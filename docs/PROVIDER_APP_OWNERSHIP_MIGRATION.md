@@ -365,6 +365,58 @@ after: it is the same claim in the privacy policy, the verification form, and
 the CASA questionnaire, and getting caught out on it in one place discredits it
 in the other two.
 
+### 3.6.2 Demo video — recording setup and shot list
+
+Two things get a video rejected far more than anything else: the **OAuth client
+ID is not legible on screen**, and a **restricted scope is claimed but never
+shown in use**. Both are avoidable, and both are the whole point of the script
+below.
+
+**Mechanics**
+
+- Record the **production app on the verified domain** (`getlawhand.com`).
+  Localhost, a staging hostname, or a mock is an automatic rejection.
+- 1080p, real time. Do not speed up or cut between steps in a way that hides
+  a transition — the reviewer is checking that the flow is real.
+- Narrate in English, or add English subtitles.
+- Upload to YouTube as **unlisted**; paste the link into the form.
+- OBS Studio works everywhere and is free. macOS QuickTime and Windows Game Bar
+  are fine too. Keep the cursor visible and the browser URL bar on screen.
+- Sign in with a Workspace account you control, seeded with **fabricated**
+  matters, mail and Drive files. Never record real client data: it is a
+  confidentiality breach independent of anything Google requires.
+- Expect the "Google hasn't verified this app" interstitial while unverified.
+  Show yourself clicking through it. That is normal and not a defect.
+
+**The client ID shot.** During consent, before clicking Allow, pause on the
+browser URL bar and zoom so `client_id=...apps.googleusercontent.com` is
+readable. It must match the client submitted for verification. This single
+frame is the most common reason for a requeue.
+
+**Shot list.** Each restricted scope needs a visible, in-product use, and the
+two narrower-scope arguments from 3.6.1 should be *demonstrated*, not merely
+asserted:
+
+| # | Scope | Surface | What must be on screen |
+|---|---|---|---|
+| 1 | — | `getlawhand.com` | The homepage on the verified domain |
+| 2 | `openid`, `email`, `profile` | `/login` | Sign in with Google |
+| 3 | all | consent screen | App name, full scope list, **client ID in the URL**, the privacy policy link resolving to `/privacy` |
+| 4 | `admin.directory.user.readonly` | `/admin?tab=users` | Directory sync listing the domain's staff |
+| 5 | `drive` | `/admin?tab=integrations` → Cloud Search | A query finding a Drive file **created before the app existed** |
+| 6 | `drive` | `/matters/:id` | Matter folder created and a document uploaded, then the same folder shown in `drive.google.com` |
+| 7 | `gmail.readonly` | `/matters/:id` → Correspondence → **Scan now** | Mail searched by correspondent and date, a message filed to the matter |
+| 8 | `gmail.send` | any notification trigger | The sent message in the firm's Gmail **Sent** folder |
+| 9 | `calendar` | `/calendar` | A LawHand deadline written through to `calendar.google.com` |
+| 10 | — | `/admin?tab=integrations` | Disconnect, showing the user can revoke |
+
+Shots 5 and 7 carry the argument. In 5, open the found file and show it
+predates the integration — that is `drive.file` failing on camera. In 7, let the
+search box and the correspondent/date filter be legible — that is the `q`
+parameter `gmail.metadata` forbids.
+
+Close on shot 10. Reviewers look for revocation, and it costs fifteen seconds.
+
 ---
 
 ## 4. Microsoft — exact steps
