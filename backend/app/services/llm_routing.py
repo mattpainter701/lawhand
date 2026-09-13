@@ -258,11 +258,15 @@ def route_from_values(
 def default_platform_llm_config() -> dict[str, str | None]:
     return {
         "standard_provider": LITELLM_PROVIDER,
-        "standard_model": settings.LITELLM_STANDARD_MODEL,
+        # A host environment file written before a rename still names the old
+        # static alias. Upgrade it on read so a stale env cannot select an alias
+        # the renamed gateway no longer serves. Registered revision aliases keep
+        # their exact name (see _upgrade_legacy_alias).
+        "standard_model": _upgrade_legacy_alias(settings.LITELLM_STANDARD_MODEL),
         "premium_provider": LITELLM_PROVIDER,
-        "premium_model": settings.LITELLM_PREMIUM_MODEL,
+        "premium_model": _upgrade_legacy_alias(settings.LITELLM_PREMIUM_MODEL),
         "background_provider": LITELLM_PROVIDER,
-        "background_model": settings.LITELLM_BACKGROUND_MODEL,
+        "background_model": _upgrade_legacy_alias(settings.LITELLM_BACKGROUND_MODEL),
     }
 
 
@@ -274,20 +278,17 @@ def _normalize_config(value: dict[str, Any] | None) -> dict[str, str | None]:
     premium_provider = _clean(value.get("premium_provider"))
     background_provider = _clean(value.get("background_provider"))
     if standard_provider in (None, LITELLM_PROVIDER):
-        config["standard_model"] = (
-            _upgrade_legacy_alias(value.get("standard_model"))
-            or settings.LITELLM_STANDARD_MODEL
-        )
+        config["standard_model"] = _upgrade_legacy_alias(
+            value.get("standard_model")
+        ) or _upgrade_legacy_alias(settings.LITELLM_STANDARD_MODEL)
     if premium_provider in (None, LITELLM_PROVIDER):
-        config["premium_model"] = (
-            _upgrade_legacy_alias(value.get("premium_model"))
-            or settings.LITELLM_PREMIUM_MODEL
-        )
+        config["premium_model"] = _upgrade_legacy_alias(
+            value.get("premium_model")
+        ) or _upgrade_legacy_alias(settings.LITELLM_PREMIUM_MODEL)
     if background_provider in (None, LITELLM_PROVIDER):
-        config["background_model"] = (
-            _upgrade_legacy_alias(value.get("background_model"))
-            or settings.LITELLM_BACKGROUND_MODEL
-        )
+        config["background_model"] = _upgrade_legacy_alias(
+            value.get("background_model")
+        ) or _upgrade_legacy_alias(settings.LITELLM_BACKGROUND_MODEL)
     return config
 
 
