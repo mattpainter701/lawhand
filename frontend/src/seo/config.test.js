@@ -271,9 +271,11 @@ describe('SEO configuration', () => {
   })
 
   it.each([
-    ['/privacy', 'Privacy Policy | LawHand', 'Privacy Policy', 'Terms of Use'],
-    ['/terms', 'Terms of Use | LawHand', 'Terms of Use', 'Privacy Policy'],
-  ])('builds substantive route-correct no-JavaScript HTML for %s', (route, title, heading, otherPolicy) => {
+    // Each policy carries its own last-updated date and its own section count;
+    // the privacy shell gained the Google Limited Use disclosure.
+    ['/privacy', 'Privacy Policy | LawHand', 'Privacy Policy', 'Terms of Use', '2026-09-13', 'September 13, 2026', 9],
+    ['/terms', 'Terms of Use | LawHand', 'Terms of Use', 'Privacy Policy', '2026-07-27', 'July 27, 2026', 8],
+  ])('builds substantive route-correct no-JavaScript HTML for %s', (route, title, heading, otherPolicy, updatedIso, updatedLabel, sectionCount) => {
     const base = readFileSync('index.html', 'utf8')
     const html = buildPublicRouteHtml(base, route, 'https://clarity.example')
 
@@ -284,8 +286,8 @@ describe('SEO configuration', () => {
     expect(html).toContain('<article class="server-legal__article">')
     expect(html).toContain('<nav class="server-legal__contents" aria-label="On this page">')
     expect(html).toContain('<ol>')
-    expect(html).toContain('<time datetime="2026-07-27">July 27, 2026</time>')
-    expect(html.match(/<section id=/g)).toHaveLength(8)
+    expect(html).toContain(`<time datetime="${updatedIso}">${updatedLabel}</time>`)
+    expect(html.match(/<section id=/g)).toHaveLength(sectionCount)
     expect(html).toContain(`>${otherPolicy}</a>`)
     expect(html).toContain('mailto:support@getlawhand.com')
     // The marketing hero must not survive into a policy page. The slogan may
@@ -294,6 +296,19 @@ describe('SEO configuration', () => {
     expect(html).not.toContain('<h1>Law practice management, simplified.</h1>')
     expect(html).not.toContain('<main class="server-marketing">')
     expect(html).toContain('<script type="module" src="/src/main.jsx"></script>')
+  })
+
+  it('serves the Google Limited Use disclosure in the no-JavaScript privacy shell', () => {
+    const base = readFileSync('index.html', 'utf8')
+    const html = buildPublicRouteHtml(base, '/privacy', 'https://clarity.example')
+
+    expect(html).toContain('Google user data and Limited Use')
+    expect(html).toContain('adhere to the Google API Services User Data Policy, including the Limited Use requirements')
+    expect(html).toContain('https://developers.google.com/terms/api-services-user-data-policy')
+    expect(html).toContain('<section id="google-user-data">')
+
+    const terms = buildPublicRouteHtml(base, '/terms', 'https://clarity.example')
+    expect(terms).not.toContain('Limited Use requirements')
   })
 
   it('keeps each legal shell specific to its policy', () => {
