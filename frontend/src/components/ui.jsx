@@ -299,3 +299,53 @@ export function Toggle({ checked, onChange, label, disabled = false }) {
     </button>
   )
 }
+
+const DISCLOSURE_TONES = {
+  ok: 'bg-green-100 text-green-700',
+  warn: 'bg-amber-100 text-amber-700',
+  off: 'bg-gray-100 text-gray-600',
+  danger: 'bg-red-100 text-red-700',
+}
+
+/**
+ * Click-to-expand section. Closed by default so a page answers "is this
+ * working?" from its summary line without showing every control at once.
+ * Built on <details> so it needs no state and is keyboard/screen-reader
+ * accessible for free. A disclosure is presentation, not authorization:
+ * gate operator-only content on role before rendering it inside one.
+ */
+export function Disclosure({
+  title,
+  summary,
+  tone,
+  defaultOpen = false,
+  children,
+  className = '',
+  testId,
+}) {
+  return (
+    <details
+      className={`group rounded-xl border border-brand-line bg-brand-surface ${className}`}
+      open={defaultOpen || undefined}
+      data-testid={testId}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-brand-ink font-sans">{title}</span>
+          {summary && (
+            <span className="mt-0.5 block text-xs text-brand-ink-2 font-sans">{summary}</span>
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {tone && (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${DISCLOSURE_TONES[tone] || DISCLOSURE_TONES.off}`}>
+              {tone === 'ok' ? 'OK' : tone === 'warn' ? 'Attention' : tone === 'danger' ? 'Caution' : 'Off'}
+            </span>
+          )}
+          <span className="text-brand-muted transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+        </span>
+      </summary>
+      <div className="border-t border-brand-line px-5 py-5">{children}</div>
+    </details>
+  )
+}

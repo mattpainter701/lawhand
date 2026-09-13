@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./IntegrationsPanel', () => ({ default: () => <div>Cloud configuration</div> }))
 vi.mock('./TeamsPanel', () => ({ default: () => <div>Teams configuration</div> }))
@@ -10,17 +10,51 @@ vi.mock('./QBOPanel', () => ({ default: () => <div>QuickBooks configuration</div
 vi.mock('../pages/MCPPage', () => ({ default: () => <div>MCP configuration</div> }))
 vi.mock('../pages/CloudSearchAdmin', () => ({ default: () => <div>Search configuration</div> }))
 vi.mock('../pages/SmbAdminPage', () => ({ default: () => <div>File share configuration</div> }))
+vi.mock('./StorageMigrationSection', () => ({ default: () => <div>Storage migration configuration</div> }))
+vi.mock('./Tabs3ImportPanel', () => ({ default: () => <div>Tabs3 configuration</div> }))
+vi.mock('./IntegrationReadinessCard', () => ({ default: () => <div>Readiness configuration</div> }))
+vi.mock('../api', () => ({
+  getAdminPermissions: vi.fn(),
+  getQBOStatus: vi.fn(),
+  getZoomStatus: vi.fn(),
+}))
 
 import IntegrationsHub, {
   LEGACY_INTEGRATION_TABS,
   availableIntegrationSections,
+  canOperateIntegrations,
+  operatorIntegrationSections,
 } from './IntegrationsHub'
+import { getAdminPermissions, getQBOStatus, getZoomStatus } from '../api'
+
+afterEach(cleanup)
+
+const admin = { role: 'admin', plan: 'professional', capabilities: ['manage_integrations', 'manage_users'] }
+
+function renderHub(props = {}) {
+  const onSectionChange = vi.fn()
+  render(
+    <MemoryRouter>
+      <IntegrationsHub user={admin} section="overview" onSectionChange={onSectionChange} {...props} />
+    </MemoryRouter>
+  )
+  return onSectionChange
+}
 
 describe('IntegrationsHub', () => {
-  it('keeps every full-platform integration in one admin catalog', () => {
-    const sections = availableIntegrationSections({ role: 'admin', plan: 'professional' })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getAdminPermissions.mockResolvedValue({
+      overall_health: 'attention_needed',
+      microsoft: { connected: false, health: 'disconnected', capabilities: {} },
+      google: { connected: true, health: 'revoked' },
+    })
+    getZoomStatus.mockResolvedValue({ configured: true, connected: false })
+    getQBOStatus.mockResolvedValue({ connected: true, company_name: 'Painter Law' })
+  })
 
-    expect(sections.map((section) => section.id)).toEqual([
+  it('keeps firm integrations in the catalog and nests operator tooling separately', () => {
+    expect(availableIntegrationSections(admin).map((section) => section.id)).toEqual([
       'email-intake',
       'cloud',
       'cloud-search',
@@ -28,37 +62,114 @@ describe('IntegrationsHub', () => {
       'teams',
       'zoom',
       'quickbooks',
+    ])
+    expect(operatorIntegrationSections(admin).map((section) => section.id)).toEqual([
       'mcp',
+      'storage-migration',
+      'data-import',
+      'readiness',
     ])
     expect(LEGACY_INTEGRATION_TABS).toMatchObject({ mcp: 'mcp', smb: 'file-shares', qbo: 'quickbooks' })
   })
 
+  it('gates operator tooling on role and capability, not on the disclosure', () => {
+    expect(canOperateIntegrations(admin)).toBe(true)
+    expect(canOperateIntegrations({ role: 'admin', plan: 'professional' })).toBe(true)
+    expect(canOperateIntegrations({ role: 'admin', plan: 'professional', capabilities: ['manage_users'] })).toBe(false)
+    expect(canOperateIntegrations({ role: 'user', capabilities: ['manage_integrations'] })).toBe(false)
+    expect(canOperateIntegrations({ role: 'accountant' })).toBe(false)
+    expect(canOperateIntegrations({ role: 'admin', plan: 'intake-only' })).toBe(false)
+    expect(operatorIntegrationSections({ role: 'admin', plan: 'professional', capabilities: ['manage_users'] })).toEqual([])
+  })
+
+  it('answers "is this working?" from the overview without expanding anything', async () => {
+    renderHub()
+
+    const cloud = screen.getByTestId('integration-card-cloud')
+    expect(await within(cloud).findByText('Needs attention')).toBeInTheDocument()
+    expect(within(cloud).getByText('Open')).toBeInTheDocument()
+
+    const teams = screen.getByTestId('integration-card-teams')
+    expect(within(teams).getByText('Connect Microsoft 365 first')).toBeInTheDocument()
+    expect(within(teams).getByText('Set up')).toBeInTheDocument()
+
+    const zoom = screen.getByTestId('integration-card-zoom')
+    expect(within(zoom).getByText('Not connected')).toBeInTheDocument()
+
+    const qbo = screen.getByTestId('integration-card-quickbooks')
+    expect(within(qbo).getByText('Connected to Painter Law')).toBeInTheDocument()
+
+    // Every card is collapsed: permissions and setup stay behind a disclosure.
+    expect(screen.getAllByText('Permissions & setup').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Directory profiles for user provisioning')).not.toBeVisible()
+  })
+
   it('shows purpose, expandable permissions, setup requirements, and guide links', async () => {
-    const onSectionChange = vi.fn()
-    render(
-      <MemoryRouter>
-        <IntegrationsHub
-          user={{ role: 'admin', plan: 'professional' }}
-          section="overview"
-          onSectionChange={onSectionChange}
-        />
-      </MemoryRouter>
-    )
+    const onSectionChange = renderHub()
 
     expect(screen.getByText('Every external connection, in one place.')).toBeInTheDocument()
-    expect(screen.getByText('Connect Microsoft 365 or Google Workspace, choose where matter documents live, and manage approved imports.')).toBeInTheDocument()
+    expect(screen.getByText('Connect Microsoft 365 or Google Workspace and choose where matter documents live.')).toBeInTheDocument()
 
-    const details = screen.getAllByText('Permissions & setup')[1]
-    await userEvent.click(details)
+    const cloud = screen.getByTestId('integration-card-cloud')
+    await userEvent.click(within(cloud).getByText('Permissions & setup'))
     expect(screen.getByText('Directory profiles for user provisioning')).toBeVisible()
-    expect(screen.getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/guide/integrations')
+    expect(within(cloud).getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/guide/integrations')
 
-    await userEvent.click(screen.getAllByText('Open configuration')[1])
+    await userEvent.click(within(cloud).getByText('Open'))
     expect(onSectionChange).toHaveBeenCalledWith('cloud')
   })
 
-  it('limits the catalog for accountant and intake-only roles', () => {
+  it('keeps operator tools behind a closed Advanced disclosure and out of the main nav', async () => {
+    const onSectionChange = renderHub()
+
+    const nav = screen.getByRole('navigation', { name: 'Integration sections' })
+    expect(within(nav).queryByRole('button', { name: /Migration/ })).toBeNull()
+    expect(within(nav).queryByRole('button', { name: /MCP/ })).toBeNull()
+
+    const advanced = screen.getByTestId('integrations-advanced')
+    expect(advanced).not.toHaveAttribute('open')
+    expect(within(advanced).getByText('Storage migration')).not.toBeVisible()
+
+    await userEvent.click(within(advanced).getByText('Advanced'))
+    expect(within(advanced).getByText('Storage migration')).toBeVisible()
+    await userEvent.click(within(screen.getByTestId('integration-card-storage-migration')).getByText('Open'))
+    expect(onSectionChange).toHaveBeenCalledWith('storage-migration')
+
+    await userEvent.click(within(nav).getByRole('button', { name: /Advanced/ }))
+    expect(within(nav).getByRole('button', { name: /Migration/ })).toBeInTheDocument()
+  })
+
+  it('renders an operator section with its badge when selected directly', async () => {
+    renderHub({ section: 'storage-migration' })
+
+    expect(await screen.findByText('Storage migration configuration')).toBeInTheDocument()
+    expect(screen.getByText('Operator tool')).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Integration sections' })
+    expect(within(nav).getByRole('button', { name: /Migration/ })).toBeInTheDocument()
+  })
+
+  it('hides operator tools entirely from an administrator without the capability', () => {
+    renderHub({ user: { role: 'admin', plan: 'professional', capabilities: ['manage_users'] }, section: 'storage-migration' })
+
+    expect(screen.queryByTestId('integrations-advanced')).toBeNull()
+    expect(screen.queryByText('Storage migration configuration')).toBeNull()
+    // An unknown or forbidden section falls back to the overview.
+    expect(screen.getByTestId('integrations-overview')).toBeInTheDocument()
+  })
+
+  it('limits the catalog for accountant and intake-only roles', async () => {
     expect(availableIntegrationSections({ role: 'accountant' }).map((section) => section.id)).toEqual(['quickbooks'])
     expect(availableIntegrationSections({ role: 'admin', plan: 'intake-only' }).map((section) => section.id)).toEqual(['zoom'])
+
+    renderHub({ user: { role: 'accountant' } })
+    await waitFor(() => expect(getQBOStatus).toHaveBeenCalled())
+    expect(getAdminPermissions).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('integrations-advanced')).toBeNull()
+  })
+
+  it('shows the selected section status in its header', async () => {
+    renderHub({ section: 'cloud' })
+    expect(await screen.findByText('Cloud configuration')).toBeInTheDocument()
+    expect(await screen.findByText('Needs attention')).toBeInTheDocument()
   })
 })

@@ -57,18 +57,21 @@ function StatCard({ label, value, sub }) {
   )
 }
 
+// Ordered by how often a firm administrator reaches for each: the day-to-day
+// tabs first, then setup, then the reference and rarely-touched ones. Tab ids
+// are stable because links across the app deep-link with ?tab=<id>.
 const ADMIN_TABS = [
   { id: 'users', label: 'Users' },
-  { id: 'firm', label: 'Firm Profile' },
-  { id: 'guide', label: 'Admin Guide' },
-  { id: 'roles', label: 'Roles' },
-  { id: 'licensing', label: 'Licensing' },
-  { id: 'billing', label: 'Subscription' },
-  { id: 'usage', label: 'Usage' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'firm', label: 'Firm Profile' },
+  { id: 'billing', label: 'Subscription' },
+  { id: 'licensing', label: 'Licensing' },
+  { id: 'usage', label: 'Usage' },
+  { id: 'roles', label: 'Roles' },
+  { id: 'settings', label: 'Settings' },
   { id: 'tenant', label: 'Tenant' },
   { id: 'prompts', label: 'Prompts' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'guide', label: 'Admin Guide' },
   { id: 'support', label: 'Support' },
 ]
 
