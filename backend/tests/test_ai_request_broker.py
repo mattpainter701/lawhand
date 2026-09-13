@@ -119,7 +119,7 @@ async def test_responses_transport_uses_global_background_alias(monkeypatch):
         return LLMRoute(
             requested_route="background",
             resolved_route="background",
-            gateway_alias="clarity-background-r2",
+            gateway_alias="lawhand-background-r2",
         )
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -172,7 +172,7 @@ async def test_responses_transport_uses_global_background_alias(monkeypatch):
         await client.aclose()
 
     assert seen["path"] == "/v1/responses"
-    assert seen["body"]["model"] == "clarity-background-r2"
+    assert seen["body"]["model"] == "lawhand-background-r2"
     assert seen["body"]["text"]["format"]["schema"] == SCHEMA
     assert seen["body"]["litellm_metadata"]["route_tier"] == "background"
     assert seen["body"]["litellm_metadata"]["tenant_id"] != "spoofed"
@@ -185,7 +185,7 @@ async def test_responses_transport_uses_global_background_alias(monkeypatch):
     assert result.provider_request_id == "call_test"
     assert result.value == {"brief": "Follow-up draft"}
     assert (result.tokens_in, result.tokens_out) == (8, 5)
-    assert seen["reservation"]["route_alias"] == "clarity-background-r2"
+    assert seen["reservation"]["route_alias"] == "lawhand-background-r2"
     assert len(seen["reservation"]["idempotency_key"]) == 64
     assert seen["reservation"]["idempotency_key"] != "lead:1:note:v1"
     assert seen["settled"]["provider_request_id"] == "call_test"
@@ -209,7 +209,7 @@ def test_input_estimate_includes_schema_wrappers_and_unicode():
     route = LLMRoute(
         requested_route="background",
         resolved_route="background",
-        gateway_alias="clarity-background-r2",
+        gateway_alias="lawhand-background-r2",
     )
 
     estimated = AIRequestBroker._estimate_input_tokens(
@@ -231,7 +231,7 @@ async def test_responses_5xx_is_ambiguous_not_released():
     route = LLMRoute(
         requested_route="background",
         resolved_route="background",
-        gateway_alias="clarity-background-r2",
+        gateway_alias="lawhand-background-r2",
     )
     try:
         with pytest.raises(AIRequestUnknown):
@@ -279,7 +279,7 @@ async def _background_route(*_args, **_kwargs):
     return LLMRoute(
         requested_route="background",
         resolved_route="background",
-        gateway_alias="clarity-background-r2",
+        gateway_alias="lawhand-background-r2",
     )
 
 

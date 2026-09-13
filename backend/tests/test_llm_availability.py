@@ -40,8 +40,8 @@ async def test_probe_checks_both_active_customer_aliases_with_visible_content():
     ) as client:
         result = await probe_customer_llm_routes(
             {
-                "standard": "clarity-standard-ractive",
-                "premium": "clarity-premium-ractive",
+                "standard": "lawhand-standard-ractive",
+                "premium": "lawhand-premium-ractive",
             },
             client=client,
             base_url="http://litellm",
@@ -50,8 +50,8 @@ async def test_probe_checks_both_active_customer_aliases_with_visible_content():
 
     assert result["ok"] is True
     assert [request["model"] for request in requests] == [
-        "clarity-standard-ractive",
-        "clarity-premium-ractive",
+        "lawhand-standard-ractive",
+        "lawhand-premium-ractive",
     ]
     assert all(route["visible_content"] for route in result["routes"].values())
 
@@ -63,7 +63,7 @@ async def test_probe_reports_sanitized_failure_and_still_checks_premium():
     async def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         requested_models.append(payload["model"])
-        if payload["model"] == "clarity-standard-rbroken":
+        if payload["model"] == "lawhand-standard-rbroken":
             return httpx.Response(
                 429,
                 json={"error": {"message": "secret upstream quota details"}},
@@ -75,8 +75,8 @@ async def test_probe_reports_sanitized_failure_and_still_checks_premium():
     ) as client:
         result = await probe_customer_llm_routes(
             {
-                "standard": "clarity-standard-rbroken",
-                "premium": "clarity-premium-rhealthy",
+                "standard": "lawhand-standard-rbroken",
+                "premium": "lawhand-premium-rhealthy",
             },
             client=client,
             base_url="http://litellm",
@@ -85,11 +85,11 @@ async def test_probe_reports_sanitized_failure_and_still_checks_premium():
 
     assert result["ok"] is False
     assert requested_models == [
-        "clarity-standard-rbroken",
-        "clarity-premium-rhealthy",
+        "lawhand-standard-rbroken",
+        "lawhand-premium-rhealthy",
     ]
     assert result["routes"]["standard"] == {
-        "alias": "clarity-standard-rbroken",
+        "alias": "lawhand-standard-rbroken",
         "ok": False,
         "status_code": 429,
         "visible_content": False,
@@ -139,7 +139,7 @@ def test_visible_content_rejects_missing_or_blank_completion(payload):
 @pytest.mark.asyncio
 async def test_probe_fails_closed_when_gateway_configuration_is_missing():
     result = await probe_customer_llm_routes(
-        {"standard": "clarity-standard", "premium": "clarity-premium"},
+        {"standard": "lawhand-standard", "premium": "lawhand-premium"},
         base_url="http://litellm",
         api_key="",
     )
@@ -148,12 +148,12 @@ async def test_probe_fails_closed_when_gateway_configuration_is_missing():
         "ok": False,
         "routes": {
             "standard": {
-                "alias": "clarity-standard",
+                "alias": "lawhand-standard",
                 "ok": False,
                 "error_type": "gateway_configuration_missing",
             },
             "premium": {
-                "alias": "clarity-premium",
+                "alias": "lawhand-premium",
                 "ok": False,
                 "error_type": "gateway_configuration_missing",
             },
@@ -165,7 +165,7 @@ async def test_probe_fails_closed_when_gateway_configuration_is_missing():
 async def test_probe_sanitizes_transport_and_empty_completion_failures():
     async def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
-        if payload["model"] == "clarity-standard-rtransport":
+        if payload["model"] == "lawhand-standard-rtransport":
             raise httpx.ConnectError(
                 "credential-bearing upstream detail", request=request
             )
@@ -176,8 +176,8 @@ async def test_probe_sanitizes_transport_and_empty_completion_failures():
     ) as client:
         result = await probe_customer_llm_routes(
             {
-                "standard": "clarity-standard-rtransport",
-                "premium": "clarity-premium-rempty",
+                "standard": "lawhand-standard-rtransport",
+                "premium": "lawhand-premium-rempty",
             },
             client=client,
             base_url="http://litellm",
@@ -198,8 +198,8 @@ async def test_active_probe_uses_database_route_aliases(monkeypatch):
     async def fake_get_platform_llm_config(db):
         assert db is sentinel_db
         return {
-            "standard_model": "clarity-standard-rdb",
-            "premium_model": "clarity-premium-rdb",
+            "standard_model": "lawhand-standard-rdb",
+            "premium_model": "lawhand-premium-rdb",
         }
 
     async def fake_probe(aliases):
@@ -215,8 +215,8 @@ async def test_active_probe_uses_database_route_aliases(monkeypatch):
 
     assert result["ok"] is True
     assert captured == {
-        "standard": "clarity-standard-rdb",
-        "premium": "clarity-premium-rdb",
+        "standard": "lawhand-standard-rdb",
+        "premium": "lawhand-premium-rdb",
     }
 
 
@@ -291,8 +291,8 @@ async def test_probe_closes_internally_owned_http_client(monkeypatch):
 
     result = await probe_customer_llm_routes(
         {
-            "standard": "clarity-standard-owned",
-            "premium": "clarity-premium-owned",
+            "standard": "lawhand-standard-owned",
+            "premium": "lawhand-premium-owned",
         },
         base_url="http://litellm",
         api_key="test-master-key",

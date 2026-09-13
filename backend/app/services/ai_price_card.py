@@ -222,9 +222,9 @@ _DEFAULT_RATES: dict[str, dict[str, float]] = {
     },
     # Legacy static aliases remain for Standard/Premium accounting callers.
     # Dynamic Background admission never prices one of these aliases.
-    "clarity-background": {"input": 0.60, "output": 2.40},
-    "clarity-standard": {"input": 0.60, "output": 2.40},
-    "clarity-premium": {"input": 3.00, "output": 15.00},
+    "lawhand-background": {"input": 0.60, "output": 2.40},
+    "lawhand-standard": {"input": 0.60, "output": 2.40},
+    "lawhand-premium": {"input": 3.00, "output": 15.00},
 }
 
 # Characters per token. Deliberately low so the character-based estimate rounds
@@ -254,7 +254,7 @@ class PriceCard:
         rate = self.rates.get(key)
         if rate is None:
             # Revisioned aliases resolve to their family rate:
-            # "clarity-background-r7" prices as "clarity-background".
+            # "lawhand-background-r7" prices as "lawhand-background".
             base = key.rsplit("-r", 1)[0]
             rate = self.rates.get(base)
         if rate is None:

@@ -232,7 +232,7 @@ async def test_plan_and_result_store_metadata_only(
     route = LLMRoute(
         requested_route="standard",
         resolved_route="standard",
-        gateway_alias="clarity-standard",
+        gateway_alias="lawhand-standard",
     )
     llm_response = json.dumps(
         {

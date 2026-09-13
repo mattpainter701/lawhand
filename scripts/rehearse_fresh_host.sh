@@ -358,7 +358,7 @@ request = urllib.request.Request(
 )
 with urllib.request.urlopen(request, timeout=15) as response:
     models = {item["id"] for item in json.load(response).get("data", [])}
-assert {"clarity-standard", "clarity-premium"}.issubset(models)
+assert {"lawhand-standard", "lawhand-premium"}.issubset(models)
 PY
 
 tenant_id="00000000-0000-4000-8000-000000000101"
