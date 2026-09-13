@@ -20,7 +20,7 @@ workflow-level procedure and the safety rules.
 ## The pipeline
 
 1. `ci.yml` must be `success` for the exact commit. An IONOS stage also requires
-   `codeql.yml` to be `success` for that commit.
+   `security-scanners.yml` to be `success` for that commit.
 2. `deploy-dev1.yml` (`operation=deploy`, confirmation `DEPLOY-SKYNET-DEV1`) —
    plain dev1 deploy, or
    `qa-acceptance.yml` (`release_sha=<40-hex>`) — deploys the same commit to dev1

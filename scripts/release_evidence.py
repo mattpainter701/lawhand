@@ -77,7 +77,7 @@ def main():
         "--workflow",
         action="append",
         required=True,
-        choices=["ci.yml", "codeql.yml", "qa-acceptance.yml"],
+        choices=["ci.yml", "security-scanners.yml", "qa-acceptance.yml"],
     )
     parser.add_argument(
         "--event", default="push", choices=["push", "workflow_dispatch"]
