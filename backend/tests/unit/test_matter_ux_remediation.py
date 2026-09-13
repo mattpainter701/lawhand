@@ -297,7 +297,7 @@ async def test_copy_document_is_private_retryable_and_never_mutates_source(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", ["bad-id", str(uuid.uuid4())])
+@pytest.mark.parametrize("value", ["bad-id", "5c2f9b1a-7d3e-4c8f-9a1b-2d3e4f5a6b7c"])
 async def test_attachment_missing_or_invalid_is_not_disclosed(value):
     db = SimpleNamespace(scalar=AsyncMock(return_value=None))
     with pytest.raises(HTTPException) as error:
