@@ -300,6 +300,71 @@ Realistic timeline: plan for four to eight weeks, and do not commit a customer
 launch date against it. This is the critical path of the whole migration —
 everything in sections 4 and 5 can proceed in parallel while it runs.
 
+### 3.6.1 Scope justification text
+
+The **Data Access** screen wants a justification per scope group, and the
+reviewer reads it next to your demo video. If the two disagree, you are
+rejected and requeued, so the text below describes only what the code in this
+repository actually does. Each block is under Google's 1000-character limit.
+
+Before pasting, re-read section 5.3: if the scope manifest has moved, this text
+has to move with it.
+
+**Sensitive scopes** — `admin.directory.user.readonly`, `calendar`,
+`gmail.send`. Source: `user_sync.sync_google_users`, `calendar_sync`
+(`google_get_events` / `google_create_event` / `google_delete_event`),
+`email_admin._send_via_google`.
+
+> LawHand is legal practice management software. A firm administrator connects the firm's own Google Workspace account.
+>
+> admin.directory.user.readonly - at setup and on demand we list the firm's domain users so the administrator can provision staff into the firm's LawHand workspace without retyping names and addresses. We read name, primary email and suspension status only, and never modify directory data.
+>
+> calendar - we write court dates, filing deadlines and limitation dates calculated in LawHand to the user's primary calendar, update them when a matter's dates change, and remove them when a deadline is deleted. We read existing events to avoid duplicates and surface scheduling conflicts.
+>
+> gmail.send - we send the firm's own operational mail (matter assignments, deadline reminders, intake confirmations) from the firm's address, so mail to clients and staff stays in the firm's sent mail rather than arriving from a third-party sender.
+
+**Restricted — Drive** (`auth/drive`). Source: `cloud_search._search_google_drive`
+(`fullText contains`, `corpora=allDrives`), `matter_file_store`,
+`matter_folder_marker`, `storage_discovery._google`, `document_sync`.
+
+> LawHand is legal practice management software. A firm connects its own Google Workspace; its matter documents live in its Drive.
+>
+> We use this scope to: (1) full-text search My Drive and Shared Drives (files.list with q="fullText contains ...") to find correspondence, pleadings and contracts relating to a specific matter; (2) read or export those files so their text appears in the matter record; (3) create matter folders and upload documents LawHand generates; (4) read an existing folder tree at onboarding so the firm's filing structure is preserved. We delete only files our own upload staged and failed to commit, and never alter sharing or permissions.
+>
+> drive.file is insufficient: it reaches only files our app created or the user picked individually. The documents a firm must find are pre-existing, authored by staff over years, often in Shared Drives, and added to matter folders outside our app. drive.readonly is insufficient because we also create folders and upload files.
+
+**Restricted — Gmail** (`auth/gmail.readonly`). Source:
+`cloud_sync` and `cloud_search._search_gmail` (`messages.list` with `q=`),
+`cloud_search._fetch_gmail_content` (`format=full`), `google_mail.gmail_read_raw`
+(`format=raw`, used by `correspondence_capture`).
+
+> LawHand is legal practice management software. A firm connects its own Google Workspace so client correspondence can be found and filed against the right matter.
+>
+> We use this scope to: (1) search the user's mailbox with messages.list q= (from:, to:, subject:, after:) for messages relating to a specific matter or client; (2) read a message the user selects so it can be filed to that matter.
+>
+> Data is minimised. Search results are fetched with format=metadata, returning only From, To, Cc, Subject and Date. A message body is read only when the user explicitly opens a result or files a message onto a matter (format=full, or format=raw to store the .eml). We do not bulk-download mailboxes.
+>
+> gmail.metadata is insufficient: it forbids the q search parameter, and searching by correspondent, subject and date is the entire feature. No narrower Gmail read scope supports search.
+
+**"What features will you use?"** — tick only what the demo video shows. Every
+box you check is a claim the reviewer will look for on screen, and an unshown
+claim is a rejection. For Drive that is searching, reading/downloading, and
+creating folders and files; *not* sharing, permission changes, or ownership
+transfer, none of which LawHand performs. For Gmail that is searching and
+reading; *not* sending (that is `gmail.send`, justified above as a sensitive
+scope), labels, or deletion.
+
+**One caveat that is not cosmetic.** Google's Limited Use terms forbid using
+this data to develop or improve generalized AI models, and the privacy policy
+now asserts that LawHand does not. LawHand trains nothing — but Gmail and Drive
+content does reach the configured model provider for inference, and the
+assertion is only true if *every* provider in that chain is contractually
+no-training. OpenRouter is the open question, because it forwards to downstream
+providers on terms LawHand does not set. Confirm that before submitting, not
+after: it is the same claim in the privacy policy, the verification form, and
+the CASA questionnaire, and getting caught out on it in one place discredits it
+in the other two.
+
 ---
 
 ## 4. Microsoft — exact steps
