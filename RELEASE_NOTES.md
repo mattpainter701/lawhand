@@ -16,6 +16,22 @@ New firms confirm where matter documents live during setup, and the Integrations
 - **Integrations answer "is this working?" at a glance.** Each card shows a status pill, provider cards lead with the remedy when a connection cannot be used, and firm-wide and per-user connections are reported separately.
 - **Storage settings and operator tools are out of the way.** Changing the document provider asks for confirmation, and migration, import and readiness tools sit under Advanced for administrators who manage integrations.
 
+## 2026.09.13.6 — Reliable filing after clients sign
+
+Released September 13, 2026.
+
+Signed forms can finish filing without waiting on their own cloud connection lock, and background retries keep each matter's tenant context.
+
+- **Recover signed forms without signing again.** Saved answers and signatures are reused when filing retries. Once filed, the signed PDF and evidence certificate are available in the client's Documents tab.
+
+## 2026.09.13.5 — Clearer legal team contact details
+
+Released September 13, 2026.
+
+The client portal shows your legal team's names and email addresses without internal assignment labels.
+
+- **Simple team contact details.** Find your legal team's names and email links in the matter overview, without internal role codes beside their names.
+
 ## 2026.09.13.4 — Flexible matter billing and Helcim subscriptions
 
 Released September 13, 2026.
@@ -135,15 +151,15 @@ Clients fill form fields and sign on the document's own signature line in the po
 - **Storage outages no longer fail signing.** If the firm's cloud storage is down when a client signs, the signature is kept, the client sees a confirmation, and filing retries automatically while staff see the problem.
 - **One signing provider.** The Dropbox Sign option is removed. LawHand's own portal signing is the only provider, so there is nothing to pick or configure.
 
-## 2026.09.11.12 — One practice resolver behind routing
+## 2026.09.11.16 — Send any of the three standard pieces
 
 Released September 11, 2026.
 
-Plugin suggestions and workflow automations resolve matter labels through one shared alias-aware resolver, so “Dissolution of Marriage” routes to family everywhere. Matters show the resolved practice so staff can correct mis-resolved ones.
+Start this case now lists the fee agreement, questionnaire, and client intake form together, fills the questionnaire with the matter type's own questions, and can send any subset.
 
-- **One resolver behind routing.** Plugin suggestions and workflow automations resolve matter labels through the same alias table the intake pack uses, so “Dissolution of Marriage” is family everywhere.
-- **Plugin suggestions understand practice aliases.** A matter whose text never mentions a plugin's keywords still gets the right add-on when its practice resolves; existing substring matches keep working, so tenants do not regress.
-- **The matter record shows its resolved practice.** Matter detail now carries the resolved practice slug and label, so staff can see how a matter was read and correct one that resolved wrong.
+- **The three common pieces, side by side.** The fee agreement, client questionnaire, and client intake form are each listed and selectable, so a firm can send one, two, or all three.
+- **A fee agreement is now optional.** Send only the questionnaire or requested uploads when no agreement is needed. Signing still opens the portal when an agreement goes out.
+- **Questions match the matter type.** The questionnaire starts with the standard questions for the matter type, and the upload hint shows examples for that practice instead of one generic list.
 
 ## 2026.09.11.15 — Fee agreements fill themselves — drafts can't be approved half-empty
 
@@ -176,15 +192,15 @@ Questionnaire answers propose updates to the contact and matter record (address,
 - **Conflicts of interest checked automatically.** Names from the conflict section are checked against the firm's contacts and matters when the form is submitted, and the result is attached to the review task.
 - **Nothing changes without staff approval.** Every proposed update waits for a staff member's decision, and a change is refused for re-review if the record moved after the proposal was made.
 
-## 2026.09.11.16 — Send any of the three standard pieces
+## 2026.09.11.12 — One practice resolver behind routing
 
 Released September 11, 2026.
 
-Start this case now lists the fee agreement, questionnaire, and client intake form together, fills the questionnaire with the matter type's own questions, and can send any subset.
+Plugin suggestions and workflow automations resolve matter labels through one shared alias-aware resolver, so “Dissolution of Marriage” routes to family everywhere. Matters show the resolved practice so staff can correct mis-resolved ones.
 
-- **The three common pieces, side by side.** The fee agreement, client questionnaire, and client intake form are each listed and selectable, so a firm can send one, two, or all three.
-- **A fee agreement is now optional.** Send only the questionnaire or requested uploads when no agreement is needed. Signing still opens the portal when an agreement goes out.
-- **Questions match the matter type.** The questionnaire starts with the standard questions for the matter type, and the upload hint shows examples for that practice instead of one generic list.
+- **One resolver behind routing.** Plugin suggestions and workflow automations resolve matter labels through the same alias table the intake pack uses, so “Dissolution of Marriage” is family everywhere.
+- **Plugin suggestions understand practice aliases.** A matter whose text never mentions a plugin's keywords still gets the right add-on when its practice resolves; existing substring matches keep working, so tenants do not regress.
+- **The matter record shows its resolved practice.** Matter detail now carries the resolved practice slug and label, so staff can see how a matter was read and correct one that resolved wrong.
 
 ## 2026.09.11.11 — Declined signatures and resilient signing
 

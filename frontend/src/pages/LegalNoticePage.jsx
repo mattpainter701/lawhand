@@ -3,7 +3,23 @@ import { ArrowLeft, ArrowUp, Mail, ShieldCheck } from 'lucide-react'
 import LawHandLogo from '../components/LawHandLogo'
 import { Link } from 'react-router-dom'
 
-const UPDATED = 'July 27, 2026'
+const UPDATED = { privacy: 'September 13, 2026', terms: 'July 27, 2026' }
+const GOOGLE_USER_DATA_POLICY_URL = 'https://developers.google.com/terms/api-services-user-data-policy'
+const GOOGLE_ACCOUNT_PERMISSIONS_URL = 'https://myaccount.google.com/permissions'
+
+// Google requires the Limited Use disclosure to reference its policy, so bare URLs
+// in policy prose render as real links rather than unclickable text.
+const URL_PATTERN = /(https?:\/\/[^\s,]+[^\s.,)])/g
+function linkify(text) {
+  // split() on a single capturing group puts the captured URLs at the odd indices.
+  // Do not re-test with URL_PATTERN here: it is /g, so .test() advances lastIndex
+  // between calls and would match inconsistently.
+  return text.split(URL_PATTERN).map((part, index) => (
+    index % 2 === 1
+      ? <a key={part} href={part} target='_blank' rel='noreferrer' className='font-semibold text-brand-ink underline underline-offset-4'>{part}</a>
+      : part
+  ))
+}
 const EMAIL = 'support@getlawhand.com'
 
 const privacySections = [
@@ -24,6 +40,22 @@ const privacySections = [
   ]],
   ['ai-assisted-features', 'AI-assisted features', [
     'When an organization enables AI-assisted features, relevant prompts, documents, retrieved context, and outputs may be processed through the model provider configured for that workspace. Data handling can vary by provider, deployment, and tenant configuration. Your organization is responsible for approving the providers and workflows it enables. AI-assisted output requires professional review and should not be treated as verified legal advice.',
+  ]],
+  ['google-user-data', 'Google user data and Limited Use', [
+    'LawHand\u2019s use and transfer of information received from Google APIs to any other app will adhere to the Google API Services User Data Policy, including the Limited Use requirements. That policy is published at ' + GOOGLE_USER_DATA_POLICY_URL + '.',
+    'Where your organization connects a Google Workspace or Google account, LawHand requests only the access its enabled workflows need:',
+  ], [
+    'Sign-in through OpenID Connect, your email address, and basic profile information, to authenticate you and match your account to your organization\u2019s workspace.',
+    'Directory read access, to provision staff accounts from your organization\u2019s user directory.',
+    'Gmail read access, so correspondence can be matched to the right matter and filed by an authorized user.',
+    'Gmail send access, so an authorized user can send from the connected mailbox when they ask the service to.',
+    'Google Drive read and write access, to create and maintain matter folders and documents and to index them for search inside the workspace.',
+    'Google Calendar read and write access, for matter calendar entries and deadlines.',
+  ]],
+  ['google-limited-use', 'How Google user data is handled', [
+    'Google user data is used only to provide and improve the user-facing features described above. It is not used for advertising, and it is not sold. People do not read Google user data except with your organization\u2019s explicit permission for a specific support request, where necessary for security or to comply with applicable law, or where the data has been aggregated and de-identified.',
+    'Where your organization enables AI-assisted features, Google user data may be processed by the workspace\u2019s configured model provider solely to deliver those features. Google user data is not used to develop, improve, or train generalized artificial intelligence or machine-learning models.',
+    'An administrator may disconnect Google at any time from the workspace integration settings. Access can also be revoked directly from your Google Account at ' + GOOGLE_ACCOUNT_PERMISSIONS_URL + '.',
   ]],
   ['when-information-is-shared', 'When information is shared', [
     'We may make information available to infrastructure, model, integration, communications, support, monitoring, and payment providers as needed to operate features selected by your organization. We also send information to connected services when an authorized user requests a workflow, and may disclose information when required by law, to protect the service or its users, or in connection with a corporate transaction. Provider-specific processing is also governed by the provider’s terms and the configuration selected by your organization.',
@@ -119,7 +151,7 @@ function LegalSection({ section, number }) {
         <div>
           <h2 id={id + '-title'} className='font-serif text-2xl font-bold tracking-tight'>{title}</h2>
           <div className='mt-3 space-y-4 font-sans text-[15px] leading-7 text-brand-ink-2'>
-            {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            {paragraphs.map((paragraph) => <p key={paragraph}>{linkify(paragraph)}</p>)}
             {items && (
               <ul className='space-y-3 pl-1'>
                 {items.map((item) => (
@@ -172,7 +204,7 @@ export default function LegalNoticePage({ type }) {
             <span className='inline-flex items-center gap-2 rounded-full border border-brand-line bg-brand-surface px-3 py-1.5 font-sans text-xs font-bold uppercase tracking-[0.14em] text-brand-accent-2'><ShieldCheck size={14} aria-hidden='true' /> {notice.eyebrow}</span>
             <h1 className='mt-5 max-w-3xl font-serif text-4xl font-bold tracking-tight sm:text-5xl'>{notice.title}</h1>
             <p className='mt-5 max-w-3xl font-sans text-base leading-8 text-brand-ink-2 sm:text-[17px]'>{notice.intro}</p>
-            <p className='mt-5 font-sans text-sm font-semibold text-brand-muted'>Last updated {UPDATED}</p>
+            <p className='mt-5 font-sans text-sm font-semibold text-brand-muted'>Last updated {UPDATED[type] || UPDATED.privacy}</p>
           </div>
         </section>
 

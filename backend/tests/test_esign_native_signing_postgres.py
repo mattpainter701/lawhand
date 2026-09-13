@@ -33,6 +33,129 @@ PORTAL = "/api/portal/client"
 CLIENT_EMAIL = "client@example.com"
 
 
+@pytest.mark.asyncio
+async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
+    client,
+    db_session,
+    test_tenant,
+    test_user,
+    portal_matter,
+    portal_cookie,
+    local_storage,
+    monkeypatch,
+):
+    from app.models.tenant_credential import TenantCredential
+    from app.services import token_vault
+
+    source = acroform_pdf()
+    document = await _stored_document(
+        db_session, test_tenant, portal_matter, content=source, filename="Intake.pdf"
+    )
+    request = await _sent_request(
+        db_session, test_tenant, test_user, portal_matter, document, source
+    )
+    db_session.add(
+        TenantCredential(
+            tenant_id=test_tenant.id,
+            provider="microsoft",
+            encrypted_access_token=token_vault.encrypt_token("fixture-token"),
+            token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            is_active=True,
+        )
+    )
+    await db_session.commit()
+    monkeypatch.setattr(token_vault, "DB_LOCK_TIMEOUT_MS", 100)
+    original_read = MatterFileStore.read_matter_file_bytes
+
+    async def cloud_read(self, **kwargs):
+        # Exercise the real PostgreSQL credential row lock used by cloud reads;
+        # only the provider's byte transport is replaced with a local fixture.
+        assert (
+            await token_vault.get_fresh_token(
+                kwargs["db"], kwargs["tenant_id"], "microsoft"
+            )
+            == "fixture-token"
+        )
+        return await original_read(self, **kwargs)
+
+    monkeypatch.setattr(MatterFileStore, "read_matter_file_bytes", cloud_read)
+    unavailable = True
+    uploads = []
+
+    async def cloud_store(**kwargs):
+        # A second session must acquire the same real credential lock while
+        # the signing transaction is still open. Previously this timed out.
+        assert (
+            await token_vault.get_fresh_token(
+                kwargs["db"], kwargs["tenant_id"], "microsoft"
+            )
+            == "fixture-token"
+        )
+        if unavailable:
+            return StorageResult(
+                provider="microsoft", backend="onedrive", error="Provider outage"
+            )
+        uploads.append(kwargs["content"])
+        return await MatterFileStore()._store_local(
+            kwargs["tenant_id"],
+            kwargs["matter_slug"],
+            kwargs["category"],
+            kwargs["filename"],
+            kwargs["content"],
+        )
+
+    monkeypatch.setattr(
+        esign_service._file_store, "store_matter_file_result", cloud_store
+    )
+    headers = _portal_headers(portal_cookie)
+    values = {
+        "acroform:client_name": "Jane Q. Client",
+        "acroform:agree": "true",
+        "acroform:state": "OK",
+        "acroform:plan": "B",
+    }
+    response = await client.post(
+        f"{PORTAL}/signatures/{request.id}/sign",
+        headers=headers,
+        json={
+            "typed_signature": "Jane Q. Client",
+            "consent_to_electronic_signature": True,
+            "field_values": values,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["completion_pending"] is True
+    durable = await _reload(db_session, request.id)
+    assert durable.signers[0].field_values == values
+    assert durable.signers[0].status == "signed"
+    signed_at = durable.signers[0].signed_at
+    await db_session.commit()
+
+    unavailable = False
+    later = datetime.now(timezone.utc) + esign_service.COMPLETION_RETRY_INTERVAL
+    assert await retry_pending_completions(db_session, now=later) == 1
+    await db_session.commit()
+    durable = await _reload(db_session, request.id)
+    assert durable.status == "completed"
+    assert durable.signers[0].signed_at == signed_at
+    assert durable.signers[0].field_values == values
+    artifact_ids = {str(durable.executed_document_id), durable.provider_envelope_id}
+    await db_session.commit()
+
+    listed = await client.get(f"{PORTAL}/documents", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert artifact_ids <= {row["id"] for row in listed.json()}
+    for artifact_id in artifact_ids:
+        downloaded = await client.get(
+            f"{PORTAL}/documents/{artifact_id}/download", headers=headers
+        )
+        assert downloaded.status_code == 200, downloaded.text
+        assert downloaded.content in uploads
+    text = PdfReader(BytesIO(uploads[0])).pages[0].extract_text()
+    assert "Jane Q. Client" in text and "Signed electronically" in text
+    assert await retry_pending_completions(db_session, now=later) == 0
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _fresh_portal_state(test_redis):
     """Portal rate-limit counters live in Redis; isolate tests."""
@@ -580,3 +703,66 @@ async def test_pending_completion_is_retried_once_storage_returns(
     assert [upload["category"] for upload in uploads] == ["signed", "signed"]
     # Completed requests fall out of the retry query.
     assert await retry_pending_completions(db_session, now=later) == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_batch_restores_tenant_after_failure_and_commit(
+    db_session,
+    test_tenant,
+    test_user,
+    portal_matter,
+    local_storage,
+    captured_uploads,
+    monkeypatch,
+):
+    from sqlalchemy import text
+
+    source = flat_agreement_pdf()
+    document = await _stored_document(
+        db_session, test_tenant, portal_matter, content=source, filename="Agreement.pdf"
+    )
+    ids = []
+    for index in range(3):
+        request = await _sent_request(
+            db_session, test_tenant, test_user, portal_matter, document, source
+        )
+        request.created_at = datetime.now(timezone.utc) + timedelta(seconds=index)
+        signer = request.signers[0]
+        signer.status = "signed"
+        signer.signed_at = datetime.now(timezone.utc)
+        signer.typed_signature = "Jane Client"
+        request.status = "partially_signed"
+        ids.append(request.id)
+        await db_session.commit()
+
+    tenant_id = str(test_tenant.id)
+    original_complete = esign_service.complete_request_if_done
+    seen = []
+
+    async def complete(db, request, matter):
+        assert (
+            await db.scalar(text("SELECT current_setting('app.tenant_id')"))
+            == tenant_id
+        )
+        seen.append(request.id)
+        if request.id == ids[0]:
+            # A failed flush expires ORM attributes and leaves a failed
+            # transaction: logging must not access the expired request object.
+            db.add(
+                MatterEvent(
+                    tenant_id=uuid.UUID(tenant_id),
+                    matter_id=matter.id,
+                    event_type="signature",
+                    title="Invalid fixture event",
+                    created_by=None,
+                )
+            )
+            await db.flush()
+        return await original_complete(db, request, matter)
+
+    monkeypatch.setattr(esign_service, "complete_request_if_done", complete)
+    assert await retry_pending_completions(db_session) == 2
+    assert seen == ids
+    assert len(captured_uploads) == 4
+    for request_id in ids[1:]:
+        assert (await _reload(db_session, request_id)).status == "completed"

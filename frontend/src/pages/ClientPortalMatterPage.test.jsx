@@ -123,6 +123,19 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('ClientPortalMatterPage', () => {
+  it('shows legal team contact details without internal assignment roles', async () => {
+    getClientPortalMatter.mockResolvedValue({
+      ...matterView,
+      attorneys: [{ name: 'Dana Reyes', role: 'lead_attorney', email: 'dana@firm.example' }],
+    })
+    render(<ClientPortalMatterPage />)
+
+    const name = await screen.findByText('Dana Reyes')
+    expect(name).toHaveTextContent(/^Dana Reyes$/)
+    expect(screen.getByRole('link', { name: 'dana@firm.example' })).toHaveAttribute('href', 'mailto:dana@firm.example')
+    expect(screen.queryByText(/lead_attorney/)).not.toBeInTheDocument()
+  })
+
   it('serializes message refreshes while a previous read is pending', async () => {
     let resolveRead
     listClientPortalMessages.mockReturnValueOnce(new Promise((resolve) => { resolveRead = resolve }))

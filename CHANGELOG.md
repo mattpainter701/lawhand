@@ -5,7 +5,16 @@
 - Integrations hub: sections carry `firm`/`operator` audiences; operator tools (MCP, storage migration, Tabs3 import, provider readiness) move under an Advanced disclosure gated by `canOperateIntegrations` (admin role plus `manage_integrations` when capabilities are present). Provider cards render health before scopes and hide the tally for revoked or refresh-failed credentials. Storage settings sit in a `Disclosure` with an inline confirmation before repointing the primary provider.
 - Admin portal tabs grouped (People, Firm, Billing, Support) with stable ids; Prompts requires `admin_settings`; the LiteLLM alias override moves behind Advanced. New Admin Guide chapter on onboarding and storage; Integrations chapter documents health states and remedies.
 - Tests: `test_integration_reauthorization_clears_health.py`, `test_onboarding_storage_step.py`, `IntegrationsPanel.test.jsx`, expanded `IntegrationsHub.test.jsx` and `OnboardingWizard.test.jsx`.
+## 2026.09.13.6 — Recover signed forms and client copies
 
+- Isolate signing source reads from the evidence transaction so OAuth row locks are released before cloud filing and token refresh cannot commit pending signature evidence.
+- Restore tenant context between completion retries and reload requests after rollback; log stable IDs and count only committed completions.
+- Verify real PostgreSQL credential locks, saved answers, original signature timestamps, outage recovery, portal downloads of both artifacts, and continuation after a failed flush.
+
+## 2026.09.13.5 — Client portal legal team labels
+
+- Omit internal matter assignment roles from the client portal's legal team card while preserving names and email links.
+- Add a portal regression check for contact details with a `lead_attorney` assignment.
 ## 2026.09.13.4 — Flexible matter billing
 
 - Add fixed-fee-only generation, stable request keys, fee readiness/reservation, calendar schedules and a ready-to-bill query.
