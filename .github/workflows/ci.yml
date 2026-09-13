@@ -717,14 +717,26 @@ jobs:
       - name: Select this shard's test files
         id: split
         working-directory: backend
+        env:
+          # Measured per-test timings, refreshed from CI. When the file is
+          # absent the sharder falls back to its heuristic. Fixed loads are the
+          # pinned per-shard work that is not part of the packed files
+          # (LibreOffice plus the durable workflow suite on shard 1, the Studio
+          # fact-review database on shard 2), in seconds.
+          SHARD_DURATIONS_FILE: tests/ci_durations.json
         run: |
-          files="$(python scripts/shard_tests.py --shards 4 --index ${{ matrix.shard }})"
+          shard_args=(
+            --shards 4 --index ${{ matrix.shard }}
+            --durations "$SHARD_DURATIONS_FILE"
+            --fixed-load 1:71 --fixed-load 2:18
+          )
+          files="$(python scripts/shard_tests.py "${shard_args[@]}")"
           if [ -z "$files" ]; then
             echo "shard produced no files; refusing to run a bare pytest" >&2
             exit 1
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
-          python scripts/shard_tests.py --shards 4 --index ${{ matrix.shard }} --summary
+          python scripts/shard_tests.py "${shard_args[@]}" --summary
 
       - name: Prepare isolated Template Studio fact review database
         if: matrix.shard == 2
@@ -788,6 +800,7 @@ jobs:
         run: >-
           pytest ${{ steps.split.outputs.files }} -v --tb=short --maxfail=1
           --cov=app --cov-report= -n 4 --dist loadfile
+          --junitxml=.junit-shard${{ matrix.shard }}.xml
 
       - name: Upload this shard's coverage data
         if: always()
@@ -797,6 +810,20 @@ jobs:
           path: backend/.coverage.shard${{ matrix.shard }}
           include-hidden-files: true
           if-no-files-found: error
+          retention-days: 14
+
+      # Per-test timings for shard_tests.py --durations. A later CI run (or
+      # `Refresh backend test durations`) converts these into the committed
+      # tests/ci_durations.json. warn, not error: a failed run may not produce
+      # the file, and that must not add a second, misleading failure.
+      - name: Upload this shard's JUnit timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node.js 24)
+        with:
+          name: backend-junit-shard-${{ matrix.shard }}
+          path: backend/.junit-shard${{ matrix.shard }}.xml
+          include-hidden-files: true
+          if-no-files-found: warn
           retention-days: 14
 
   # ─── Backend: Tests (aggregating gate) ──────────────────────────
