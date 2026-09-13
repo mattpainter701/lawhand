@@ -290,7 +290,8 @@ async def test_completed_documents_preserve_engagement_followup(ctx):
     complete(c, "questionnaire")
     await s.reconcile(c.db, c.packet)
     assert c.db.tasks[uuid.uuid5(c.packet.id, "signed")].status not in (
-        "completed", "cancelled"
+        "completed",
+        "cancelled",
     )
 
 

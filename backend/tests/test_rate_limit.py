@@ -36,7 +36,9 @@ async def test_user_hourly_retry_matches_next_utc_hour(monkeypatch):
 
     monkeypatch.setattr(rate_limit, "datetime", Clock)
     monkeypatch.setattr(rate_limit, "USER_HOURLY_LIMIT", 1)
-    monkeypatch.setattr(rate_limit, "_extract_jwt_claims", lambda request: ("u", "t", "payg"))
+    monkeypatch.setattr(
+        rate_limit, "_extract_jwt_claims", lambda request: ("u", "t", "payg")
+    )
     app = FastAPI()
     app.state.redis = _FakeRedis()
     app.add_middleware(RateLimitMiddleware)
@@ -45,7 +47,9 @@ async def test_user_hourly_retry_matches_next_utc_hour(monkeypatch):
     async def matter():
         return {"ok": True}
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         assert (await client.get("/api/matters/test")).status_code == 200
         limited = await client.get("/api/matters/test")
     assert limited.status_code == 429

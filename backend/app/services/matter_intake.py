@@ -1035,7 +1035,10 @@ async def reconcile(db, packet):
         # a fee-agreement follow-up: that may include separate engagement work.
         if agreement is None:
             await close_task(
-                db, packet, "signed", "Paperwork completed; scheduling follow-up created"
+                db,
+                packet,
+                "signed",
+                "Paperwork completed; scheduling follow-up created",
             )
         await ensure_task(
             db,
