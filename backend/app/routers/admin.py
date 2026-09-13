@@ -20,6 +20,7 @@ from app.models.rbac import Role, UserRole
 from app.models.tenant import Tenant, TenantSettings
 from app.models.tenant_credential import TenantCredential
 from app.models.user import User
+from app.models.user_oauth_token import UserOAuthToken
 from app.models.workspace_mcp_grant import WorkspaceMCPGrant
 from app.schemas.admin import (
     AuditLog,
@@ -49,6 +50,7 @@ from app.services.llm_routing import VALID_LLM_PROVIDERS
 from app.services.rbac_service import get_user_capabilities
 from app.services.automation_capabilities import capability_catalog
 from app.services import capabilities as provider_capabilities
+from app.services.integration_observability import summarize_user_tokens
 from app.services import account_detect
 from app.services.workspace_mcp_access import (
     lock_tenant_workspace_mcp_policy,
@@ -1638,6 +1640,15 @@ async def get_permissions_audit(
     latest_runs: dict[tuple[str, str], IntegrationSyncRun] = {}
     for run in runs_result.scalars().all():
         latest_runs.setdefault((run.provider, run.job_type), run)
+    user_token_rows = (
+        (
+            await db.execute(
+                select(UserOAuthToken).where(UserOAuthToken.tenant_id == tenant_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     async def _provider_user_count(provider: str) -> int:
         return (
@@ -1699,6 +1710,9 @@ async def get_permissions_audit(
             "last_refresh_error": match.last_refresh_error if match else None,
             "scopes_version": match.scopes_version if match else 1,
             "recent_sync_runs": provider_runs,
+            # The tenant-wide credential and per-user tokens fail
+            # independently; the card renders them as separate rows.
+            "user_tokens": summarize_user_tokens(user_token_rows, provider),
         }
         if not match or not match.scopes:
             return {
