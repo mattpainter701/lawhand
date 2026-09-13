@@ -509,6 +509,15 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
      tenant is an asset of **Perevaga Group LLC** whatever it is called, and
      4.4's publisher verification is performed against that entity, because
      Microsoft verifies registered legal entities rather than product names.
+   - When the tenant is created through a paid M365 signup, the **organization
+     details and the payment method are the ownership record**, so enter the
+     owning entity's registered name, its business address and its card.
+     Matching what Partner Center will later verify avoids an entity mismatch
+     during publisher verification, and the invoice trail is what answers the
+     appendix's first question. Do **not** buy it under an unrelated company or
+     a personal card: paying from another business's account puts LawHand's
+     identity platform on that business's books and reproduces exactly the
+     coupling this document removes.
 3. **Identity → Domain names → Add custom domain** → `getlawhand.com` → add the
    TXT record at your DNS provider → verify. This both looks right on consent
    screens and is the simplest route to publisher-domain verification in 4.4.
