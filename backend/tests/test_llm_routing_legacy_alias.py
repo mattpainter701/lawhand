@@ -1,24 +1,28 @@
-"""Stored ``clarity-*`` route aliases map forward to their LawHand names.
+"""Static aliases upgrade; registered revisions keep their exact identity."""
 
-The platform aliases were renamed from ``clarity-*`` to ``lawhand-*``. Platform
-settings and tenant overrides written before the rename still carry the old
-prefix, so ``llm_routing`` rewrites them on read until the next save persists
-the new name.
-"""
+import pytest
 
 from app.services import llm_routing
 
 
-def test_upgrade_legacy_alias_maps_old_managed_routes() -> None:
-    assert llm_routing._upgrade_legacy_alias("clarity-standard") == "lawhand-standard"
-    assert (
-        llm_routing._upgrade_legacy_alias("clarity-premium-r7")
-        == "lawhand-premium-r7"
-    )
-    assert (
-        llm_routing._upgrade_legacy_alias("clarity-background-fb-0")
-        == "lawhand-background-fb-0"
-    )
+@pytest.mark.parametrize("tier", ["standard", "premium", "background"])
+def test_upgrade_legacy_alias_maps_only_static_routes(tier) -> None:
+    assert llm_routing._upgrade_legacy_alias(f"clarity-{tier}") == f"lawhand-{tier}"
+
+
+@pytest.mark.parametrize("tier", ["standard", "premium", "background"])
+@pytest.mark.parametrize("suffix", ["-rac12ac34c0ba", "-fb-0"])
+def test_registered_legacy_aliases_keep_their_exact_name(tier, suffix) -> None:
+    alias = f"clarity-{tier}{suffix}"
+    assert llm_routing._upgrade_legacy_alias(alias) == alias
+
+
+@pytest.mark.parametrize("tier", ["standard", "premium", "background"])
+def test_legacy_revision_override_follows_explicit_active_route(tier) -> None:
+    alias = f"clarity-{tier}-rprevious"
+    active = f"lawhand-{tier}-rcurrent"
+    assert llm_routing._current_managed_alias(alias, {f"{tier}_model": active}) == active
+    assert llm_routing._current_managed_alias(alias, {}) == alias
 
 
 def test_upgrade_legacy_alias_leaves_current_and_custom_aliases() -> None:
@@ -45,4 +49,4 @@ def test_normalize_config_upgrades_stored_legacy_models() -> None:
         {"standard_model": "clarity-standard", "premium_model": "clarity-premium-r2"}
     )
     assert config["standard_model"] == "lawhand-standard"
-    assert config["premium_model"] == "lawhand-premium-r2"
+    assert config["premium_model"] == "clarity-premium-r2"

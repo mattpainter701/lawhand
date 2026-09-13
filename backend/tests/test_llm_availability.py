@@ -1,4 +1,6 @@
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -22,6 +24,40 @@ def _completion(model: str) -> dict:
         ],
         "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
     }
+
+
+@pytest.mark.asyncio
+async def test_active_probe_preserves_registered_legacy_revision_aliases(monkeypatch):
+    registered = {
+        "clarity-standard-rac12ac34c0ba",
+        "clarity-premium-rac12ac34c0ba",
+    }
+    db = AsyncMock()
+    db.execute.side_effect = [
+        SimpleNamespace(scalar_one_or_none=lambda: SimpleNamespace(value={
+            "standard_model": "clarity-standard-rac12ac34c0ba",
+            "premium_model": "clarity-premium-rac12ac34c0ba",
+        })),
+        SimpleNamespace(scalar_one_or_none=lambda: None),
+    ]
+    requested = []
+
+    def handler(request):
+        alias = json.loads(request.content)["model"]
+        requested.append(alias)
+        if alias not in registered:
+            return httpx.Response(400, json={"error": {"type": "model_not_found"}})
+        return httpx.Response(200, json=_completion(alias))
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(llm_availability.settings, "LITELLM_BASE_URL", "http://gateway/v1")
+    monkeypatch.setattr(llm_availability.settings, "LITELLM_API_KEY", "test-key")
+    monkeypatch.setattr(llm_availability.httpx, "AsyncClient", lambda **kwargs: client)
+
+    result = await llm_availability.probe_active_customer_llm_routes(db)
+
+    assert result["ok"] is True
+    assert set(requested) == registered
 
 
 @pytest.mark.asyncio

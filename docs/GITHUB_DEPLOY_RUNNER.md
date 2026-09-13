@@ -120,6 +120,12 @@ artifact. A skipped smoke is explicitly incomplete coverage, even when the
 optional-smoke policy allows the overall QA run to pass. No promotion switch or
 demo credential is enabled by this change.
 
+Stored revision and fallback AI aliases identify exact gateway registrations.
+Keep those names until a validated activation replaces them; only static legacy
+aliases may be renamed on read. A missing renamed revision is not evidence that
+provider credentials need rotating. The nginx maintenance asset is copied with
+explicit mode0644 so workers can serve it even from a checkout with umask077.
+
 CI's PR policy check reads the current description through the pull-request
 REST API and validates it against the run's head and base. After correcting an
 attestation, rerun the failed policy job; no empty commit is required. If head

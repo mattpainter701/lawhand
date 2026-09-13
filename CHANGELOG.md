@@ -1,3 +1,10 @@
+## 2026.09.13.9 — Preserve registered AI aliases and readable maintenance pages
+
+- Upgrade only static legacy AI aliases on read. Preserve exact revision and fallback registrations so production acceptance and configured routes do not request nonexistent renamed models.
+- Continue forwarding legacy tenant revision overrides to explicitly activated platform routes without inventing an alias when no replacement exists. Provider selections, credentials, and matter-context policies are unchanged.
+- Copy the nginx maintenance page with explicit mode0644 so a restrictive checkout umask cannot make the fallback return403 during application restarts.
+- Reproduce the production alias failure through the real platform configuration loader and HTTP completion probe; validate nginx readability as its unprivileged worker.
+
 ## 2026.09.13.8 — Reliable tenant locking for signed files and matter numbers
 
 - Use PostgreSQL FOR NO KEY UPDATE for the cloud write binding guard, allowing pending tenant foreign-key references from signature events and document folders without weakening exclusion against storage-provider cutover.

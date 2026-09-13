@@ -206,19 +206,18 @@ _LEGACY_ALIAS_ROOTS = ("standard", "premium", "background")
 
 
 def _upgrade_legacy_alias(alias: str | None) -> str | None:
-    """Map a stored ``clarity-*`` route alias to its ``lawhand-*`` name.
+    """Upgrade static aliases, preserving concrete gateway registrations.
 
-    Platform settings and tenant overrides written before the rebrand still
-    name the previous aliases. Rewrite them on read so a stored value keeps
-    resolving; the next save persists the new name, and a later cleanup can
-    drop this shim once no stored row carries the old prefix.
+    Revision and fallback aliases are registered under their exact names.
+    Rebranding their prefix on read invents a model the gateway does not have;
+    only a validated route activation may replace those registrations.
     """
     value = _clean(alias)
     if not value:
         return value
     for root in _LEGACY_ALIAS_ROOTS:
         prefix = f"clarity-{root}"
-        if value == prefix or value.startswith(f"{prefix}-"):
+        if value == prefix:
             return f"lawhand-{value[len('clarity-'):]}"
     return value
 
@@ -231,12 +230,11 @@ def _current_managed_alias(
     alias = _upgrade_legacy_alias(alias)
     if not alias:
         return None
-    if alias == "lawhand-standard" or alias.startswith("lawhand-standard-r"):
-        return _clean(platform_config.get("standard_model")) or alias
-    if alias == "lawhand-premium" or alias.startswith("lawhand-premium-r"):
-        return _clean(platform_config.get("premium_model")) or alias
-    if alias == "lawhand-background" or alias.startswith("lawhand-background-r"):
-        return _clean(platform_config.get("background_model")) or alias
+    for tier in _LEGACY_ALIAS_ROOTS:
+        if alias == f"lawhand-{tier}" or alias.startswith(
+            (f"lawhand-{tier}-r", f"clarity-{tier}-r")
+        ):
+            return _clean(platform_config.get(f"{tier}_model")) or alias
     return alias
 
 

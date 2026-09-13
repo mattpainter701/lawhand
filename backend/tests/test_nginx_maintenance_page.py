@@ -108,7 +108,9 @@ def test_hypervisor_nginx_service_has_no_depends_on():
 
 def test_nginx_image_bakes_in_the_maintenance_page():
     dockerfile = DOCKERFILE_LOCAL.read_text(encoding="utf-8")
-    assert "COPY maintenance.html /usr/share/nginx/html/maintenance.html" in dockerfile
+    # Production checkouts may use umask077. Workers must be able to read the
+    # fallback even when the source file was readable only by the build user.
+    assert "COPY --chmod=644 maintenance.html /usr/share/nginx/html/maintenance.html" in dockerfile
 
 
 def test_maintenance_page_exists_is_branded_and_leaks_nothing():
