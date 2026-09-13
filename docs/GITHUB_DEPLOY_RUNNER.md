@@ -126,6 +126,17 @@ aliases may be renamed on read. A missing renamed revision is not evidence that
 provider credentials need rotating. The nginx maintenance asset is copied with
 explicit mode0644 so workers can serve it even from a checkout with umask077.
 
+**Completing an alias rebrand.** Renaming `clarity-*` to `lawhand-*` moves the
+static aliases in code and the gateway config, but the active routing profile
+keeps its registered `clarity-*-r<hash>` revision aliases until it is
+re-activated. A reload (`POST /api/platform/llm/routes/reload`) deliberately
+merges the stored activation aliases and will not switch them; save the profile
+so a validated `lawhand-*-r<hash>` revision is registered and the activation
+moves. The platform-global Background route must also validate its own targets
+against the price card and the confidential-data policy before any activation
+lands, so a provider quota or policy block surfaces as the save failure. A host
+env file that still names a static legacy alias is upgraded on read.
+
 CI's PR policy check reads the current description through the pull-request
 REST API and validates it against the run's head and base. After correcting an
 attestation, rerun the failed policy job; no empty commit is required. If head

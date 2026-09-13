@@ -21,7 +21,9 @@ def test_registered_legacy_aliases_keep_their_exact_name(tier, suffix) -> None:
 def test_legacy_revision_override_follows_explicit_active_route(tier) -> None:
     alias = f"clarity-{tier}-rprevious"
     active = f"lawhand-{tier}-rcurrent"
-    assert llm_routing._current_managed_alias(alias, {f"{tier}_model": active}) == active
+    assert (
+        llm_routing._current_managed_alias(alias, {f"{tier}_model": active}) == active
+    )
     assert llm_routing._current_managed_alias(alias, {}) == alias
 
 
@@ -50,3 +52,44 @@ def test_normalize_config_upgrades_stored_legacy_models() -> None:
     )
     assert config["standard_model"] == "lawhand-standard"
     assert config["premium_model"] == "clarity-premium-r2"
+
+
+@pytest.mark.parametrize("tier", ["standard", "premium", "background"])
+def test_default_config_upgrades_legacy_env_alias(tier, monkeypatch) -> None:
+    """A pre-rename host env file must not select an alias the gateway lacks."""
+
+    monkeypatch.setattr(
+        llm_routing.settings, f"LITELLM_{tier.upper()}_MODEL", f"clarity-{tier}"
+    )
+
+    assert (
+        llm_routing.default_platform_llm_config()[f"{tier}_model"] == f"lawhand-{tier}"
+    )
+
+
+@pytest.mark.parametrize("tier", ["standard", "premium", "background"])
+def test_normalize_config_upgrades_legacy_env_fallback(tier, monkeypatch) -> None:
+    """The settings fallback is upgraded, not only a stored platform value."""
+
+    monkeypatch.setattr(
+        llm_routing.settings, f"LITELLM_{tier.upper()}_MODEL", f"clarity-{tier}"
+    )
+
+    config = llm_routing._normalize_config({f"{tier}_provider": "litellm"})
+
+    assert config[f"{tier}_model"] == f"lawhand-{tier}"
+
+
+def test_default_config_preserves_registered_revision_env(monkeypatch) -> None:
+    """A registered revision alias keeps its exact name; only static aliases move."""
+
+    monkeypatch.setattr(
+        llm_routing.settings,
+        "LITELLM_STANDARD_MODEL",
+        "clarity-standard-rac12ac34c0ba",
+    )
+
+    assert (
+        llm_routing.default_platform_llm_config()["standard_model"]
+        == "clarity-standard-rac12ac34c0ba"
+    )
