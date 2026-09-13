@@ -37,6 +37,7 @@ _DEMO_PROVIDER_GET_ROUTES = frozenset(
         "/api/integrations/zoom/callback",
         "/api/integrations/zoom-phone/connect",
         "/api/integrations/zoom-phone/callback",
+        "/api/billing/subscription/offer",
     }
 )
 
@@ -74,6 +75,7 @@ def _is_blocked_demo_action(path: str, method: str) -> bool:
                 "/api/calendar/sync",
                 "/api/calendar/scheduled-events",
                 "/api/billing/checkout-session",
+                "/api/billing/subscription/",
                 "/api/billing/portal",
             )
         )

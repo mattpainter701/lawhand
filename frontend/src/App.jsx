@@ -1,5 +1,5 @@
 import { Suspense, createContext, lazy, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { ToastProvider } from './components/toast/ToastProvider'
 import { ConfirmProvider } from './components/dialog/ConfirmProvider'
@@ -34,6 +34,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 const ChatPage = lazy(() => import('./pages/ChatPage'))
 const FirmMemoryPage = lazy(() => import('./pages/FirmMemoryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
+const BillingPage = lazy(() => import('./pages/BillingPage'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
 const PluginsPage = lazy(() => import('./pages/PluginsPage'))
 const PluginPage = lazy(() => import('./pages/PluginPage'))
@@ -227,12 +228,6 @@ function RedirectMatterId() {
   return <Navigate to={`/matters/${id}`} replace />
 }
 
-function LegacyBillingRedirect() {
-  const [searchParams] = useSearchParams()
-  const success = searchParams.get('success')
-  return <Navigate to={`/admin?tab=billing${success ? '&success=1' : ''}`} replace />
-}
-
 function FirmMemoryRoute() {
   const [unifiedEnabled, setUnifiedEnabled] = useState(null)
 
@@ -379,7 +374,7 @@ export default function App() {
         ))}
         <Route
           path="/billing"
-          element={<ProtectedRoute financeOnly><LegacyBillingRedirect /></ProtectedRoute>}
+          element={<ProtectedRoute financeOnly><BillingPage /></ProtectedRoute>}
         />
         <Route
           path="/clients"

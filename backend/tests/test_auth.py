@@ -252,6 +252,8 @@ class TestAuthMe:
             tenant=SimpleNamespace(
                 billing_tier="flat",
                 stripe_subscription_status="active",
+                platform_billing_provider="stripe",
+                platform_subscription_status=None,
                 mcp_billing_status="active",
             ),
             email="lawyer@example.test",
@@ -346,6 +348,8 @@ class TestAuthMe:
             tenant=SimpleNamespace(
                 billing_tier="flat",
                 stripe_subscription_status="active",
+                platform_billing_provider="stripe",
+                platform_subscription_status=None,
                 mcp_billing_status="active",
             ),
             email="lawyer@example.test",
