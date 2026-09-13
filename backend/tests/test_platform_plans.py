@@ -94,8 +94,8 @@ async def test_assign_and_clear_tenant_routing_profile(
         activation={
             "status": "active",
             "aliases": {
-                "standard": "clarity-standard-rtenant",
-                "premium": "clarity-premium-rtenant",
+                "standard": "lawhand-standard-rtenant",
+                "premium": "lawhand-premium-rtenant",
             },
         },
     )

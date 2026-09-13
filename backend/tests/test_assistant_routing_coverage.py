@@ -147,7 +147,7 @@ async def test_broker_execute_maps_reservation_errors_and_validation(monkeypatch
             return_value=LLMRoute(
                 requested_route="background",
                 resolved_route="background",
-                gateway_alias="clarity-background",
+                gateway_alias="lawhand-background",
             )
         ),
     )
@@ -161,7 +161,7 @@ async def test_broker_execute_maps_reservation_errors_and_validation(monkeypatch
     monkeypatch.setattr(
         broker_module,
         "get_active_background_pricing_models",
-        AsyncMock(return_value=["clarity-background"]),
+        AsyncMock(return_value=["lawhand-background"]),
     )
 
     class Quota:
@@ -213,7 +213,7 @@ async def test_broker_provider_failures_release_or_mark_unknown(monkeypatch):
             return_value=LLMRoute(
                 requested_route="background",
                 resolved_route="background",
-                gateway_alias="clarity-background",
+                gateway_alias="lawhand-background",
             )
         ),
     )
@@ -227,7 +227,7 @@ async def test_broker_provider_failures_release_or_mark_unknown(monkeypatch):
     monkeypatch.setattr(
         broker_module,
         "get_active_background_pricing_models",
-        AsyncMock(return_value=["clarity-background"]),
+        AsyncMock(return_value=["lawhand-background"]),
     )
     reservation = BackgroundReservation(uuid.uuid4(), uuid.uuid4(), "r", "pool")
 

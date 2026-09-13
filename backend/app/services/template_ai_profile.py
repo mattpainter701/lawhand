@@ -32,7 +32,7 @@ class TemplateAiProfile(BaseModel):
     def alias(self) -> str:
         material = json.dumps(self.model_dump(mode="json"), sort_keys=True)
         revision = hashlib.sha256(material.encode()).hexdigest()[:12]
-        return f"clarity-template-premium-r{revision}"
+        return f"lawhand-template-premium-r{revision}"
 
 
 class TemplateAiProfileUnavailable(RuntimeError):

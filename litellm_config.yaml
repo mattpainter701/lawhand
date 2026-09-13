@@ -3,7 +3,7 @@ model_list:
   # Primary: OpenCode Zen.  This deployment has a configured OpenCode key;
   # routing through an unset OpenRouter key made the normal assistant fail
   # before LiteLLM could reach an alternate route.
-  - model_name: clarity-standard
+  - model_name: lawhand-standard
     litellm_params:
       model: openai/nemotron-3-ultra-free
       api_base: https://opencode.ai/zen/v1
@@ -11,7 +11,7 @@ model_list:
       timeout: 15  # fast failover to next model
 
   # Standard fallback: OpenCode zen Nemotron free.
-  - model_name: clarity-standard-zen-nemotron
+  - model_name: lawhand-standard-zen-nemotron
     litellm_params:
       model: openai/nemotron-3-ultra-free
       api_base: https://opencode.ai/zen/v1
@@ -19,7 +19,7 @@ model_list:
       timeout: 15
 
   # Standard fallback: OpenCode zen DeepSeek V4 Flash Free.
-  - model_name: clarity-standard-deepseek-flash-free
+  - model_name: lawhand-standard-deepseek-flash-free
     litellm_params:
       model: openai/deepseek-v4-flash-free
       api_base: https://opencode.ai/zen/v1
@@ -28,7 +28,7 @@ model_list:
 
   # Premium profile: highest-quality drafting/reasoning.
   # Primary: OpenCode go DeepSeek V4 Pro (opencode.ai/zen/go/v1)
-  - model_name: clarity-premium
+  - model_name: lawhand-premium
     litellm_params:
       model: openai/deepseek-v4-pro
       api_base: https://opencode.ai/zen/go/v1
@@ -36,7 +36,7 @@ model_list:
       timeout: 30
 
   # Premium fallback: fast free model for availability if premium provider stalls.
-  - model_name: clarity-premium-openrouter-gemma
+  - model_name: lawhand-premium-openrouter-gemma
     litellm_params:
       model: openrouter/google/gemma-4-31b-it:free
       api_key: os.environ/OPENROUTER_API_KEY
@@ -47,7 +47,7 @@ model_list:
   # JSON schemas, and reserves shared request quota before this alias is called.
   # Production key pools are registered dynamically by Platform Management as
   # multiple deployments sharing the same versioned alias.
-  - model_name: clarity-background
+  - model_name: lawhand-background
     litellm_params:
       model: openai/gpt-5.6-luna
       api_base: https://opencode.ai/zen/go/v1
@@ -55,8 +55,8 @@ model_list:
       timeout: 30
 
   # Metered Zen is the explicit low-cost escape hatch for Background. It never
-  # falls through to clarity-premium.
-  - model_name: clarity-background-zen
+  # falls through to lawhand-premium.
+  - model_name: lawhand-background-zen
     litellm_params:
       model: openai/gpt-5.6-luna
       api_base: https://opencode.ai/zen/v1
@@ -78,15 +78,15 @@ router_settings:
   # Fail over inside the gateway so every request keeps the app-selected route
   # and provider outages do not surface as a generic chat failure.
   fallbacks:
-    - clarity-standard:
-        - clarity-standard-deepseek-flash-free
+    - lawhand-standard:
+        - lawhand-standard-deepseek-flash-free
     # Premium OpenCode Go can return capacity errors independently of the
     # standard route. Preserve the premium alias while keeping customer chat
     # available through the configured standard chain when that happens.
-    - clarity-premium:
-        - clarity-standard
-    - clarity-background:
-        - clarity-background-zen
+    - lawhand-premium:
+        - lawhand-standard
+    - lawhand-background:
+        - lawhand-background-zen
 
 general_settings:
   master_key: os.environ/LITELLM_API_KEY

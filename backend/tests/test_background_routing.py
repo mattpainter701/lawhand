@@ -19,7 +19,7 @@ def test_route_tier_legacy_compatibility_and_validation():
 async def test_background_route_is_global_and_ignores_caller_model(monkeypatch):
     llm_routing.invalidate_llm_route_cache()
     monkeypatch.setattr(
-        llm_routing.settings, "LITELLM_BACKGROUND_MODEL", "clarity-background-r7"
+        llm_routing.settings, "LITELLM_BACKGROUND_MODEL", "lawhand-background-r7"
     )
 
     route = await resolve_llm_route(
@@ -32,7 +32,7 @@ async def test_background_route_is_global_and_ignores_caller_model(monkeypatch):
 
     assert route.requested_route == "background"
     assert route.resolved_route == "background"
-    assert route.gateway_alias == "clarity-background-r7"
+    assert route.gateway_alias == "lawhand-background-r7"
     assert route.customer_api_key is None
     assert route.customer_provider is None
 
