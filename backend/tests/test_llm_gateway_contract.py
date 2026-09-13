@@ -58,8 +58,8 @@ async def test_real_llm_service_routes_standard_and_premium_aliases_without_glob
             },
         )
 
-    standard_alias = "clarity-standard"
-    premium_alias = "clarity-premium"
+    standard_alias = "lawhand-standard"
+    premium_alias = "lawhand-premium"
     monkeypatch.setattr(llm_module.settings, "LITELLM_STANDARD_MODEL", standard_alias)
     monkeypatch.setattr(llm_module.settings, "LITELLM_PREMIUM_MODEL", premium_alias)
 

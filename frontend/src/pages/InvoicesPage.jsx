@@ -1,3 +1,6 @@
+import BillingSchedule from '../components/BillingSchedule'
+import ReadyToBill from '../components/ReadyToBill'
+import BillingFees from '../components/BillingFees'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { reportError } from '../utils/reportError'
 import { Link, useNavigate } from 'react-router-dom'
@@ -65,6 +68,11 @@ function QboStatus({ invoice }) {
   )
 }
 
+function localDate() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
 export default function InvoicesPage() {
   const navigate = useNavigate()
   const [invoices, setInvoices] = useState([])
@@ -77,19 +85,26 @@ export default function InvoicesPage() {
   const [generateForm, setGenerateForm] = useState({
     matter_id: '',
     date_from: '',
-    date_to: '',
-    issue_date: new Date().toISOString().slice(0, 10),
+    date_to: localDate(),
+    issue_date: localDate(),
     due_date_days: 30,
     payment_terms: 'Net 30',
     tax_rate: '',
     notes: '',
   })
+  const [manualCharges, setManualCharges] = useState([])
+  const generationKey = useRef(null)
+  const generationPayload = useRef(null)
+  const cutoffEdited = useRef(false)
+  const selectionScope = useRef('')
   const [generateError, setGenerateError] = useState(null)
   const [preview, setPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState(null)
   const [selectedTimeIds, setSelectedTimeIds] = useState(new Set())
   const [selectedExpenseIds, setSelectedExpenseIds] = useState(new Set())
+  const [selectedFeeIds, setSelectedFeeIds] = useState(new Set())
+  const [previewVersion, setPreviewVersion] = useState(0)
   const defaultsMatterRef = useRef(null)
 
   const loadData = useCallback(async () => {
@@ -132,8 +147,13 @@ export default function InvoicesPage() {
     }).then((data) => {
       if (cancelled) return
       setPreview(data)
-      setSelectedTimeIds(new Set((data.time_entries || []).map((entry) => entry.id)))
-      setSelectedExpenseIds(new Set((data.expenses || []).map((expense) => expense.id)))
+      const scope = `${generateForm.matter_id}|${generateForm.date_from}|${generateForm.date_to}`
+      if (selectionScope.current !== scope) {
+        setSelectedTimeIds(new Set((data.time_entries || []).map((entry) => entry.id)))
+        setSelectedExpenseIds(new Set((data.expenses || []).map((expense) => expense.id)))
+        setSelectedFeeIds(new Set((data.fees || []).map(fee => fee.id)))
+        selectionScope.current = scope
+      }
       if (defaultsMatterRef.current !== data.matter_id) {
         defaultsMatterRef.current = data.matter_id
         setGenerateForm((current) => ({
@@ -150,7 +170,7 @@ export default function InvoicesPage() {
       if (!cancelled) setPreviewLoading(false)
     })
     return () => { cancelled = true }
-  }, [showGenerate, generateForm.matter_id, generateForm.date_from, generateForm.date_to])
+  }, [showGenerate, generateForm.matter_id, generateForm.date_from, generateForm.date_to, previewVersion])
 
   const handleGenerate = async (event) => {
     event.preventDefault()
@@ -158,7 +178,8 @@ export default function InvoicesPage() {
     setGenerating(true)
     try {
       if (!generateForm.matter_id) return
-      const invoice = await generateInvoice({
+      const payload = {
+        manual_charges: manualCharges.map(({ description, quantity, unit_price }) => ({ description, quantity, unit_price })),
         ...generateForm,
         date_from: generateForm.date_from || undefined,
         date_to: generateForm.date_to || undefined,
@@ -166,10 +187,20 @@ export default function InvoicesPage() {
         tax_rate: generateForm.tax_rate === '' ? undefined : Number(generateForm.tax_rate) / 100,
         time_entry_ids: [...selectedTimeIds],
         expense_ids: [...selectedExpenseIds],
-      })
+        fee_ids: [...selectedFeeIds],
+      }
+      const signature = JSON.stringify(payload)
+      if (generationPayload.current !== signature) {
+        generationKey.current = crypto.randomUUID()
+        generationPayload.current = signature
+      }
+      const invoice = await generateInvoice({ ...payload, generation_key: generationKey.current })
       setShowGenerate(false)
+      setManualCharges([])
+      cutoffEdited.current = false
+      selectionScope.current = ''
       defaultsMatterRef.current = null
-      setGenerateForm({ matter_id: '', date_from: '', date_to: '', issue_date: new Date().toISOString().slice(0, 10), due_date_days: 30, payment_terms: 'Net 30', tax_rate: '', notes: '' })
+      setGenerateForm({ matter_id: '', date_from: '', date_to: localDate(), issue_date: localDate(), due_date_days: 30, payment_terms: 'Net 30', tax_rate: '', notes: '' })
       navigate(`/invoices/${invoice.id}`)
     } catch (error) {
       const detail = error?.response?.data?.detail
@@ -190,12 +221,13 @@ export default function InvoicesPage() {
   const draftCount = invoices.filter((invoice) => invoice.status === 'draft').length
   const selectedTime = (preview?.time_entries || []).filter((entry) => selectedTimeIds.has(entry.id))
   const selectedExpenses = (preview?.expenses || []).filter((expense) => selectedExpenseIds.has(expense.id))
+  const selectedFees = (preview?.fees || []).filter(fee => selectedFeeIds.has(fee.id))
   const selectedHours = selectedTime.reduce((sum, entry) => sum + Number(entry.hours || 0), 0)
-  const selectedSubtotal = [...selectedTime, ...selectedExpenses]
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  const selectedSubtotal = [...selectedTime, ...selectedExpenses, ...selectedFees]
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0) + manualCharges.reduce((sum, item) => sum + Math.round(Number(item.quantity) * Number(item.unit_price) * 100) / 100, 0)
   const selectedTax = selectedSubtotal * (Number(generateForm.tax_rate || 0) / 100)
   const selectedTotal = selectedSubtotal + selectedTax
-  const selectedCount = selectedTime.length + selectedExpenses.length
+  const selectedCount = selectedTime.length + selectedExpenses.length + manualCharges.length + selectedFees.length
 
   return (
     <WorkspacePage width="wide">
@@ -245,6 +277,12 @@ export default function InvoicesPage() {
         ]}
       />
 
+      <ReadyToBill cutoff={generateForm.date_to || localDate()} onSelect={row => {
+        setMatters(current => current.some(m => m.id === row.matter_id) ? current : [...current, { id: row.matter_id, matter_name: row.matter_name }])
+        setGenerateForm(current => ({ ...current, matter_id: row.matter_id }))
+        setManualCharges([])
+        setShowGenerate(true)
+      }} />
       {showGenerate && (
         <form
           onSubmit={handleGenerate}
@@ -254,7 +292,7 @@ export default function InvoicesPage() {
             <div>
               <h2 className="text-lg font-semibold text-brand-ink">Generate a draft invoice</h2>
               <p className="mt-1 text-sm text-brand-muted">
-                Pull unbilled time and expenses into a draft for review before it is sent.
+                Choose work through a date, add any fixed fees, and save a draft for review. Saving does not send the invoice.
               </p>
             </div>
           </div>
@@ -273,6 +311,7 @@ export default function InvoicesPage() {
                 value={generateForm.matter_id}
                 onChange={(event) => {
                   defaultsMatterRef.current = null
+                  setManualCharges([])
                   setGenerateForm((current) => ({ ...current, matter_id: event.target.value }))
                 }}
                 required
@@ -285,16 +324,16 @@ export default function InvoicesPage() {
               </select>
             </div>
             <div>
-              <label htmlFor="invoicespage-date-from" className="mb-1.5 block text-xs font-semibold text-brand-ink">Work from</label>
+              <label htmlFor="invoicespage-date-from" className="mb-1.5 block text-xs font-semibold text-brand-ink">Work from (optional)</label>
               <input id="invoicespage-date-from" type="date" max={generateForm.date_to || undefined} value={generateForm.date_from} onChange={(event) => setGenerateForm((current) => ({ ...current, date_from: event.target.value }))} className="min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink" />
             </div>
             <div>
               <label htmlFor="invoicespage-date-to" className="mb-1.5 block text-xs font-semibold text-brand-ink">Work through</label>
-              <input id="invoicespage-date-to" type="date" min={generateForm.date_from || undefined} value={generateForm.date_to} onChange={(event) => setGenerateForm((current) => ({ ...current, date_to: event.target.value }))} className="min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink" />
+              <input id="invoicespage-date-to" type="date" min={generateForm.date_from || undefined} value={generateForm.date_to} onChange={(event) => { cutoffEdited.current = true; setGenerateForm((current) => ({ ...current, date_to: event.target.value })) }} className="min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink" />
             </div>
             <div>
               <label htmlFor="invoicespage-issue-date" className="mb-1.5 block text-xs font-semibold text-brand-ink">Issue date</label>
-              <input id="invoicespage-issue-date" type="date" value={generateForm.issue_date} onChange={(event) => setGenerateForm((current) => ({ ...current, issue_date: event.target.value }))} required className="min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink" />
+              <input id="invoicespage-issue-date" type="date" value={generateForm.issue_date} onChange={(event) => setGenerateForm((current) => ({ ...current, issue_date: event.target.value, date_to: cutoffEdited.current ? current.date_to : event.target.value }))} required className="min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink" />
             </div>
             <div>
               <label htmlFor="invoicespage-terms" className="mb-1.5 block text-xs font-semibold text-brand-ink">Payment terms</label>
@@ -315,7 +354,7 @@ export default function InvoicesPage() {
             </div>
             <button
               type="submit"
-              disabled={generating || previewLoading || !preview || selectedCount === 0}
+              disabled={generating || previewLoading || !!previewError || !preview || selectedCount === 0}
               className="btn-primary self-end inline-flex min-h-11 items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {generating && <RefreshCw size={15} className="animate-spin" />}
@@ -323,6 +362,19 @@ export default function InvoicesPage() {
             </button>
           </div>
           {previewError && <AlertBanner type="error" title="Preview unavailable" className="mt-4">{previewError}</AlertBanner>}
+          <fieldset className="mt-4 rounded-xl border border-brand-line p-4">
+            <legend className="px-2 text-sm font-semibold text-brand-ink">Fixed fees</legend>
+            <p className="text-sm text-brand-muted">Create a fee-only invoice or add charges to the selected work. All older unbilled work remains eligible unless you set a start date.</p>
+            {manualCharges.map((charge, index) => (
+              <div key={charge.id} className="mt-3 grid gap-3 sm:grid-cols-4">
+                <label className="text-sm">Fee description {index + 1}<input required maxLength={4000} value={charge.description} onChange={e => setManualCharges(rows => rows.map(row => row.id === charge.id ? { ...row, description: e.target.value } : row))} className="input w-full" /></label>
+                <label className="text-sm">Quantity {index + 1}<input required type="number" min="0.01" step="0.01" value={charge.quantity} onChange={e => setManualCharges(rows => rows.map(row => row.id === charge.id ? { ...row, quantity: e.target.value } : row))} className="input w-full" /></label>
+                <label className="text-sm">Unit price {index + 1}<input required type="number" min="0" step="0.01" value={charge.unit_price} onChange={e => setManualCharges(rows => rows.map(row => row.id === charge.id ? { ...row, unit_price: e.target.value } : row))} className="input w-full" /></label>
+                <button type="button" className="btn-secondary self-end" onClick={() => setManualCharges(rows => rows.filter(row => row.id !== charge.id))}>Remove fee {index + 1}</button>
+              </div>
+            ))}
+            <button type="button" className="btn-secondary mt-3" disabled={manualCharges.length >= 100} onClick={() => setManualCharges(rows => [...rows, { id: crypto.randomUUID(), description: '', quantity: '1', unit_price: '' }])}>Add fixed fee</button>
+          </fieldset>
           {previewLoading && <div className="mt-5"><Spinner /></div>}
           {preview && !previewLoading && selectedCount === 0 && (
             <AlertBanner type="warning" title="Select work to invoice" className="mt-4">
@@ -336,15 +388,15 @@ export default function InvoicesPage() {
                 <table className="min-w-full text-left text-xs">
                   <thead><tr className="border-b border-brand-line text-[10px] uppercase tracking-wide text-brand-muted"><th className="px-2 py-2">Include</th><th className="px-2 py-2">Date</th><th className="px-2 py-2">Description</th><th className="px-2 py-2 text-right">Hours / Amount</th></tr></thead>
                   <tbody className="divide-y divide-brand-line/60">
-                    {[...(preview.time_entries || []).map((entry) => ({ ...entry, kind: 'time' })), ...(preview.expenses || []).map((expense) => ({ ...expense, kind: 'expense' }))].map((item) => {
-                      const selected = item.kind === 'time' ? selectedTimeIds.has(item.id) : selectedExpenseIds.has(item.id)
+                    {[...(preview.time_entries || []).map((entry) => ({ ...entry, kind: 'time' })), ...(preview.expenses || []).map((expense) => ({ ...expense, kind: 'expense' })), ...(preview.fees || []).map(fee => ({ ...fee, date: fee.service_date, kind: 'fee' }))].map((item) => {
+                      const selected = (item.kind === 'time' ? selectedTimeIds : item.kind === 'fee' ? selectedFeeIds : selectedExpenseIds).has(item.id)
                       return (
                         <tr key={`${item.kind}-${item.id}`}>
                           <td className="px-2 py-2">
                             <input
                               type="checkbox"
                               checked={selected}
-                              onChange={() => (item.kind === 'time' ? setSelectedTimeIds : setSelectedExpenseIds)((current) => {
+                              onChange={() => (item.kind === 'time' ? setSelectedTimeIds : item.kind === 'fee' ? setSelectedFeeIds : setSelectedExpenseIds)((current) => {
                                 const next = new Set(current)
                                 selected ? next.delete(item.id) : next.add(item.id)
                                 return next
@@ -382,6 +434,8 @@ export default function InvoicesPage() {
               </dl>
             </div>
           )}
+          {generateForm.matter_id && <BillingFees key={generateForm.matter_id} matterId={generateForm.matter_id} onChange={() => { selectionScope.current = ''; setPreviewVersion(value => value + 1) }} />}
+          {generateForm.matter_id && <BillingSchedule key={`schedule-${generateForm.matter_id}`} matterId={generateForm.matter_id} />}
         </form>
       )}
 

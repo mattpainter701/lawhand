@@ -59,8 +59,8 @@ async def test_streaming_routes_both_aliases_and_uses_private_litellm_metadata(
             200, headers={"content-type": "text/event-stream"}, content=body.encode()
         )
 
-    standard_alias = "clarity-standard"
-    premium_alias = "clarity-premium"
+    standard_alias = "lawhand-standard"
+    premium_alias = "lawhand-premium"
     monkeypatch.setattr(llm_module.settings, "LITELLM_STANDARD_MODEL", standard_alias)
     monkeypatch.setattr(llm_module.settings, "LITELLM_PREMIUM_MODEL", premium_alias)
     http_client = httpx.AsyncClient(

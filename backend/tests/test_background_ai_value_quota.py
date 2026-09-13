@@ -109,10 +109,10 @@ def test_price_card_estimate_rounds_up_never_down():
 def test_price_card_resolves_revisioned_aliases_to_their_family():
     card = default_price_card()
     base = card.estimate_max_micros(
-        model="clarity-background", input_tokens=100, max_output_tokens=100
+        model="lawhand-background", input_tokens=100, max_output_tokens=100
     )
     revisioned = card.estimate_max_micros(
-        model="clarity-background-r7", input_tokens=100, max_output_tokens=100
+        model="lawhand-background-r7", input_tokens=100, max_output_tokens=100
     )
     assert base == revisioned
 
@@ -305,7 +305,7 @@ async def test_expensive_requests_exhaust_the_dollar_window_with_requests_to_spa
             idempotency_key=f"burn-{index}",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background",
+            route_alias="lawhand-background",
             estimated_micros=thirty_cents,
         )
 
@@ -315,7 +315,7 @@ async def test_expensive_requests_exhaust_the_dollar_window_with_requests_to_spa
             idempotency_key="burn-over",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background",
+            route_alias="lawhand-background",
             estimated_micros=thirty_cents,
         )
 
@@ -339,7 +339,7 @@ async def test_admission_fits_the_whole_request_not_just_a_nonfull_window(
         idempotency_key="fit-first",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.99 * MICROS_PER_USD),
     )
     with pytest.raises(BackgroundQuotaExceeded, match="spend"):
@@ -348,7 +348,7 @@ async def test_admission_fits_the_whole_request_not_just_a_nonfull_window(
             idempotency_key="fit-second",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background",
+            route_alias="lawhand-background",
             estimated_micros=int(0.50 * MICROS_PER_USD),
         )
 
@@ -367,7 +367,7 @@ async def test_unpriced_reservation_is_refused(test_engine, db_session):
             idempotency_key="unpriced",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background",
+            route_alias="lawhand-background",
             estimated_micros=0,
         )
 
@@ -388,7 +388,7 @@ async def test_settlement_frees_the_difference_between_estimate_and_actual(
         idempotency_key="settle-cheap",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.90 * MICROS_PER_USD),
     )
     # The request actually cost a cent, not ninety.
@@ -409,7 +409,7 @@ async def test_settlement_frees_the_difference_between_estimate_and_actual(
         idempotency_key="settle-next",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.80 * MICROS_PER_USD),
     )
 
@@ -432,7 +432,7 @@ async def test_unreported_usage_settles_at_the_estimate_not_zero(
         idempotency_key="noreport",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.40 * MICROS_PER_USD),
     )
     await ledger.settle(
@@ -457,7 +457,7 @@ async def test_unknown_holds_its_estimate_and_release_does_not(test_engine, db_s
         idempotency_key="ambiguous",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.25 * MICROS_PER_USD),
     )
     rejected = await ledger.reserve(
@@ -465,7 +465,7 @@ async def test_unknown_holds_its_estimate_and_release_does_not(test_engine, db_s
         idempotency_key="rejected",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.25 * MICROS_PER_USD),
     )
     await ledger.mark_unknown(ambiguous, error_code="ai_request_unknown")
@@ -488,7 +488,7 @@ async def _make_unknown(ledger, tenant_id, key, micros, provider_request_id="res
         idempotency_key=key,
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=micros,
     )
     await ledger.mark_unknown(reservation, error_code="ai_request_unknown")
@@ -523,7 +523,7 @@ async def test_stale_reserved_request_becomes_unknown_without_losing_its_hold(
         idempotency_key="stale-reserved",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background",
+        route_alias="lawhand-background",
         estimated_micros=int(0.40 * MICROS_PER_USD),
     )
     await _age_reservation(factory, reservation.id, minutes=30)
@@ -567,7 +567,7 @@ async def test_reconciliation_settles_a_confirmed_billed_request(
 
     async def lookup(provider_request_id, route_alias):
         return ProviderOutcome(
-            billed=True, tokens_in=100, tokens_out=100, model="clarity-background"
+            billed=True, tokens_in=100, tokens_out=100, model="lawhand-background"
         )
 
     async with factory() as db:

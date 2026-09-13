@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -245,11 +247,11 @@ class Settings(BaseSettings):
     LITELLM_ENABLED: bool = False
     LITELLM_BASE_URL: str = "http://litellm:4000"
     LITELLM_API_KEY: str = ""
-    LITELLM_STANDARD_MODEL: str = "clarity-standard"
-    LITELLM_PREMIUM_MODEL: str = "clarity-premium"
+    LITELLM_STANDARD_MODEL: str = "lawhand-standard"
+    LITELLM_PREMIUM_MODEL: str = "lawhand-premium"
     # Platform-owned route for scheduled/event-driven assistant work. This is
     # deliberately separate from tenant Standard/Premium profiles and BYOK.
-    LITELLM_BACKGROUND_MODEL: str = "clarity-background"
+    LITELLM_BACKGROUND_MODEL: str = "lawhand-background"
     LITELLM_BACKGROUND_TRANSPORT: str = "responses"
     LITELLM_EMBEDDING_MODEL: str = ""
     LITELLM_DB_PASSWORD: str = ""
@@ -300,6 +302,10 @@ class Settings(BaseSettings):
     )
     QBO_ENVIRONMENT: str = "sandbox"  # "sandbox" | "production"
 
+    PLATFORM_BILLING_PROVIDER: Literal["helcim", "stripe", "manual"] = "helcim"
+    HELCIM_API_TOKEN: str = ""
+    HELCIM_WEBHOOK_TOKEN: str = ""
+    HELCIM_PAYMENT_PLAN_ID: int = 0
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID: str = ""  # Stripe Price ID for flat subscription

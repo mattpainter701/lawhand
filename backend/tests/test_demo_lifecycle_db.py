@@ -214,8 +214,8 @@ async def test_new_demos_use_only_an_active_matter_aware_demo_profile(db_session
         activation={
             "status": "active",
             "aliases": {
-                "standard": "clarity-standard-rdemo",
-                "premium": "clarity-premium-rdemo",
+                "standard": "lawhand-standard-rdemo",
+                "premium": "lawhand-premium-rdemo",
             },
         },
     )

@@ -70,7 +70,7 @@ def test_background_alias_is_versioned_only_when_global_route_is_complete():
         },
     }
     aliases = router._managed_route_aliases(config)
-    assert aliases["background"].startswith("clarity-background-r")
+    assert aliases["background"].startswith("lawhand-background-r")
     assert (
         router._managed_route_aliases(
             {"standard": {}, "premium": {}, "background": {}}
@@ -104,7 +104,7 @@ def test_background_primary_and_alternate_share_alias_and_keep_fallback_explicit
     alternate = _key("opencode-go")
     fallback = _key("opencode-go")
     monkeypatch.setattr(router, "decrypt_token", lambda value: f"plain-{value}")
-    alias = "clarity-background-rtest"
+    alias = "lawhand-background-rtest"
 
     models, fallbacks, errors = router._build_litellm_reload_payload(
         {
@@ -136,7 +136,7 @@ def test_background_primary_and_alternate_share_alias_and_keep_fallback_explicit
 
     assert [model["model_name"] for model in models] == [alias, alias, f"{alias}-fb-0"]
     assert fallbacks == [{alias: [f"{alias}-fb-0"]}]
-    assert all(model["model_name"] != "clarity-premium" for model in models)
+    assert all(model["model_name"] != "lawhand-premium" for model in models)
     assert errors == []
 
 
@@ -236,8 +236,8 @@ async def test_background_resolution_reads_global_alias_and_ignores_tenant(monke
     row = PlatformSetting(
         key=BACKGROUND_ROUTE_CONFIG_KEY,
         value={
-            "model": "clarity-background-r9",
-            "activation": {"aliases": {"background": "clarity-background-r9"}},
+            "model": "lawhand-background-r9",
+            "activation": {"aliases": {"background": "lawhand-background-r9"}},
             "quota": {"account_monthly": 17},
         },
     )
@@ -248,7 +248,7 @@ async def test_background_resolution_reads_global_alias_and_ignores_tenant(monke
         requested_provider="customer-byoK",
         requested_model="tenant-model",
     )
-    assert route.gateway_alias == "clarity-background-r9"
+    assert route.gateway_alias == "lawhand-background-r9"
     assert route.customer_api_key is None
     assert route.resolved_route == "background"
 
@@ -302,13 +302,13 @@ async def test_background_setting_update_preserves_quota_and_forces_public_polic
             "model": "gpt-5.6-luna",
             "allow_matter_context": True,
         },
-        {"status": "active", "aliases": {"background": "clarity-background-r3"}},
-        "clarity-background-r3",
+        {"status": "active", "aliases": {"background": "lawhand-background-r3"}},
+        "lawhand-background-r3",
     )
 
     assert row.value["quota"] == {"account_monthly": 17}
     assert row.value["operator_note"] == "keep"
-    assert row.value["model"] == "clarity-background-r3"
+    assert row.value["model"] == "lawhand-background-r3"
     assert row.value["route"]["allow_matter_context"] is False
     assert db.flushed is True
 
@@ -342,14 +342,14 @@ async def test_background_probe_uses_responses_transport(monkeypatch):
     monkeypatch.setattr(router.httpx, "AsyncClient", lambda timeout: client)
 
     valid, results, error = await router._probe_litellm_aliases(
-        {"background": "clarity-background-r3"}
+        {"background": "lawhand-background-r3"}
     )
 
     assert valid is True
     assert error is None
     assert results["background"]["ok"] is True
     assert client.calls[0][0] == "http://gateway/v1/responses"
-    assert client.calls[0][2]["model"] == "clarity-background-r3"
+    assert client.calls[0][2]["model"] == "lawhand-background-r3"
     assert (
         client.calls[0][2]["max_output_tokens"]
         == router.ROUTE_ACTIVATION_CANARY_MAX_TOKENS

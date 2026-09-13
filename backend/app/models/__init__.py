@@ -1,3 +1,4 @@
+from app.models.platform_subscription import PlatformSubscription
 from app.models.matter_intake import MatterIntake
 from app.models.tenant import Tenant, TenantSettings
 from app.models.work_artifact_review import (
@@ -247,6 +248,7 @@ from app.models.automation_service import (
 )
 
 __all__ = [
+    "PlatformSubscription",
     "EmailSuppression",
     "PlatformEmailWebhookEvent",
     "WorkflowConfigurationProposal",

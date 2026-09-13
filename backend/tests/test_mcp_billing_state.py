@@ -191,3 +191,9 @@ def test_no_stripe_identifier_reaches_a_log_statement():
     assert offenders == [], (
         f"Stripe identifiers must not be passed to a logger: {offenders}"
     )
+
+
+@pytest.fixture(autouse=True)
+def legacy_stripe_billing_provider(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "PLATFORM_BILLING_PROVIDER", "stripe")
