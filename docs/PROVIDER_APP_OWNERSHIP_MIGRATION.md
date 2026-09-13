@@ -476,8 +476,20 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
    Entra. LawHand authenticates against each customer's existing tenant, so a
    workforce tenant is what hosts its app registrations.
 
-   Then in **Microsoft Entra admin center → Identity → Overview → Properties**,
-   set the organization name to **Perevaga Group LLC**.
+   Name the tenant after **the product, not the holding company**. The tenant
+   is the unit that changes hands on a sale (see the appendix), so a buyer
+   acquiring LawHand should not inherit a directory named after a company that
+   was never for sale.
+
+   - The **initial domain** — `lawhand.onmicrosoft.com` — is **permanent**. It
+     cannot be renamed or removed for the life of the tenant. It is the only
+     irreversible choice on this screen.
+   - The **organization name** (Entra admin center → Identity → Overview →
+     Properties) should likewise be `LawHand`. This one is editable later.
+   - Legal ownership is a separate question from naming. Until a sale, the
+     tenant is an asset of **Perevaga Group LLC** whatever it is called, and
+     4.4's publisher verification is performed against that entity, because
+     Microsoft verifies registered legal entities rather than product names.
 3. **Identity → Domain names → Add custom domain** → `getlawhand.com` → add the
    TXT record at your DNS provider → verify. This both looks right on consent
    screens and is the simplest route to publisher-domain verification in 4.4.
@@ -729,7 +741,7 @@ working, and can the company get it back without them?*
 - [ ] App published to In production
 
 **Microsoft**
-- [ ] New Entra tenant via Azure free signup, org name set to Perevaga Group LLC
+- [ ] New Entra tenant created, Governed Workforce, named for the product (`lawhand.onmicrosoft.com`)
 - [ ] `getlawhand.com` added and verified as a custom domain
 - [ ] Second Global Administrator created
 - [ ] `LawHand` multitenant app registered, both redirect URIs, secret stored, rotation reminder set
@@ -758,7 +770,8 @@ working, and can the company get it back without them?*
 Have a one-page answer to each before you go to market:
 
 1. Who legally owns the Google Cloud project and the Entra tenant, and what
-   document proves it?
+   document proves it? (Ownership is what transfers; the names on the
+   containers should already be the product's, not the seller's.)
 2. Is any production credential recoverable only through an individual's
    personal account or personal MFA device?
 3. Is the Google app verified, in production, and — if restricted scopes are in
