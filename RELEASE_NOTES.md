@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.11 — Conflict searches catch more of the same name
+
+Released September 13, 2026.
+
+Find a person whose name you typed in a different order or with a middle name, and see opposing parties recorded only on the matter.
+
+- **Type the name the way you have it.** A search matches when the words of a name appear in any order, so "Smith, Alice" from a caption or a name entered with a middle name still finds the contact on file.
+- **See opposing parties recorded on the matter.** A matter whose counterparty matches your search is reported even when it also stores a client contact. Each matter is still listed once.
+
 ## 2026.09.13.10 — Clearer matter checks and follow-ups
 
 Released September 13, 2026.
