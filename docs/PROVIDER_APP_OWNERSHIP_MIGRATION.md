@@ -687,11 +687,38 @@ project and, ideally, a separate dev app registration.
 
 | File | Line | Change |
 | --- | --- | --- |
-| `teams-app/manifest.json` | 5 | new Teams app GUID |
 | `teams-app/manifest.json` | 49 | `webApplicationInfo.id` → new server app client ID |
-| `teams-app/manifest.json` | 50 | `resource` → `api://getlawhand.com/<new-client-id>` — retires `legalapp.perevagagroup.com` |
-| `teams-app/package.ps1` | 3 | same GUID as manifest line 5 |
+| `teams-app/manifest.json` | 50 | `resource` → the new Application ID URI, byte for byte — retires `legalapp.perevagagroup.com` |
+| `teams-app/package.ps1` | 8 | `$MicrosoftResourceHost` → the host inside that URI |
+| `.env.prod.example` | 187 | `TEAMS_APP_ID`, only if the Teams app GUID changes |
 | `office-addin/.env.example` | 2-4 | keep placeholder zeros; document the new `api://` shape |
+
+**Set the Application ID URI first; everything else is derived from it.** On the
+server app registration, **Expose an API → Add** — a new registration has none,
+which is why the manifest cannot be edited before this step.
+
+The host inside that URI is constrained. Entra requires a custom domain in an
+Application ID URI to be **verified in the tenant that owns the app**, so
+`api://getlawhand.com/<client-id>` is only available once `getlawhand.com` is
+verified there — which 4.1 step 3 explains may never happen, because the domain
+can live in one tenant at a time and it is serving mail elsewhere. Two forms
+need no verification:
+
+- `api://<tenant>.onmicrosoft.com/<client-id>` — a domain the tenant always owns
+- `api://<client-id>` — the bare default
+
+Prefer the first. Try the `getlawhand.com` form and fall back when Entra
+refuses it; the URI is an identity string, never fetched over the network, so a
+host that does not match the product's website costs nothing functionally.
+Teams `validDomains` governs the domains that serve *content* and stays
+`getlawhand.com` regardless.
+
+The Teams app `id` on manifest line 5 is a **developer-generated GUID with no
+tenant binding** — an earlier revision listed it as a required change, which
+overstated it. Regenerate it only if the old manifest was published or
+sideloaded under the previous identity and you want a clean break; doing so
+orphans existing installs, and `TEAMS_APP_ID` and `package.ps1:3` must move
+with it.
 
 The `<Id>` GUIDs in `office-addin/manifests/outlook.xml:8` and
 `word-excel.xml:8` are Office add-in identifiers, **not** Entra client IDs, and
