@@ -22,6 +22,7 @@ SKIP_PATHS = {
     "/openapi.json",
     "/redoc",
     "/api/billing/webhook",
+    "/api/billing/provider-events",
     "/api/matters/esign/webhooks",
 }
 
@@ -33,6 +34,9 @@ SKIP_PREFIXES = (
 )
 
 LICENSE_EXEMPT_PREFIXES = (
+    # Finance authorization still applies; buying or repairing a subscription
+    # must not require an already assigned Workspace seat.
+    "/api/billing/subscription/",
     "/auth/",
     "/api/auth/",
     "/portal/",
@@ -48,6 +52,7 @@ LICENSE_EXEMPT_PREFIXES = (
 )
 
 LICENSE_EXEMPT_PATHS = {
+    "/api/billing/status",
     "/api/mcp/product-keys",
     "/api/mcp/usage",
 }

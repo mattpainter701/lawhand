@@ -4,7 +4,7 @@
     {
       "id": "2026.09.13.4",
       "version": "2026.09.13.4",
-      "title": "Flexible matter billing and reviewed recurring drafts",
+      "title": "Flexible matter billing and Helcim subscriptions",
       "published_at": "2026-09-13",
       "summary": "Prepare invoices from selected work, one-time fees or agreed stages, and opt into recurring drafts while keeping control of sending and payment.",
       "highlights": [
@@ -19,6 +19,10 @@
         {
           "title": "Offer dated installments",
           "description": "Record installments against one invoice and let clients see and pay them in the portal. Fixed-fee invoices use existing QuickBooks mappings after review."
+        },
+        {
+          "title": "Manage your LawHand subscription with Helcim",
+          "description": "Review subscription pricing, securely add a card, update payment details and manage your LawHand plan. Your firm’s manual invoices and QuickBooks integration remain separate."
         }
       ]
     },

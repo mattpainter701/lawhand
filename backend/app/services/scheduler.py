@@ -893,6 +893,10 @@ class LegalScheduler:
         async with async_session_maker() as session:
             await _apply_scheduler_tenant_context(session)
             await run_schedules(session, _scheduler_tenant_id.get())
+        from app.services.platform_billing import reconcile_tenant_subscription
+        if settings.PLATFORM_BILLING_PROVIDER == "helcim" and settings.HELCIM_API_TOKEN:
+            async with async_session_maker() as session:
+                await reconcile_tenant_subscription(session, _scheduler_tenant_id.get())
 
     def shutdown(self) -> None:
         """Graceful shutdown of the scheduler."""

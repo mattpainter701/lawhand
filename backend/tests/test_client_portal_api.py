@@ -1739,3 +1739,14 @@ async def test_portal_installments_only_age_matured_balance(
     assert row["is_overdue"] == (Decimal(overdue_amount) > 0)
     assert row["days_overdue"] == (5 if Decimal(overdue_amount) else 0)
     assert len(row["installments"]) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured", [False, True])
+async def test_portal_only_offers_online_payment_when_configured(client, db_session, test_tenant, test_user, portal_matter, portal_cookie, monkeypatch, configured):
+    from app.routers import client_portal
+    monkeypatch.setattr(client_portal.settings, "STRIPE_SECRET_KEY", "test-only" if configured else "")
+    await _add_invoice(db_session, test_tenant, portal_matter, test_user)
+    response = await client.get(f"{PORTAL}/invoices", headers=_portal_headers(portal_cookie))
+    assert response.status_code == 200, response.text
+    assert response.json()["invoices"][0]["online_payment_available"] is configured

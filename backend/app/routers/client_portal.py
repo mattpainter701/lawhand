@@ -2381,6 +2381,7 @@ async def _visible_invoices(
                 overdue_balance=overdue_amount,
                 payment_terms=inv.payment_terms,
                 stripe_payment_link=inv.stripe_payment_link,
+                online_payment_available=bool(settings.STRIPE_SECRET_KEY),
             )
         )
     return out

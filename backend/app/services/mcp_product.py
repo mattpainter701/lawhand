@@ -195,6 +195,8 @@ def _validate_key_controls(
 
 async def deliver_mcp_meter_event(payload: dict[str, Any]) -> dict[str, str]:
     """Deliver one durable usage event to Stripe with a stable identifier."""
+    if settings.PLATFORM_BILLING_PROVIDER != "stripe":
+        raise RuntimeError("Legacy Stripe usage delivery is disabled for the configured billing provider")
     if not settings.STRIPE_SECRET_KEY or not settings.STRIPE_MCP_METER_EVENT_NAME:
         raise RuntimeError("Stripe MCP metering is not configured")
     meter_event = getattr(getattr(stripe, "billing", None), "MeterEvent", None)
@@ -223,6 +225,22 @@ def ensure_mcp_product_access(tenant: Tenant | Any) -> None:
         raise HTTPException(status_code=403, detail="MCP entitlement is not active")
     if getattr(tenant, "mcp_billing_status", "disabled") != "active":
         raise HTTPException(status_code=402, detail="MCP billing is not active")
+    if settings.PLATFORM_BILLING_PROVIDER == "helcim":
+        if getattr(
+            tenant, "platform_billing_provider", None
+        ) != "helcim" or not getattr(tenant, "platform_customer_id", None):
+            raise HTTPException(
+                status_code=402, detail="MCP billing customer is not configured"
+            )
+        if not settings.HELCIM_API_TOKEN:
+            raise HTTPException(
+                status_code=503, detail="LawHand billing is not configured"
+            )
+        return
+    if settings.PLATFORM_BILLING_PROVIDER != "stripe":
+        raise HTTPException(
+            status_code=503, detail="MCP usage billing is not configured"
+        )
     if not getattr(tenant, "stripe_customer_id", None):
         raise HTTPException(
             status_code=402, detail="MCP billing customer is not configured"
@@ -592,6 +610,31 @@ async def record_mcp_usage(
     )
     if stripe_value:
         tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+        if settings.PLATFORM_BILLING_PROVIDER == "helcim":
+            if (
+                not tenant
+                or tenant.platform_billing_provider != "helcim"
+                or not tenant.platform_customer_id
+            ):
+                raise RuntimeError("MCP usage requires a Helcim billing customer")
+            key = (
+                await db.get(MCPProductKey, product_key_id) if product_key_id else None
+            )
+            event.metadata_json = {
+                **(event.metadata_json or {}),
+                "platform_billing": {
+                    "provider": "helcim",
+                    "collection": "pending_review",
+                    "unit_price_cents": key.unit_price_cents
+                    if key
+                    else settings.MCP_PRODUCT_CALL_PRICE_CENTS,
+                    "currency": "USD",
+                },
+            }
+            await db.commit()
+            return event
+        if settings.PLATFORM_BILLING_PROVIDER != "stripe":
+            raise RuntimeError("MCP usage billing is not configured")
         if not tenant or not tenant.stripe_customer_id:
             raise RuntimeError("MCP usage cannot be metered without a Stripe customer")
         meter_job = await enqueue_job(

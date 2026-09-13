@@ -1410,7 +1410,7 @@ function InvoicesTab({ matter, onSessionError }) {
                     >
                       <Download size={14} /> PDF
                     </a>
-                    {Number(inv.balance_due) > 0 && (
+                    {Number(inv.balance_due) > 0 && inv.online_payment_available && (
                       <a
                         href={inv.stripe_payment_link || '#'}
                         onClick={(event) => { event.preventDefault(); pay(inv.id) }}
@@ -1420,6 +1420,7 @@ function InvoicesTab({ matter, onSessionError }) {
                         <CreditCard size={14} className="inline mr-1" /> {paying === inv.id ? 'Opening…' : inv.installments?.length ? 'Pay installment' : 'Pay now'}
                       </a>
                     )}
+                    {Number(inv.balance_due) > 0 && !inv.online_payment_available && <p className="text-sm text-brand-muted">Contact your firm for payment instructions.</p>}
                   </div>
                 </div>
               </li>

@@ -305,6 +305,7 @@ class PortalInvoiceResponse(BaseModel):
     overdue_balance: Decimal = Decimal("0")
     payment_terms: str | None = None
     stripe_payment_link: str | None = None
+    online_payment_available: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
