@@ -561,7 +561,18 @@ sections 4.2 to 4.4 changes.
 
 - Name: `LawHand`
 - Supported account types: **Accounts in any organizational directory (Any
-  Microsoft Entra ID tenant — Multitenant)** — per Decision 2.
+  Microsoft Entra ID tenant — Multitenant)** — per Decision 2. In the manifest
+  this is `"signInAudience": "AzureADMultipleOrgs"`; confirm it there rather
+  than trusting the radio button, because the adjacent option — *...and
+  personal Microsoft accounts*, `AzureADandPersonalMicrosoftAccount` — is one
+  click away and reads almost identically.
+  - It is not a cosmetic difference. `config.py:101` still defaults
+    `MICROSOFT_TENANT_ID` to `common`, so a deploy that forgets to set
+    `organizations` falls back to admitting consumer accounts. Narrowing the
+    audience makes Entra refuse them whatever the application is configured to
+    request, which turns a silent misconfiguration into no incident at all.
+  - Correct it before any tenant consents. Sign-in audience changes are
+    restricted once an application is in use.
 - Redirect URI (Web), both entries:
 
 ```text
