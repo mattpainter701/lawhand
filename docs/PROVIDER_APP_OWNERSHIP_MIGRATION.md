@@ -432,11 +432,31 @@ admin portal on a free or trial subscription. Use the Azure signup path:
    - Azure free signup asks for a card for identity verification. App
      registrations, Entra ID Free, and multitenant OAuth cost nothing; you are
      not obligated to run paid Azure resources.
+   - Do **not** sign up with an address whose domain already belongs to another
+     Entra tenant. Signing in with it authenticates against *that* tenant
+     instead of creating a new one. `getlawhand@gmail.com` registered as a
+     Microsoft account works and keeps the company-owned mailbox consistent
+     with the Google side.
+   - The 30-day trial credit lapsing does not take the directory with it. App
+     registrations live in Entra, not in the Azure subscription, and keep
+     working after the subscription is disabled.
 2. In **Microsoft Entra admin center → Identity → Overview → Properties**, set
    the organization name to **Perevaga Group LLC**.
 3. **Identity → Domain names → Add custom domain** → `getlawhand.com` → add the
    TXT record at your DNS provider → verify. This both looks right on consent
    screens and is the simplest route to publisher-domain verification in 4.4.
+   - **A domain can only be verified in one Entra tenant at a time.** If
+     `getlawhand.com` is already attached to another tenant — commonly because
+     it was added to a different company's Microsoft 365 for mail, or because
+     someone once signed up for a Microsoft service on an `@getlawhand.com`
+     address and created an unmanaged "shadow" tenant — this step will fail and
+     there is no way around it short of removing the domain there first.
+   - **This step is optional.** Skip it and use the
+     `microsoft-identity-association.json` route in 4.4 step 4, which proves
+     domain control over HTTPS and does not require the domain to live in this
+     tenant at all. Publisher verification, the consent-screen publisher name
+     and the blue verified marker all work identically either way. Do not
+     unpick a working mail setup for a cosmetic gain.
 4. Create a second Global Administrator account and store its credentials with
    the LLC's records. A tenant with one admin is a single point of failure and a
    diligence finding.
