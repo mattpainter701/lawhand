@@ -480,10 +480,20 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
      creating a new one.
 2. Choose **Governed Workforce** when asked for a tenant configuration.
    *Workforce (legacy)* can no longer be created for add-on tenants as of
-   31 August 2026. Do **not** choose *External*: that is the CIAM
+   31 August 2026.
+
+   Do **not** choose *External*, however far that flow gets. It is the CIAM
    configuration, for authenticating an application's own end users inside
-   Entra. LawHand authenticates against each customer's existing tenant, so a
-   workforce tenant is what hosts its app registrations.
+   Entra, and LawHand instead authenticates against each customer firm's
+   existing tenant. The incompatibility is not stylistic: an External tenant
+   issues tokens from `<tenant>.ciamlogin.com`, while every Microsoft auth path
+   in this repository is built against
+   `https://login.microsoftonline.com/{tenant}` (`backend/app/routers/auth.py:1006`,
+   `backend/app/routers/integrations.py:420`,
+   `backend/app/services/token_vault.py:238`) and
+   `oauth_security.py:145` rejects any issuer that does not start with that
+   host. Tokens from an External tenant would be refused by LawHand's own
+   validator. A workforce tenant is what hosts a multitenant app registration.
 
    Name the tenant after **the product, not the holding company**. The tenant
    is the unit that changes hands on a sale (see the appendix), so a buyer
