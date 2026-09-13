@@ -29,19 +29,34 @@ saved text answer. Staff showed 0 awaiting, 0 partial, 2 done and a 2/2 paperwor
 These changes do not rewrite historical signed files or automatically repair already
 completed packets' old tasks. Staff should review an old follow-up before closing it.
 
+## Conflict-search follow-up (release 2026.09.13.11)
+
+The combined-name fix above still missed a name typed in another order. Conflict search
+now matches when the words of a term appear in any order, so "Smith, Alice" copied from a
+caption, a reversed entry, and a search carrying a middle name all find the contact stored
+as "Alice Smith". A matter whose counterparty matches the search is reported even when the
+matter also stores a client contact; that match was previously reported only for matters
+with no client contact, so an adverse party recorded as free text on a matter with a client
+was invisible. Each matter is still listed once.
+
+Matching stays bounded: words shorter than three characters are not counted on their own,
+and a multi-word term must match two distinct words, so one shared first name is not a
+conflict. The direction is deliberate — an extra row for an attorney to dismiss is cheaper
+than a missed adverse party, and no result is automatic clearance.
+
 ## Remaining findings
 
-| Priority | Observation | Follow-up and limits |
-| --- | --- | --- |
-| High | Outlook task push ignores the saved due time and creates an all-day event; the calendar showed both a task and its synced copy. | Test timezone-aware timed task propagation, stable provider identity, deduplication, and event navigation. The date-label fix here does not repair provider sync. |
-| High, source-dependent | The supplied signature-field document was confirmed bad by the user. Generic signature detection also matched unrelated “Referred by” and firm-use “reviewed by” lines. | Keep source quality distinct from detector behavior. Validate a clean prepared form with explicit roles before attributing all placement problems to the application. Never modify historical executed copies. |
-| Medium | Administrative assistant wording such as “do not do legal research” or “attorney assignment” triggered the authority guard. A neutral control returned correct matter facts but omitted two of three open tasks. | Improve intent classification and complete task retrieval while preserving safeguards for actual legal conclusions; test negated and mixed legal/administrative requests. |
-| Medium | Reopening an assistant conversation reset the selected tier and public-case-law preference. | Verify preference persistence and precedence between conversation settings and platform policy. |
-| Medium | The evidence certificate's filled-field count included blank serialized entries; its IP was an internal proxy address. | Define nonempty field counting and verify trusted proxy configuration before changing evidence attribution. |
-| Medium | Shared-document counts and labels differed between overview, documents, and signing grants. | Align counts and explain signing-based access; no unauthorized-access conclusion was established. |
-| Low | A void invoice retained a staff balance display; the time-entry status remained DRAFT after restoring nonbillable time. | Reconcile void/nonbillable display semantics. The client saw no invoice and zero balance. |
-| Low | Court and judge were displayed but had no inputs in the tested general matter editors. A closed control still offered sending paperwork. | Confirm intended editing paths and suppress inappropriate closed-matter actions. |
-| Follow-up | No new filing-failure escalation task was visible during the original storage outage. | Define escalation ownership and retry exhaustion behavior; successful recovery does not establish operational escalation coverage. |
+| Issue | Priority | Observation | Follow-up and limits |
+| --- | --- | --- | --- |
+| [#484](https://github.com/mattpainter701/lawhand/issues/484) | High | Outlook task push ignores the saved due time and creates an all-day event; the calendar showed both a task and its synced copy. | Test timezone-aware timed task propagation, stable provider identity, deduplication, and event navigation. The date-label fix here does not repair provider sync. |
+| [#485](https://github.com/mattpainter701/lawhand/issues/485) | High, source-dependent | The supplied signature-field document was confirmed bad by the user. Generic signature detection also matched unrelated “Referred by” and firm-use “reviewed by” lines. | Keep source quality distinct from detector behavior. Validate a clean prepared form with explicit roles before attributing all placement problems to the application. Never modify historical executed copies. |
+| [#486](https://github.com/mattpainter701/lawhand/issues/486) | Medium | Administrative assistant wording such as “do not do legal research” or “attorney assignment” triggered the authority guard. A neutral control returned correct matter facts but omitted two of three open tasks. | Improve intent classification and complete task retrieval while preserving safeguards for actual legal conclusions; test negated and mixed legal/administrative requests. |
+| [#487](https://github.com/mattpainter701/lawhand/issues/487) | Medium | Reopening an assistant conversation reset the selected tier and public-case-law preference. | Verify preference persistence and precedence between conversation settings and platform policy. |
+| [#488](https://github.com/mattpainter701/lawhand/issues/488) | Medium | The evidence certificate's filled-field count included blank serialized entries; its IP was an internal proxy address. | Define nonempty field counting and verify trusted proxy configuration before changing evidence attribution. |
+| [#489](https://github.com/mattpainter701/lawhand/issues/489) | Medium | Shared-document counts and labels differed between overview, documents, and signing grants. | Align counts and explain signing-based access; no unauthorized-access conclusion was established. |
+| [#490](https://github.com/mattpainter701/lawhand/issues/490) | Low | A void invoice retained a staff balance display; the time-entry status remained DRAFT after restoring nonbillable time. | Reconcile void/nonbillable display semantics. The client saw no invoice and zero balance. |
+| [#491](https://github.com/mattpainter701/lawhand/issues/491) | Low | Court and judge were displayed but had no inputs in the tested general matter editors. A closed control still offered sending paperwork. | Confirm intended editing paths and suppress inappropriate closed-matter actions. |
+| [#492](https://github.com/mattpainter701/lawhand/issues/492) | Follow-up | No new filing-failure escalation task was visible during the original storage outage. | Define escalation ownership and retry exhaustion behavior; successful recovery does not establish operational escalation coverage. |
 
 ## Other tested paths and limits
 
@@ -71,4 +86,6 @@ completed packets' old tasks. Staff should review an old follow-up before closin
 
 Use labeled synthetic data and preserve attorney review decisions. Do not treat any
 conflict result as automatic clearance. Revalidate the fixed paths after deployment and
-keep the remaining findings open until their own acceptance checks pass.
+keep the remaining findings open until their own acceptance checks pass. Every remaining
+finding is tracked as a GitHub issue above; close an issue on its own acceptance evidence,
+not because this document has been read.

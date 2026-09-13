@@ -4,16 +4,87 @@ Shared conflict-check service.
 Extracted from the contacts /conflict-check endpoint so it can be called
 from both the contacts router (manual check) and the plugins router
 (auto-check on matter create + manual re-run endpoint).
+
+Matching deliberately fails toward review rather than clearance: a missed
+conflict is the expensive error, an extra row for an attorney to dismiss is not.
 """
 
+import operator
+import re
 import uuid
+from functools import reduce
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.contact import Contact
 from app.models.matter_party import MatterParty
 from app.models.plugin import Matter
+
+# Words shorter than this are ignored when matching a term out of order. "of",
+# "&" and bare initials appear inside almost any name, so counting them would
+# turn a firm name into a tenant-wide sweep.
+MIN_TOKEN_LENGTH = 3
+# How many distinct words of a multi-word term must appear. Two keeps
+# "Alice Smith" from matching every Alice, while still finding the contact
+# stored as "Alice Smith" when the search carries a middle name.
+MIN_TOKEN_HITS = 2
+
+_TOKEN_SPLIT = re.compile(r"[^0-9A-Za-z]+")
+
+
+def _escape_ilike(text: str) -> str:
+    """Escape % and _ wildcards for ILIKE patterns."""
+    return text.replace("%", "\\%").replace("_", "\\_")
+
+
+def _significant_tokens(term: str) -> list[str]:
+    """Distinct words of a search term worth matching on their own."""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for word in _TOKEN_SPLIT.split(term):
+        if len(word) < MIN_TOKEN_LENGTH:
+            continue
+        key = word.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tokens.append(word)
+    return tokens
+
+
+def _matches_term(expr, term: str):
+    """
+    Match a search term against a text expression, tolerating word order.
+
+    The whole term still matches as a substring. A term of several words also
+    matches when MIN_TOKEN_HITS of its words are present in any order, which is
+    what finds "Smith, Alice" copied from a caption, a first-and-last-name
+    search against a record carrying a middle name, and reversed name entry.
+    """
+    clauses = [expr.ilike(f"%{_escape_ilike(term)}%")]
+    tokens = _significant_tokens(term)
+    if len(tokens) >= MIN_TOKEN_HITS:
+        hits = reduce(
+            operator.add,
+            [
+                case((expr.ilike(f"%{_escape_ilike(token)}%"), 1), else_=0)
+                for token in tokens
+            ],
+        )
+        clauses.append(hits >= MIN_TOKEN_HITS)
+    return or_(*clauses)
+
+
+def _contact_haystack():
+    """Searchable contact fields as one string; concat_ws drops NULL columns."""
+    return func.concat_ws(
+        " ",
+        Contact.first_name,
+        Contact.last_name,
+        Contact.organization_name,
+        Contact.email,
+    )
 
 
 async def run_conflict_check(
@@ -38,10 +109,9 @@ async def run_conflict_check(
     if exclude_matter_ids is None:
         exclude_matter_ids = []
     matches: list[dict] = []
-
-    def _escape_ilike(text: str) -> str:
-        """Escape % and _ wildcards for ILIKE patterns."""
-        return text.replace("%", "\\%").replace("_", "\\_")
+    # Matters already reported through a counterparty hit, so phase 2 does not
+    # list the same matter a second time.
+    reported_counterparty: set[uuid.UUID] = set()
 
     # Build (search_term, field_type) pairs
     terms = (
@@ -52,21 +122,10 @@ async def run_conflict_check(
 
     # ── Phase 1: contact-based matches ───────────────────────────────────────
     for term, field_type in terms:
-        pattern = f"%{_escape_ilike(term)}%"
         stmt = select(Contact).where(
             Contact.tenant_id == tenant_id,
             Contact.is_active.is_(True),
-            or_(
-                Contact.first_name.ilike(pattern),
-                Contact.last_name.ilike(pattern),
-                func.trim(
-                    func.coalesce(Contact.first_name, "")
-                    + " "
-                    + func.coalesce(Contact.last_name, "")
-                ).ilike(pattern),
-                Contact.organization_name.ilike(pattern),
-                Contact.email.ilike(pattern),
-            ),
+            _matches_term(_contact_haystack(), term),
         )
         result = await db.execute(stmt)
         found = result.scalars().all()
@@ -98,7 +157,7 @@ async def run_conflict_check(
             # Matters where counterparty string matches
             cp_stmt = select(Matter).where(
                 Matter.tenant_id == tenant_id,
-                Matter.counterparty.ilike(pattern),
+                _matches_term(Matter.counterparty, term),
             )
             cp_result = await db.execute(cp_stmt)
             cp_matters = cp_result.scalars().all()
@@ -124,16 +183,20 @@ async def run_conflict_check(
                         "matter_names": [m.matter_name for m in all_matters.values()],
                     }
                 )
+                reported_counterparty.update(
+                    m.id for m in cp_matters if m.id in all_matters
+                )
 
-    # ── Phase 2: matter counterparty-only matches (no Contact record) ─────────
+    # ── Phase 2: counterparty matches with no Contact record of their own ────
+    # Whether the matter also stores a client contact says nothing about the
+    # opposing party, so this is not restricted to matters without one: an
+    # adverse party recorded only as free text is still a conflict.
     for term in list(names) + list(organization_names):
         if not term:
             continue
-        pattern = f"%{_escape_ilike(term)}%"
         cp_filters = [
             Matter.tenant_id == tenant_id,
-            Matter.counterparty.ilike(pattern),
-            Matter.client_contact_id.is_(None),  # not already linked to a contact
+            _matches_term(Matter.counterparty, term),
         ]
         if exclude_matter_ids:
             cp_filters.append(Matter.id.notin_(exclude_matter_ids))
@@ -142,6 +205,9 @@ async def run_conflict_check(
         cp_matters = cp_result.scalars().all()
 
         for m in cp_matters:
+            if m.id in reported_counterparty:
+                continue
+            reported_counterparty.add(m.id)
             matches.append(
                 {
                     "contact_id": uuid.UUID("00000000-0000-0000-0000-000000000000"),

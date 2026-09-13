@@ -1,3 +1,9 @@
+## 2026.09.13.11 — Conflict search finds names in any order
+
+- Match a conflict-search name when its words appear in any order, so "Smith, Alice" from a caption and a search carrying a middle name find the contact stored as "Alice Smith".
+- Report a matter whose counterparty matches the search even when that matter also stores a client contact; the same matter is still listed once.
+- Add conflict-search regressions for name order, separators, middle names, wildcard escaping, excluded matters, and counterparty de-duplication.
+
 ## 2026.09.13.10 — Matter lifecycle validation follow-ups
 
 - Match combined contact first/last names in tenant-scoped conflict searches; exercise the saved search without an email fallback.
