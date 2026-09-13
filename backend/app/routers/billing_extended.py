@@ -1,6 +1,7 @@
 """Extended billing router — time entries, expenses, invoice generation, payments."""
 
 import asyncio
+import hashlib
 from html import escape as html_escape
 import logging
 import uuid
@@ -9,7 +10,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import select, func
+from sqlalchemy import select, func, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
@@ -24,7 +25,15 @@ from app.services.stripe_webhook_guard import (
     claim_event,
     ordering_object_id,
 )
-from app.models.billing import TimeEntry, Expense, Invoice, InvoiceLineItem, Payment
+from app.models.billing import (
+    TimeEntry,
+    Expense,
+    Invoice,
+    InvoiceLineItem,
+    Payment,
+    BillingFee,
+    BillingSchedule,
+)
 from app.models.contact import Contact
 from app.models.plugin import Matter
 from app.models.tenant import Tenant, TenantSettings
@@ -59,6 +68,11 @@ from app.schemas.billing import (
     InvoiceSendResponse,
     ApplyTrustRequest,
     RetainerAvailability,
+    BillingFeeCreate,
+    BillingFeeState,
+    BillingScheduleCreate,
+    BillingSchedulePause,
+    InvoicePaymentPlanRequest,
 )
 from app.services.billing_workflow import (
     DEFAULT_ROUNDING_MINUTES,
@@ -295,6 +309,322 @@ def _select_requested_sources(items, requested_ids: list[str] | None, label: str
     return [by_id[item_id] for item_id in parsed_ids]
 
 
+@router.get("/ready-to-bill")
+async def ready_to_bill(
+    request: Request,
+    date_to: date | None = None,
+    q: str = "",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await require_finance_admin(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    cutoff = date_to or date.today()
+    work = union_all(
+        select(
+            TimeEntry.matter_id.label("matter_id"),
+            TimeEntry.date.label("date"),
+            TimeEntry.amount.label("amount"),
+        ).where(
+            TimeEntry.tenant_id == user.tenant_id,
+            TimeEntry.invoice_id.is_(None),
+            TimeEntry.is_billable.is_(True),
+            TimeEntry.status == "draft",
+            TimeEntry.date <= cutoff,
+        ),
+        select(
+            Expense.matter_id,
+            Expense.date,
+            func.coalesce(Expense.client_amount, Expense.amount),
+        ).where(
+            Expense.tenant_id == user.tenant_id,
+            Expense.invoice_id.is_(None),
+            Expense.is_billable.is_(True),
+            Expense.review_status.in_(("ready", "approved")),
+            ~func.lower(Expense.category).in_(INTERNAL_ONLY_EXPENSE_CATEGORIES),
+            Expense.date <= cutoff,
+        ),
+        select(BillingFee.matter_id, BillingFee.service_date, BillingFee.amount).where(
+            BillingFee.tenant_id == user.tenant_id,
+            BillingFee.invoice_id.is_(None),
+            BillingFee.status == "ready",
+            BillingFee.service_date <= cutoff,
+        ),
+    ).subquery()
+    totals = (
+        select(
+            work.c.matter_id,
+            func.sum(work.c.amount).label("amount"),
+            func.count().label("item_count"),
+            func.min(work.c.date).label("oldest"),
+        )
+        .group_by(work.c.matter_id)
+        .subquery()
+    )
+    stmt = (
+        select(
+            Matter.id,
+            Matter.matter_name,
+            Matter.is_closed,
+            totals.c.amount,
+            totals.c.item_count,
+            totals.c.oldest,
+        )
+        .join(totals, totals.c.matter_id == Matter.id)
+        .where(Matter.tenant_id == user.tenant_id)
+    )
+    if q.strip():
+        stmt = stmt.where(
+            Matter.matter_name.ilike(
+                "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+            )
+        )
+    count, amount = (
+        await db.execute(
+            select(func.count(), func.coalesce(func.sum(totals.c.amount), 0))
+            .select_from(Matter)
+            .join(totals, totals.c.matter_id == Matter.id)
+            .where(*stmt._where_criteria)
+        )
+    ).one()
+    rows = (
+        await db.execute(
+            stmt.order_by(totals.c.oldest, Matter.id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    return {
+        "items": [
+            {
+                "matter_id": str(row.id),
+                "matter_name": row.matter_name,
+                "closed": row.is_closed,
+                "amount": str(row.amount),
+                "count": row.item_count,
+                "oldest": row.oldest,
+            }
+            for row in rows
+        ],
+        "total": count,
+        "total_amount": str(amount),
+        "page": page,
+        "date_to": cutoff,
+    }
+
+
+def _schedule_response(schedule):
+    return {
+        "id": str(schedule.id),
+        "matter_id": str(schedule.matter_id),
+        "next_date": schedule.next_date,
+        "paused": schedule.paused,
+        "config": schedule.config,
+        "last_error": schedule.last_error,
+    }
+
+
+@router.get("/schedules")
+async def list_billing_schedules(
+    matter_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    user = await require_finance_admin(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    matter = await _get_matter_or_404(db, matter_id, user.tenant_id)
+    rows = (
+        (
+            await db.execute(
+                select(BillingSchedule).where(
+                    BillingSchedule.tenant_id == user.tenant_id,
+                    BillingSchedule.matter_id == matter.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"items": [_schedule_response(row) for row in rows]}
+
+
+@router.post("/schedules", status_code=201)
+async def create_billing_schedule(
+    body: BillingScheduleCreate, request: Request, db: AsyncSession = Depends(get_db)
+):
+    user = await _require_billing_manager(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    matter = await _get_matter_or_404(db, body.matter_id, user.tenant_id)
+    if matter.is_closed or matter.billing_method == "pro_bono":
+        raise HTTPException(
+            status_code=400,
+            detail="Closed or pro bono matters cannot start billing schedules",
+        )
+    if body.end_date and body.end_date < body.first_invoice_date:
+        raise HTTPException(
+            status_code=400, detail="End date precedes first invoice date"
+        )
+    if body.fixed_amount > 0 and not body.fixed_description.strip():
+        raise HTTPException(
+            status_code=400, detail="Describe the recurring service fee"
+        )
+    if not body.include_unbilled_work and body.fixed_amount <= 0:
+        raise HTTPException(status_code=400, detail="Choose a fee or unbilled work")
+    config = body.model_dump(mode="json", exclude={"matter_id", "first_invoice_date"})
+    config["anchor_day"] = body.first_invoice_date.day
+    schedule = BillingSchedule(
+        tenant_id=user.tenant_id,
+        matter_id=matter.id,
+        created_by=user.id,
+        next_date=body.first_invoice_date,
+        config=config,
+        paused=False,
+    )
+    db.add(schedule)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="This matter already has a schedule"
+        )
+    await db.refresh(schedule)
+    return _schedule_response(schedule)
+
+
+@router.patch("/schedules/{schedule_id}")
+async def pause_billing_schedule(
+    schedule_id: str,
+    body: BillingSchedulePause,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _require_billing_manager(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    schedule = await db.scalar(
+        select(BillingSchedule)
+        .where(
+            BillingSchedule.id == _parse_uuid(schedule_id, "schedule"),
+            BillingSchedule.tenant_id == user.tenant_id,
+        )
+        .with_for_update()
+    )
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    schedule.paused = body.paused
+    await db.commit()
+    await db.refresh(schedule)
+    return _schedule_response(schedule)
+
+
+def _fee_response(fee):
+    return {
+        "id": str(fee.id),
+        "matter_id": str(fee.matter_id),
+        "description": fee.description,
+        "amount": str(fee.amount),
+        "service_date": fee.service_date,
+        "status": fee.status,
+        "invoice_id": str(fee.invoice_id) if fee.invoice_id else None,
+    }
+
+
+@router.get("/fees")
+async def list_billing_fees(
+    matter_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    user = await require_finance_admin(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    matter = await _get_matter_or_404(db, matter_id, user.tenant_id)
+    fees = (
+        (
+            await db.execute(
+                select(BillingFee)
+                .where(
+                    BillingFee.tenant_id == user.tenant_id,
+                    BillingFee.matter_id == matter.id,
+                )
+                .order_by(BillingFee.service_date, BillingFee.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"items": [_fee_response(fee) for fee in fees]}
+
+
+@router.post("/fees", status_code=201)
+async def create_billing_fee(
+    body: BillingFeeCreate, request: Request, db: AsyncSession = Depends(get_db)
+):
+    user = await _require_billing_manager(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    matter = await _get_matter_or_404(db, body.matter_id, user.tenant_id)
+    fee = BillingFee(
+        tenant_id=user.tenant_id,
+        matter_id=matter.id,
+        description=body.description,
+        amount=body.amount,
+        service_date=body.service_date,
+        status="ready" if body.ready else "pending",
+        created_by=user.id,
+    )
+    db.add(fee)
+    await db.commit()
+    await db.refresh(fee)
+    return _fee_response(fee)
+
+
+@router.patch("/fees/{fee_id}")
+async def set_billing_fee_state(
+    fee_id: str,
+    body: BillingFeeState,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _require_billing_manager(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    fee = (
+        await db.execute(
+            select(BillingFee)
+            .where(
+                BillingFee.id == _parse_uuid(fee_id, "fee"),
+                BillingFee.tenant_id == user.tenant_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if not fee:
+        raise HTTPException(status_code=404, detail="Fee not found")
+    if fee.invoice_id or fee.status == "cancelled":
+        raise HTTPException(
+            status_code=409, detail="Billed or cancelled fees cannot be reopened"
+        )
+    fee.status = body.status
+    await db.commit()
+    await db.refresh(fee)
+    return _fee_response(fee)
+
+
+async def _ready_fees(db, matter, tenant_id, date_from=None, date_to=None, lock=False):
+    stmt = (
+        select(BillingFee)
+        .where(
+            BillingFee.tenant_id == tenant_id,
+            BillingFee.matter_id == matter.id,
+            BillingFee.invoice_id.is_(None),
+            BillingFee.status == "ready",
+        )
+        .order_by(BillingFee.service_date, BillingFee.id)
+    )
+    if date_from:
+        stmt = stmt.where(BillingFee.service_date >= date_from)
+    if date_to:
+        stmt = stmt.where(BillingFee.service_date <= date_to)
+    if lock:
+        stmt = stmt.with_for_update()
+    return (await db.execute(stmt)).scalars().all()
+
+
 @router.get("/invoices/preview")
 async def preview_invoice_sources(
     matter_id: str = Query(...),
@@ -314,6 +644,7 @@ async def preview_invoice_sources(
         db, matter_id, user.tenant_id, date_from, date_to
     )
     defaults = await _matter_billing_defaults(db, matter, user.tenant_id)
+    fees = await _ready_fees(db, matter, user.tenant_id, date_from, date_to)
     time_amount = sum((entry.amount for entry in times), Decimal("0"))
     expense_amount = sum(
         (_expense_invoice_amount(expense) for expense in expenses), Decimal("0")
@@ -321,6 +652,7 @@ async def preview_invoice_sources(
     return {
         "matter_id": str(matter.id),
         "matter_name": matter.matter_name,
+        "fees": [_fee_response(fee) for fee in fees],
         "date_from": date_from,
         "date_to": date_to,
         "time_entries": [
@@ -1026,6 +1358,34 @@ async def generate_invoice(
 ) -> InvoiceResponse:
     """Generate an invoice from unbilled time entries and expenses for a matter. Admin only."""
     user = await _require_billing_manager(request, db)
+    try:
+        return await _generate_invoice(body, user, db)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Another invoice claimed this work or number. Refresh before retrying.",
+        )
+
+
+async def _generate_invoice(body: GenerateInvoiceRequest, user, db: AsyncSession):
+    """Single generation path for manual and batch drafts; never sends or syncs."""
+    await set_tenant_context(db, str(user.tenant_id))
+    request_hash = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+    if body.generation_key:
+        previous = await db.scalar(
+            select(Invoice).where(
+                Invoice.tenant_id == user.tenant_id,
+                Invoice.generation_key == str(body.generation_key),
+            )
+        )
+        if previous:
+            if (previous.billing_details or {}).get("request_hash") != request_hash:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This request key was used for a different invoice",
+                )
+            return await _load_invoice_response(db, previous.id, user.tenant_id)
 
     if body.date_from and body.date_to and body.date_from > body.date_to:
         raise HTTPException(
@@ -1047,10 +1407,20 @@ async def generate_invoice(
         available_expenses, body.expense_ids, "expense"
     )
 
-    if not time_entries and not expenses:
+    available_fees = await _ready_fees(
+        db, matter, user.tenant_id, body.date_from, body.date_to, lock=True
+    )
+    fees = _select_requested_sources(available_fees, body.fee_ids, "fee")
+    if not time_entries and not expenses and not body.manual_charges and not fees:
         raise HTTPException(
             status_code=400,
             detail="No unbilled time entries or expenses found for this matter",
+        )
+
+    issue_date = body.issue_date or date.today()
+    if body.due_date and body.due_date < issue_date:
+        raise HTTPException(
+            status_code=400, detail="Due date must not precede invoice date"
         )
 
     # Build line items
@@ -1089,6 +1459,38 @@ async def generate_invoice(
         subtotal += client_amount
         sort_order += 1
 
+    for charge in body.manual_charges:
+        amount = (charge.quantity * charge.unit_price).quantize(Decimal("0.01"))
+        line_items.append(
+            {
+                "source_type": "flat_fee",
+                "source_id": None,
+                "description": charge.description,
+                "quantity": charge.quantity,
+                "unit_price": charge.unit_price,
+                "amount": amount,
+                "sort_order": sort_order,
+            }
+        )
+        subtotal += amount
+        sort_order += 1
+    for fee in fees:
+        line_items.append(
+            {
+                "source_type": "flat_fee",
+                "source_id": str(fee.id),
+                "description": fee.description,
+                "quantity": Decimal("1"),
+                "unit_price": fee.amount,
+                "amount": fee.amount,
+                "sort_order": sort_order,
+            }
+        )
+        subtotal += fee.amount
+        sort_order += 1
+    if subtotal > Decimal("99999999.99"):
+        raise HTTPException(status_code=400, detail="Invoice exceeds supported amount")
+
     defaults = await _matter_billing_defaults(db, matter, user.tenant_id)
 
     # Calculate tax
@@ -1109,10 +1511,34 @@ async def generate_invoice(
         if body.due_date_days is not None
         else defaults["default_due_date_days"]
     )
-    due_date = issue_date + timedelta(days=due_date_days)
-    invoice_number = await _next_invoice_number(db, user.tenant_id)
+    due_date = body.due_date or issue_date + timedelta(days=due_date_days)
+    invoice_number = await _next_invoice_number(db, user.tenant_id, issue_date.year)
 
-    billed_dates = [e.date for e in time_entries] + [x.date for x in expenses]
+    billed_dates = (
+        [e.date for e in time_entries]
+        + [x.date for x in expenses]
+        + [f.service_date for f in fees]
+    )
+    billing_details = {
+        "request_hash": request_hash,
+        "tax_rate": str(tax_rate),
+        "work_from": body.date_from.isoformat() if body.date_from else None,
+        "work_through": body.date_to.isoformat() if body.date_to else None,
+        "matter_name": matter.matter_name,
+    }
+    if matter.client_contact_id:
+        client = await db.scalar(
+            select(Contact).where(
+                Contact.id == matter.client_contact_id,
+                Contact.tenant_id == user.tenant_id,
+            )
+        )
+        if client:
+            billing_details["bill_to"] = {
+                "name": client.display_name,
+                "address": client.address or {},
+                "email": client.email,
+            }
 
     invoice = Invoice(
         tenant_id=user.tenant_id,
@@ -1129,16 +1555,22 @@ async def generate_invoice(
         billing_period_start=min(billed_dates) if billed_dates else None,
         billing_period_end=max(billed_dates) if billed_dates else None,
         created_by=user.id,
+        billing_details=billing_details,
+        generation_key=str(body.generation_key) if body.generation_key else None,
     )
     db.add(invoice)
     await db.flush()
+
+    for fee in fees:
+        fee.invoice_id = invoice.id
+        fee.status = "billed"
 
     # Create line items and link sources
     for li_data in line_items:
         li = InvoiceLineItem(
             invoice_id=invoice.id,
             source_type=li_data["source_type"],
-            source_id=uuid.UUID(li_data["source_id"]),
+            source_id=uuid.UUID(li_data["source_id"]) if li_data["source_id"] else None,
             description=li_data["description"],
             quantity=li_data["quantity"],
             unit_price=li_data["unit_price"],
@@ -1221,6 +1653,7 @@ async def _load_invoice_response(
         tenant_id=str(invoice.tenant_id),
         matter_id=str(invoice.matter_id),
         invoice_number=invoice.invoice_number,
+        billing_details=invoice.billing_details,
         status=invoice.status,
         issue_date=invoice.issue_date,
         due_date=invoice.due_date,
@@ -1432,14 +1865,73 @@ async def _recompute_invoice_totals(db: AsyncSession, invoice: Invoice) -> None:
     subtotal = Decimal(str(rows.scalar() or 0)).quantize(Decimal("0.01"))
 
     previous_subtotal = invoice.subtotal or Decimal("0")
-    if previous_subtotal > 0:
+    if invoice.billing_details and "tax_rate" in invoice.billing_details:
+        tax_rate = Decimal(invoice.billing_details["tax_rate"])
+    elif previous_subtotal > 0:
         tax_rate = (invoice.tax_amount or Decimal("0")) / previous_subtotal
     else:
         tax_rate = Decimal("0")
 
+    if subtotal != invoice.subtotal and (invoice.billing_details or {}).get(
+        "installments"
+    ):
+        details = dict(invoice.billing_details)
+        details.pop("installments", None)
+        invoice.billing_details = details
     invoice.subtotal = subtotal
     invoice.tax_amount = (subtotal * tax_rate).quantize(Decimal("0.01"))
     invoice.total = invoice.subtotal + invoice.tax_amount
+
+
+@router.put("/invoices/{invoice_id}/payment-plan")
+async def set_invoice_payment_plan(
+    invoice_id: str,
+    body: InvoicePaymentPlanRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _require_billing_manager(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    invoice = await db.scalar(
+        select(Invoice)
+        .where(
+            Invoice.id == _parse_uuid(invoice_id, "invoice"),
+            Invoice.tenant_id == user.tenant_id,
+        )
+        .with_for_update()
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if invoice.status not in {"draft", "sent"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Payment plans can only be set before payments are received",
+        )
+    paid = await db.scalar(
+        select(func.count(Payment.id)).where(Payment.invoice_id == invoice.id)
+    )
+    if paid:
+        raise HTTPException(
+            status_code=409, detail="An invoice with payments cannot be rescheduled"
+        )
+    rows = sorted(body.installments, key=lambda row: row.due_date)
+    if rows[0].due_date < invoice.issue_date:
+        raise HTTPException(
+            status_code=400, detail="Installments must not precede the invoice date"
+        )
+    if len({row.due_date for row in rows}) != len(rows):
+        raise HTTPException(status_code=400, detail="Use one installment per date")
+    if sum((row.amount for row in rows), Decimal("0")) != invoice.total:
+        raise HTTPException(
+            status_code=400, detail="Installments must equal the invoice total"
+        )
+    details = dict(invoice.billing_details or {})
+    details["installments"] = [row.model_dump(mode="json") for row in rows]
+    details["payment_plan_recorded_by"] = str(user.id)
+    details["payment_plan_recorded_at"] = datetime.now(timezone.utc).isoformat()
+    invoice.billing_details = details
+    await db.commit()
+    return await _load_invoice_response(db, invoice.id, user.tenant_id)
 
 
 @router.post("/invoices/{invoice_id}/line-items", status_code=201)
@@ -1574,6 +2066,19 @@ async def delete_invoice_line_item(
         if expense:
             expense.invoice_id = None
 
+    if line.source_id and line.source_type == "flat_fee":
+        fee = await db.scalar(
+            select(BillingFee)
+            .where(
+                BillingFee.id == line.source_id,
+                BillingFee.tenant_id == user.tenant_id,
+                BillingFee.invoice_id == invoice.id,
+            )
+            .with_for_update()
+        )
+        if fee:
+            fee.invoice_id = None
+            fee.status = "ready"
     await db.delete(line)
     await db.flush()
     await _recompute_invoice_totals(db, invoice)
@@ -1646,6 +2151,23 @@ async def update_invoice(
     # Voiding an invoice releases its time entries and expenses back to the
     # unbilled pool so they can be corrected and re-invoiced.
     if new_status == "void" and old_status != "void":
+        fees = (
+            (
+                await db.execute(
+                    select(BillingFee)
+                    .where(
+                        BillingFee.invoice_id == invoice.id,
+                        BillingFee.tenant_id == user.tenant_id,
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for fee in fees:
+            fee.invoice_id = None
+            fee.status = "ready"
         time_result = await db.execute(
             select(TimeEntry).where(TimeEntry.invoice_id == invoice.id)
         )

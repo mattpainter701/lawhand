@@ -2346,6 +2346,8 @@ async def _visible_invoices(
     )
     paid_by_invoice = {row[0]: Decimal(row[1]) for row in paid_rows.all()}
 
+    from app.services.billing_workflow import payment_plan_balances
+
     today = date.today()
     out: list[PortalInvoiceResponse] = []
     for inv in invoices:
@@ -2360,6 +2362,9 @@ async def _visible_invoices(
         overdue = balance > 0 and inv.due_date is not None and inv.due_date < today
         out.append(
             PortalInvoiceResponse(
+                installments=payment_plan_balances(
+                    (inv.billing_details or {}).get("installments", []), paid
+                ),
                 id=str(inv.id),
                 invoice_number=inv.invoice_number,
                 status=inv.status,
@@ -2433,6 +2438,13 @@ async def portal_create_invoice_payment(  # pragma: no cover - exercised by brow
         )
     )
     balance_due = Decimal(invoice.total) - paid
+    installments = (invoice.billing_details or {}).get("installments", [])
+    if installments:
+        from app.services.billing_workflow import installment_payment_amount
+
+        balance_due = min(
+            balance_due, installment_payment_amount(installments, paid, date.today())
+        )
     if balance_due <= 0:
         raise HTTPException(status_code=409, detail="Invoice has no balance due")
     import stripe

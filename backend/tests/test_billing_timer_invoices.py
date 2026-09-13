@@ -1017,3 +1017,144 @@ class TestTrustApplication:
         row = next(r for r in available.json() if r["retainer_id"] == str(retainer_id))
         assert Decimal(row["current_balance"]) == Decimal("400.00")
         assert row["needs_replenishment"] is True
+
+
+class TestFeeParity:
+    async def test_fixed_fee_without_dummy_time_and_explicit_dates(self, client, test_matter):
+        response = await client.post("/api/billing/invoices/generate", json={
+            "matter_id": str(test_matter.id), "issue_date": "2025-12-31",
+            "due_date": "2026-01-15", "date_to": "2025-12-30", "tax_rate": "0.05",
+            "manual_charges": [{"description": "Estate package", "quantity": "2", "unit_price": "1250.00"}],
+        })
+        assert response.status_code == 201, response.text
+        invoice = response.json()
+        assert invoice["invoice_number"].startswith("INV-2025-")
+        assert invoice["status"] == "draft"
+        assert Decimal(invoice["total"]) == Decimal("2625.00")
+        assert invoice["due_date"] == "2026-01-15"
+        assert invoice["billing_details"]["work_through"] == "2025-12-30"
+        assert invoice["line_items"][0]["source_type"] == "flat_fee"
+        assert invoice["line_items"][0]["source_id"] is None
+
+    async def test_stage_selection_replay_and_void(self, client, test_matter):
+        response = await client.post("/api/billing/fees", json={
+            "matter_id": str(test_matter.id), "description": "Filing stage",
+            "amount": "1800.00", "service_date": "2026-09-01",
+        })
+        assert response.status_code == 201, response.text
+        fee = response.json()
+        preview_url = "/api/billing/invoices/preview"
+        params = {"matter_id": str(test_matter.id)}
+        assert (await client.get(preview_url, params=params)).json()["fees"] == []
+        ready = await client.patch(f"/api/billing/fees/{fee['id']}", json={"status": "ready"})
+        assert ready.status_code == 200
+        assert len((await client.get(preview_url, params=params)).json()["fees"]) == 1
+        payload = {"matter_id": str(test_matter.id), "fee_ids": [fee["id"]]}
+        invoice_response = await client.post("/api/billing/invoices/generate", json=payload)
+        assert invoice_response.status_code == 201, invoice_response.text
+        invoice = invoice_response.json()
+        assert Decimal(invoice["total"]) == Decimal("1800")
+        assert (await client.post("/api/billing/invoices/generate", json=payload)).status_code == 409
+        assert (await client.patch(f"/api/billing/fees/{fee['id']}", json={"status": "ready"})).status_code == 409
+        assert (await client.patch(f"/api/billing/invoices/{invoice['id']}", json={"status": "void"})).status_code == 200
+        assert len((await client.get(preview_url, params=params)).json()["fees"]) == 1
+
+    async def test_invalid_manual_charge_and_due_date(self, client, test_matter):
+        base = {"matter_id": str(test_matter.id), "manual_charges": [{"description": "Fee", "unit_price": "25"}]}
+        response = await client.post("/api/billing/invoices/generate", json={**base, "issue_date": "2026-10-01", "due_date": "2026-09-30"})
+        assert response.status_code == 400
+        base["manual_charges"][0]["description"] = "   "
+        assert (await client.post("/api/billing/invoices/generate", json=base)).status_code == 422
+
+
+class TestScheduledBillingParity:
+    async def test_opt_in_calendar_drafts_and_pause(self, client, test_matter, db_session, test_tenant):
+        from app.models.billing import Invoice
+        from app.services.scheduled_billing import run_schedules
+        response = await client.post("/api/billing/schedules", json={
+            "matter_id": str(test_matter.id), "first_invoice_date": date.today().isoformat(),
+            "fixed_description": "Monthly advisory", "fixed_amount": "750.00",
+            "include_unbilled_work": False,
+        })
+        assert response.status_code == 201, response.text
+        schedule = response.json()
+        tenant_id = test_tenant.id
+        await run_schedules(db_session, tenant_id)
+        invoices = (await db_session.execute(select(Invoice).where(Invoice.tenant_id == tenant_id))).scalars().all()
+        assert len(invoices) == 1
+        assert invoices[0].status == "draft"
+        assert invoices[0].total == Decimal("750")
+        await run_schedules(db_session, tenant_id)
+        assert len((await db_session.execute(select(Invoice).where(Invoice.tenant_id == tenant_id))).scalars().all()) == 1
+        paused = await client.patch(f"/api/billing/schedules/{schedule['id']}", json={"paused": True})
+        assert paused.status_code == 200 and paused.json()["paused"]
+
+    async def test_generation_key_reuses_same_draft_and_rejects_different_content(self, client, test_matter):
+        payload = {"matter_id": str(test_matter.id), "generation_key": str(uuid.uuid4()),
+            "manual_charges": [{"description": "Fee", "unit_price": "500"}]}
+        first = await client.post("/api/billing/invoices/generate", json=payload)
+        assert first.status_code == 201, first.text
+        again = await client.post("/api/billing/invoices/generate", json=payload)
+        assert again.status_code == 201, again.text
+        assert first.json()["id"] == again.json()["id"]
+        payload["manual_charges"][0]["unit_price"] = "600"
+        assert (await client.post("/api/billing/invoices/generate", json=payload)).status_code == 409
+
+    async def test_fixed_fee_qbo_export_and_existing_invoice_update(self, client, test_matter, db_session, test_tenant, monkeypatch):
+        from app.services.qbo_sync import QBOSyncService
+        from app.models.qbo import QBOItemMapping
+        response = await client.post("/api/billing/invoices/generate", json={"matter_id": str(test_matter.id),
+            "issue_date": "2026-08-31", "due_date": "2026-09-15",
+            "manual_charges": [{"description": "Fixed service", "unit_price": "500"}]})
+        assert response.status_code == 201, response.text
+        invoice_id = response.json()["id"]
+        db_session.add(QBOItemMapping(tenant_id=test_tenant.id, source_type="flat_fee", qbo_item_id="22", qbo_item_name="Fixed legal service"))
+        await db_session.commit()
+        service = QBOSyncService(db_session, str(test_tenant.id), "synthetic-token")
+        from unittest.mock import AsyncMock
+        monkeypatch.setattr(service, "_get_realm_id", AsyncMock(return_value="test-realm"))
+        monkeypatch.setattr(service, "_ensure_customer", AsyncMock(return_value={"Id": "customer"}))
+        request = AsyncMock(return_value={"Invoice": {"Id": "qbo-invoice", "SyncToken": "1"}})
+        monkeypatch.setattr(service, "_request", request)
+        assert await service.sync_invoice_with_retry(invoice_id) is None
+        request.assert_not_called()
+        marked = await client.patch(f"/api/billing/invoices/{invoice_id}", json={"status": "sent"})
+        assert marked.status_code == 200
+        await service.sync_invoice(invoice_id)
+        payload = request.call_args.kwargs["json_data"]
+        assert payload["TxnDate"] == "2026-08-31"
+        assert payload["DueDate"] == "2026-09-15"
+        assert payload["Line"][0]["Amount"] == 500
+        assert payload["Line"][0]["SalesItemLineDetail"]["ItemRef"]["value"] == "22"
+        await service.sync_invoice(invoice_id)
+        assert request.call_args.kwargs["json_data"]["Id"] == "qbo-invoice"
+        assert request.call_args.kwargs["json_data"]["SyncToken"] == "1"
+
+
+class TestBillingCollectionsParity:
+    async def test_payment_plan_matches_total_and_is_cleared_by_draft_adjustment(self, client, test_matter):
+        created = await client.post("/api/billing/invoices/generate", json={"matter_id": str(test_matter.id),
+            "issue_date": "2026-09-01", "manual_charges": [{"description": "Work", "unit_price": "600"}]})
+        invoice = created.json()
+        url = f"/api/billing/invoices/{invoice['id']}/payment-plan"
+        rows = [{"due_date": "2026-09-15", "amount": "300"}, {"due_date": "2026-10-15", "amount": "300"}]
+        assert (await client.put(url, json={"installments": rows[:1]})).status_code == 400
+        plan = await client.put(url, json={"installments": rows})
+        assert plan.status_code == 200, plan.text
+        assert len(plan.json()["billing_details"]["installments"]) == 2
+        changed = await client.post(f"/api/billing/invoices/{invoice['id']}/line-items", json={"source_type": "flat_fee", "description": "Extra", "amount": "50"})
+        assert changed.status_code == 201, changed.text
+        assert "installments" not in changed.json()["billing_details"]
+
+    async def test_ready_to_bill_finds_closed_matters_and_ready_fees(self, client, test_matter, db_session):
+        matter_id = str(test_matter.id)
+        test_matter.is_closed = True
+        await db_session.commit()
+        fee = await client.post("/api/billing/fees", json={"matter_id": matter_id, "description": "Final stage", "amount": "450", "service_date": "2026-09-01", "ready": True})
+        assert fee.status_code == 201
+        ready = await client.get("/api/billing/ready-to-bill", params={"date_to": "2026-09-30", "q": "Smith"})
+        assert ready.status_code == 200, ready.text
+        assert ready.json()["total"] == 1
+        assert ready.json()["items"][0]["count"] == 1
+        assert ready.json()["items"][0]["closed"] is True
+        assert Decimal(ready.json()["total_amount"]) == Decimal("450")

@@ -290,6 +290,7 @@ class PortalDocumentResponse(BaseModel):
 
 
 class PortalInvoiceResponse(BaseModel):
+    installments: list[dict] = Field(default_factory=list)
     id: str
     invoice_number: str
     status: str

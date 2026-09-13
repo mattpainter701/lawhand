@@ -71,3 +71,44 @@ def next_invoice_number(existing_numbers: list[str], year: int) -> str:
         if suffix.isdigit():
             max_seq = max(max_seq, int(suffix))
     return f"{prefix}{max_seq + 1:04d}"
+
+
+def payment_plan_balances(installments: list[dict], paid: Decimal) -> list[dict]:
+    """Allocate received money oldest-first without creating additional charges."""
+    remaining_paid = max(Decimal(str(paid)), Decimal("0"))
+    rows = []
+    for row in installments:
+        amount = Decimal(str(row["amount"]))
+        applied = min(remaining_paid, amount)
+        rows.append(
+            {
+                "due_date": row["due_date"],
+                "amount": str(amount),
+                "balance_due": str(amount - applied),
+            }
+        )
+        remaining_paid -= applied
+    return rows
+
+
+def installment_payment_amount(
+    installments: list[dict], paid: Decimal, today: date
+) -> Decimal:
+    """Past/current installments together, otherwise allow the next installment early."""
+    rows = payment_plan_balances(installments, paid)
+    due = sum(
+        (
+            Decimal(row["balance_due"])
+            for row in rows
+            if date.fromisoformat(row["due_date"]) <= today
+        ),
+        Decimal("0"),
+    )
+    return due or next(
+        (
+            Decimal(row["balance_due"])
+            for row in rows
+            if Decimal(row["balance_due"]) > 0
+        ),
+        Decimal("0"),
+    )

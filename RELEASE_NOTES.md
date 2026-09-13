@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.4 — Flexible matter billing and reviewed recurring drafts
+
+Released September 13, 2026.
+
+Prepare invoices from selected work, one-time fees or agreed stages, and opt into recurring drafts while keeping control of sending and payment.
+
+- **Bill the work and fees you choose.** Choose invoice and work cutoff dates, add fixed fees without dummy time, and find older unbilled work in Ready to bill.
+- **Track stages and prepare recurring drafts.** Mark agreed stage fees ready and enable monthly or quarterly drafts for selected matters. Existing matters stay on their current billing workflow.
+- **Offer dated installments.** Record installments against one invoice and let clients see and pay them in the portal. Fixed-fee invoices use existing QuickBooks mappings after review.
+
 ## 2026.09.13.3 — Password reset emails that actually arrive
 
 Released September 13, 2026.

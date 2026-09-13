@@ -307,7 +307,7 @@ class QBOSyncService:
         # outstanding A/R in both systems on one click, so drafts are skipped
         # here exactly as the bulk sync already skips them. Returning rather
         # than raising keeps the retry wrapper from treating it as an outage.
-        if invoice.status == "draft":
+        if invoice.status in {"draft", "void", "written_off"}:
             logger.info("QBO invoice sync skipped for %s: still a draft", invoice_id)
             return None
 
@@ -645,6 +645,9 @@ class QBOSyncService:
         )
         invoice = inv_result.scalar_one_or_none()
         if not invoice:
+            return None
+
+        if invoice.status in {"draft", "void", "written_off"}:
             return None
 
         invoice.qbo_sync_status = "syncing"

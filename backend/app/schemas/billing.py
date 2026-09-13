@@ -360,6 +360,7 @@ class InvoiceUpdate(BaseModel):
 
 
 class InvoiceResponse(BaseModel):
+    billing_details: dict | None = None
     id: str
     tenant_id: str
     matter_id: str
@@ -409,6 +410,23 @@ class InvoiceListResponse(BaseModel):
     total_amount: Decimal
 
 
+class InvoiceManualCharge(BaseModel):
+    """A fixed charge; amounts are calculated by the server, never supplied twice."""
+
+    description: str = Field(min_length=1, max_length=4000)
+    quantity: Decimal = Field(
+        default=Decimal("1"), gt=0, max_digits=8, decimal_places=2
+    )
+    unit_price: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+
+    @field_validator("description")
+    @classmethod
+    def nonblank_description(cls, value):
+        if not value.strip():
+            raise ValueError("Description is required")
+        return value.strip()
+
+
 class GenerateInvoiceRequest(BaseModel):
     """Request to generate an invoice from unbilled time entries and expenses."""
 
@@ -420,6 +438,12 @@ class GenerateInvoiceRequest(BaseModel):
     tax_rate: Optional[Decimal] = Field(default=None, ge=0, le=1)
     date_from: Optional[date] = None
     date_to: Optional[date] = None
+    due_date: Optional[date] = None
+    generation_key: Optional[_uuid.UUID] = None
+    fee_ids: list[str] = Field(default_factory=list, max_length=100)
+    manual_charges: list[InvoiceManualCharge] = Field(
+        default_factory=list, max_length=100
+    )
     # ``None`` means "use every matching source" for backwards compatibility;
     # an explicit empty list means "include none of this source type".
     time_entry_ids: Optional[list[str]] = None
@@ -527,3 +551,66 @@ class BillingSettingsUpdate(BaseModel):
 
 # InvoiceSendResponse embeds InvoiceResponse, defined further down this module.
 InvoiceSendResponse.model_rebuild()
+
+
+class BillingFeeCreate(BaseModel):
+    matter_id: str
+    description: str = Field(min_length=1, max_length=4000)
+    amount: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    service_date: date
+    ready: bool = False
+
+    @field_validator("description")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError("Description is required")
+        return value.strip()
+
+
+class BillingFeeState(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def valid_state(cls, value):
+        if value not in {"pending", "ready", "cancelled"}:
+            raise ValueError("Choose pending, ready or cancelled")
+        return value
+
+
+class BillingScheduleCreate(BaseModel):
+    matter_id: str
+    first_invoice_date: date
+    timezone: str = "UTC"
+    interval_months: int = Field(default=1, ge=1, le=3)
+    fixed_description: str = Field(default="", max_length=4000)
+    fixed_amount: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=10, decimal_places=2
+    )
+    include_unbilled_work: bool = True
+    end_date: Optional[date] = None
+
+    @field_validator("timezone")
+    @classmethod
+    def valid_timezone(cls, value):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError("Unknown timezone")
+        return value
+
+
+class BillingSchedulePause(BaseModel):
+    paused: bool
+
+
+class InvoiceInstallment(BaseModel):
+    due_date: date
+    amount: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+
+
+class InvoicePaymentPlanRequest(BaseModel):
+    installments: list[InvoiceInstallment] = Field(min_length=1, max_length=60)

@@ -216,12 +216,46 @@ def generate_invoice_pdf(invoice_response, branding: dict | None = None) -> byte
         )
     )
     story.append(info_table)
+    bill_to = (getattr(inv, "billing_details", None) or {}).get("bill_to")
+    if bill_to:
+        address = bill_to.get("address") or {}
+        lines = [bill_to.get("name")]
+        lines.extend(
+            address.get(key)
+            for key in (
+                "street",
+                "line1",
+                "street2",
+                "line2",
+                "city",
+                "state",
+                "zip",
+                "postal_code",
+                "country",
+            )
+        )
+        body = "<br/>".join(escape(str(line)) for line in dict.fromkeys(lines) if line)
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("<b>Bill to</b><br/>" + body, style_body))
+
     story.append(Spacer(1, 16))
 
     story.append(
         HRFlowable(width="100%", thickness=0.5, color=colors.Color(0.7, 0.7, 0.7))
     )
     story.append(Spacer(1, 12))
+
+    installments = (getattr(inv, "billing_details", None) or {}).get("installments", [])
+    if installments:
+        story.append(Paragraph("<b>Payment schedule</b>", style_body))
+        for installment in installments:
+            story.append(
+                Paragraph(
+                    f"{escape(installment['due_date'])}: {_format_currency(Decimal(installment['amount']))}",
+                    style_body,
+                )
+            )
+        story.append(Spacer(1, 12))
 
     # ── Line Items Table ──────────────────────────────────────────────────
 

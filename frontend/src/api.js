@@ -2969,3 +2969,15 @@ export const getTemplateAIProfile = (key) =>
 
 export const saveTemplateAIProfile = (key, data) =>
   platformApi(key).put('/platform/llm/template-profile', data).then((r) => r.data)
+
+// Fixed and stage fees share the existing invoice and QuickBooks workflow.
+export const getBillingFees = matterId => api.get('/billing/fees', { params: { matter_id: matterId } }).then(r => r.data)
+export const createBillingFee = data => api.post('/billing/fees', data).then(r => r.data)
+export const updateBillingFee = (id, status) => api.patch(`/billing/fees/${id}`, { status }).then(r => r.data)
+
+export const getReadyToBill = params => api.get('/billing/ready-to-bill', { params }).then(r => r.data)
+export const getBillingSchedules = matterId => api.get('/billing/schedules', { params: { matter_id: matterId } }).then(r => r.data)
+export const createBillingSchedule = data => api.post('/billing/schedules', data).then(r => r.data)
+export const pauseBillingSchedule = (id, paused) => api.patch(`/billing/schedules/${id}`, { paused }).then(r => r.data)
+
+export const setInvoicePaymentPlan = (id, installments) => api.put(`/billing/invoices/${id}/payment-plan`, { installments }).then(r => r.data)
