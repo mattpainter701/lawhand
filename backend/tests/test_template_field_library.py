@@ -53,7 +53,8 @@ async def test_catalog_counts_only_available_definitions(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "binding", ["manual", "client.unknown", "custom.matter." + str(uuid.uuid4())]
+    "binding",
+    ["manual", "client.unknown", "custom.matter.9f8a1c2e-3b4d-4e5f-8a6b-7c8d9e0f1a2b"],
 )
 async def test_usage_rejects_unavailable_and_other_firm_definitions(
     monkeypatch, binding

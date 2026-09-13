@@ -15,6 +15,46 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+
+def _apply_xdist_worker_isolation() -> None:
+    """Give every pytest-xdist worker its own Postgres database and Redis DB.
+
+    The suite shares one migrated Postgres database, and the ``db_session``
+    fixture truncates every table before each test, so parallel workers must
+    not share a database. The CI job creates ``<database>_<worker>`` clones of
+    the migrated template and leaves Redis databases 10+ free; rewrite the
+    connection URLs here, before the app imports and caches its settings.
+
+    The xdist controller process has no ``PYTEST_XDIST_WORKER``, so this is a
+    no-op for a normal (non-xdist) run.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker:
+        return
+
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        index = int(worker.removeprefix("gw"))
+    except ValueError:
+        index = 0
+
+    for name in ("DATABASE_URL", "TEST_DATABASE_URL", "RLS_TEST_DATABASE_URL"):
+        value = os.environ.get(name)
+        if value:
+            parts = urlsplit(value)
+            os.environ[name] = urlunsplit(
+                parts._replace(path=f"{parts.path}_{worker}")
+            )
+    for name in ("REDIS_URL", "TEST_REDIS_URL"):
+        value = os.environ.get(name)
+        if value:
+            parts = urlsplit(value)
+            os.environ[name] = urlunsplit(parts._replace(path=f"/{10 + index}"))
+
+
+_apply_xdist_worker_isolation()
+
 from app.config import get_settings
 from app.database import Base, get_db
 from app.main import app
