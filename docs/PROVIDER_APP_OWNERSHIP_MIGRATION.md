@@ -562,8 +562,17 @@ https://getlawhand.com/api/auth/microsoft/callback
 https://getlawhand.com/api/integrations/microsoft/callback
 ```
 
-(Constructed at `backend/app/routers/auth.py:1003` and
-`backend/app/routers/integrations.py:416`.)
+Both are `{BACKEND_URL}` plus a fixed path, built at
+`backend/app/routers/auth.py:1003` and
+`backend/app/routers/integrations.py:416`. Register a **second app** for dev1
+rather than adding its URIs here, mirroring the `lawhand-prod` / `lawhand-dev`
+split on the Google side, so a dev misconfiguration cannot reach production
+credentials:
+
+```text
+https://dev1.getlawhand.com/api/auth/microsoft/callback
+https://dev1.getlawhand.com/api/integrations/microsoft/callback
+```
 
 Then:
 
