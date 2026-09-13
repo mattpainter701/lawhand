@@ -782,7 +782,6 @@ function OverviewTab({ matter, onNavigate }) {
               <li key={i} className="py-2 first:pt-0 last:pb-0">
                 <p className="text-sm text-brand-ink">
                   {a.name}
-                  {a.role ? <span className="text-brand-ink-2 capitalize"> — {a.role}</span> : null}
                 </p>
                 {a.email && (
                   <a href={`mailto:${a.email}`} className="text-xs text-brand-accent hover:underline">

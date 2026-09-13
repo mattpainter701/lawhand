@@ -2,6 +2,32 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.6",
+      "version": "2026.09.13.6",
+      "title": "Reliable filing after clients sign",
+      "published_at": "2026-09-13",
+      "summary": "Signed forms can finish filing without waiting on their own cloud connection lock, and background retries keep each matter's tenant context.",
+      "highlights": [
+        {
+          "title": "Recover signed forms without signing again",
+          "description": "Saved answers and signatures are reused when filing retries. Once filed, the signed PDF and evidence certificate are available in the client's Documents tab."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.13.5",
+      "version": "2026.09.13.5",
+      "title": "Clearer legal team contact details",
+      "published_at": "2026-09-13",
+      "summary": "The client portal shows your legal team's names and email addresses without internal assignment labels.",
+      "highlights": [
+        {
+          "title": "Simple team contact details",
+          "description": "Find your legal team's names and email links in the matter overview, without internal role codes beside their names."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.4",
       "version": "2026.09.13.4",
       "title": "Flexible matter billing and Helcim subscriptions",
