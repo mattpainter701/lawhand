@@ -1,7 +1,10 @@
 # =============================================================================
-# CI Pipeline — Clarity Legal
+# CI Pipeline — LawHand
 # =============================================================================
 # Runs on every pull request targeting main, and on every push to main.
+# The post-merge `push` run is required: scripts/release_evidence.py gates the
+# IONOS and production releases on a successful exact-SHA `push` run here, so it
+# cannot be dropped while that gate exists.
 #
 # Required GitHub repository secrets: none (CI uses fake/test values).
 # Optional secrets for extended checks:
