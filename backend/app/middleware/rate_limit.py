@@ -4,7 +4,7 @@ Nginx handles IP-level limiting; this layer adds per-tenant daily caps
 and per-user hourly caps so no single user or firm can exhaust the system.
 
 Limits:
-  user:    200 requests / hour
+  user:    600 requests / UTC clock hour
   tenant:  flat tier  → 1 000 LLM calls / day
            payg tier  → 10 000 LLM calls / day  (they pay per call anyway)
 
@@ -312,12 +312,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     if count == 1:
                         await self._redis.expire(user_key, 3600)
                     if count > USER_HOURLY_LIMIT:
+                        now = datetime.now(timezone.utc)
+                        retry_after = 3600 - (now.minute * 60 + now.second)
                         return JSONResponse(
                             status_code=429,
                             content={
-                                "detail": "Hourly request limit exceeded. Please retry in a few minutes."
+                                "detail": (
+                                    "Hourly request limit exceeded. "
+                                    f"Please retry in {(retry_after + 59) // 60} minute(s)."
+                                )
                             },
-                            headers={"Retry-After": "60"},
+                            headers={"Retry-After": str(retry_after)},
                         )
             except aioredis.RedisError:
                 pass  # Redis unavailable — fail open

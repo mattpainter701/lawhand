@@ -147,8 +147,8 @@ export function localDateTimeToIso(dateValue, timeValue) {
   return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString()
 }
 
-function formatEventTime(raw) {
-  if (!raw) return null
+export function formatEventTime(raw) {
+  if (!raw || /^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
   const d = new Date(raw)
   if (Number.isNaN(d.getTime())) return null
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })

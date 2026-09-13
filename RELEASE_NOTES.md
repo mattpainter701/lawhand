@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.10 — Clearer matter checks and follow-ups
+
+Released September 13, 2026.
+
+Find contacts by full name, see accurate deadline labels, and understand when an action needs a retry.
+
+- **Find full names and keep follow-ups current.** Conflict searches match a contact's combined first and last name. Once required paperwork is complete, its document-chasing task gives way to the scheduling follow-up.
+- **See clearer dates and errors.** Deadlines keep their calendar day. Save errors explain the failure and retry wait. A failed document load no longer looks like an empty folder.
+
 ## 2026.09.13.9 — Keep AI connections working through updates
 
 Released September 13, 2026.

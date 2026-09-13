@@ -24,7 +24,7 @@ vi.mock('../api', async (importOriginal) => {
 vi.mock('../App', () => ({ useAuth: () => ({ user: { hidden_matter_panels: [] } }) }))
 vi.mock('../components/toast/useToast', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
 
-import MatterDetailPage, { MatterNumberBadge } from './MatterDetailPage'
+import MatterDetailPage, { DueDateLabel, MatterNumberBadge } from './MatterDetailPage'
 
 // Surfaces the current path so a redirect is observable without reaching into
 // router internals.
@@ -85,6 +85,20 @@ describe('matter number in the URL', () => {
 })
 
 describe('matter number badge', () => {
+  it('keeps date-only task deadlines on the local calendar day', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 8, 13, 12))
+    try {
+      const view = render(<DueDateLabel dueDate="2026-09-14" />)
+      expect(screen.getByText('Due in 1d')).toBeInTheDocument()
+      view.rerender(<DueDateLabel dueDate="2026-09-13" />)
+      expect(screen.getByText('Due today')).toBeInTheDocument()
+      view.rerender(<DueDateLabel dueDate="2026-09-12" />)
+      expect(screen.getByText('1d overdue')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it('copies the number to the clipboard and confirms it', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     // fireEvent rather than userEvent: userEvent.setup() installs its own

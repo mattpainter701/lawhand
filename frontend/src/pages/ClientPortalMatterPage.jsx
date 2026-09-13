@@ -1080,7 +1080,7 @@ function DocumentsTab({ matter, onSessionError, onChanged }) {
       </div>
       {loading ? (
         <Card><Spinner label="Loading documents…" /></Card>
-      ) : docs.length === 0 ? (
+      ) : docs.length === 0 && !err ? (
         <Card>
           <p className="text-sm text-brand-ink-2">
             No shared documents yet. Anything your legal team shares with you will appear here.

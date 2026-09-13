@@ -222,11 +222,11 @@ function TaskTypeBadge({ type }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider font-sans border ${cls}`}>{type?.replace(/_/g, ' ') || 'task'}</span>
 }
 
-function DueDateLabel({ dueDate }) {
+export function DueDateLabel({ dueDate }) {
   if (!dueDate) return null
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const due = new Date(dueDate)
+  const due = parseISO(dueDate)
   due.setHours(0, 0, 0, 0)
   const diff = differenceInDays(due, today)
   if (diff < 0) return <span className="text-brand-rose text-[12px] font-semibold font-sans">{Math.abs(diff)}d overdue</span>
@@ -581,8 +581,8 @@ function MatterWorkspace() {
       setEditData(updated)
       setEditing(false)
       getMatterBudgetV2(id).then(setBudget).catch(() => {})
-    } catch {
-      setSaveError('Failed to save changes.')
+    } catch (error) {
+      setSaveError(error?.message || 'Failed to save changes.')
     } finally {
       setSaving(false)
     }
@@ -655,8 +655,8 @@ function MatterWorkspace() {
       setEditData(updated)
       setEditingPeople(false)
       getMatterBudgetV2(id).then(setBudget).catch(() => {})
-    } catch {
-      setPeopleError('Failed to save changes.')
+    } catch (error) {
+      setPeopleError(error?.message || 'Failed to save changes.')
     } finally {
       setSavingPeople(false)
     }

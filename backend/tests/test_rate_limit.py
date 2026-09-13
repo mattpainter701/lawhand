@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -24,6 +25,36 @@ class _FakeRedis:
 
     async def expire(self, key: str, seconds: int) -> None:
         self.expirations[key] = seconds
+
+
+@pytest.mark.asyncio
+async def test_user_hourly_retry_matches_next_utc_hour(monkeypatch):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 13, 18, 10, 30, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(rate_limit, "datetime", Clock)
+    monkeypatch.setattr(rate_limit, "USER_HOURLY_LIMIT", 1)
+    monkeypatch.setattr(
+        rate_limit, "_extract_jwt_claims", lambda request: ("u", "t", "payg")
+    )
+    app = FastAPI()
+    app.state.redis = _FakeRedis()
+    app.add_middleware(RateLimitMiddleware)
+
+    @app.get("/api/matters/test")
+    async def matter():
+        return {"ok": True}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        assert (await client.get("/api/matters/test")).status_code == 200
+        limited = await client.get("/api/matters/test")
+    assert limited.status_code == 429
+    assert limited.headers["Retry-After"] == "2970"
+    assert "50 minute(s)" in limited.json()["detail"]
 
 
 def _platform_test_app(redis_client) -> FastAPI:

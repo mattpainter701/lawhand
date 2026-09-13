@@ -1,3 +1,12 @@
+## 2026.09.13.10 — Matter lifecycle validation follow-ups
+
+- Match combined contact first/last names in tenant-scoped conflict searches; exercise the saved search without an email fallback.
+- Preserve API error messages and edited drafts when matter details or people fail to save. Calculate hourly Retry-After against the next UTC hour without changing request limits.
+- Keep date-only task labels on the local calendar day and omit invented clock times for date-only calendar events.
+- Avoid an empty-folder message when client document loading fails; retain a working retry action.
+- Retire no-agreement paperwork-chasing tasks when required documents complete, while preserving separate engagement follow-ups.
+- Record remaining lifecycle findings, source-document limitations, and unverified paths in docs/validation/matter-lifecycle-2026-09-13.md.
+
 ## 2026.09.13.9 — Preserve registered AI aliases and readable maintenance pages
 
 - Upgrade only static legacy AI aliases on read. Preserve exact revision and fallback registrations so production acceptance and configured routes do not request nonexistent renamed models.
