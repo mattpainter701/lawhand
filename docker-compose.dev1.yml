@@ -3,8 +3,19 @@
 # `legalapp_*` production/research volumes that remain on Skynet.
 name: law-hand-dev1
 
+# Container stdout/stderr is the only record of what the application logs
+# outside Postgres. Docker's default json-file driver never rotates, so on a
+# long-running host it grows until the disk is full — and a full disk takes the
+# database down with it. Cap every service identically: 100 MiB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     volumes:
       - dev1_postgres_data:/var/lib/postgresql/data
     deploy:
@@ -14,6 +25,7 @@ services:
           cpus: "1.0"
 
   redis:
+    logging: *default-logging
     volumes:
       - dev1_redis_data:/data
     deploy:
@@ -23,6 +35,7 @@ services:
           cpus: "0.20"
 
   litellm-postgres:
+    logging: *default-logging
     volumes:
       - dev1_litellm_postgres_data:/var/lib/postgresql/data
     deploy:
@@ -32,6 +45,7 @@ services:
           cpus: "0.30"
 
   litellm:
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -39,6 +53,7 @@ services:
           cpus: "0.50"
 
   backend:
+    logging: *default-logging
     environment:
       RUN_SCHEDULER: "false"
       PUBLIC_SIGNUP_ENABLED: "false"
@@ -61,18 +76,22 @@ services:
   # makes `docker compose up -d` omit this service even though it exists in the
   # hardened hypervisor base topology.
   scheduler:
+    logging: *default-logging
     profiles: ["production-writer-disabled-on-dev1"]
 
   frontend:
+    logging: *default-logging
     build:
       args:
         VITE_PUBLIC_SITE_URL: https://dev1.getlawhand.com
         VITE_PUBLIC_SIGNUP_ENABLED: "false"
 
   office-addin:
+    logging: *default-logging
     profiles: ["office-addin-disabled-on-dev1"]
 
   nginx:
+    logging: *default-logging
     depends_on: !override
       frontend:
         condition: service_healthy

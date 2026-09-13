@@ -2,10 +2,21 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # Removes dev ports, adds restart policies, tightens resources, no hot reload
 
+# Container stdout/stderr is the only record of what the application logs
+# outside Postgres. Docker's default json-file driver never rotates, so on a
+# long-running host it grows until the disk is full — and a full disk takes the
+# database down with it. Cap every service identically: 100 MiB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   # Init service: runs migrations once, exits when complete.
   # Backend depends on migrator health, ensuring migrations run before app starts.
   migrator:
+    logging: *default-logging
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -26,6 +37,7 @@ services:
           memory: 512M
 
   backend:
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       migrator:
@@ -106,6 +118,7 @@ services:
   # and is not placed behind nginx (it serves no user traffic). Job-level Postgres
   # advisory locks remain as a backstop against any accidental second runner.
   scheduler:
+    logging: *default-logging
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -190,6 +203,7 @@ services:
           cpus: '1.0'
 
   studio-render-worker:
+    logging: *default-logging
     restart: unless-stopped
     deploy:
       resources:
@@ -198,6 +212,7 @@ services:
           cpus: '1.0'
 
   litellm:
+    logging: *default-logging
     restart: unless-stopped
     environment:
       LITELLM_API_KEY: ${LITELLM_API_KEY:?Set LITELLM_API_KEY in .env}
@@ -211,6 +226,7 @@ services:
           cpus: '1.0'
 
   litellm-postgres:
+    logging: *default-logging
     restart: unless-stopped
     ports: []
     environment:
@@ -224,6 +240,7 @@ services:
           cpus: '1.0'
 
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       args:
@@ -244,6 +261,7 @@ services:
           memory: 512M
 
   postgres:
+    logging: *default-logging
     restart: unless-stopped
     ports: []    # no external exposure in prod
     # Defaults assume a tiny box: shared_buffers ships at 128MB regardless of the
@@ -273,6 +291,7 @@ services:
           cpus: '4.0'
 
   redis:
+    logging: *default-logging
     restart: unless-stopped
     ports: []    # no external exposure in prod
     # maxmemory stays below the container limit so Redis reports pressure
@@ -303,6 +322,7 @@ services:
           memory: 512M
 
   nginx:
+    logging: *default-logging
     restart: unless-stopped
     environment:
       - DOMAIN=${DOMAIN}

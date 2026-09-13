@@ -735,6 +735,20 @@ class LegalScheduler:
             replace_existing=True,
         )
 
+        from app.services.log_retention import purge_expired_logs
+
+        # error_logs and api_access_logs are append-only diagnostic tables with
+        # no natural bound — one row per failure and per request. Age them out
+        # overnight so the operator console keeps answering quickly and the
+        # volume stays predictable.
+        self.scheduler.add_job(
+            self._guarded("log-retention", purge_expired_logs),
+            CronTrigger(hour=3, minute=20),
+            id="log-retention",
+            name="Diagnostic Log Retention Sweep",
+            replace_existing=True,
+        )
+
         from app.services.background_ai_reconciliation import (
             reconcile_unknown_reservations,
         )

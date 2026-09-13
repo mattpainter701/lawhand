@@ -1,5 +1,16 @@
+# Container stdout/stderr is the only record of what the application logs
+# outside Postgres. Docker's default json-file driver never rotates, so on a
+# long-running host it grows until the disk is full — and a full disk takes the
+# database down with it. Cap every service identically: 100 MiB per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     image: pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
     ports: []
     environment:
@@ -18,6 +29,7 @@ services:
     restart: unless-stopped
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     ports: []
     volumes:
@@ -33,6 +45,7 @@ services:
     restart: unless-stopped
 
   litellm-postgres:
+    logging: *default-logging
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_USER: litellm
@@ -50,6 +63,7 @@ services:
   # The proxy is gated by both upstream Prisma migrations and an exact,
   # reviewed schema reconciliation. Unknown drift fails before the API starts.
   litellm-migrator:
+    logging: *default-logging
     image: legalapp-litellm:${APP_COMMIT:-dev}
     pull_policy: never
     depends_on:
@@ -62,6 +76,7 @@ services:
     restart: "no"
 
   litellm-schema-migrator:
+    logging: *default-logging
     image: legalapp-litellm:${APP_COMMIT:-dev}
     pull_policy: never
     depends_on:
@@ -75,6 +90,7 @@ services:
     restart: "no"
 
   litellm:
+    logging: *default-logging
     build:
       context: .
       dockerfile: litellm/Dockerfile
@@ -110,6 +126,7 @@ services:
       start_period: 480s
 
   migrator:
+    logging: *default-logging
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -127,6 +144,7 @@ services:
     restart: "no"
 
   backend:
+    logging: *default-logging
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -228,6 +246,7 @@ services:
       start_period: 30s
 
   studio-render-worker:
+    logging: *default-logging
     profiles: ["studio-render"]
     image: legalapp-backend:${APP_COMMIT:-dev}
     depends_on:
@@ -273,6 +292,7 @@ services:
   # this separate prevents API restarts or future worker scaling from firing
   # customer reminders more than once.
   scheduler:
+    logging: *default-logging
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -350,6 +370,7 @@ services:
       start_period: 30s
 
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       args:
@@ -375,6 +396,7 @@ services:
     restart: unless-stopped
 
   office-addin:
+    logging: *default-logging
     build:
       context: .
       dockerfile: office-addin/Dockerfile
@@ -389,6 +411,7 @@ services:
     restart: unless-stopped
 
   nginx:
+    logging: *default-logging
     build:
       context: ./nginx
       dockerfile: Dockerfile.local

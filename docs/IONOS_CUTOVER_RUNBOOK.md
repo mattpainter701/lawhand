@@ -105,6 +105,18 @@ Do not move DNS when any item below is true:
 10. Create the GitHub `ionos-production` environment restricted to `main`.
     Do not store the production `.env`, Tunnel credential JSON, Tailscale auth
     key, or provider secrets in repository variables.
+11. Provision platform operator access in the production `.env` before the
+    first deploy: `PLATFORM_TOKEN_SIGNING_KEY` and at least one unexpired
+    `PLATFORM_BOOTSTRAP_CREDENTIALS_JSON` entry, built with
+    `backend/scripts/hash_platform_bootstrap.py` (see
+    [credential_security_operations.md](credential_security_operations.md)).
+    Without them nobody can mint an operator token on the live host, so error
+    triage, tenant diagnostics and audit review are all unavailable exactly
+    when they are first needed. `scripts/prod_env_preflight.sh` refuses a
+    deploy that leaves either unset, and warns when an entry is within 14 days
+    of its mandatory expiry. Set `PLATFORM_INFRASTRUCTURE_TARGETS_JSON` in the
+    same pass unless the console's infrastructure page is deliberately unused —
+    empty makes it report "unconfigured" rather than fail.
 
 ## Candidate deployment
 

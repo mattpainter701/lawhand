@@ -1,3 +1,11 @@
+## 2026.09.13.11 — Bound the operator log tables, container logs, and cutover credentials
+
+- Add a nightly `log-retention` scheduler job (03:20 ET) that ages out `error_logs` after `ERROR_LOG_RETENTION_DAYS` (90) and `api_access_logs` after `API_ACCESS_LOG_RETENTION_DAYS` (30). Both tables previously grew unbounded — one row per 4xx/5xx and per tenant API request — and would eventually dominate the database and slow the operator console that reads them.
+- Delete inside one tenant RLS scope at a time, in bounded batches, re-entering the transaction-local tenant GUC after each commit; tenantless `error_logs` rows are swept in their own pass. A per-scope batch cap and a failed scope are both reported as an incomplete sweep rather than passing silently. A retention window of `0` retains that table indefinitely for a litigation hold.
+- Cap container logs on every Compose service (`json-file`, 20 MiB × 5) in the base, hypervisor, prod, and dev1 topologies. Docker's default driver never rotates, so on a long-running host the logs grow until the disk is full, which would take PostgreSQL down with them.
+- Fail the production preflight when `PLATFORM_TOKEN_SIGNING_KEY` or an unexpired `PLATFORM_BOOTSTRAP_CREDENTIALS_JSON` entry is missing, and warn 14 days before a bootstrap entry lapses; the validator carries a completion sentinel so a crash fails closed. Warn when `PLATFORM_INFRASTRUCTURE_TARGETS_JSON` is empty, since the console then reports "unconfigured" rather than failing. The fresh-host rehearsal now provisions both credentials.
+- Document the retention windows in the tenant troubleshooting runbook and the operator-credential step in the IONOS cutover runbook; stage all three settings in `.env.prod.example`.
+
 ## 2026.09.13.10 — Matter lifecycle validation follow-ups
 
 - Match combined contact first/last names in tenant-scoped conflict searches; exercise the saved search without an email fallback.

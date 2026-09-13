@@ -59,6 +59,13 @@ fernet_key() {
 new_token_key="$(fernet_key)"
 old_token_key="$(fernet_key)"
 
+# A fresh production host must come up able to authenticate a platform operator,
+# so the rehearsal provisions the same pair a real cutover does. The raw key is
+# discarded here: only its hash is ever written to the environment file.
+platform_signing_key="$(openssl rand -hex 32)"
+platform_bootstrap_hash="$(openssl rand -hex 32 | openssl dgst -sha256 -r | cut -d' ' -f1)"
+platform_bootstrap_expiry="$(date -u -d '+365 days' '+%Y-%m-%dT%H:%M:%SZ')"
+
 cat > "$APP_DIR/.env" <<ENV
 POSTGRES_PASSWORD=$owner_password
 CLARITY_APP_PASSWORD=$app_password
@@ -80,6 +87,8 @@ TOKEN_ENCRYPTION_KEYS=$new_token_key,$old_token_key
 DEV_MODE=false
 MCP_PRODUCT_ENABLED=false
 PLATFORM_LEGACY_BOOTSTRAP_ENABLED=false
+PLATFORM_TOKEN_SIGNING_KEY=$platform_signing_key
+PLATFORM_BOOTSTRAP_CREDENTIALS_JSON=[{"key_hash":"$platform_bootstrap_hash","operator_id":"rehearsal@rehearsal.invalid","scopes":["platform:read"],"expires_at":"$platform_bootstrap_expiry"}]
 DOMAIN=rehearsal.invalid
 BACKEND_URL=https://rehearsal.invalid
 FRONTEND_URL=https://rehearsal.invalid

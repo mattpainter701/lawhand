@@ -53,49 +53,49 @@
   "compose_images": [
     {
       "image": "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
-      "line": 3,
+      "line": 14,
       "pinned_by_digest": true,
       "source": "docker-compose.yml"
     },
     {
       "image": "redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
-      "line": 17,
+      "line": 29,
       "pinned_by_digest": true,
       "source": "docker-compose.yml"
     },
     {
       "image": "postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
-      "line": 27,
+      "line": 40,
       "pinned_by_digest": true,
       "source": "docker-compose.yml"
     },
     {
       "image": "legalapp-litellm:${APP_COMMIT:-dev}",
-      "line": 44,
+      "line": 58,
       "pinned_by_digest": false,
       "source": "docker-compose.yml"
     },
     {
       "image": "legalapp-litellm:${APP_COMMIT:-dev}",
-      "line": 56,
+      "line": 71,
       "pinned_by_digest": false,
       "source": "docker-compose.yml"
     },
     {
       "image": "legalapp-litellm:${APP_COMMIT:-dev}",
-      "line": 72,
+      "line": 88,
       "pinned_by_digest": false,
       "source": "docker-compose.yml"
     },
     {
       "image": "legalapp-backend:${APP_COMMIT:-dev}",
-      "line": 120,
+      "line": 138,
       "pinned_by_digest": false,
       "source": "docker-compose.yml"
     },
     {
       "image": "legalapp-backend:${APP_COMMIT:-dev}",
-      "line": 175,
+      "line": 194,
       "pinned_by_digest": false,
       "source": "docker-compose.yml"
     },
@@ -113,49 +113,49 @@
     },
     {
       "image": "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
-      "line": 3,
+      "line": 14,
       "pinned_by_digest": true,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
-      "line": 21,
+      "line": 33,
       "pinned_by_digest": true,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
-      "line": 36,
+      "line": 49,
       "pinned_by_digest": true,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "legalapp-litellm:${APP_COMMIT:-dev}",
-      "line": 53,
+      "line": 67,
       "pinned_by_digest": false,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "legalapp-litellm:${APP_COMMIT:-dev}",
-      "line": 65,
+      "line": 80,
       "pinned_by_digest": false,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "legalapp-litellm:${APP_COMMIT:-dev}",
-      "line": 81,
+      "line": 97,
       "pinned_by_digest": false,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "legalapp-backend:${APP_COMMIT:-dev}",
-      "line": 133,
+      "line": 151,
       "pinned_by_digest": false,
       "source": "docker-compose.hypervisor.yml"
     },
     {
       "image": "legalapp-backend:${APP_COMMIT:-dev}",
-      "line": 232,
+      "line": 251,
       "pinned_by_digest": false,
       "source": "docker-compose.hypervisor.yml"
     },

@@ -117,6 +117,106 @@ studio_render_enabled="$(get_env TEMPLATE_STUDIO_RENDER_ENABLED)"
 [[ "$studio_render_enabled" == "true" || "$studio_render_enabled" == "false" ]] || errors+=("TEMPLATE_STUDIO_RENDER_ENABLED must be explicitly true or false")
 [[ "$studio_render_enabled" != "true" ]] || errors+=("Studio rendering must remain production-disabled until CAS backup and restore rehearsal are release-gated")
 [[ "$(get_env PLATFORM_LEGACY_BOOTSTRAP_ENABLED)" == "false" ]] || errors+=("PLATFORM_LEGACY_BOOTSTRAP_ENABLED must be explicitly false for production")
+
+# Platform operator access must work on the live host from the first minute.
+# Without a signing key and at least one unexpired bootstrap entry, nobody can
+# mint an operator token, which means no error triage, no tenant diagnostics
+# and no audit review during the incident that needs them. Both are easy to
+# leave at their template defaults, so fail the deploy rather than discover it
+# under pressure.
+check_secret PLATFORM_TOKEN_SIGNING_KEY 32
+platform_bootstrap_report="$(get_env PLATFORM_BOOTSTRAP_CREDENTIALS_JSON | python3 -c '
+import json, sys
+from datetime import datetime, timedelta, timezone
+
+NAME = "PLATFORM_BOOTSTRAP_CREDENTIALS_JSON"
+HEX = set("0123456789abcdefABCDEF")
+
+
+def review(raw):
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError:
+        print(f"ERROR {NAME} must be valid JSON")
+        return
+    if not isinstance(entries, list):
+        print(f"ERROR {NAME} must be a JSON list")
+        return
+    if not entries:
+        print(f"ERROR {NAME} must contain at least one operator entry")
+        return
+
+    now = datetime.now(timezone.utc)
+    soon = now + timedelta(days=14)
+    live = 0
+
+    for index, entry in enumerate(entries):
+        label = f"entry {index}"
+        if not isinstance(entry, dict):
+            print(f"ERROR {NAME} {label} must be an object")
+            continue
+
+        operator_id = str(entry.get("operator_id") or "")
+        if operator_id:
+            label = f"entry for {operator_id}"
+        else:
+            print(f"ERROR {NAME} {label} is missing operator_id")
+
+        key_hash = str(entry.get("key_hash") or "")
+        if len(key_hash) != 64 or not set(key_hash) <= HEX:
+            print(f"ERROR {NAME} {label} needs a 64-character SHA-256 key_hash")
+
+        scopes = entry.get("scopes")
+        if not isinstance(scopes, list) or not scopes:
+            print(f"ERROR {NAME} {label} needs a non-empty scopes list")
+
+        try:
+            expires_at = datetime.fromisoformat(
+                str(entry.get("expires_at") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            print(f"ERROR {NAME} {label} needs an ISO-8601 expires_at")
+            continue
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= now:
+            print(f"ERROR {NAME} {label} expired on {expires_at.date()}")
+            continue
+
+        live += 1
+        if expires_at <= soon:
+            print(
+                f"WARN {NAME} {label} expires on {expires_at.date()};"
+                " rotate before it lapses"
+            )
+
+    if not live:
+        print(f"ERROR {NAME} has no unexpired operator entry")
+
+
+review(sys.stdin.read().strip() or "[]")
+# Sentinel: the shell treats a report without it as a crashed validator rather
+# than as a clean pass, so a broken check can never fail open.
+print("DONE")
+' || true)"
+platform_bootstrap_completed=false
+while IFS= read -r platform_bootstrap_line; do
+  case "$platform_bootstrap_line" in
+    "") continue ;;
+    DONE) platform_bootstrap_completed=true ;;
+    ERROR\ *) errors+=("${platform_bootstrap_line#ERROR }") ;;
+    WARN\ *) warnings+=("${platform_bootstrap_line#WARN }") ;;
+  esac
+done <<< "$platform_bootstrap_report"
+[[ "$platform_bootstrap_completed" == true ]] || errors+=("PLATFORM_BOOTSTRAP_CREDENTIALS_JSON could not be validated")
+
+# The infrastructure health page silently reports "unconfigured" when this is
+# empty, so an operator can believe multi-site health is being watched when
+# nothing is. Not fatal — a single-site deploy legitimately has no targets —
+# but it must be a deliberate choice.
+if [[ -z "$(get_env PLATFORM_INFRASTRUCTURE_TARGETS_JSON)" || "$(get_env PLATFORM_INFRASTRUCTURE_TARGETS_JSON)" == "[]" ]]; then
+  warnings+=("PLATFORM_INFRASTRUCTURE_TARGETS_JSON is empty; the Platform console infrastructure page will report unconfigured rather than probing any site")
+fi
 [[ "$(get_env OFFSITE_BACKUP_REQUIRED)" == "true" ]] || errors+=("OFFSITE_BACKUP_REQUIRED must be true for production deploys")
 email_enabled="$(get_env EMAIL_ENABLED)"
 [[ "$email_enabled" == "true" || "$email_enabled" == "false" ]] || errors+=("EMAIL_ENABLED must be explicitly true or false")

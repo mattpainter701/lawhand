@@ -333,6 +333,16 @@ class Settings(BaseSettings):
     PLATFORM_RATE_LIMIT_PER_MINUTE: int = 120
     PLATFORM_BOOTSTRAP_LIMIT_PER_5_MINUTES: int = 5
 
+    # Diagnostic log retention. ``error_logs`` and ``api_access_logs`` are
+    # written on every failure/request respectively and have no natural bound;
+    # the scheduled sweep in app.services.log_retention ages them out. Set a
+    # window to 0 to keep that table forever (e.g. under a litigation hold).
+    LOG_RETENTION_ENABLED: bool = True
+    ERROR_LOG_RETENTION_DAYS: int = 90
+    API_ACCESS_LOG_RETENTION_DAYS: int = 30
+    LOG_RETENTION_BATCH_SIZE: int = 5000
+    LOG_RETENTION_MAX_BATCHES_PER_SCOPE: int = 40
+
     MCP_SERVER_URL: str = ""
     # Public/sellable MCP is fail-closed until every product, protocol and
     # operational release gate has passed. Internal research is independent.
