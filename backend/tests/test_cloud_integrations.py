@@ -858,6 +858,159 @@ async def test_rename_legacy_root_leaves_firm_named_folders_alone(
     assert test_tenant.cloud_root_folder == firm_named
 
 
+class _RenameResponse:
+    def __init__(self, status_code, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def _rename_client(response, seen):
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def patch(self, url, **kwargs):
+            seen["url"] = url
+            seen["json"] = kwargs.get("json")
+            seen["headers"] = kwargs.get("headers")
+            return response
+
+    return FakeClient
+
+
+RENAME_HELPERS = [
+    (
+        "_rename_onedrive_folder",
+        ("ms-token", "item-1"),
+        "https://graph.microsoft.com/v1.0/me/drive/items/item-1",
+    ),
+    (
+        "_rename_sharepoint_folder",
+        ("ms-token", "drive-1", "item-1"),
+        "https://graph.microsoft.com/v1.0/drives/drive-1/items/item-1",
+    ),
+    (
+        "_rename_gdrive_folder",
+        ("g-token", "item-1"),
+        "https://www.googleapis.com/drive/v3/files/item-1",
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper,args,expected_url", RENAME_HELPERS)
+async def test_root_rename_patches_the_item_and_sends_only_a_new_name(
+    helper, args, expected_url, monkeypatch
+):
+    """Each provider renames its own item in place, changing nothing else."""
+    from app.services import cloud_init
+
+    seen: dict = {}
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _rename_client(
+            _RenameResponse(200, {"id": "item-1", "name": cloud_init.ROOT_FOLDER_NAME}),
+            seen,
+        ),
+    )
+
+    item = await getattr(cloud_init, helper)(*args, cloud_init.ROOT_FOLDER_NAME)
+
+    assert item["name"] == cloud_init.ROOT_FOLDER_NAME
+    assert seen["url"] == expected_url
+    # A rename must not carry a parent or any other field that would move it.
+    assert seen["json"] == {"name": cloud_init.ROOT_FOLDER_NAME}
+    assert seen["headers"]["Authorization"] == f"Bearer {args[0]}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper,args,_expected_url", RENAME_HELPERS)
+async def test_root_rename_raises_when_the_provider_rejects_it(
+    helper, args, _expected_url, monkeypatch
+):
+    """A refused rename raises rather than reporting a name that never changed."""
+    from app.services import cloud_init
+
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _rename_client(_RenameResponse(403, text="insufficient privileges"), {}),
+    )
+
+    with pytest.raises(RuntimeError, match=cloud_init.ROOT_FOLDER_NAME):
+        await getattr(cloud_init, helper)(*args, cloud_init.ROOT_FOLDER_NAME)
+
+
+@pytest.mark.asyncio
+async def test_rename_legacy_root_keeps_the_saved_name_when_a_provider_fails(
+    db_session, test_tenant, monkeypatch
+):
+    """A failed rename leaves the binding describing the folder as it still is."""
+    from app.services import cloud_init
+
+    saved = {
+        "onedrive": {"id": "od-root", "folder_name": "claritylegal-records"},
+        "sharepoint": {
+            "id": "sp-root",
+            "drive_id": "drive-1",
+            "folder_name": "claritylegal-records",
+        },
+        "google_drive": {"id": "gd-root", "folder_name": "claritylegal-records"},
+        "path": "claritylegal-records",
+    }
+    test_tenant.cloud_root_folder = dict(saved)
+    await db_session.commit()
+
+    async def fake_token(_db, _tenant_id, provider):
+        return {"microsoft": "ms-token", "google": "g-token"}.get(provider)
+
+    async def refuse(*_args, **_kwargs):
+        raise RuntimeError("provider refused the rename")
+
+    monkeypatch.setattr(cloud_init, "get_fresh_token", fake_token)
+    monkeypatch.setattr(cloud_init, "_rename_onedrive_folder", refuse)
+    monkeypatch.setattr(cloud_init, "_rename_sharepoint_folder", refuse)
+    monkeypatch.setattr(cloud_init, "_rename_gdrive_folder", refuse)
+
+    renamed = await cloud_init.rename_legacy_root_folder(
+        db_session, str(test_tenant.id)
+    )
+
+    assert renamed == {}
+    assert test_tenant.cloud_root_folder == saved
+
+
+@pytest.mark.asyncio
+async def test_rename_legacy_root_ignores_a_tenant_with_no_saved_root(
+    db_session, test_tenant, monkeypatch
+):
+    """A tenant that never finished cloud setup has nothing to rename."""
+    from app.services import cloud_init
+
+    async def should_not_fetch_tokens(*_args, **_kwargs):
+        raise AssertionError("a tenant without a root must not resolve credentials")
+
+    monkeypatch.setattr(cloud_init, "get_fresh_token", should_not_fetch_tokens)
+
+    assert test_tenant.cloud_root_folder is None
+    renamed = await cloud_init.rename_legacy_root_folder(
+        db_session, str(test_tenant.id)
+    )
+
+    assert renamed == {}
+
+
 @pytest.mark.asyncio
 async def test_matter_root_repair_preserves_legacy_provider_binding(
     db_session, test_tenant, monkeypatch
