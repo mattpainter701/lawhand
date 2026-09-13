@@ -423,23 +423,33 @@ Close on shot 10. Reviewers look for revocation, and it costs fifteen seconds.
 
 ### 4.1 Create a company Entra tenant (free)
 
-You cannot create additional workforce tenants from the Microsoft 365 / Entra
-admin portal on a free or trial subscription. Use the Azure signup path:
+**You do not need an Azure subscription.** App registrations, client secrets,
+multitenant OAuth and admin consent are all Entra ID Free features, and Entra
+is not a subscription resource. An earlier revision of this section sent the
+reader through `azure.microsoft.com/free` as though a subscription were a
+prerequisite; it is not, and that signup is the most failure-prone way in.
 
-1. `https://azure.microsoft.com/free` — sign up. Use a **new** Microsoft account
-   tied to a company address, not your personal one. The signup creates a
-   default Microsoft Entra directory (`something.onmicrosoft.com`).
-   - Azure free signup asks for a card for identity verification. App
-     registrations, Entra ID Free, and multitenant OAuth cost nothing; you are
-     not obligated to run paid Azure resources.
-   - Do **not** sign up with an address whose domain already belongs to another
-     Entra tenant. Signing in with it authenticates against *that* tenant
-     instead of creating a new one. `getlawhand@gmail.com` registered as a
-     Microsoft account works and keeps the company-owned mailbox consistent
-     with the Google side.
-   - The 30-day trial credit lapsing does not take the directory with it. App
-     registrations live in Entra, not in the Azure subscription, and keep
-     working after the subscription is disabled.
+1. Get a directory. In order of preference:
+   - **Sign in at `https://entra.microsoft.com`** with the company Microsoft
+     account. Signing a personal Microsoft account into the Azure or Entra
+     portal provisions a **Default Directory** for it automatically, and you
+     are its Global Administrator. Check **Identity → Overview** before doing
+     anything else — the tenant may already exist, including as a side effect
+     of a failed Azure signup attempt.
+   - **Identity → Overview → Manage tenants → Create** for an explicitly named
+     tenant rather than the auto-created default. No subscription required.
+   - Only if both are unavailable: a **Microsoft 365 Business Standard free
+     trial**, which reliably provisions a full tenant. The tenant and its app
+     registrations outlive the trial.
+   - `azure.microsoft.com/free` is a last resort. Its fraud checks reject
+     newly created Microsoft accounts, accounts on consumer mail domains,
+     prepaid and virtual cards, and any card/address country mismatch, with a
+     generic *"You are not eligible for an Azure subscription"* that names no
+     cause. Retrying does not help and repeated attempts can soft-lock the
+     account for a day.
+   - Do **not** use an address whose domain already belongs to another Entra
+     tenant. Signing in with it authenticates against *that* tenant instead of
+     creating a new one.
 2. In **Microsoft Entra admin center → Identity → Overview → Properties**, set
    the organization name to **Perevaga Group LLC**.
 3. **Identity → Domain names → Add custom domain** → `getlawhand.com` → add the
@@ -461,8 +471,10 @@ admin portal on a free or trial subscription. Use the Azure signup path:
    the LLC's records. A tenant with one admin is a single point of failure and a
    diligence finding.
 
-You do **not** need a paid Microsoft 365 license for any of this. Entra ID Free
-supports app registrations, multitenant apps, and admin consent.
+You do **not** need a paid Microsoft 365 license or an Azure subscription for
+any of this. Entra ID Free supports app registrations, multitenant apps, and
+admin consent. If a subscription is ever attached to this tenant, nothing in
+sections 4.2 to 4.4 changes.
 
 ### 4.2 Register the server-side application
 
