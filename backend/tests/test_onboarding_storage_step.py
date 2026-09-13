@@ -14,7 +14,11 @@ from fastapi import HTTPException
 from app.routers import onboarding
 
 TENANT_ID = "12345678-1234-1234-1234-123456789abc"
-GOOGLE_ROOT = {"id": "root-google", "folder_name": "claritylegal-records", "url": "https://drive"}
+GOOGLE_ROOT = {
+    "id": "root-google",
+    "folder_name": "claritylegal-records",
+    "url": "https://drive",
+}
 
 
 class _Db:
@@ -141,7 +145,9 @@ async def test_storage_step_creates_root_and_records_the_choice(monkeypatch):
 @pytest.mark.asyncio
 async def test_storage_step_keeps_an_existing_root_instead_of_recreating(monkeypatch):
     existing = {"google_drive": {"id": "keep-me", "folder_name": "records"}}
-    tenant = _tenant(cloud_root_folder=dict(existing), onboarding_step=onboarding.STEP_REVIEW)
+    tenant = _tenant(
+        cloud_root_folder=dict(existing), onboarding_step=onboarding.STEP_REVIEW
+    )
     settings_record = SimpleNamespace(primary_cloud_provider="google_drive")
     _, calls = _wire(monkeypatch, tenant, settings=settings_record)
 
@@ -209,7 +215,9 @@ async def test_storage_step_surfaces_a_blocked_provider_change(monkeypatch):
     )
 
     with pytest.raises(HTTPException) as exc:
-        await onboarding.confirm_onboarding_storage(_request("google_drive"), None, _Db())
+        await onboarding.confirm_onboarding_storage(
+            _request("google_drive"), None, _Db()
+        )
 
     assert exc.value.status_code == 409
     assert settings_record.primary_cloud_provider == "onedrive"
@@ -259,4 +267,48 @@ def test_status_helpers_read_only_usable_bindings():
     assert onboarding._has_any_root({"google_drive": {"folder_name": "x"}}) is False
     assert onboarding._has_any_root({"onedrive": {"id": " "}}) is False
     assert onboarding._has_any_root({"onedrive": {"id": "abc"}}) is True
-    assert onboarding._root_binding({"sharepoint": {"id": "s1"}}, "sharepoint") == {"id": "s1"}
+    assert onboarding._root_binding({"sharepoint": {"id": "s1"}}, "sharepoint") == {
+        "id": "s1"
+    }
+
+
+@pytest.mark.asyncio
+async def test_storage_step_reports_a_provider_error_without_half_writing(monkeypatch):
+    """A provider failure leaves no root and no primary-provider change."""
+    tenant = _tenant()
+    settings_record, _ = _wire(monkeypatch, tenant)
+
+    async def boom(_db, _tenant_id, *, existing_root=None):
+        raise RuntimeError("insufficient Drive permissions")
+
+    monkeypatch.setattr("app.services.cloud_init.initialize_cloud_root_folder", boom)
+
+    response = await onboarding.confirm_onboarding_storage(
+        _request("google_drive"), None, _Db()
+    )
+
+    assert response.status == "failed"
+    assert "insufficient Drive permissions" in response.error
+    assert "Google Drive" in response.error
+    assert tenant.cloud_root_folder is None
+    assert tenant.onboarding_step == onboarding.STEP_STORAGE
+
+
+@pytest.mark.asyncio
+async def test_storage_step_points_sharepoint_at_binding_its_library_first(monkeypatch):
+    """SharePoint needs a site and library bound before a root can exist."""
+    tenant = _tenant()
+    _wire(monkeypatch, tenant, connected=("microsoft",))
+
+    async def no_root(_db, _tenant_id, *, existing_root=None):
+        return {}
+
+    monkeypatch.setattr("app.services.cloud_init.initialize_cloud_root_folder", no_root)
+
+    response = await onboarding.confirm_onboarding_storage(
+        _request("sharepoint"), None, _Db()
+    )
+
+    assert response.status == "failed"
+    assert "site and library" in response.error
+    assert "OneDrive for now" in response.error
