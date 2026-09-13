@@ -152,6 +152,7 @@ class CalendarSyncService:
         body: str = "",
         location: str = "",
         attendees: list[str] | None = None,
+        timezone_name: str = "UTC",
     ) -> dict | None:
         if user_id:
             token = await get_fresh_user_token(db, tenant_id, user_id, "microsoft")
@@ -164,12 +165,12 @@ class CalendarSyncService:
         event = {
             "subject": subject,
             "start": {
-                "dateTime": start_dt.isoformat(),
-                "timeZone": "America/New_York",
+                "dateTime": _provider_local_datetime(start_dt, timezone_name),
+                "timeZone": timezone_name or "UTC",
             },
             "end": {
-                "dateTime": end_dt.isoformat(),
-                "timeZone": "America/New_York",
+                "dateTime": _provider_local_datetime(end_dt, timezone_name),
+                "timeZone": timezone_name or "UTC",
             },
         }
         if body:
@@ -365,6 +366,7 @@ class CalendarSyncService:
         body: str = "",
         location: str = "",
         attendees: list[str] | None = None,
+        timezone_name: str = "UTC",
     ) -> dict | None:
         token = await get_fresh_user_token(db, tenant_id, user_id, "google")
         if not token:
@@ -373,12 +375,12 @@ class CalendarSyncService:
         event = {
             "summary": subject,
             "start": {
-                "dateTime": start_dt.isoformat(),
-                "timeZone": "America/New_York",
+                "dateTime": _provider_local_datetime(start_dt, timezone_name),
+                "timeZone": timezone_name or "UTC",
             },
             "end": {
-                "dateTime": end_dt.isoformat(),
-                "timeZone": "America/New_York",
+                "dateTime": _provider_local_datetime(end_dt, timezone_name),
+                "timeZone": timezone_name or "UTC",
             },
         }
         if body:
@@ -479,12 +481,44 @@ class CalendarSyncService:
             )
         return resp.status_code in (200, 202, 204, 410)
 
+    async def _existing_synced_keys(
+        self,
+        db: AsyncSession,
+        tenant_id: str,
+        user_id: str,
+        provider: str,
+        days_ahead: int,
+    ) -> set[tuple[str, str]]:
+        """Index what this calendar already holds, as (subject, start date).
+
+        Without it every sync creates the same deadline again, so the calendar
+        ends up showing a LawHand task beside its own synced copy. Reading the
+        provider is how the identity stays stable across syncs: nothing local
+        records which events a previous run created.
+        """
+        if provider == "microsoft":
+            existing = await self.ms_get_events(
+                db, tenant_id, user_id, days_ahead=days_ahead
+            )
+        else:
+            existing = await self.google_get_events(
+                db, tenant_id, user_id, days_ahead=days_ahead
+            )
+        keys: set[tuple[str, str]] = set()
+        for event in existing:
+            subject = (event.get("subject") or "").strip()
+            start = str(event.get("start") or "")[:10]
+            if subject and start:
+                keys.add((subject, start))
+        return keys
+
     async def sync_deadlines_to_calendar(
         self,
         db: AsyncSession,
         tenant_id: str,
         user_id: str,
         provider: str,
+        timezone_name: str = "UTC",
     ) -> dict:
         from app.models.plugin import Matter
 
@@ -498,8 +532,13 @@ class CalendarSyncService:
         matters = result.scalars().all()
 
         created = 0
+        skipped = 0
         today = date.today()
-        cutoff = today + timedelta(days=90)
+        window_days = 90
+        cutoff = today + timedelta(days=window_days)
+        already_synced = await self._existing_synced_keys(
+            db, tenant_id, user_id, provider, window_days
+        )
 
         for matter in matters:
             key_dates = matter.key_dates or {}
@@ -522,17 +561,36 @@ class CalendarSyncService:
                     subject = f"[LawHand] {label}: {matter.matter_name}"
                     body = f"Matter: {matter.matter_name}\nType: {matter.matter_type}\nStatus: {matter.status}\nDeadline: {label}"
 
+                    if (subject, d.isoformat()) in already_synced:
+                        skipped += 1
+                        continue
+
                     try:
                         if provider == "microsoft":
                             result_ev = await self.ms_create_event(
-                                db, tenant_id, user_id, subject, start_dt, end_dt, body
+                                db,
+                                tenant_id,
+                                user_id,
+                                subject,
+                                start_dt,
+                                end_dt,
+                                body,
+                                timezone_name=timezone_name,
                             )
                         else:
                             result_ev = await self.google_create_event(
-                                db, tenant_id, user_id, subject, start_dt, end_dt, body
+                                db,
+                                tenant_id,
+                                user_id,
+                                subject,
+                                start_dt,
+                                end_dt,
+                                body,
+                                timezone_name=timezone_name,
                             )
                         if result_ev:
                             created += 1
+                            already_synced.add((subject, d.isoformat()))
                     except Exception as exc:
                         logger.warning(
                             "Failed to create calendar event for matter %s: %s",
@@ -540,7 +598,7 @@ class CalendarSyncService:
                             exc,
                         )
 
-        return {"created": created, "provider": provider}
+        return {"created": created, "skipped": skipped, "provider": provider}
 
 
 calendar_sync = CalendarSyncService()

@@ -69,12 +69,18 @@ async def run_calendar_sync(
         raise HTTPException(status_code=424, detail=str(exc))
 
     deadlines_created = 0
+    deadlines_skipped = 0
     if body.sync_deadlines:
         try:
             sync_result = await calendar_sync.sync_deadlines_to_calendar(
-                db, tenant_id, user_id, body.provider
+                db,
+                tenant_id,
+                user_id,
+                body.provider,
+                timezone_name=body.timezone or "UTC",
             )
             deadlines_created = sync_result.get("created", 0)
+            deadlines_skipped = sync_result.get("skipped", 0)
         except ValueError as exc:
             raise HTTPException(status_code=424, detail=str(exc))
 
@@ -92,6 +98,7 @@ async def run_calendar_sync(
             for e in events
         ],
         deadlines_created=deadlines_created,
+        deadlines_skipped=deadlines_skipped,
     )
 
 

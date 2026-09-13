@@ -1,3 +1,10 @@
+## 2026.09.13.14 — Assistant intent, task context, and deadline push
+
+- Classify an authority-guard trigger by intent: exclude a trigger inside an administrative phrase ("attorney assignment") or an explicit instruction not to research, and only when every trigger in the question is excluded. A bare "not" is not a negation cue and "without" counts only before a gerund, so a request for an answer "without case law" stays guarded.
+- Load every open task for a matter into assistant context and render all of them, state when there are none, and report truncation. Privacy mode redacts the title and keeps status, priority and due date.
+- Write pushed deadlines in the requested IANA zone through the provider wall-clock helper instead of a hardcoded America/New_York, defaulting to UTC; send the browser zone from the calendar client.
+- Skip a deadline the calendar already holds so a repeat sync stops creating a second copy, and report the skipped count.
+
 ## 2026.09.13.13 — Redact restricted matters in conflict results
 
 - Apply the saved conflict-check endpoint's assignment-aware redaction to `POST /api/contacts/conflict-check`, which returned raw matches. Broadening counterparty matching in 2026.09.13.11 made that route able to reveal the names and ids of matters the viewer is not assigned to.

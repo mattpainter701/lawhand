@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.14 — Straighter answers about tasks and deadlines
+
+Released September 13, 2026.
+
+Ask administrative questions without being turned away, see every open task, and push deadlines that keep their time and do not double up.
+
+- **Administrative questions get answered.** Asking who is assigned no longer returns a research notice. Questions that do ask for a legal conclusion are still held to cited authority.
+- **Every open task, and deadlines that stay put.** The assistant sees all open tasks on a matter. Deadlines pushed to Outlook or Google keep your time zone and are not created twice.
+
 ## 2026.09.13.13 — Conflict results respect matter access
 
 Released September 13, 2026.

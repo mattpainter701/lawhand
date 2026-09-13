@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.14",
+      "version": "2026.09.13.14",
+      "title": "Straighter answers about tasks and deadlines",
+      "published_at": "2026-09-13",
+      "summary": "Ask administrative questions without being turned away, see every open task, and push deadlines that keep their time and do not double up.",
+      "highlights": [
+        {
+          "title": "Administrative questions get answered",
+          "description": "Asking who is assigned no longer returns a research notice. Questions that do ask for a legal conclusion are still held to cited authority."
+        },
+        {
+          "title": "Every open task, and deadlines that stay put",
+          "description": "The assistant sees all open tasks on a matter. Deadlines pushed to Outlook or Google keep your time zone and are not created twice."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.13",
       "version": "2026.09.13.13",
       "title": "Conflict results respect matter access",
