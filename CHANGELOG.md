@@ -1,8 +1,9 @@
-## 2026.09.13.8 — File signed artifacts alongside pending signature records
+## 2026.09.13.8 — Reliable tenant locking for signed files and matter numbers
 
 - Use PostgreSQL FOR NO KEY UPDATE for the cloud write binding guard, allowing pending tenant foreign-key references from signature events and document folders without weakening exclusion against storage-provider cutover.
 - Exercise the actual token and cloud binding locks in both fresh portal signing and outage recovery; preserve answers, signature times, and client downloads of executed PDFs and certificates.
 - Verify concurrent cutover locks and tenant updates remain blocked, and an upload rejects its stale provider after cutover commits.
+- Lock and refresh the tenant before first matter-prefix allocation, preventing concurrent or previously loaded sessions from replacing the prefix when incrementing the counter.
 
 ## 2026.09.13.7 — Setup chooses document storage, and integrations show health first
 

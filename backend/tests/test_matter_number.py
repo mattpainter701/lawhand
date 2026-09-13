@@ -231,6 +231,27 @@ async def test_concurrent_creations_do_not_share_a_number(
     assert {first, second} == {"TEST0001", "TEST0002"}
 
 
+@pytest.mark.asyncio
+async def test_cached_empty_prefix_is_refreshed_before_allocating(
+    db_session, test_tenant, test_engine
+):
+    """A caller loaded before the first allocation must reuse its firm prefix."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    tenant_id = test_tenant.id
+    await db_session.commit()
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with factory() as first, factory() as second:
+        cached = await second.get(Tenant, tenant_id)
+        assert cached.matter_prefix is None
+        first_number, _ = await generate_matter_number(first, tenant_id)
+        await first.commit()
+        second_number, _ = await generate_matter_number(second, tenant_id)
+        await second.commit()
+        assert cached.matter_prefix == "TEST"
+        assert (first_number, second_number) == ("TEST0001", "TEST0002")
+
+
 # ── The migration ────────────────────────────────────────────────────────────
 
 
