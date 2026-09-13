@@ -122,6 +122,9 @@ class ConflictMatch(BaseModel):
 class ConflictCheckResult(BaseModel):
     clear: bool
     matches: list[ConflictMatch]
+    # Matters withheld because the viewer is not assigned to them. A search
+    # that quietly shows less must still say that it did.
+    restricted_matter_count: int = 0
     checked_names: list[str]
     checked_emails: list[str]
 

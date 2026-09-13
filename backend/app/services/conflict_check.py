@@ -18,8 +18,11 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.contact import Contact
+from app.models.matter_assignment import MatterAssignment
 from app.models.matter_party import MatterParty
 from app.models.plugin import Matter
+
+ZERO_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
 # Words shorter than this are ignored when matching a term out of order. "of",
 # "&" and bare initials appear inside almost any name, so counting them would
@@ -85,6 +88,74 @@ def _contact_haystack():
         Contact.organization_name,
         Contact.email,
     )
+
+
+async def visible_matter_ids(db: AsyncSession, user) -> set[uuid.UUID] | None:
+    """Matters this user may see named, or None when no restriction applies.
+
+    Tenant isolation keeps another firm's matters out; it says nothing about a
+    matter inside the firm that this user is not on. A conflict search must not
+    become a way to enumerate those.
+    """
+    if user.role == "admin":
+        return None
+    assigned = set(
+        (
+            await db.scalars(
+                select(MatterAssignment.matter_id).where(
+                    MatterAssignment.tenant_id == user.tenant_id,
+                    MatterAssignment.user_id == user.id,
+                )
+            )
+        ).all()
+    )
+    owned = set(
+        (
+            await db.scalars(
+                select(Matter.id).where(
+                    Matter.tenant_id == user.tenant_id,
+                    Matter.user_id == user.id,
+                )
+            )
+        ).all()
+    )
+    return assigned | owned
+
+
+def restrict_matches_to_visible(
+    matches: list[dict], visible: set[uuid.UUID] | None
+) -> tuple[list[dict], int]:
+    """Strip matter identifiers the viewer may not see, and count what was held back.
+
+    A counterparty-only row carries the adverse party's name as its display
+    name and nothing else, so when every matter behind it is restricted the row
+    itself is the disclosure and is dropped. A contact row stays: the contact is
+    already listed in the firm's address book. The withheld count is returned so
+    the caller can say something was hidden — a conflict search that silently
+    shows less is its own hazard.
+    """
+    if visible is None:
+        return matches, 0
+
+    kept: list[dict] = []
+    withheld = 0
+    for match in matches:
+        ids = list(match.get("matter_ids") or [])
+        names = list(match.get("matter_names") or [])
+        visible_ids = []
+        visible_names = []
+        for index, matter_id in enumerate(ids):
+            if matter_id in visible:
+                visible_ids.append(matter_id)
+                if index < len(names):
+                    visible_names.append(names[index])
+            else:
+                withheld += 1
+        counterparty_only = match.get("contact_id") in (None, ZERO_UUID)
+        if counterparty_only and ids and not visible_ids:
+            continue
+        kept.append({**match, "matter_ids": visible_ids, "matter_names": visible_names})
+    return kept, withheld
 
 
 async def run_conflict_check(
@@ -210,7 +281,7 @@ async def run_conflict_check(
             reported_counterparty.add(m.id)
             matches.append(
                 {
-                    "contact_id": uuid.UUID("00000000-0000-0000-0000-000000000000"),
+                    "contact_id": ZERO_UUID,
                     "display_name": m.counterparty,
                     "contact_type": "opposing_party",
                     "email": None,

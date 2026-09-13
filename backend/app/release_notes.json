@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.13",
+      "version": "2026.09.13.13",
+      "title": "Conflict results respect matter access",
+      "published_at": "2026-09-13",
+      "summary": "Conflict search results now hide matters you are not assigned to, and tell you when something was withheld.",
+      "highlights": [
+        {
+          "title": "Restricted matters stay restricted",
+          "description": "A conflict search shows matter names only for matters you are on. Administrators still see everything."
+        },
+        {
+          "title": "Nothing is hidden silently",
+          "description": "When a result withholds a matter, the response reports how many were withheld so a reviewer knows to escalate."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.11",
       "version": "2026.09.13.11",
       "title": "Conflict searches catch more of the same name",

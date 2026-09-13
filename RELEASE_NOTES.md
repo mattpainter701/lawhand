@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.13 — Conflict results respect matter access
+
+Released September 13, 2026.
+
+Conflict search results now hide matters you are not assigned to, and tell you when something was withheld.
+
+- **Restricted matters stay restricted.** A conflict search shows matter names only for matters you are on. Administrators still see everything.
+- **Nothing is hidden silently.** When a result withholds a matter, the response reports how many were withheld so a reviewer knows to escalate.
+
 ## 2026.09.13.11 — Conflict searches catch more of the same name
 
 Released September 13, 2026.
