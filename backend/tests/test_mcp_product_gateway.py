@@ -977,3 +977,9 @@ def test_product_key_header_rejects_duplicate_credentials():
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "Multiple MCP credentials supplied"
+
+
+@pytest.fixture(autouse=True)
+def legacy_stripe_billing_provider(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "PLATFORM_BILLING_PROVIDER", "stripe")

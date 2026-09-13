@@ -12,6 +12,11 @@
 merge_queue:
   # One comment when a PR leaves the queue, instead of a running commentary.
   status_comments: outcomes
+  # main's branch protection requires branches to be up to date before merging,
+  # which Mergify cannot combine with speculative draft-PR checks. In-place
+  # checks (one at a time) are the supported way to keep both settings; dropping
+  # the "up to date" requirement on main would allow parallel speculative checks.
+  max_parallel_checks: 1
 
 merge_protections_settings:
   auto_merge_conditions:
@@ -21,7 +26,5 @@ queue_rules:
   - name: default
     # Matches the repository's history: merge commits, not squash.
     merge_method: merge
-    # Test each queued PR on its own against the latest main (no batching).
-    # Mergify still runs up to `merge_queue.max_parallel_checks` speculative
-    # checks in parallel, so the queue moves as fast as CI allows.
+    # One PR per check run; in-place checks require batch_size 1.
     batch_size: 1

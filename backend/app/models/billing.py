@@ -246,6 +246,9 @@ class Invoice(Base):
         UniqueConstraint(
             "tenant_id", "invoice_number", name="uq_invoices_tenant_number"
         ),
+        UniqueConstraint(
+            "tenant_id", "generation_key", name="uq_invoice_generation_key"
+        ),
         Index("idx_invoices_tenant_id", "tenant_id"),
         Index("idx_invoices_matter_id", "matter_id"),
         Index("idx_invoices_status", "status"),
@@ -328,6 +331,10 @@ class Invoice(Base):
         server_default="now()",
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+    # Versioned billing details preserve the rates and client data used to bill.
+    generation_key: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    billing_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     line_items: Mapped[list["InvoiceLineItem"]] = relationship(
@@ -421,3 +428,68 @@ class Payment(Base):
 
     # Relationships
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="payments")
+
+
+class BillingFee(Base):
+    """An agreed fixed/stage fee waiting to be billed; never a time entry."""
+
+    __tablename__ = "billing_fees"
+    __table_args__ = (
+        CheckConstraint("amount >= 0", name="ck_billing_fee_amount"),
+        CheckConstraint(
+            "status IN ('pending', 'ready', 'billed', 'cancelled')",
+            name="ck_billing_fee_status",
+        ),
+        Index("ix_billing_fees_matter", "tenant_id", "matter_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    matter_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("matters.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    service_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class BillingSchedule(Base):
+    """Explicit opt-in to calendar-based draft generation; never auto-collection."""
+
+    __tablename__ = "billing_schedules"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "matter_id", name="uq_billing_schedule_matter"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    matter_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("matters.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    next_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(String(300), nullable=True)

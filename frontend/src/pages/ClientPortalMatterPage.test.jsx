@@ -280,6 +280,7 @@ describe('ClientPortalMatterPage', () => {
           is_overdue: true,
           days_overdue: 10,
           stripe_payment_link: 'https://pay.example/inv-001',
+          online_payment_available: true,
         },
       ],
       total_billed: '1000.00',
@@ -303,6 +304,16 @@ describe('ClientPortalMatterPage', () => {
       'href',
       '/api/portal/client/invoices/i1/download',
     )
+  })
+
+  it('shows manual payment instructions when online collection is unavailable', async () => {
+    listClientPortalInvoices.mockResolvedValue({ invoices: [{ id: 'manual', invoice_number: 'INV-MANUAL', status: 'sent', issue_date: '2026-09-01', due_date: '2026-09-30', total: '100.00', amount_paid: '0', balance_due: '100.00', online_payment_available: false }], outstanding_balance: '100.00' })
+    render(<ClientPortalMatterPage />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('tab', { name: /Invoices/ }))
+    expect(await screen.findByText('Contact your firm for payment instructions.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Pay now' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'PDF' })).toBeInTheDocument()
   })
 
   it('separates documents the firm shared from ones the client sent', async () => {

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -12,6 +12,8 @@ from app.database import get_db
 from app.services.access_control import require_finance_admin
 from app.models.mcp_product import MCPUsageEvent
 from app.models.tenant import Tenant
+from app.models.platform_subscription import PlatformSubscription
+from app.services.platform_billing import subscription_response
 from app.services.stripe_webhook_guard import (
     StripeTargetUnresolved,
     claim_event,
@@ -44,7 +46,11 @@ def _mask(val: str | None) -> str | None:
 
 async def ensure_stripe_customer(tenant: Tenant, db: AsyncSession) -> None:
     """Create a Stripe customer for the tenant if one doesn't exist yet."""
-    if tenant.stripe_customer_id or not settings.STRIPE_SECRET_KEY:
+    if (
+        settings.PLATFORM_BILLING_PROVIDER != "stripe"
+        or tenant.stripe_customer_id
+        or not settings.STRIPE_SECRET_KEY
+    ):
         return
     stripe.api_key = settings.STRIPE_SECRET_KEY
     try:
@@ -86,6 +92,23 @@ async def billing_status(
                 .filter(MCPUsageEvent.status_code >= 400)
                 .label("failed_calls"),
                 func.coalesce(func.sum(MCPUsageEvent.result_count), 0).label("results"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                MCPUsageEvent.status_code < 400,
+                                func.coalesce(
+                                    MCPUsageEvent.metadata_json["platform_billing"][
+                                        "unit_price_cents"
+                                    ].as_integer(),
+                                    settings.MCP_PRODUCT_CALL_PRICE_CENTS,
+                                ),
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("charge_cents"),
             ).where(
                 MCPUsageEvent.tenant_id == tenant.id,
                 MCPUsageEvent.product_key_id.is_not(None),
@@ -94,18 +117,30 @@ async def billing_status(
         )
     ).one()
 
+    subscription = (
+        await db.get(PlatformSubscription, tenant.id)
+        if settings.PLATFORM_BILLING_PROVIDER == "helcim"
+        else None
+    )
     return {
+        "provider": settings.PLATFORM_BILLING_PROVIDER,
+        "subscription": subscription_response(subscription) if subscription else None,
         "billing_tier": tenant.billing_tier,
         "stripe_customer_id": _mask(tenant.stripe_customer_id),
         "stripe_subscription_id": _mask(tenant.stripe_subscription_id),
         # Surfaced so the billing page can notice a tier that disagrees with the
         # subscription Stripe actually holds, rather than presenting a stale
         # downgrade as a plan and upselling the firm on what it already bought.
-        "subscription_status": tenant.stripe_subscription_status,
+        "subscription_status": tenant.platform_subscription_status
+        if settings.PLATFORM_BILLING_PROVIDER == "helcim"
+        else tenant.stripe_subscription_status,
         "billing_status": tenant.mcp_billing_status,
         "flat_seat_count": tenant.flat_seat_count,
         "mcp_usage": {
             "mode": "payg",
+            "collection_status": "pending_review"
+            if settings.PLATFORM_BILLING_PROVIDER == "helcim"
+            else "metered",
             "line_item": "MCP usage",
             "meter": "mcp_product_key_calls",
             "calls_30d": int(mcp_usage.calls or 0),
@@ -113,11 +148,7 @@ async def billing_status(
             "failed_calls_30d": int(mcp_usage.failed_calls or 0),
             "results_30d": int(mcp_usage.results or 0),
             "unit_price_usd": settings.MCP_PRODUCT_CALL_PRICE_CENTS / 100,
-            "estimated_charges_usd_30d": (
-                int(mcp_usage.successful_calls or 0)
-                * settings.MCP_PRODUCT_CALL_PRICE_CENTS
-                / 100
-            ),
+            "estimated_charges_usd_30d": (int(mcp_usage.charge_cents or 0) / 100),
         },
     }
 
@@ -131,6 +162,10 @@ async def create_checkout_session(
     Create a Stripe Checkout Session for upgrading to the flat subscription.
     Returns {checkout_url} for the frontend to redirect to.
     """
+    if settings.PLATFORM_BILLING_PROVIDER != "stripe":
+        raise HTTPException(
+            409, "Use LawHand subscription settings for the configured billing provider"
+        )
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(status_code=501, detail="Stripe not configured")
     if not settings.STRIPE_PRICE_ID:
@@ -184,6 +219,10 @@ async def create_portal_session(
     Create a Stripe Customer Portal session so the tenant can manage their subscription.
     Returns {portal_url}.
     """
+    if settings.PLATFORM_BILLING_PROVIDER != "stripe":
+        raise HTTPException(
+            409, "Use LawHand subscription settings for the configured billing provider"
+        )
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(status_code=501, detail="Stripe not configured")
 
@@ -323,6 +362,13 @@ async def _find_tenant_by_customer(
             f"{event_type} references a Stripe customer with no matching "
             "tenant; a paying customer may be unlinked -- look up the event in "
             "Stripe and reconcile tenants.stripe_customer_id"
+        )
+    if (
+        settings.PLATFORM_BILLING_PROVIDER != "stripe"
+        or tenant.platform_billing_provider == "helcim"
+    ):
+        raise StripeTargetUnresolved(
+            "Stripe cannot change a firm managed by another billing provider"
         )
     return tenant
 

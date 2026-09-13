@@ -300,3 +300,9 @@ async def test_retired_pseudo_transports_return_gone():
         await mcp.mcp_sse_endpoint(SimpleNamespace())
     assert messages_exc.value.status_code == 410
     assert sse_exc.value.status_code == 410
+
+
+@pytest.fixture(autouse=True)
+def legacy_stripe_billing_provider(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "PLATFORM_BILLING_PROVIDER", "stripe")

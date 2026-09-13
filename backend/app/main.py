@@ -37,6 +37,7 @@ from app.routers.chat_artifacts import router as chat_artifacts_router
 from app.routers.documents import router as documents_router
 from app.routers.admin import router as admin_router
 from app.routers.billing import router as billing_router
+from app.routers.platform_billing import router as platform_billing_router
 from app.routers.mcp import router as mcp_router
 from app.routers.workspace_mcp_oauth import router as workspace_mcp_oauth_router
 from app.routers.workspace_mcp_activity import router as workspace_mcp_activity_router
@@ -467,6 +468,7 @@ app.include_router(chat_artifacts_router, prefix="/api")
 app.include_router(documents_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(billing_router, prefix="/api")
+app.include_router(platform_billing_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api")
 app.include_router(platform_router, prefix="/api")
 app.include_router(platform_compliance_router, prefix="/api")

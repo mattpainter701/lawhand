@@ -53,6 +53,13 @@ class Tenant(Base):
     staff_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    platform_billing_provider: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )
+    platform_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    platform_subscription_status: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     billing_tier: Mapped[str] = mapped_column(
         String(50), default="payg", server_default="payg"
