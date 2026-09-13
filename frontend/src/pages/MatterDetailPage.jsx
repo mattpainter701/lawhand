@@ -1959,9 +1959,19 @@ function MatterWorkspace() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label htmlFor="matterdetailpage-case-number" className={labelCls}>Case Number</label>
-                    <input id="matterdetailpage-case-number" type="text" value={editData.case_number || ''} onChange={e => setEditData(p => ({ ...p, case_number: e.target.value }))} className={inputCls} />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label htmlFor="matterdetailpage-case-number" className={labelCls}>Case Number</label>
+                      <input id="matterdetailpage-case-number" type="text" value={editData.case_number || ''} onChange={e => setEditData(p => ({ ...p, case_number: e.target.value }))} className={inputCls} />
+                    </div>
+                    <div>
+                      <label htmlFor="matterdetailpage-court" className={labelCls}>Court</label>
+                      <input id="matterdetailpage-court" type="text" value={editData.court || ''} onChange={e => setEditData(p => ({ ...p, court: e.target.value }))} className={inputCls} placeholder="For example, Cook County Circuit Court" />
+                    </div>
+                    <div>
+                      <label htmlFor="matterdetailpage-judge" className={labelCls}>Judge</label>
+                      <input id="matterdetailpage-judge" type="text" value={editData.judge || ''} onChange={e => setEditData(p => ({ ...p, judge: e.target.value }))} className={inputCls} placeholder="For example, Hon. A. Rivera" />
+                    </div>
                   </div>
 
                   {/* People */}

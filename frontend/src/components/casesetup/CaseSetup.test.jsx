@@ -204,6 +204,16 @@ it('offers the kickoff when the matter has no packet yet', async () => {
   expect(screen.getByRole('heading', { name: 'Start this case' })).toBeInTheDocument()
 })
 
+it.each([
+  ['the closed flag', { is_closed: true, status: 'open' }],
+  ['a closed status', { is_closed: false, status: 'closed' }],
+])('does not offer to send paperwork when the matter has %s', async (label, matter) => {
+  getMatterPaperwork.mockResolvedValue(packet({ status: 'cancelled' }))
+  render(<CaseSetupCard matterId="matter" matter={matter} />)
+  expect(await screen.findByText('Reopen the matter to send client paperwork.')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Send client paperwork' })).not.toBeInTheDocument()
+})
+
 it('sends the chosen documents and their deadlines from the drawer', async () => {
   const user = userEvent.setup()
   const onSent = vi.fn()
