@@ -16,13 +16,13 @@ settings = get_settings()
 
 def test_tenant_managed_alias_follows_active_route_revision():
     config = {
-        "standard_model": "clarity-standard-rnew",
-        "premium_model": "clarity-premium-rnew",
+        "standard_model": "lawhand-standard-rnew",
+        "premium_model": "lawhand-premium-rnew",
     }
 
     assert (
-        _current_managed_alias("clarity-standard-rold", config)
-        == "clarity-standard-rnew"
+        _current_managed_alias("lawhand-standard-rold", config)
+        == "lawhand-standard-rnew"
     )
     assert (
         _current_managed_alias("custom-tenant-alias", config) == "custom-tenant-alias"
@@ -260,7 +260,7 @@ async def test_stream_rejects_reasoning_only_token_exhaustion():
                 [{"role": "user", "content": "Analyze jurisdiction"}],
                 tenant_name="Tenant",
                 context="Eight retrieved sources",
-                model="clarity-standard-rtest",
+                model="lawhand-standard-rtest",
                 usage_sink=usage,
             )
         ]
@@ -321,7 +321,7 @@ async def test_stream_records_provider_first_token_and_total_time():
                 [{"role": "user", "content": "Question"}],
                 tenant_name="Tenant",
                 context="Retrieved authority",
-                model="clarity-premium-rtest",
+                model="lawhand-premium-rtest",
                 usage_sink=usage,
             )
         ]
@@ -358,7 +358,7 @@ async def test_complete_rejects_empty_success_response():
             [{"role": "user", "content": "Analyze jurisdiction"}],
             tenant_name="Tenant",
             context="Eight retrieved sources",
-            model="clarity-standard-rtest",
+            model="lawhand-standard-rtest",
         )
 
 

@@ -60,13 +60,13 @@ async def test_platform_llm_config_round_trip(client: AsyncClient):
         headers=headers,
         json={
             "standard_provider": "litellm",
-            "standard_model": "clarity-standard",
+            "standard_model": "lawhand-standard",
             "premium_provider": "litellm",
-            "premium_model": "clarity-premium-openrouter",
+            "premium_model": "lawhand-premium-openrouter",
         },
     )
     assert update.status_code == 200
-    assert update.json()["config"]["premium_model"] == "clarity-premium-openrouter"
+    assert update.json()["config"]["premium_model"] == "lawhand-premium-openrouter"
 
     get_resp = await client.get("/api/platform/llm-config", headers=headers)
     assert get_resp.status_code == 200
@@ -91,8 +91,8 @@ async def test_routing_profiles_clone_expose_policies_and_can_become_default(
         activation={
             "status": "active",
             "aliases": {
-                "standard": "clarity-standard-rsource",
-                "premium": "clarity-premium-rsource",
+                "standard": "lawhand-standard-rsource",
+                "premium": "lawhand-premium-rsource",
             },
         },
     )
@@ -167,13 +167,13 @@ async def test_routing_profiles_clone_expose_policies_and_can_become_default(
 
 def test_provider_route_builder_litellm_model_prefixes():
     opencode = platform_llm_router._build_litellm_model_entry(
-        "clarity-standard", "opencode-zen", "deepseek-v4-flash-free", "sk-test"
+        "lawhand-standard", "opencode-zen", "deepseek-v4-flash-free", "sk-test"
     )
     assert opencode["litellm_params"]["model"] == "openai/deepseek-v4-flash-free"
     assert opencode["litellm_params"]["api_base"] == "https://opencode.ai/zen/v1"
 
     openrouter = platform_llm_router._build_litellm_model_entry(
-        "clarity-standard-fb-0",
+        "lawhand-standard-fb-0",
         "openrouter",
         "qwen/qwen3-235b-a22b:free",
         "sk-test",
@@ -187,7 +187,7 @@ def test_provider_route_builder_litellm_model_prefixes():
     }
 
     anthropic = platform_llm_router._build_litellm_model_entry(
-        "clarity-premium", "anthropic", "claude-3-5-sonnet-latest", "sk-test"
+        "lawhand-premium", "anthropic", "claude-3-5-sonnet-latest", "sk-test"
     )
     assert anthropic["litellm_params"]["model"] == "anthropic/claude-3-5-sonnet-latest"
     assert "api_base" not in anthropic["litellm_params"]
@@ -328,7 +328,7 @@ async def test_route_activation_canary_has_reasoning_model_token_budget(monkeypa
     )
 
     valid, results, error = await platform_llm_router._probe_litellm_aliases(
-        {"standard": "clarity-standard-r1", "premium": "clarity-premium-r1"}
+        {"standard": "lawhand-standard-r1", "premium": "lawhand-premium-r1"}
     )
 
     assert valid is True
@@ -416,7 +416,7 @@ async def test_route_activation_names_a_drained_reasoning_budget(monkeypatch):
     )
 
     valid, results, error = await platform_llm_router._probe_litellm_aliases(
-        {"standard": "clarity-standard-r1"}
+        {"standard": "lawhand-standard-r1"}
     )
 
     assert valid is False
@@ -1025,12 +1025,12 @@ def test_litellm_reload_payload_builds_aliases_and_reports_stale_targets(monkeyp
             "premium": {},
         },
         {str(openrouter_key.id): openrouter_key, str(opencode_key.id): opencode_key},
-        {"standard": "clarity-standard-rtest", "premium": "clarity-premium-rtest"},
+        {"standard": "lawhand-standard-rtest", "premium": "lawhand-premium-rtest"},
     )
 
     assert [model["model_name"] for model in models] == [
-        "clarity-standard-rtest",
-        "clarity-standard-rtest",
+        "lawhand-standard-rtest",
+        "lawhand-standard-rtest",
     ]
     assert models[0]["model_info"]["id"] != models[1]["model_info"]["id"]
     assert (
@@ -1090,13 +1090,13 @@ def test_litellm_reload_payload_builds_fast_standard_route(monkeypatch):
             "premium": {},
         },
         {str(openrouter_key.id): openrouter_key, str(opencode_key.id): opencode_key},
-        {"standard": "clarity-standard-rtest", "premium": "clarity-premium-rtest"},
+        {"standard": "lawhand-standard-rtest", "premium": "lawhand-premium-rtest"},
     )
 
     assert [model["model_name"] for model in models] == [
-        "clarity-standard-rtest",
-        "clarity-standard-rtest-fb-0",
-        "clarity-standard-rtest-fb-1",
+        "lawhand-standard-rtest",
+        "lawhand-standard-rtest-fb-0",
+        "lawhand-standard-rtest-fb-1",
     ]
     assert (
         models[0]["litellm_params"]["model"] == "openrouter/google/gemma-4-31b-it:free"
@@ -1106,9 +1106,9 @@ def test_litellm_reload_payload_builds_fast_standard_route(monkeypatch):
     assert models[2]["litellm_params"]["model"] == "openai/deepseek-v4-flash-free"
     assert fallbacks == [
         {
-            "clarity-standard-rtest": [
-                "clarity-standard-rtest-fb-0",
-                "clarity-standard-rtest-fb-1",
+            "lawhand-standard-rtest": [
+                "lawhand-standard-rtest-fb-0",
+                "lawhand-standard-rtest-fb-1",
             ]
         }
     ]
@@ -1136,14 +1136,14 @@ async def test_litellm_reload_uses_model_management_api(monkeypatch):
                 {
                     "data": [
                         {
-                            "model_name": "clarity-standard",
+                            "model_name": "lawhand-standard",
                             "litellm_params": {
                                 "model": "openrouter/google/gemma-4-31b-it:free",
                             },
                             "model_info": {"id": "static-standard", "db_model": False},
                         },
                         {
-                            "model_name": "clarity-standard-fb-0",
+                            "model_name": "lawhand-standard-fb-0",
                             "litellm_params": {
                                 "model": "openai/nemotron-3-ultra-free",
                             },
@@ -1170,14 +1170,14 @@ async def test_litellm_reload_uses_model_management_api(monkeypatch):
     ok, error = await platform_llm_router._call_litellm_config_update(
         [
             {
-                "model_name": "clarity-standard",
+                "model_name": "lawhand-standard",
                 "litellm_params": {
                     "model": "openrouter/google/gemma-4-31b-it:free",
                     "api_key": "sk-openrouter",
                 },
             },
             {
-                "model_name": "clarity-standard-fb-0",
+                "model_name": "lawhand-standard-fb-0",
                 "litellm_params": {
                     "model": "openai/nemotron-3-ultra-free",
                     "api_key": "sk-opencode",
@@ -1185,7 +1185,7 @@ async def test_litellm_reload_uses_model_management_api(monkeypatch):
                 },
             },
             {
-                "model_name": "clarity-standard-fb-1",
+                "model_name": "lawhand-standard-fb-1",
                 "litellm_params": {
                     "model": "openai/deepseek-v4-flash-free",
                     "api_key": "sk-opencode",
@@ -1193,7 +1193,7 @@ async def test_litellm_reload_uses_model_management_api(monkeypatch):
                 },
             },
         ],
-        [{"clarity-standard": ["clarity-standard-fb-0", "clarity-standard-fb-1"]}],
+        [{"lawhand-standard": ["lawhand-standard-fb-0", "lawhand-standard-fb-1"]}],
     )
 
     assert ok is True
@@ -1207,7 +1207,7 @@ async def test_litellm_reload_uses_model_management_api(monkeypatch):
     config_update = fake_client.calls[-1][2]
     assert "model_list" not in config_update
     assert config_update["router_settings"]["fallbacks"] == [
-        {"clarity-standard": ["clarity-standard-fb-0", "clarity-standard-fb-1"]}
+        {"lawhand-standard": ["lawhand-standard-fb-0", "lawhand-standard-fb-1"]}
     ]
 
 
@@ -1234,12 +1234,12 @@ async def test_litellm_upserts_each_balanced_deployment_by_stable_id(monkeypatch
     ok, error = await platform_llm_router._call_litellm_config_update(
         [
             {
-                "model_name": "clarity-standard-rtest",
+                "model_name": "lawhand-standard-rtest",
                 "litellm_params": {"model": "openrouter/model-a", "api_key": "a"},
                 "model_info": {"id": "deployment-a", "legalapp_managed": True},
             },
             {
-                "model_name": "clarity-standard-rtest",
+                "model_name": "lawhand-standard-rtest",
                 "litellm_params": {"model": "openrouter/model-b", "api_key": "b"},
                 "model_info": {"id": "deployment-b", "legalapp_managed": True},
             },
@@ -1267,7 +1267,7 @@ async def test_litellm_reload_rejects_different_file_backed_alias(monkeypatch):
                 {
                     "data": [
                         {
-                            "model_name": "clarity-standard",
+                            "model_name": "lawhand-standard",
                             "litellm_params": {
                                 "model": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
                             },
@@ -1291,7 +1291,7 @@ async def test_litellm_reload_rejects_different_file_backed_alias(monkeypatch):
     ok, error = await platform_llm_router._call_litellm_config_update(
         [
             {
-                "model_name": "clarity-standard",
+                "model_name": "lawhand-standard",
                 "litellm_params": {
                     "model": "openrouter/google/gemma-4-31b-it:free",
                     "api_key": "sk-openrouter",

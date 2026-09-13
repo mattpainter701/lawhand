@@ -25,7 +25,7 @@ def database(value=None):
 
 
 @pytest.mark.parametrize("value", [None, {}, {"settings": {"model": "cheap-model"}},
-    {"settings": {"enabled": True, "key_id": str(uuid4())}, "activation": {"status": "active", "alias": "clarity-premium"}},
+    {"settings": {"enabled": True, "key_id": str(uuid4())}, "activation": {"status": "active", "alias": "lawhand-premium"}},
     {"settings": {"enabled": False}, "activation": {"status": "active"}},
 ])
 @pytest.mark.asyncio
@@ -41,7 +41,7 @@ async def test_missing_disabled_or_stale_profile_never_falls_back(value):
     {"input_usd_per_million": 0}, {"output_usd_per_million": -1},
     {"output_usd_per_million": "NaN"}, {"input_usd_per_million": "Infinity"},
     {"provider_id": "opencode-go"}, {"model": "mimo-v2.5-free"},
-    {"fallbacks": [{"model": "clarity-premium"}]}, {"key_id": "secret-key"},
+    {"fallbacks": [{"model": "lawhand-premium"}]}, {"key_id": "secret-key"},
 ])
 def test_profile_rejects_unpriced_and_unscoped_settings(changes):
     with pytest.raises(ValidationError):
@@ -214,7 +214,7 @@ async def test_template_deployment_never_writes_global_router_config(monkeypatch
         import json
         requests.append((request.method, request.url.path))
         if request.url.path == "/v1/model/info":
-            return httpx.Response(200, json={"data": [{"model_name": "clarity-background", "model_info": {"id": "background"}}]})
+            return httpx.Response(200, json={"data": [{"model_name": "lawhand-background", "model_info": {"id": "background"}}]})
         if request.url.path == "/v1/model/new":
             data = json.loads(request.content)
             assert data["model_name"] == profile.alias
