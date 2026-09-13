@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { getBillingStatus, createCheckoutSession, createPortalSession } from '../api'
 import { useAuth } from '../App'
+import PlatformSubscription from '../components/PlatformSubscription'
 
 function TierBadge({ tier }) {
   const isFlat = tier === 'flat'
@@ -18,7 +19,6 @@ function TierBadge({ tier }) {
 
 export default function BillingPage({ embedded = false }) {
   useAuth()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
   const [status, setStatus] = useState(null)
@@ -32,7 +32,7 @@ export default function BillingPage({ embedded = false }) {
   const subscriptionDisagrees = Boolean(
     status?.billing_tier === 'payg'
     && status?.subscription_status
-    && !['canceled', 'incomplete_expired', ''].includes(
+    && !['canceled', 'cancelled', 'term_ended', 'none', 'incomplete_expired', ''].includes(
       String(status.subscription_status).toLowerCase()
     )
   )
@@ -93,7 +93,7 @@ export default function BillingPage({ embedded = false }) {
           </div>
           {!embedded && (
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => window.location.assign('/admin?tab=billing')}
               className="text-sm text-brand-muted hover:text-brand-ink font-sans"
             >
               ← Back
@@ -140,7 +140,7 @@ export default function BillingPage({ embedded = false }) {
                 This plan does not match the subscription on file.
               </p>
               <p className="text-sm text-brand-ink-2 font-sans mt-1">
-                Stripe reports this firm&rsquo;s subscription as
+                {status?.provider === 'helcim' ? 'Helcim' : 'Stripe'} reports this firm&rsquo;s subscription as
                 {' '}<span className="font-semibold">{status.subscription_status}</span>, but the plan
                 above is pay-as-you-go. Do not purchase again — contact support so billing can be
                 reconciled, otherwise you may be charged twice.
@@ -148,7 +148,7 @@ export default function BillingPage({ embedded = false }) {
             </div>
           )}
 
-          {status?.billing_tier === 'payg' && !subscriptionDisagrees && (
+          {status?.provider === 'stripe' && status?.billing_tier === 'payg' && !subscriptionDisagrees && (
             <div className="mt-4 pt-4 border-t border-brand-line">
               <p className="text-sm text-brand-ink-2 font-sans mb-3">
                 On pay-as-you-go, usage is billed at a 10× markup on model cost.
@@ -173,6 +173,8 @@ export default function BillingPage({ embedded = false }) {
           )}
         </div>
 
+        {status?.provider === 'helcim' && <PlatformSubscription subscription={status.subscription} embedded={embedded} onChanged={async () => setStatus(await getBillingStatus())} />}
+
         {status?.mcp_usage && (
           <div className="bg-brand-surface rounded-xl border border-brand-line shadow-sm p-6 mb-6">
             <div className="flex items-start justify-between gap-4">
@@ -181,7 +183,7 @@ export default function BillingPage({ embedded = false }) {
                   MCP usage
                 </p>
                 <p className="text-sm text-brand-muted font-sans">
-                  Product-key calls are metered separately from subscription seats and model usage.
+                  {status.mcp_usage.collection_status === 'pending_review' ? 'Usage charges are reviewed and invoiced separately through Helcim. These estimates are not payments collected.' : 'Product-key calls are metered separately from subscription seats and model usage.'}
                 </p>
               </div>
               <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
@@ -204,7 +206,7 @@ export default function BillingPage({ embedded = false }) {
               <div className="rounded-lg border border-brand-line bg-brand-bg px-3 py-2">
                 <p className="text-xs uppercase tracking-wider text-brand-muted font-sans">Estimated charges</p>
                 <p className="mt-1 text-xl font-bold text-brand-ink font-serif">${Number(status.mcp_usage.estimated_charges_usd_30d || 0).toFixed(2)}</p>
-                <p className="mt-1 text-xs text-brand-muted">${Number(status.mcp_usage.unit_price_usd || 0.45).toFixed(2)} per successful call</p>
+                <p className="mt-1 text-xs text-brand-muted">{status.provider === 'helcim' ? 'Rates recorded when usage occurred' : `$${Number(status.mcp_usage.unit_price_usd || 0.45).toFixed(2)} per successful call`}</p>
               </div>
               <div className="rounded-lg border border-brand-line bg-brand-bg px-3 py-2">
                 <p className="text-xs uppercase tracking-wider text-brand-muted font-sans">Returned results</p>
@@ -220,7 +222,7 @@ export default function BillingPage({ embedded = false }) {
         )}
 
         {/* Manage subscription */}
-        {status?.stripe_customer_id && (
+        {status?.provider === 'stripe' && status?.stripe_customer_id && (
           <div className="bg-brand-surface rounded-xl border border-brand-line shadow-sm p-6 mb-6">
             <p className="text-sm font-semibold text-brand-ink font-sans mb-1">
               Manage Subscription

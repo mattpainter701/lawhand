@@ -338,3 +338,8 @@ Protocol references:
 - [MCP transports](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - [MCP tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
 - [Official Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+
+
+### Helcim platform billing
+
+`PLATFORM_BILLING_PROVIDER=helcim` uses the firm's Helcim customer and billing status for paid Research MCP access. Entitlement remains an independent, explicit requirement. No Stripe customer is required in this mode. Successful billable calls retain their price in `MCPUsageEvent.metadata_json.platform_billing` with collection state `pending_review`; failed calls are not charged. These rows are reviewable usage obligations, not proof of payment. Stripe meter jobs are neither enqueued nor delivered while Helcim is the configured platform provider. Automated Helcim usage invoicing remains pending; operations must review and bill variable usage separately. See [billing setup and reconciliation](billing-parity.md#lawhand-subscriptions-are-separate).

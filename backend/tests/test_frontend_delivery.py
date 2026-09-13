@@ -284,7 +284,7 @@ def test_nginx_operator_routes_and_pdf_csp_are_consistent() -> None:
     # Google Analytics runs only on the public marketing pages, so its hosts
     # enter the policy through a request-scoped variable rather than being
     # granted to every response. An inline snippet is never allowed.
-    assert "script-src 'self'$csp_analytics_script;" in csp_lines[0]
+    assert "script-src 'self'$csp_analytics_script$csp_platform_payments;" in csp_lines[0]
     assert "'unsafe-inline'" not in csp_lines[0].split("style-src")[0]
     public_routes = (
         "privacy|terms|pricing|request-demo|trust-center|support|requirements"

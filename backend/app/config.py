@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -300,6 +302,10 @@ class Settings(BaseSettings):
     )
     QBO_ENVIRONMENT: str = "sandbox"  # "sandbox" | "production"
 
+    PLATFORM_BILLING_PROVIDER: Literal["helcim", "stripe", "manual"] = "helcim"
+    HELCIM_API_TOKEN: str = ""
+    HELCIM_WEBHOOK_TOKEN: str = ""
+    HELCIM_PAYMENT_PLAN_ID: int = 0
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID: str = ""  # Stripe Price ID for flat subscription

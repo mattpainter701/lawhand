@@ -1714,3 +1714,39 @@ async def test_invite_info_hides_revoked_invitations(client, db_session, portal_
         headers={"Authorization": ""},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paid,overdue_amount", [("250", "250"), ("500", "0")])
+async def test_portal_installments_only_age_matured_balance(
+    client, db_session, test_tenant, test_user, portal_matter, portal_cookie, paid, overdue_amount
+):
+    invoice = await _add_invoice(
+        db_session, test_tenant, portal_matter, test_user,
+        billing_details={"installments": [
+            {"due_date": (date.today() - timedelta(days=5)).isoformat(), "amount": "500"},
+            {"due_date": (date.today() + timedelta(days=25)).isoformat(), "amount": "500"},
+        ]},
+    )
+    db_session.add(Payment(tenant_id=test_tenant.id, invoice_id=invoice.id, amount=Decimal(paid), payment_date=date.today(), method="check"))
+    await db_session.commit()
+    response = await client.get(f"{PORTAL}/invoices", headers=_portal_headers(portal_cookie))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert Decimal(body["overdue_balance"]) == Decimal(overdue_amount)
+    assert Decimal(body["outstanding_balance"]) == Decimal("1000") - Decimal(paid)
+    row = body["invoices"][0]
+    assert row["is_overdue"] == (Decimal(overdue_amount) > 0)
+    assert row["days_overdue"] == (5 if Decimal(overdue_amount) else 0)
+    assert len(row["installments"]) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured", [False, True])
+async def test_portal_only_offers_online_payment_when_configured(client, db_session, test_tenant, test_user, portal_matter, portal_cookie, monkeypatch, configured):
+    from app.routers import client_portal
+    monkeypatch.setattr(client_portal.settings, "STRIPE_SECRET_KEY", "test-only" if configured else "")
+    await _add_invoice(db_session, test_tenant, portal_matter, test_user)
+    response = await client.get(f"{PORTAL}/invoices", headers=_portal_headers(portal_cookie))
+    assert response.status_code == 200, response.text
+    assert response.json()["invoices"][0]["online_payment_available"] is configured

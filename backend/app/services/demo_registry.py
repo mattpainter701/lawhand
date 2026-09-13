@@ -85,6 +85,9 @@ _CLONE_TABLES = {
 # ephemeral work, or audit evidence. A demo may create rows in these tables even
 # though fixture rows must never be copied into a disposable tenant.
 _PURGE_ONLY_TABLES = {
+    "billing_fees",
+    "platform_subscriptions",
+    "billing_schedules",
     # Provider migration evidence and onboarding root history are tenant
     # scoped runtime/audit state. Migration matches must purge before their
     # parent migration rows via the FK dependency planner.
