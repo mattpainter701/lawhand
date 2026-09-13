@@ -5,6 +5,14 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.5 — Clearer legal team contact details
+
+Released September 13, 2026.
+
+The client portal shows your legal team's names and email addresses without internal assignment labels.
+
+- **Simple team contact details.** Find your legal team's names and email links in the matter overview, without internal role codes beside their names.
+
 ## 2026.09.13.4 — Flexible matter billing and Helcim subscriptions
 
 Released September 13, 2026.

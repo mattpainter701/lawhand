@@ -1,3 +1,8 @@
+## 2026.09.13.5 — Client portal legal team labels
+
+- Omit internal matter assignment roles from the client portal's legal team card while preserving names and email links.
+- Add a portal regression check for contact details with a `lead_attorney` assignment.
+
 ## 2026.09.13.4 — Flexible matter billing
 
 - Add fixed-fee-only generation, stable request keys, fee readiness/reservation, calendar schedules and a ready-to-bill query.
