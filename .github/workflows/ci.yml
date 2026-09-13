@@ -366,6 +366,7 @@ jobs:
     env:
       # Database
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
+      TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
       RLS_TEST_DATABASE_URL: postgresql+asyncpg://clarity_app:clarity-ci-runtime-password@localhost:5432/legalapp_test
 
       # Redis
@@ -588,6 +589,7 @@ jobs:
     env:
       # Database
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
+      TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
       RLS_TEST_DATABASE_URL: postgresql+asyncpg://clarity_app:clarity-ci-runtime-password@localhost:5432/legalapp_test
 
       # Redis
@@ -644,6 +646,32 @@ jobs:
           pip install -r backend/requirements-dev.txt
           pip install pytest-cov==7.1.0 diff-cover==10.5.1
 
+      - name: Raise the Postgres lock limit for parallel workers
+        # Four xdist workers each TRUNCATE every table, and Postgres defaults
+        # max_locks_per_transaction to 64, so the shared lock table runs out
+        # ("out of shared memory" / asyncpg OutOfMemoryError). Raise it and
+        # restart the service; the migrated schema survives the restart.
+        run: |
+          wait_for_postgres() {
+            for _ in $(seq 1 30); do
+              if docker exec "${{ job.services.postgres.id }}" \
+                   pg_isready -U test -d legalapp_test >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+          wait_for_postgres
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -U test -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET max_locks_per_transaction = 1000;"
+          docker restart "${{ job.services.postgres.id }}"
+          wait_for_postgres || {
+            echo "Postgres did not become ready after the lock-limit restart" >&2
+            exit 1
+          }
+
       - name: Run database migrations
         working-directory: backend
         run: alembic upgrade head
@@ -660,6 +688,22 @@ jobs:
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO clarity_app;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO clarity_app;
           SQL
+
+      - name: Create per-worker test databases
+        env:
+          PGPASSWORD: test
+        run: |
+          # pytest-xdist runs four workers; each needs its own clone of the
+          # migrated database because the per-test TRUNCATE in conftest would
+          # otherwise cross workers. conftest rewrites each worker's URLs to
+          # legalapp_test_gw<i>.
+          psql -h localhost -U test -d postgres -v ON_ERROR_STOP=1 -q <<'SQL'
+          SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+            WHERE datname = 'legalapp_test' AND pid <> pg_backend_pid();
+          SQL
+          for i in $(seq 0 3); do
+            createdb -h localhost -U test -T legalapp_test "legalapp_test_gw${i}"
+          done
 
       - name: Verify real Word-to-PDF preview and save determinism
         if: matrix.shard == 1
@@ -743,7 +787,7 @@ jobs:
           COVERAGE_FILE: .coverage.shard${{ matrix.shard }}
         run: >-
           pytest ${{ steps.split.outputs.files }} -v --tb=short --maxfail=1
-          --cov=app --cov-report=
+          --cov=app --cov-report= -n 4 --dist loadfile
 
       - name: Upload this shard's coverage data
         if: always()

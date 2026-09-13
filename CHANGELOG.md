@@ -1,3 +1,11 @@
+## 2026.09.13.5 — Setup chooses document storage, and integrations show health first
+
+- Route all four OAuth callback upserts (Google/Microsoft, admin/user) through `_record_fresh_grant`, which calls the new `clear_refresh_failure` before `apply_scope_audit`. A fresh consent now clears `health`, `last_refresh_error` and `last_refresh_at`; the `revoked` guard on the refresh path is unchanged. Report per-user token health (`user_tokens`) separately from the tenant credential on `/api/admin/permissions` and `/api/integrations/status`.
+- Onboarding gains an explicit Storage step (`POST /api/admin/onboarding/storage`) that records `primary_cloud_provider` and creates the root through `initialize_cloud_root_folder`; `/complete` refuses without a usable root. Wizard steps renumber to 0–5 and the post-connect hooks advance 1→2 and 3→4 only. Completed re-authorizations land back on the cloud card.
+- Integrations hub: sections carry `firm`/`operator` audiences; operator tools (MCP, storage migration, Tabs3 import, provider readiness) move under an Advanced disclosure gated by `canOperateIntegrations` (admin role plus `manage_integrations` when capabilities are present). Provider cards render health before scopes and hide the tally for revoked or refresh-failed credentials. Storage settings sit in a `Disclosure` with an inline confirmation before repointing the primary provider.
+- Admin portal tabs grouped (People, Firm, Billing, Support) with stable ids; Prompts requires `admin_settings`; the LiteLLM alias override moves behind Advanced. New Admin Guide chapter on onboarding and storage; Integrations chapter documents health states and remedies.
+- Tests: `test_integration_reauthorization_clears_health.py`, `test_onboarding_storage_step.py`, `IntegrationsPanel.test.jsx`, expanded `IntegrationsHub.test.jsx` and `OnboardingWizard.test.jsx`.
+
 ## 2026.09.13.4 — Flexible matter billing
 
 - Add fixed-fee-only generation, stable request keys, fee readiness/reservation, calendar schedules and a ready-to-bill query.
