@@ -290,6 +290,7 @@ class PortalDocumentResponse(BaseModel):
 
 
 class PortalInvoiceResponse(BaseModel):
+    installments: list[dict] = Field(default_factory=list)
     id: str
     invoice_number: str
     status: str
@@ -301,8 +302,10 @@ class PortalInvoiceResponse(BaseModel):
     # "overdue" is derived from due_date against the balance, never stored.
     is_overdue: bool = False
     days_overdue: int = 0
+    overdue_balance: Decimal = Decimal("0")
     payment_terms: str | None = None
     stripe_payment_link: str | None = None
+    online_payment_available: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

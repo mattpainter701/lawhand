@@ -33,8 +33,8 @@ Set these in the deployment environment. Do not commit real values.
 When enabled, the app fallback route uses separate standard and premium
 profiles:
 
-- Standard: `LITELLM_STANDARD_MODEL` (default `clarity-standard`)
-- Premium: `LITELLM_PREMIUM_MODEL` (default `clarity-premium`)
+- Standard: `LITELLM_STANDARD_MODEL` (default `lawhand-standard`)
+- Premium: `LITELLM_PREMIUM_MODEL` (default `lawhand-premium`)
 
 Operators can still override global or per-tenant standard/premium routes in
 the operator console. Direct providers remain available as emergency fallbacks.
@@ -90,22 +90,22 @@ non-zero aged-out count before raising a pool limit.
 
 `litellm_config.yaml` defines these operator-selectable aliases:
 
-- `clarity-standard`: primary standard profile, using OpenCode Zen with
+- `lawhand-standard`: primary standard profile, using OpenCode Zen with
   `OPENCODE_ZEN_API_KEY` for the OpenAI-compatible key. During credential-name
   migration, the Compose configuration accepts `OPENCODE_API_KEY`,
   `OPENCODE_KEY`, then `DEEPSEEK_API_KEY` as ordered fallbacks. It fails over
-  inside LiteLLM to `clarity-standard-deepseek-flash-free`.
-- `clarity-premium`: primary premium profile, using OpenCode Go through the
+  inside LiteLLM to `lawhand-standard-deepseek-flash-free`.
+- `lawhand-premium`: primary premium profile, using OpenCode Go through the
   OpenAI-compatible base URL and `OPENCODE_GO_API_KEY`, with
   `DEEPSEEK_API_KEY` as its migration fallback. If Premium capacity is
-  unavailable, LiteLLM falls back to the configured `clarity-standard` chain
+  unavailable, LiteLLM falls back to the configured `lawhand-standard` chain
   so the customer request remains available. Operators should disclose that a
   fallback may return standard-tier quality while the requested alias remains
   Premium.
 
 The operator console should point global standard and premium routes at these
-aliases by setting provider `litellm` and model `clarity-standard` /
-`clarity-premium`.
+aliases by setting provider `litellm` and model `lawhand-standard` /
+`lawhand-premium`.
 
 ## Privacy Defaults
 

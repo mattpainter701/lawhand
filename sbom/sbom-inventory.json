@@ -4,49 +4,49 @@
       "api_base": "https://opencode.ai/zen/v1",
       "api_key_env": "os.environ/OPENCODE_ZEN_API_KEY",
       "provider_model": "openai/nemotron-3-ultra-free",
-      "route_name": "clarity-standard",
+      "route_name": "lawhand-standard",
       "source": "litellm_config.yaml"
     },
     {
       "api_base": "https://opencode.ai/zen/v1",
       "api_key_env": "os.environ/OPENCODE_ZEN_API_KEY",
       "provider_model": "openai/nemotron-3-ultra-free",
-      "route_name": "clarity-standard-zen-nemotron",
+      "route_name": "lawhand-standard-zen-nemotron",
       "source": "litellm_config.yaml"
     },
     {
       "api_base": "https://opencode.ai/zen/v1",
       "api_key_env": "os.environ/OPENCODE_ZEN_API_KEY",
       "provider_model": "openai/deepseek-v4-flash-free",
-      "route_name": "clarity-standard-deepseek-flash-free",
+      "route_name": "lawhand-standard-deepseek-flash-free",
       "source": "litellm_config.yaml"
     },
     {
       "api_base": "https://opencode.ai/zen/go/v1",
       "api_key_env": "os.environ/OPENCODE_GO_API_KEY",
       "provider_model": "openai/deepseek-v4-pro",
-      "route_name": "clarity-premium",
+      "route_name": "lawhand-premium",
       "source": "litellm_config.yaml"
     },
     {
       "api_base": "default/provider",
       "api_key_env": "os.environ/OPENROUTER_API_KEY",
       "provider_model": "openrouter/google/gemma-4-31b-it:free",
-      "route_name": "clarity-premium-openrouter-gemma",
+      "route_name": "lawhand-premium-openrouter-gemma",
       "source": "litellm_config.yaml"
     },
     {
       "api_base": "https://opencode.ai/zen/go/v1",
       "api_key_env": "os.environ/OPENCODE_GO_API_KEY",
       "provider_model": "openai/gpt-5.6-luna",
-      "route_name": "clarity-background",
+      "route_name": "lawhand-background",
       "source": "litellm_config.yaml"
     },
     {
       "api_base": "https://opencode.ai/zen/v1",
       "api_key_env": "os.environ/OPENCODE_ZEN_API_KEY",
       "provider_model": "openai/gpt-5.6-luna",
-      "route_name": "clarity-background-zen",
+      "route_name": "lawhand-background-zen",
       "source": "litellm_config.yaml"
     }
   ],

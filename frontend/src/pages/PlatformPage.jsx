@@ -665,9 +665,9 @@ function AliasPill({ label, alias, sub }) {
 }
 
 function RoutingOverviewPanel({ config, onOpenRouting }) {
-  const standardAlias = config?.standard_model || 'clarity-standard'
-  const premiumAlias = config?.premium_model || 'clarity-premium'
-  const backgroundAlias = config?.background_model || 'clarity-background'
+  const standardAlias = config?.standard_model || 'lawhand-standard'
+  const premiumAlias = config?.premium_model || 'lawhand-premium'
+  const backgroundAlias = config?.background_model || 'lawhand-background'
   return (
     <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden mb-8">
       <div className="px-5 py-4 border-b border-brand-line flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1426,7 +1426,7 @@ function RouteCard({ label, routeName, alias: activeAlias, route, allKeys, prese
   const [testResult, setTestResult] = useState(null)
 
   const routeKey = routeName || label.toLowerCase()
-  const alias = activeAlias || `clarity-${routeKey}`
+  const alias = activeAlias || `lawhand-${routeKey}`
   const selectedPreset = presets.find((p) => p.id === route.provider_id)
   const selectedKey = allKeys.find((k) => k.id === route.key_id)
   const issues = routeIssues(route, allKeys)
@@ -3040,7 +3040,7 @@ export function AIRoutingTab({ platformKey, onAuthError }) {
           {saveResult && (
             <span className={`text-xs font-sans ${saveResult.ok ? (saveResult.pending ? 'text-brand-amber' : 'text-brand-accent') : 'text-brand-rose'}`}>
               {saveResult.message || (saveResult.ok
-                ? `Saved - ${saveResult.app_aliases?.standard || 'clarity-standard'} / ${saveResult.app_aliases?.premium || 'clarity-premium'}${saveResult.litellm_updated ? `, ${saveResult.models_registered} model(s), ${saveResult.fallbacks_registered} fallback(s) reloaded` : `, DB only; LiteLLM not reloaded${saveResult.litellm_error ? ` (${saveResult.litellm_error})` : ''}`}`
+                ? `Saved - ${saveResult.app_aliases?.standard || 'lawhand-standard'} / ${saveResult.app_aliases?.premium || 'lawhand-premium'}${saveResult.litellm_updated ? `, ${saveResult.models_registered} model(s), ${saveResult.fallbacks_registered} fallback(s) reloaded` : `, DB only; LiteLLM not reloaded${saveResult.litellm_error ? ` (${saveResult.litellm_error})` : ''}`}`
                 : saveResult.error)}
             </span>
           )}
@@ -3829,8 +3829,8 @@ export default function PlatformPage() {
                                       tenantDetail={tenantDetail}
                                       platformKey={platformKey}
                                       defaultAliases={{
-                                        standard: llmConfig?.standard_model || 'clarity-standard',
-                                        premium: llmConfig?.premium_model || 'clarity-premium',
+                                        standard: llmConfig?.standard_model || 'lawhand-standard',
+                                        premium: llmConfig?.premium_model || 'lawhand-premium',
                                       }}
                                       onUpdate={handleUpdate}
                                       onError={(message) => setError(message)}

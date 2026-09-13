@@ -1717,8 +1717,8 @@ def _managed_route_aliases(config: dict[str, Any]) -> dict[str, str]:
     # owns, while the activation record may still use the full graph revision.
     revision = _route_revision(config, ("standard", "premium"))
     aliases = {
-        "standard": f"clarity-standard-r{revision}",
-        "premium": f"clarity-premium-r{revision}",
+        "standard": f"lawhand-standard-r{revision}",
+        "premium": f"lawhand-premium-r{revision}",
     }
     background = config.get("background") or {}
     if isinstance(background, dict) and (
@@ -1735,7 +1735,7 @@ def _managed_route_aliases(config: dict[str, Any]) -> dict[str, str]:
         )
     ):
         background_revision = _route_revision(config, ("background",))
-        aliases["background"] = f"clarity-background-r{background_revision}"
+        aliases["background"] = f"lawhand-background-r{background_revision}"
     return aliases
 
 
@@ -2323,7 +2323,7 @@ async def _fetch_models_from_provider(
 
 
 def _route_aliases(route_name: str, route_dict: dict) -> tuple[str, list[str]]:
-    primary = f"clarity-{route_name}"
+    primary = f"lawhand-{route_name}"
     fallback_aliases = [
         f"{primary}-fb-{idx}"
         for idx, fallback in enumerate(route_dict.get("fallbacks", []))

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,9 @@ vi.mock('../App', () => ({
 }))
 
 vi.mock('../api', () => ({
+  getReadyToBill: vi.fn().mockResolvedValue({ items: [], total: 0, total_amount: "0" }),
+  getBillingSchedules: vi.fn().mockResolvedValue({ items: [] }),
+  getBillingFees: vi.fn().mockResolvedValue({ items: [] }),
   getInvoicePreview,
   generateInvoice,
   getInvoices: vi.fn().mockResolvedValue({ items: [] }),
@@ -58,7 +61,32 @@ describe('InvoicesPage prebill review', () => {
       due_date_days: 15,
       payment_terms: 'Net 15',
       date_from: undefined,
-      date_to: undefined,
+      date_to: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     })))
   })
+})
+
+
+it('creates a fixed-fee-only draft with the chosen work cutoff', async () => {
+  getInvoicePreview.mockResolvedValue({ matter_id: 'matter-1', time_entries: [], expenses: [] })
+  generateInvoice.mockResolvedValue({ id: 'invoice-2' })
+  const user = userEvent.setup()
+  render(<MemoryRouter><InvoicesPage /></MemoryRouter>)
+  await user.click(screen.getByRole('button', { name: /generate invoice/i }))
+  await user.selectOptions(screen.getByLabelText('Matter'), 'matter-1')
+  await waitFor(() => expect(getInvoicePreview).toHaveBeenCalled())
+  fireEvent.change(screen.getByLabelText('Issue date'), { target: { value: '2026-10-01' } })
+  fireEvent.change(screen.getByLabelText('Work through'), { target: { value: '2026-09-30' } })
+  fireEvent.change(screen.getByLabelText('Issue date'), { target: { value: '2026-10-03' } })
+  expect(screen.getByLabelText('Work through')).toHaveValue('2026-09-30')
+  await user.click(screen.getByRole('button', { name: 'Add fixed fee' }))
+  await user.type(screen.getByLabelText('Fee description 1'), 'Estate package')
+  await user.type(screen.getByLabelText('Unit price 1'), '2500')
+  await user.click(screen.getByRole('button', { name: /generate draft/i }))
+  await waitFor(() => expect(generateInvoice).toHaveBeenCalledWith(expect.objectContaining({
+    date_to: '2026-09-30', issue_date: '2026-10-03',
+    manual_charges: [{ description: 'Estate package', quantity: '1', unit_price: '2500' }],
+    time_entry_ids: [], expense_ids: [],
+  })))
+  cleanup()
 })

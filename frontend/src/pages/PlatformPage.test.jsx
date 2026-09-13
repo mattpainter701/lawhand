@@ -38,8 +38,8 @@ vi.mock('../api', async (importOriginal) => ({
 }))
 
 const activeAliases = {
-  standard: 'clarity-standard-rabc123',
-  premium: 'clarity-premium-rabc123',
+  standard: 'lawhand-standard-rabc123',
+  premium: 'lawhand-premium-rabc123',
 }
 
 const standard = {

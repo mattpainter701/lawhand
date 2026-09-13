@@ -350,7 +350,7 @@ request = urllib.request.Request(
 )
 with urllib.request.urlopen(request, timeout=15) as response:
     models = {item["id"] for item in json.load(response).get("data", [])}
-required = {"clarity-standard", "clarity-premium"}
+required = {"lawhand-standard", "lawhand-premium"}
 if not required.issubset(models):
     raise SystemExit(f"missing required model aliases: {sorted(required - models)}")
 PY

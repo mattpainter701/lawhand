@@ -85,7 +85,7 @@ async def test_operator_override_preserves_other_provider_rates():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model,expected_cost", [("mimo-v2.5-free", 0), ("deepseek-v4-flash", 11), ("unknown", None)])
 async def test_gateway_usage_settles_verified_free_without_weakening_unknown_cost_handling(monkeypatch, model, expected_cost):
-    route = LLMRoute(requested_route="background", resolved_route="background", gateway_alias="clarity-background-test")
+    route = LLMRoute(requested_route="background", resolved_route="background", gateway_alias="lawhand-background-test")
     monkeypatch.setattr(broker, "resolve_llm_route", AsyncMock(return_value=route))
     monkeypatch.setattr(broker, "get_active_background_pricing_models", AsyncMock(return_value=["deepseek/deepseek-v4-flash", "opencode-zen/mimo-v2.5-free"]))
     monkeypatch.setattr(broker.settings, "LITELLM_BASE_URL", "http://gateway/v1")

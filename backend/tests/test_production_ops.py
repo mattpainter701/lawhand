@@ -1413,7 +1413,7 @@ def test_production_check_exercises_customer_llm_routes() -> None:
     assert '"${compose[@]}" exec -T backend' in production_check
     assert "timeout --kill-after=10s 140s" in production_check
     assert (
-        'for model in ("clarity-standard", "clarity-premium"):' not in production_check
+        'for model in ("lawhand-standard", "lawhand-premium"):' not in production_check
     )
 
 

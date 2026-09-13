@@ -1,3 +1,4 @@
+import InvoicePaymentPlan from '../components/InvoicePaymentPlan'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -637,6 +638,7 @@ export default function InvoiceDetailPage() {
         </AlertBanner>
       )}
 
+      <InvoicePaymentPlan key={`${invoice.id}-${JSON.stringify(invoice.billing_details?.installments || [])}`} invoice={invoice} onSaved={setInvoice} />
       <MetricStrip
         className="mb-6"
         items={[

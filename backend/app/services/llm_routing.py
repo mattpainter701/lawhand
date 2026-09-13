@@ -202,19 +202,40 @@ def _model_from_values(provider: str | None, model: str | None) -> str | None:
     return _clean(model)
 
 
+_LEGACY_ALIAS_ROOTS = ("standard", "premium", "background")
+
+
+def _upgrade_legacy_alias(alias: str | None) -> str | None:
+    """Map a stored ``clarity-*`` route alias to its ``lawhand-*`` name.
+
+    Platform settings and tenant overrides written before the rebrand still
+    name the previous aliases. Rewrite them on read so a stored value keeps
+    resolving; the next save persists the new name, and a later cleanup can
+    drop this shim once no stored row carries the old prefix.
+    """
+    value = _clean(alias)
+    if not value:
+        return value
+    for root in _LEGACY_ALIAS_ROOTS:
+        prefix = f"clarity-{root}"
+        if value == prefix or value.startswith(f"{prefix}-"):
+            return f"lawhand-{value[len('clarity-'):]}"
+    return value
+
+
 def _current_managed_alias(
     alias: str | None, platform_config: dict[str, str | None]
 ) -> str | None:
     """Move logical tenant overrides forward with managed route revisions."""
 
-    alias = _clean(alias)
+    alias = _upgrade_legacy_alias(alias)
     if not alias:
         return None
-    if alias == "clarity-standard" or alias.startswith("clarity-standard-r"):
+    if alias == "lawhand-standard" or alias.startswith("lawhand-standard-r"):
         return _clean(platform_config.get("standard_model")) or alias
-    if alias == "clarity-premium" or alias.startswith("clarity-premium-r"):
+    if alias == "lawhand-premium" or alias.startswith("lawhand-premium-r"):
         return _clean(platform_config.get("premium_model")) or alias
-    if alias == "clarity-background" or alias.startswith("clarity-background-r"):
+    if alias == "lawhand-background" or alias.startswith("lawhand-background-r"):
         return _clean(platform_config.get("background_model")) or alias
     return alias
 
@@ -256,15 +277,18 @@ def _normalize_config(value: dict[str, Any] | None) -> dict[str, str | None]:
     background_provider = _clean(value.get("background_provider"))
     if standard_provider in (None, LITELLM_PROVIDER):
         config["standard_model"] = (
-            _clean(value.get("standard_model")) or settings.LITELLM_STANDARD_MODEL
+            _upgrade_legacy_alias(value.get("standard_model"))
+            or settings.LITELLM_STANDARD_MODEL
         )
     if premium_provider in (None, LITELLM_PROVIDER):
         config["premium_model"] = (
-            _clean(value.get("premium_model")) or settings.LITELLM_PREMIUM_MODEL
+            _upgrade_legacy_alias(value.get("premium_model"))
+            or settings.LITELLM_PREMIUM_MODEL
         )
     if background_provider in (None, LITELLM_PROVIDER):
         config["background_model"] = (
-            _clean(value.get("background_model")) or settings.LITELLM_BACKGROUND_MODEL
+            _upgrade_legacy_alias(value.get("background_model"))
+            or settings.LITELLM_BACKGROUND_MODEL
         )
     return config
 
@@ -291,8 +315,9 @@ async def get_platform_llm_config(db: AsyncSession) -> dict[str, str | None]:
         if isinstance(background_value.get("activation"), dict)
         else {}
     )
-    background_alias = _clean(background_value.get("model")) or _clean(
-        (background_activation.get("aliases") or {}).get("background")
+    background_alias = _upgrade_legacy_alias(
+        _clean(background_value.get("model"))
+        or (background_activation.get("aliases") or {}).get("background")
     )
     if background_alias:
         config["background_model"] = background_alias

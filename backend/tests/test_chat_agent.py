@@ -79,7 +79,7 @@ class _ScriptedLLM:
 
 
 class _Route:
-    model = "clarity-standard"
+    model = "lawhand-standard"
     provider = "litellm"
     customer_api_key = None
     customer_provider = None

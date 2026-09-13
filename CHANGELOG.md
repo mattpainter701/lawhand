@@ -1,3 +1,12 @@
+## 2026.09.13.4 — Flexible matter billing
+
+- Add fixed-fee-only generation, stable request keys, fee readiness/reservation, calendar schedules and a ready-to-bill query.
+- Keep scheduled work on the existing draft generator and QBO invoice/payment records. Never enroll existing monthly matters automatically.
+- Preserve billing-time client/tax details and add dated invoice installments with portal allocation.
+- Migration 186 adds fee/schedule tables with forced RLS, invoice generation keys/details and isolated platform subscription records.
+- Add Helcim platform subscription checkout, price consent, cancellation, payment-method updates and canonical reconciliation. Default new deployments to Helcim and prevent signup, subscription webhooks and usage jobs from making Stripe billing calls in Helcim mode.
+- Preserve MCP usage with frozen rates for manual Helcim review; automated variable-usage invoicing remains outside this release.
+
 ## Unreleased — Client correspondence can no longer fall back to the platform relay
 
 - Gate `connected_mail.send_client_email`'s SMTP fallback behind `CLIENT_MAIL_SMTP_FALLBACK_ENABLED`, off by default. The fallback assumed `EMAIL_*` might be a firm's own mail server, but there is no per-tenant SMTP configuration: on the hosted product `EMAIL_*` is LawHand's relay, so a tenant with no Microsoft or Google grant would have had a client's matter correspondence sent from a LawHand address.
