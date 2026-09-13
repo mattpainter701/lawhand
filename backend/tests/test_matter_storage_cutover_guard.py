@@ -1,9 +1,9 @@
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import httpx
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.services import matter_file_store as module
 from app.services.matter_file_store import MatterFileStoragePolicyError, MatterFileStore
@@ -20,7 +20,8 @@ async def test_upload_lock_rejects_retired_provider(monkeypatch, provider):
     db = Mock(execute=AsyncMock(side_effect=[scalar(None), scalar('google_drive' if provider != 'google_drive' else 'onedrive')]))
     with pytest.raises(MatterFileStoragePolicyError, match='storage provider changed'):
         await MatterFileStore()._lock_write_binding(db, str(uuid4()), 'case', provider, 'old-folder')
-    assert 'FOR UPDATE' in str(db.execute.await_args_list[0].args[0])
+    sql = str(db.execute.await_args_list[0].args[0].compile(dialect=postgresql.dialect()))
+    assert 'FOR NO KEY UPDATE' in sql
 
 
 @pytest.mark.asyncio

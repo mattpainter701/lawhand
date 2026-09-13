@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.8 — Reliable signed files and matter numbering
+
+Released September 13, 2026.
+
+Signed paperwork can finish filing, and simultaneous first matters keep a consistent firm number prefix.
+
+- **Keep completed forms with the matter.** Filing retries reuse the saved answers and signatures. Once filed, clients can download the completed forms and their evidence certificates from Documents.
+- **Keep your matter numbers consistent.** When the first matters are opened at the same time, they use the same firm prefix and receive separate consecutive numbers.
+
 ## 2026.09.13.7 — Setup chooses document storage, and integrations show health first
 
 Released September 13, 2026.

@@ -746,7 +746,11 @@ class MatterFileStore:
         await db.execute(
             select(Tenant)
             .where(Tenant.id == uuid.UUID(str(tenant_id)))
-            .with_for_update()
+            # Signature events and document folders may still be uncommitted
+            # in the signing session. Their tenant FK checks hold KEY SHARE;
+            # FOR UPDATE here would wait on our own caller. NO KEY UPDATE
+            # permits those references while still excluding provider cutover.
+            .with_for_update(key_share=True)
         )
         primary = (
             await db.execute(

@@ -158,7 +158,14 @@ async def generate_matter_number(
     """
     tenant_uuid = uuid.UUID(str(tenant_id))
     tenant = (
-        await db.execute(select(Tenant).where(Tenant.id == tenant_uuid))
+        await db.execute(
+            select(Tenant)
+            .where(Tenant.id == tenant_uuid)
+            # Serialize first-prefix initialization as well as the counter.
+            # A waiting caller may have cached the old empty prefix already.
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if tenant is None:
         raise ValueError(f"Unknown tenant {tenant_id}")

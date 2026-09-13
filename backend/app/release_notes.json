@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.8",
+      "version": "2026.09.13.8",
+      "title": "Reliable signed files and matter numbering",
+      "published_at": "2026-09-13",
+      "summary": "Signed paperwork can finish filing, and simultaneous first matters keep a consistent firm number prefix.",
+      "highlights": [
+        {
+          "title": "Keep completed forms with the matter",
+          "description": "Filing retries reuse the saved answers and signatures. Once filed, clients can download the completed forms and their evidence certificates from Documents."
+        },
+        {
+          "title": "Keep your matter numbers consistent",
+          "description": "When the first matters are opened at the same time, they use the same firm prefix and receive separate consecutive numbers."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.7",
       "version": "2026.09.13.7",
       "title": "Setup chooses document storage, and integrations show health first",

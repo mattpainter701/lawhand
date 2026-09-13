@@ -34,6 +34,7 @@ CLIENT_EMAIL = "client@example.com"
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("outage", [False, True])
 async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
     client,
     db_session,
@@ -43,6 +44,7 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
     portal_cookie,
     local_storage,
     monkeypatch,
+    outage,
 ):
     from app.models.tenant_credential import TenantCredential
     from app.services import token_vault
@@ -79,7 +81,7 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
         return await original_read(self, **kwargs)
 
     monkeypatch.setattr(MatterFileStore, "read_matter_file_bytes", cloud_read)
-    unavailable = True
+    unavailable = outage
     uploads = []
 
     async def cloud_store(**kwargs):
@@ -95,6 +97,12 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
             return StorageResult(
                 provider="microsoft", backend="onedrive", error="Provider outage"
             )
+        # Keep the real cloud cutover guard as well as the token lock. Pending
+        # signature events and Signed folders hold tenant foreign-key locks.
+        # The provider transport alone is replaced by a local byte fixture.
+        await MatterFileStore()._lock_write_binding(
+            kwargs["db"], kwargs["tenant_id"], kwargs["matter_slug"], "onedrive", None
+        )
         uploads.append(kwargs["content"])
         return await MatterFileStore()._store_local(
             kwargs["tenant_id"],
@@ -124,7 +132,7 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
         },
     )
     assert response.status_code == 200, response.text
-    assert response.json()["completion_pending"] is True
+    assert response.json()["completion_pending"] is outage
     durable = await _reload(db_session, request.id)
     assert durable.signers[0].field_values == values
     assert durable.signers[0].status == "signed"
@@ -133,7 +141,7 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
 
     unavailable = False
     later = datetime.now(timezone.utc) + esign_service.COMPLETION_RETRY_INTERVAL
-    assert await retry_pending_completions(db_session, now=later) == 1
+    assert await retry_pending_completions(db_session, now=later) == int(outage)
     await db_session.commit()
     durable = await _reload(db_session, request.id)
     assert durable.status == "completed"
