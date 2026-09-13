@@ -15,6 +15,19 @@
       ]
     },
     {
+      "id": "2026.09.13.5",
+      "version": "2026.09.13.5",
+      "title": "Clearer legal team contact details",
+      "published_at": "2026-09-13",
+      "summary": "The client portal shows your legal team's names and email addresses without internal assignment labels.",
+      "highlights": [
+        {
+          "title": "Simple team contact details",
+          "description": "Find your legal team's names and email links in the matter overview, without internal role codes beside their names."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.4",
       "version": "2026.09.13.4",
       "title": "Flexible matter billing and Helcim subscriptions",

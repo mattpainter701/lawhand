@@ -13,6 +13,14 @@ Signed forms can finish filing without waiting on their own cloud connection loc
 
 - **Recover signed forms without signing again.** Saved answers and signatures are reused when filing retries. Once filed, the signed PDF and evidence certificate are available in the client's Documents tab.
 
+## 2026.09.13.5 — Clearer legal team contact details
+
+Released September 13, 2026.
+
+The client portal shows your legal team's names and email addresses without internal assignment labels.
+
+- **Simple team contact details.** Find your legal team's names and email links in the matter overview, without internal role codes beside their names.
+
 ## 2026.09.13.4 — Flexible matter billing and Helcim subscriptions
 
 Released September 13, 2026.
