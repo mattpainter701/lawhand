@@ -1,0 +1,86 @@
+---
+slug: onboarding-and-storage-setup
+title: Onboarding & storage setup
+description: What the setup wizard does at each step, why document storage is confirmed before any matter exists, and how to re-run or repair setup.
+order: 210
+read_time: 9 min
+icon: compass
+---
+
+# Onboarding & storage setup
+
+The setup wizard runs once for a new firm, after the first administrator signs in. It connects the firm's cloud provider, confirms where matter documents will live, imports the team, and hands off to the Administration portal. Every step is persisted, so an administrator can close the browser and resume; nothing is created silently in the background.
+
+The wizard is reachable at `/onboarding` for administrators. Users are redirected to it after sign-in until setup is complete or skipped.
+
+## The six steps
+
+| Step | Name | What happens | What must be true to continue |
+| --- | --- | --- | --- |
+| 1 | Welcome | Explains the setup. | — |
+| 2 | Connect | Accept the tenant agreements, then connect Microsoft 365 or Google Workspace with **administrator consent**. | At least one provider connected and agreements accepted. |
+| 3 | Storage | Choose the provider for matter documents and create the root folder. LawHand shows the folder it created and links to it. | A root folder exists for the chosen provider. |
+| 4 | Sync Users | Import the directory into LawHand. | — (personal accounts have no directory; invite users later instead). |
+| 5 | Review | Shows imported user counts and confirms storage is set. | Storage confirmed. |
+| 6 | Complete | Marks the firm live and links to the Administration portal. | — |
+
+Behind each step the tenant record stores an `onboarding_step` number from 0 to 5. Connecting a provider advances the tenant to the Storage step automatically; a finished directory sync advances from Sync Users to Review, and never skips Storage.
+
+## Why storage is its own step
+
+Matter documents are stored in the firm's own cloud account, never on LawHand infrastructure. If the folder is not there, document uploads, generation, e-signature and portal transfers fail closed rather than falling back to local storage. Previously the root folder was created quietly when setup completed, so a firm never chose the provider, never saw the folder, and could finish setup with no working storage. Now:
+
+- the administrator chooses **Google Drive** or **Microsoft OneDrive** from the providers actually connected;
+- LawHand creates `claritylegal-records` in that account and shows its name and link;
+- the choice is saved as the firm's **primary provider** (the same setting shown under Administration → Integrations → Cloud → Document storage);
+- setup cannot complete until a root folder exists.
+
+SharePoint is chosen after setup: finish with OneDrive, then select the site and library under **Document storage**. The migration tooling (below) can rebind matters afterwards if needed.
+
+## What "Folder exists" means
+
+When the Storage step shows **Folder exists** next to a provider, the tenant already has a root binding for it — from an earlier run, a re-entered setup, or an administrator repair. LawHand keeps that folder and never recreates or repoints it: folder IDs are the authority for every matter folder underneath. Choose **Continue** to keep it.
+
+If a saved root is malformed (a provider entry without a folder ID), the step reports **repair needed** and refuses to rebind. Repair it under Administration → Integrations → Advanced → Storage migration, or ask support.
+
+## Failures at the Storage step
+
+A failure here is honest and retryable. The two common causes:
+
+- **The connected account cannot create the folder.** The consent may have been granted by an account without Drive or OneDrive access, or a required scope was declined. Re-authorize from Administration → Integrations → Cloud and try again.
+- **SharePoint chosen before a library is bound.** Choose OneDrive for now, or bind the site and library first.
+
+A failed attempt records nothing: no half-created root, no primary provider change. **Try again** repeats the same request.
+
+## Re-running setup
+
+**Restart setup** on the Complete screen (or `POST /api/admin/onboarding/reenter`) reopens the wizard at Connect while keeping the firm live. The existing root is preserved and audited; the Storage step shows it as **Folder exists**. Completing setup again records an `onboarding_rerun` audit entry against the root and does not change it.
+
+Re-entry with a target provider starts a storage migration instead of a plain re-run. Use Administration → Integrations → Advanced → Storage migration for that flow; it discovers and reconciles existing folders before any cutover, and requires explicit confirmation.
+
+## Skipping setup
+
+**Skip setup** marks the firm complete without any connection or storage. Use it only for evaluation tenants. A skipped firm has no document storage until an administrator connects a provider and runs **Create missing matter folders** under Document storage.
+
+## After setup: where things live
+
+| Need | Where |
+| --- | --- |
+| Is the connection healthy? | Administration → Integrations → Cloud, provider cards (see [Integrations](/guide/integrations)). |
+| Which provider holds documents? | Administration → Integrations → Cloud → Document storage. |
+| Create folders for matters made before storage existed | Document storage → **Create missing matter folders**. Safe to repeat. |
+| Move matters to another provider | Administration → Integrations → Advanced → Storage migration. |
+| Import the team again | Provider card → **Sync now** (workspace tiers only). |
+
+## Endpoints, for support reference
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/admin/onboarding/status` | Step, connections, synced user counts, primary provider, saved root bindings, `storage_ready`. |
+| `POST /api/admin/onboarding/step/{n}` | Persist wizard progress (0–5). |
+| `POST /api/admin/onboarding/storage` | Choose a provider and create or confirm its root. Returns `ready`, `failed` or `repair_needed`. |
+| `POST /api/admin/onboarding/complete` | Finish setup. Rejected until a root exists. |
+| `POST /api/admin/onboarding/reenter` | Reopen setup without discarding the root. |
+| `POST /api/admin/onboarding/skip` | Finish without connections. |
+
+None of these expose tokens or provider secrets, and none delete provider content.

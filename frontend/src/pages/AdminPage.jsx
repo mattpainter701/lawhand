@@ -34,7 +34,7 @@ import BillingDefaultsPanel from '../components/BillingDefaultsPanel'
 import GuideViewer from '../components/GuideViewer'
 import CompliancePanel from '../components/CompliancePanel'
 import { ADMINISTRATIVE_GUIDE } from '../platformDocs'
-import { Spinner, Toggle } from '../components/ui'
+import { Disclosure, Spinner, Toggle } from '../components/ui'
 import { UserPlus, ChevronDown, ChevronRight, X } from 'lucide-react'
 
 function ErrorMsg({ msg }) {
@@ -57,23 +57,48 @@ function StatCard({ label, value, sub }) {
   )
 }
 
-// Ordered by how often a firm administrator reaches for each: the day-to-day
-// tabs first, then setup, then the reference and rarely-touched ones. Tab ids
-// are stable because links across the app deep-link with ?tab=<id>.
-const ADMIN_TABS = [
-  { id: 'users', label: 'Users' },
-  { id: 'integrations', label: 'Integrations' },
-  { id: 'firm', label: 'Firm Profile' },
-  { id: 'billing', label: 'Subscription' },
-  { id: 'licensing', label: 'Licensing' },
-  { id: 'usage', label: 'Usage' },
-  { id: 'roles', label: 'Roles' },
-  { id: 'settings', label: 'Settings' },
-  { id: 'tenant', label: 'Tenant' },
-  { id: 'prompts', label: 'Prompts' },
-  { id: 'guide', label: 'Admin Guide' },
-  { id: 'support', label: 'Support' },
+// Tabs are grouped by what an administrator is trying to do, with the
+// day-to-day groups first. Tab ids are stable because links across the app
+// deep-link with ?tab=<id>. `advanced` tabs can change AI behaviour for every
+// user and are gated on the admin_settings capability, not just the role.
+export const ADMIN_TAB_GROUPS = [
+  { id: 'people', label: 'People', tabs: [
+    { id: 'users', label: 'Users' },
+    { id: 'roles', label: 'Roles' },
+  ] },
+  { id: 'firm', label: 'Firm', tabs: [
+    { id: 'integrations', label: 'Integrations' },
+    { id: 'firm', label: 'Firm Profile' },
+    { id: 'settings', label: 'Settings' },
+  ] },
+  { id: 'billing', label: 'Billing', tabs: [
+    { id: 'billing', label: 'Subscription' },
+    { id: 'licensing', label: 'Licensing' },
+    { id: 'usage', label: 'Usage' },
+  ] },
+  { id: 'support', label: 'Support', tabs: [
+    { id: 'guide', label: 'Admin Guide' },
+    { id: 'support', label: 'Support' },
+    { id: 'tenant', label: 'Tenant' },
+    { id: 'prompts', label: 'Prompts', advanced: true },
+  ] },
 ]
+
+const ADMIN_TABS = ADMIN_TAB_GROUPS.flatMap((group) => group.tabs)
+
+export function canUseAdvancedSettings(user) {
+  if (user?.role !== 'admin') return false
+  const caps = user?.capabilities
+  if (Array.isArray(caps) && caps.length > 0) return caps.includes('admin_settings')
+  return true
+}
+
+export function adminTabsFor(user) {
+  const base = user?.plan === 'intake-only'
+    ? (user?.role === 'accountant' ? INTAKE_ACCOUNTANT_TABS : INTAKE_ADMIN_TABS)
+    : (user?.role === 'accountant' ? ACCOUNTANT_TABS : ADMIN_TABS)
+  return canUseAdvancedSettings(user) ? base : base.filter((tab) => !tab.advanced)
+}
 
 const ACCOUNTANT_TABS = ADMIN_TABS.filter((tab) =>
   ['licensing', 'billing', 'usage', 'integrations'].includes(tab.id)
@@ -1212,8 +1237,6 @@ function SettingsTab() {
 
   return (
     <div className="max-w-3xl space-y-8">
-      <ReleaseInfoPanel />
-
       {/* Case Law */}
       <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
         <div className="px-8 py-6 border-b border-brand-line bg-brand-bg-soft/50">
@@ -1231,15 +1254,29 @@ function SettingsTab() {
         </div>
       </div>
 
-      {/* LiteLLM Gateway */}
-      <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-        <div className="px-8 py-6 border-b border-brand-line bg-brand-bg-soft/50">
-          <h3 className="font-serif font-bold text-xl text-brand-ink">LiteLLM Gateway</h3>
-          <p className="text-sm text-brand-ink-2 font-sans mt-1">
-            Optional tenant gateway alias override. Provider routing and fallback chains are managed in LiteLLM.
-          </p>
-        </div>
-        <div className="divide-y divide-brand-line px-8 py-5 space-y-5">
+      {/* Alerts & Budgets */}
+      <AlertsSection />
+
+      {/* Feature Flags */}
+      {featureSettings && (
+        <FeatureFlagsSection settings={featureSettings} onUpdate={(s) => setFeatureSettings(s)} />
+      )}
+
+      {/* Operator-level controls stay reachable but never sit beside everyday
+          settings: the gateway alias changes which model answers every user. */}
+      <Disclosure
+        title="Advanced"
+        summary="AI gateway alias override. Changing it affects every user; leave blank unless support asked you to set it."
+        tone="danger"
+        testId="settings-advanced"
+      >
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-sans font-bold text-sm text-brand-ink">LiteLLM Gateway</h3>
+            <p className="text-xs text-brand-ink-2 font-sans mt-1">
+              Optional tenant gateway alias override. Provider routing and fallback chains are managed in LiteLLM.
+            </p>
+          </div>
           <div>
             <label htmlFor="adminpage-standard-alias-override" className="block text-sm font-sans font-semibold text-brand-ink mb-2">
               Standard alias override <span className="text-brand-ink-2 font-normal">(optional)</span>
@@ -1266,15 +1303,9 @@ function SettingsTab() {
             )}
           </div>
         </div>
-      </div>
+      </Disclosure>
 
-      {/* Feature Flags */}
-      {featureSettings && (
-        <FeatureFlagsSection settings={featureSettings} onUpdate={(s) => setFeatureSettings(s)} />
-      )}
-
-      {/* Alerts & Budgets */}
-      <AlertsSection />
+      <ReleaseInfoPanel />
     </div>
   )
 }
@@ -1286,9 +1317,10 @@ export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const initialTab = searchParams.get('tab')
   const normalizedInitialTab = LEGACY_INTEGRATION_TABS[initialTab] ? 'integrations' : initialTab
-  const tabs = user?.plan === 'intake-only'
-    ? (user?.role === 'accountant' ? INTAKE_ACCOUNTANT_TABS : INTAKE_ADMIN_TABS)
-    : (user?.role === 'accountant' ? ACCOUNTANT_TABS : ADMIN_TABS)
+  const tabs = adminTabsFor(user)
+  const tabGroups = ADMIN_TAB_GROUPS
+    .map((group) => ({ ...group, tabs: group.tabs.filter((tab) => tabs.some((t) => t.id === tab.id)) }))
+    .filter((group) => group.tabs.length > 0)
   const defaultTab = tabs[0]?.id || 'licensing'
   const [activeTab, setActiveTab] = useState(
     tabs.some((t) => t.id === normalizedInitialTab) ? normalizedInitialTab : defaultTab
@@ -1366,12 +1398,17 @@ export default function AdminPage() {
               <>
                 <span className="text-sm font-sans font-semibold text-brand-ink">{tabs.find(t => t.id === activeTab)?.label || 'Admin'}</span>
                 <select
+                  aria-label="Administration section"
                   value={activeTab}
                   onChange={(e) => selectTab(e.target.value)}
                   className="text-xs font-sans px-2 py-1.5 border border-brand-line rounded-lg bg-brand-surface text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent ml-auto"
                 >
-                  {tabs.map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
+                  {tabGroups.map((group) => (
+                    <optgroup key={group.id} label={group.label}>
+                      {group.tabs.map((t) => (
+                        <option key={t.id} value={t.id}>{t.label}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </>
@@ -1379,19 +1416,28 @@ export default function AdminPage() {
           </div>
           {!tabsCollapsed && (
             <div className="border-b border-brand-line overflow-x-auto">
-              <nav className="-mb-px flex gap-4 md:gap-6">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => selectTab(tab.id)}
-                    className={`pb-4 text-[13px] md:text-[14px] font-sans font-medium border-b-2 transition-all whitespace-nowrap flex-shrink-0 ${
-                      activeTab === tab.id
-                        ? 'border-brand-accent text-brand-ink'
-                        : 'border-transparent text-brand-muted hover:text-brand-ink hover:border-brand-line-2'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
+              <nav aria-label="Administration sections" className="-mb-px flex gap-6 md:gap-8">
+                {tabGroups.map((group) => (
+                  <div key={group.id} className="flex flex-col gap-1.5 flex-shrink-0" data-testid={`admin-tab-group-${group.id}`}>
+                    <span className="text-[10px] font-sans font-bold uppercase tracking-[0.14em] text-brand-muted">{group.label}</span>
+                    <div className="flex gap-4">
+                      {group.tabs.map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => selectTab(tab.id)}
+                          aria-current={activeTab === tab.id ? 'page' : undefined}
+                          className={`pb-3 text-[13px] md:text-[14px] font-sans font-medium border-b-2 transition-all whitespace-nowrap flex-shrink-0 ${
+                            activeTab === tab.id
+                              ? 'border-brand-accent text-brand-ink'
+                              : 'border-transparent text-brand-muted hover:text-brand-ink hover:border-brand-line-2'
+                          }`}
+                        >
+                          {tab.label}
+                          {tab.advanced && <span className="ml-1 text-[10px] font-bold uppercase text-amber-700" title="Changes AI behaviour for every user">adv</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </nav>
             </div>

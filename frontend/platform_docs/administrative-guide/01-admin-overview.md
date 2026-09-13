@@ -20,7 +20,11 @@ The Administration portal controls tenant-wide access, commercial settings, inte
 - [Subscription](/admin?tab=billing) and [Usage](/admin?tab=usage) — review commercial status and consumption.
 - [Firm Profile](/admin?tab=firm) — the firm's name, contact details, and branding, as clients see them.
 - [Tenant](/admin?tab=tenant) and [Settings](/admin?tab=settings) — review the organization record, and maintain defaults, alerts, and feature controls.
-- [Integrations](/admin?tab=integrations) — authorize cloud services and manage MCP servers, Cloud Search, file shares, collaboration, communications, and accounting connections in one place; [Prompts](/admin?tab=prompts) governs AI instructions.
+- [Integrations](/admin?tab=integrations) — authorize cloud services and review their health; Cloud Search, file shares, collaboration, communications, and accounting connections are firm sections, while MCP servers, storage migration, data import and provider readiness sit under **Advanced** for administrators with the `manage_integrations` capability.
+- [Prompts](/admin?tab=prompts) governs AI instructions and is listed under **Advanced** in the portal navigation; it requires the `admin_settings` capability.
+- [Onboarding](/onboarding) — the setup wizard for a new firm; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup) to re-run or repair it.
+
+The portal navigation groups tabs as **People** (Users, Roles), **Firm** (Integrations, Firm Profile, Settings), **Billing** (Subscription, Licensing, Usage) and **Support** (Admin Guide, Support, Tenant, Prompts). Tab links such as `/admin?tab=users` are unchanged.
 
 Your plan may intentionally hide features that do not apply to the tenant. Accountant access is limited to the finance-oriented administrative tabs.
 

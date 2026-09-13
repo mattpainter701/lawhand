@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.5 — Setup chooses document storage, and integrations show health first
+
+Released September 13, 2026.
+
+New firms confirm where matter documents live during setup, and the Integrations page now leads with whether each connection works, with operator tools tucked under Advanced.
+
+- **Choose where documents live during setup.** The setup wizard has a Storage step: pick Google Drive or OneDrive from the accounts you connected, and LawHand creates the records folder and shows you where it is.
+- **Re-authorizing a provider now shows that it worked.** A successful re-authorization clears the old failure right away instead of leaving a stale reconnect warning beside a working connection.
+- **Integrations answer "is this working?" at a glance.** Each card shows a status pill, provider cards lead with the remedy when a connection cannot be used, and firm-wide and per-user connections are reported separately.
+- **Storage settings and operator tools are out of the way.** Changing the document provider asks for confirmation, and migration, import and readiness tools sit under Advanced for administrators who manage integrations.
+
 ## 2026.09.13.4 — Flexible matter billing and Helcim subscriptions
 
 Released September 13, 2026.

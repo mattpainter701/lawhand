@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.5",
+      "version": "2026.09.13.5",
+      "title": "Setup chooses document storage, and integrations show health first",
+      "published_at": "2026-09-13",
+      "summary": "New firms confirm where matter documents live during setup, and the Integrations page now leads with whether each connection works, with operator tools tucked under Advanced.",
+      "highlights": [
+        {
+          "title": "Choose where documents live during setup",
+          "description": "The setup wizard has a Storage step: pick Google Drive or OneDrive from the accounts you connected, and LawHand creates the records folder and shows you where it is."
+        },
+        {
+          "title": "Re-authorizing a provider now shows that it worked",
+          "description": "A successful re-authorization clears the old failure right away instead of leaving a stale reconnect warning beside a working connection."
+        },
+        {
+          "title": "Integrations answer \"is this working?\" at a glance",
+          "description": "Each card shows a status pill, provider cards lead with the remedy when a connection cannot be used, and firm-wide and per-user connections are reported separately."
+        },
+        {
+          "title": "Storage settings and operator tools are out of the way",
+          "description": "Changing the document provider asks for confirmation, and migration, import and readiness tools sit under Advanced for administrators who manage integrations."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.4",
       "version": "2026.09.13.4",
       "title": "Flexible matter billing and Helcim subscriptions",
