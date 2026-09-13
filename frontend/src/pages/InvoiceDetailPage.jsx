@@ -638,7 +638,7 @@ export default function InvoiceDetailPage() {
         </AlertBanner>
       )}
 
-      <InvoicePaymentPlan key={invoice.id} invoice={invoice} onSaved={setInvoice} />
+      <InvoicePaymentPlan key={`${invoice.id}-${JSON.stringify(invoice.billing_details?.installments || [])}`} invoice={invoice} onSaved={setInvoice} />
       <MetricStrip
         className="mb-6"
         items={[

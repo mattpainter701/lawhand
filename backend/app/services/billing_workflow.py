@@ -112,3 +112,33 @@ def installment_payment_amount(
         ),
         Decimal("0"),
     )
+
+
+def invoice_past_due(
+    status: str,
+    due_date: date,
+    total: Decimal,
+    paid: Decimal,
+    billing_details: dict | None = None,
+    today: date | None = None,
+) -> tuple[date | None, Decimal]:
+    """Earliest unpaid overdue date and matured balance, excluding future installments."""
+    today = today or date.today()
+    balance = max(total - paid, Decimal("0"))
+    if status not in ("sent", "partially_paid") or not balance:
+        return None, Decimal("0")
+    installments = (billing_details or {}).get("installments", [])
+    if not installments:
+        return (due_date, balance) if due_date < today else (None, Decimal("0"))
+    overdue = [
+        row
+        for row in payment_plan_balances(installments, paid)
+        if Decimal(row["balance_due"]) > 0
+        and date.fromisoformat(row["due_date"]) < today
+    ]
+    return (
+        min((date.fromisoformat(row["due_date"]) for row in overdue), default=None),
+        min(
+            balance, sum((Decimal(row["balance_due"]) for row in overdue), Decimal("0"))
+        ),
+    )

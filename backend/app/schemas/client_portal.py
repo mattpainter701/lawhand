@@ -302,6 +302,7 @@ class PortalInvoiceResponse(BaseModel):
     # "overdue" is derived from due_date against the balance, never stored.
     is_overdue: bool = False
     days_overdue: int = 0
+    overdue_balance: Decimal = Decimal("0")
     payment_terms: str | None = None
     stripe_payment_link: str | None = None
 

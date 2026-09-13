@@ -18,7 +18,7 @@ export default function ReadyToBill({ cutoff, onSelect }) {
   return <section className="mb-6 rounded-2xl border border-brand-line bg-brand-surface p-4" aria-label="Ready to bill">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold">Ready to bill</h2>
-      <label className="text-sm">Find matter<input className="input ml-2" value={query} onChange={e => { setQuery(e.target.value); setPage(1) }} /></label>
+      <label className="text-sm">Find matter<input className="min-h-11 rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent ml-2" value={query} onChange={e => { setQuery(e.target.value); setPage(1) }} /></label>
       <button type="button" className="btn-secondary" onClick={() => setRefresh(v => v + 1)}>Refresh unbilled work</button>
     </div>
     <p className="mt-2 text-sm text-brand-muted">Unbilled work through {cutoff}. Older work stays visible until billed. Fixed-fee-only invoices can also be created with Generate invoice.</p>

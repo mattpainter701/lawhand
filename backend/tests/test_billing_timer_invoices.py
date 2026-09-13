@@ -1158,3 +1158,182 @@ class TestBillingCollectionsParity:
         assert ready.json()["items"][0]["count"] == 1
         assert ready.json()["items"][0]["closed"] is True
         assert Decimal(ready.json()["total_amount"]) == Decimal("450")
+
+
+class TestBillingParityBoundaries:
+    @pytest.mark.parametrize("changes,status", [
+        ({"timezone": "Missing/Zone"}, 422),
+        ({"end_date": "2020-01-01"}, 400),
+        ({"fixed_amount": "50", "fixed_description": " "}, 400),
+        ({"include_unbilled_work": False}, 400),
+    ])
+    async def test_rejects_invalid_schedule(self, client, test_matter, changes, status):
+        response = await client.post("/api/billing/schedules", json={"matter_id": str(test_matter.id), "first_invoice_date": date.today().isoformat(), **changes})
+        assert response.status_code == status, response.text
+
+    async def test_schedule_unique_and_pause_resume_visible(self, client, test_matter):
+        payload = {"matter_id": str(test_matter.id), "first_invoice_date": date.today().isoformat()}
+        created = await client.post("/api/billing/schedules", json=payload)
+        assert created.status_code == 201
+        assert (await client.post("/api/billing/schedules", json=payload)).status_code == 409
+        url = f"/api/billing/schedules/{created.json()['id']}"
+        for paused in [True, False]:
+            assert (await client.patch(url, json={"paused": paused})).json()["paused"] is paused
+        listed = await client.get("/api/billing/schedules", params={"matter_id": payload["matter_id"]})
+        assert len(listed.json()["items"]) == 1
+        assert (await client.patch(f"/api/billing/schedules/{uuid.uuid4()}", json={"paused": True})).status_code == 404
+
+    @pytest.mark.parametrize("reason", ["closed", "pro_bono"])
+    async def test_schedule_cannot_start_or_continue_for_nonbillable_matter(self, client, test_matter, test_tenant, db_session, reason):
+        from app.models.billing import BillingSchedule, Invoice
+        from app.services.scheduled_billing import run_schedules
+        tenant_id, matter_id = test_tenant.id, test_matter.id
+        created = await client.post("/api/billing/schedules", json={"matter_id": str(matter_id), "first_invoice_date": date.today().isoformat()})
+        assert created.status_code == 201
+        if reason == "closed":
+            test_matter.is_closed = True
+        else:
+            test_matter.billing_method = "pro_bono"
+        await db_session.commit()
+        rejected = await client.post("/api/billing/schedules", json={"matter_id": str(matter_id), "first_invoice_date": date.today().isoformat()})
+        assert rejected.status_code == 400
+        await run_schedules(db_session, tenant_id)
+        schedule = await db_session.scalar(select(BillingSchedule).where(BillingSchedule.matter_id == matter_id))
+        assert schedule.paused and schedule.last_error
+        assert await db_session.scalar(select(Invoice.id).where(Invoice.matter_id == matter_id)) is None
+
+    async def test_empty_scheduled_period_advances_without_phantom_invoice(self, client, test_matter, test_tenant, db_session):
+        from app.models.billing import BillingSchedule, Invoice
+        from app.services.scheduled_billing import run_schedules
+        tenant_id, matter_id = test_tenant.id, test_matter.id
+        await client.post("/api/billing/schedules", json={"matter_id": str(matter_id), "first_invoice_date": date.today().isoformat()})
+        await run_schedules(db_session, tenant_id)
+        schedule = await db_session.scalar(select(BillingSchedule).where(BillingSchedule.matter_id == matter_id))
+        assert schedule.next_date > date.today()
+        assert await db_session.scalar(select(Invoice.id).where(Invoice.matter_id == matter_id)) is None
+
+    @pytest.mark.parametrize("error_kind", ["http", "provider"])
+    async def test_failed_schedule_keeps_date_for_retry(self, client, test_matter, test_tenant, db_session, monkeypatch, error_kind):
+        from unittest.mock import AsyncMock
+        from fastapi import HTTPException
+        from app.models.billing import BillingSchedule
+        from app.services.scheduled_billing import run_schedules
+        tenant_id, matter_id = test_tenant.id, test_matter.id
+        await client.post("/api/billing/schedules", json={"matter_id": str(matter_id), "first_invoice_date": date.today().isoformat()})
+        error = HTTPException(409, "conflict") if error_kind == "http" else RuntimeError("synthetic failure")
+        monkeypatch.setattr("app.routers.billing_extended._generate_invoice", AsyncMock(side_effect=error))
+        await run_schedules(db_session, tenant_id)
+        schedule = await db_session.scalar(select(BillingSchedule).where(BillingSchedule.matter_id == matter_id))
+        assert schedule.next_date == date.today()
+        assert schedule.last_error
+
+    async def test_cancelled_fee_and_invalid_fee_state(self, client, test_matter):
+        response = await client.post("/api/billing/fees", json={"matter_id": str(test_matter.id), "description": "Milestone", "amount": "200", "service_date": "2026-09-01"})
+        fee = response.json()
+        url = f"/api/billing/fees/{fee['id']}"
+        assert (await client.patch(url, json={"status": "paid"})).status_code == 422
+        assert (await client.patch(url, json={"status": "cancelled"})).status_code == 200
+        assert (await client.patch(url, json={"status": "ready"})).status_code == 409
+        listed = await client.get("/api/billing/fees", params={"matter_id": str(test_matter.id)})
+        assert listed.json()["items"][0]["status"] == "cancelled"
+        assert (await client.patch(f"/api/billing/fees/{uuid.uuid4()}", json={"status": "ready"})).status_code == 404
+
+    async def test_payment_plan_dates_and_overdue_after_partial_payment(self, client, test_matter):
+        created = await client.post("/api/billing/invoices/generate", json={"matter_id": str(test_matter.id), "issue_date": "2026-01-01", "due_date": "2026-01-31", "manual_charges": [{"description": "Work", "unit_price": "200"}]})
+        invoice_id = created.json()["id"]
+        url = f"/api/billing/invoices/{invoice_id}/payment-plan"
+        assert (await client.put(url, json={"installments": [{"due_date": "2025-12-31", "amount": "200"}]})).status_code == 400
+        assert (await client.put(url, json={"installments": [{"due_date": "2026-01-31", "amount": "100"}]*2})).status_code == 400
+        rows = [{"due_date": "2026-01-31", "amount": "100"}, {"due_date": "2099-01-01", "amount": "100"}]
+        assert (await client.put(url, json={"installments": rows})).status_code == 200
+        await client.patch(f"/api/billing/invoices/{invoice_id}", json={"status": "sent"})
+        assert (await client.get(f"/api/billing/invoices/{invoice_id}")).json()["is_overdue"]
+        paid = await client.post("/api/billing/payments", json={"invoice_id": invoice_id, "amount": "100", "method": "check", "payment_date": date.today().isoformat()})
+        assert paid.status_code == 201, paid.text
+        assert not (await client.get(f"/api/billing/invoices/{invoice_id}")).json()["is_overdue"]
+        assert not (await client.get("/api/billing/invoices", params={"overdue_only": True})).json()["items"]
+        assert (await client.put(url, json={"installments": rows})).status_code == 409
+
+
+@pytest.mark.parametrize("source", ["time", "fee"])
+async def test_concurrent_drafts_cannot_claim_same_source(client, test_matter, test_user, test_tenant, test_engine, db_session, source):
+    import asyncio
+    from fastapi import HTTPException
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.models.billing import Invoice, InvoiceLineItem
+    from app.models.user import User
+    from app.routers.billing_extended import _generate_invoice
+    from app.schemas.billing import GenerateInvoiceRequest
+    tenant_id, user_id, matter_id = test_tenant.id, test_user.id, test_matter.id
+    payload = {"matter_id": str(matter_id), "time_entry_ids": [], "expense_ids": []}
+    if source == "time":
+        entry = await _log_time(client, str(matter_id))
+        source_id = entry["id"]
+        payload["time_entry_ids"] = [source_id]
+    else:
+        fee = await client.post("/api/billing/fees", json={"matter_id": str(matter_id), "description": "Stage", "amount": "500", "service_date": "2026-09-01", "ready": True})
+        source_id = fee.json()["id"]
+        payload["fee_ids"] = [source_id]
+    await db_session.commit()
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    async def generate():
+        async with factory() as session:
+            user = await session.get(User, user_id)
+            try:
+                await _generate_invoice(GenerateInvoiceRequest(**payload), user, session)
+                return 201
+            except HTTPException as exc:
+                await session.rollback()
+                return exc.status_code
+    assert sorted(await asyncio.gather(generate(), generate())) == [201, 409]
+    invoices = (await db_session.execute(select(Invoice).where(Invoice.tenant_id == tenant_id))).scalars().all()
+    assert len(invoices) == 1
+    lines = (await db_session.execute(select(InvoiceLineItem).where(InvoiceLineItem.source_id == uuid.UUID(source_id)))).scalars().all()
+    assert len(lines) == 1
+
+
+async def test_installment_payment_link_collects_next_payment_and_retires_prior_link(client, test_matter, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.routers import billing_extended as billing
+    import stripe
+    monkeypatch.setattr(billing.settings, "STRIPE_SECRET_KEY", "sk_test_synthetic")
+    price = Mock(return_value=SimpleNamespace(id="price-1"))
+    links = Mock(side_effect=[SimpleNamespace(id="link-1", url="https://example.test/full"), SimpleNamespace(id="link-2", url="https://example.test/installment")])
+    retire = Mock()
+    monkeypatch.setattr(stripe.Price, "create", price)
+    monkeypatch.setattr(stripe.PaymentLink, "create", links)
+    monkeypatch.setattr(stripe.PaymentLink, "modify", retire)
+    created = await client.post("/api/billing/invoices/generate", json={"matter_id": str(test_matter.id), "issue_date": "2026-01-01", "manual_charges": [{"description": "Work", "unit_price": "600"}]})
+    invoice_id = created.json()["id"]
+    await client.patch(f"/api/billing/invoices/{invoice_id}", json={"status": "sent"})
+    link_url = f"/api/billing/invoices/{invoice_id}/payment-link"
+    assert (await client.post(link_url)).status_code == 200
+    assert price.call_args.kwargs["unit_amount"] == 60000
+    plan = await client.put(f"/api/billing/invoices/{invoice_id}/payment-plan", json={"installments": [{"due_date": "2098-01-01", "amount": "200"}, {"due_date": "2099-01-01", "amount": "400"}]})
+    assert plan.status_code == 200, plan.text
+    retire.assert_called_once_with("link-1", active=False)
+    assert (await client.post(link_url)).status_code == 200
+    assert price.call_args.kwargs["unit_amount"] == 20000
+    assert (await client.post(link_url)).status_code == 200
+    assert price.call_count == 2
+
+
+async def test_payment_plan_does_not_change_if_old_link_cannot_be_retired(client, test_matter, db_session, monkeypatch):
+    from unittest.mock import Mock
+    from app.models.billing import Invoice
+    from app.routers import billing_extended as billing
+    import stripe
+    monkeypatch.setattr(billing.settings, "STRIPE_SECRET_KEY", "sk_test_synthetic")
+    monkeypatch.setattr(stripe.PaymentLink, "modify", Mock(side_effect=stripe.StripeError("synthetic failure")))
+    created = await client.post("/api/billing/invoices/generate", json={"matter_id": str(test_matter.id), "manual_charges": [{"description": "Work", "unit_price": "100"}]})
+    invoice_id = uuid.UUID(created.json()["id"])
+    invoice = await db_session.get(Invoice, invoice_id)
+    invoice.stripe_payment_link = "https://example.test/full"
+    invoice.stripe_payment_link_id = "existing-link"
+    await db_session.commit()
+    response = await client.put(f"/api/billing/invoices/{invoice_id}/payment-plan", json={"installments": [{"due_date": "2099-01-01", "amount": "100"}]})
+    assert response.status_code == 502, response.text
+    await db_session.refresh(invoice)
+    assert "installments" not in invoice.billing_details
+    assert invoice.stripe_payment_link_id == "existing-link"

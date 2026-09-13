@@ -77,7 +77,7 @@ from app.schemas.billing import (
 from app.services.billing_workflow import (
     DEFAULT_ROUNDING_MINUTES,
     can_transition_invoice,
-    is_invoice_overdue,
+    invoice_past_due,
     next_invoice_number,
     round_timer_hours,
 )
@@ -102,11 +102,19 @@ def _parse_uuid(value: str, label: str) -> uuid.UUID:
         raise HTTPException(status_code=400, detail=f"Invalid {label} ID format")
 
 
-async def _deactivate_invoice_payment_link(invoice: Invoice) -> None:
+async def _deactivate_invoice_payment_link(
+    invoice: Invoice, *, required: bool = False
+) -> None:
     """Retire a reusable Stripe link once the invoice balance changes."""
     payment_link_id = getattr(invoice, "stripe_payment_link_id", None)
-    invoice.stripe_payment_link = None
-    invoice.stripe_payment_link_id = None
+    if required and payment_link_id and not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(
+            status_code=409,
+            detail="Configure Stripe to retire the existing payment link before changing the plan",
+        )
+    if not required:
+        invoice.stripe_payment_link = None
+        invoice.stripe_payment_link_id = None
     if not payment_link_id or not settings.STRIPE_SECRET_KEY:
         return
 
@@ -117,7 +125,12 @@ async def _deactivate_invoice_payment_link(invoice: Invoice) -> None:
         await asyncio.to_thread(
             stripe.PaymentLink.modify, payment_link_id, active=False
         )
-    except stripe.StripeError:
+    except stripe.StripeError as exc:
+        if required:
+            raise HTTPException(
+                status_code=502,
+                detail="Existing payment link could not be retired; payment plan was not changed",
+            ) from exc
         # Never fail recording money that was actually received. Clearing the
         # local URL keeps staff from reopening a stale link; the Stripe error
         # remains visible to operators for manual deactivation.
@@ -126,6 +139,9 @@ async def _deactivate_invoice_payment_link(invoice: Invoice) -> None:
             payment_link_id,
             exc_info=True,
         )
+
+    invoice.stripe_payment_link = None
+    invoice.stripe_payment_link_id = None
 
 
 async def _require_billing_manager(request: Request, db: AsyncSession):
@@ -362,6 +378,9 @@ async def ready_to_bill(
         .group_by(work.c.matter_id)
         .subquery()
     )
+    filters = [Matter.tenant_id == user.tenant_id]
+    if q.strip():
+        filters.append(Matter.matter_name.icontains(q.strip(), autoescape=True))
     stmt = (
         select(
             Matter.id,
@@ -372,20 +391,14 @@ async def ready_to_bill(
             totals.c.oldest,
         )
         .join(totals, totals.c.matter_id == Matter.id)
-        .where(Matter.tenant_id == user.tenant_id)
+        .where(*filters)
     )
-    if q.strip():
-        stmt = stmt.where(
-            Matter.matter_name.ilike(
-                "%" + q.strip().replace("%", "\\%").replace("_", "\\_") + "%"
-            )
-        )
     count, amount = (
         await db.execute(
             select(func.count(), func.coalesce(func.sum(totals.c.amount), 0))
             .select_from(Matter)
             .join(totals, totals.c.matter_id == Matter.id)
-            .where(*stmt._where_criteria)
+            .where(*filters)
         )
     ).one()
     rows = (
@@ -685,7 +698,10 @@ async def preview_invoice_sources(
         "total_hours": sum((entry.hours for entry in times), Decimal("0")),
         "time_amount": time_amount,
         "expense_amount": expense_amount,
-        "total_amount": time_amount + expense_amount,
+        "fee_amount": sum((fee.amount for fee in fees), Decimal("0")),
+        "total_amount": time_amount
+        + expense_amount
+        + sum((fee.amount for fee in fees), Decimal("0")),
         **defaults,
         "matter_hourly_rate": matter.hourly_rate,
     }
@@ -1501,6 +1517,10 @@ async def _generate_invoice(body: GenerateInvoiceRequest, user, db: AsyncSession
     )
     tax_amount = (subtotal * tax_rate).quantize(Decimal("0.01"))
     total = subtotal + tax_amount
+    if total > Decimal("99999999.99"):
+        raise HTTPException(
+            status_code=400, detail="Invoice total exceeds the supported maximum"
+        )
 
     # Create invoice as a draft — it must be reviewed and explicitly sent
     # (PATCH status → "sent") before it counts as outstanding A/R or syncs
@@ -1675,7 +1695,14 @@ async def _load_invoice_response(
         sent_at=invoice.sent_at,
         amount_paid=amount_paid,
         balance_due=invoice.total - amount_paid,
-        is_overdue=is_invoice_overdue(invoice.status, invoice.due_date),
+        is_overdue=invoice_past_due(
+            invoice.status,
+            invoice.due_date,
+            invoice.total,
+            amount_paid,
+            invoice.billing_details,
+        )[0]
+        is not None,
         matter_name=matter_name,
         created_by=str(invoice.created_by),
         line_items=[
@@ -1728,7 +1755,13 @@ async def list_invoices(
     items = []
     total_amount = Decimal("0")
     for inv, matter_name in rows:
-        overdue = is_invoice_overdue(inv.status, inv.due_date)
+        amount_paid = paid_by_invoice.get(inv.id, Decimal("0"))
+        overdue = (
+            invoice_past_due(
+                inv.status, inv.due_date, inv.total, amount_paid, inv.billing_details
+            )[0]
+            is not None
+        )
         if overdue_only and not overdue:
             continue
         amount_paid = paid_by_invoice.get(inv.id, Decimal("0"))
@@ -1925,7 +1958,9 @@ async def set_invoice_payment_plan(
         raise HTTPException(
             status_code=400, detail="Installments must equal the invoice total"
         )
+    await _deactivate_invoice_payment_link(invoice, required=True)
     details = dict(invoice.billing_details or {})
+    details.pop("payment_link_amount", None)
     details["installments"] = [row.model_dump(mode="json") for row in rows]
     details["payment_plan_recorded_by"] = str(user.id)
     details["payment_plan_recorded_at"] = datetime.now(timezone.utc).isoformat()
@@ -2639,8 +2674,22 @@ async def create_stripe_payment_link(
     )
     paid = Decimal(str(paid_result.scalar() or 0))
     balance_due = invoice.total - paid
+    installments = (invoice.billing_details or {}).get("installments", [])
+    if installments:
+        from app.services.billing_workflow import installment_payment_amount
+
+        balance_due = min(
+            balance_due, installment_payment_amount(installments, paid, date.today())
+        )
     if balance_due <= 0:
         raise HTTPException(status_code=400, detail="Invoice has no balance due")
+    if (
+        installments
+        and invoice.stripe_payment_link_id
+        and (invoice.billing_details or {}).get("payment_link_amount")
+        != str(balance_due)
+    ):
+        await _deactivate_invoice_payment_link(invoice, required=True)
     if invoice.stripe_payment_link and invoice.stripe_payment_link_id:
         return StripePaymentLinkResponse(
             invoice_id=str(invoice.id),
@@ -2669,6 +2718,11 @@ async def create_stripe_payment_link(
 
         invoice.stripe_payment_link = payment_link.url
         invoice.stripe_payment_link_id = payment_link.id
+        if installments:
+            invoice.billing_details = {
+                **invoice.billing_details,
+                "payment_link_amount": str(balance_due),
+            }
         await db.commit()
 
         return StripePaymentLinkResponse(

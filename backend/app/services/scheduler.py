@@ -876,6 +876,7 @@ class LegalScheduler:
             self._guarded("billing-drafts", self.run_billing_drafts),
             "interval",
             minutes=60,
+            jitter=INTERVAL_JOB_JITTER_SECONDS,
             id="billing-drafts",
             name="Scheduled billing drafts",
             replace_existing=True,

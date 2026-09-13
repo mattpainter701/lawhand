@@ -37,9 +37,9 @@ export default function BillingFees({ matterId, onChange }) {
       </li>)}
     </ul>
     <div className="mt-3 grid gap-3 sm:grid-cols-3">
-      <label className="text-sm">Stage description<input className="input w-full" maxLength={4000} value={description} onChange={e => setDescription(e.target.value)} /></label>
-      <label className="text-sm">Agreed amount<input className="input w-full" type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-      <label className="text-sm">Stage billing date<input className="input w-full" type="date" value={serviceDate} onChange={e => setServiceDate(e.target.value)} /></label>
+      <label className="text-sm">Stage description<input className="min-h-11 rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent w-full" maxLength={4000} value={description} onChange={e => setDescription(e.target.value)} /></label>
+      <label className="text-sm">Agreed amount<input className="min-h-11 rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent w-full" type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></label>
+      <label className="text-sm">Stage billing date<input className="min-h-11 rounded-xl border border-brand-line bg-brand-surface px-3 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent w-full" type="date" value={serviceDate} onChange={e => setServiceDate(e.target.value)} /></label>
     </div>
     <button type="button" className="btn-secondary mt-3" disabled={busy || !description.trim() || amount === '' || Number(amount) < 0 || !serviceDate} onClick={() => change(async () => {
       await createBillingFee({ matter_id: matterId, description, amount, service_date: serviceDate })

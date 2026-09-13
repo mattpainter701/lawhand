@@ -2346,7 +2346,7 @@ async def _visible_invoices(
     )
     paid_by_invoice = {row[0]: Decimal(row[1]) for row in paid_rows.all()}
 
-    from app.services.billing_workflow import payment_plan_balances
+    from app.services.billing_workflow import payment_plan_balances, invoice_past_due
 
     today = date.today()
     out: list[PortalInvoiceResponse] = []
@@ -2359,7 +2359,10 @@ async def _visible_invoices(
         if inv.status == "paid":
             paid = max(paid, total)
         balance = max(total - paid, Decimal("0"))
-        overdue = balance > 0 and inv.due_date is not None and inv.due_date < today
+        overdue_date, overdue_amount = invoice_past_due(
+            inv.status, inv.due_date, total, paid, inv.billing_details, today
+        )
+        overdue = overdue_date is not None
         out.append(
             PortalInvoiceResponse(
                 installments=payment_plan_balances(
@@ -2374,7 +2377,8 @@ async def _visible_invoices(
                 amount_paid=paid,
                 balance_due=balance,
                 is_overdue=overdue,
-                days_overdue=(today - inv.due_date).days if overdue else 0,
+                days_overdue=(today - overdue_date).days if overdue else 0,
+                overdue_balance=overdue_amount,
                 payment_terms=inv.payment_terms,
                 stripe_payment_link=inv.stripe_payment_link,
             )
@@ -2394,9 +2398,7 @@ async def portal_list_invoices(
         total_billed=sum((i.total for i in invoices), Decimal("0")),
         total_paid=sum((i.amount_paid for i in invoices), Decimal("0")),
         outstanding_balance=sum((i.balance_due for i in invoices), Decimal("0")),
-        overdue_balance=sum(
-            (i.balance_due for i in invoices if i.is_overdue), Decimal("0")
-        ),
+        overdue_balance=sum((i.overdue_balance for i in invoices), Decimal("0")),
     )
 
 

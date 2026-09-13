@@ -51,6 +51,7 @@ async def run_schedules(db, tenant_id):
                     BillingSchedule.tenant_id == tenant_id,
                 )
                 .with_for_update()
+                .execution_options(populate_existing=True)
             )
             if not schedule or schedule.paused:
                 await db.rollback()
@@ -71,14 +72,14 @@ async def run_schedules(db, tenant_id):
                 await db.rollback()
                 break
             matter = await db.scalar(
-                select(Matter).where(
-                    Matter.id == schedule.matter_id, Matter.tenant_id == tenant_id
-                )
+                select(Matter)
+                .where(Matter.id == schedule.matter_id, Matter.tenant_id == tenant_id)
+                .execution_options(populate_existing=True)
             )
             user = await db.scalar(
-                select(User).where(
-                    User.id == schedule.created_by, User.tenant_id == tenant_id
-                )
+                select(User)
+                .where(User.id == schedule.created_by, User.tenant_id == tenant_id)
+                .execution_options(populate_existing=True)
             )
             capabilities = (
                 await get_user_capabilities(db, user.id)
@@ -88,6 +89,7 @@ async def run_schedules(db, tenant_id):
             if (
                 not matter
                 or matter.is_closed
+                or matter.billing_method == "pro_bono"
                 or not user
                 or not user.is_active
                 or not (
@@ -136,6 +138,9 @@ async def run_schedules(db, tenant_id):
                     .where(BillingSchedule.id == schedule_id)
                     .with_for_update()
                 )
+                if not schedule or schedule.paused or schedule.next_date != due:
+                    await db.rollback()
+                    break
                 if (
                     exc.status_code == 400
                     and exc.detail
@@ -157,6 +162,9 @@ async def run_schedules(db, tenant_id):
                     .where(BillingSchedule.id == schedule_id)
                     .with_for_update()
                 )
+                if not schedule or schedule.paused or schedule.next_date != due:
+                    await db.rollback()
+                    break
                 schedule.last_error = (
                     "Draft preparation failed. Review billing before retrying."
                 )

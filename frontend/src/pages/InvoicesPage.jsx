@@ -311,6 +311,7 @@ export default function InvoicesPage() {
                 value={generateForm.matter_id}
                 onChange={(event) => {
                   defaultsMatterRef.current = null
+                  setManualCharges([])
                   setGenerateForm((current) => ({ ...current, matter_id: event.target.value }))
                 }}
                 required

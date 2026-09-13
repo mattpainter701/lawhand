@@ -8,11 +8,11 @@ Add fixed fee creates an invoice without requiring time or expenses. Agreed stag
 
 ## Recurring drafts
 
-Enable recurring drafts is an explicit per-matter choice with timezone, first invoice date, monthly/quarterly frequency and optional end date. Fixed service fees are billed in arrears, optionally with unbilled hourly work/expenses before the invoice date. Pause stops new drafts; resume catches up missed periods, bounded to twelve periods per scheduler pass. Closed matters or an inactive/unauthorized billing owner pause processing. Existing billing-cycle fields never enable this schedule. Review every draft before sending. Schedule changes beyond pause/resume and advance billing/proration are not yet exposed.
+Enable recurring drafts is an explicit per-matter choice with timezone, first invoice date, monthly/quarterly frequency and optional end date. Fixed service fees are billed in arrears, optionally with unbilled hourly work/expenses before the invoice date. Pause stops new drafts; resume catches up missed periods, bounded to twelve periods per scheduler pass. Closed/pro bono matters or an inactive/unauthorized billing owner pause processing. Existing billing-cycle fields never enable this schedule. Review every draft before sending. Schedule changes beyond pause/resume and advance billing/proration are not yet exposed.
 
 ## Installments
 
-On an invoice, Payment installments records dates/amounts totaling the existing invoice. It never creates another principal charge. Recorded payments allocate oldest-first; the portal pays past/current installments together or the next installment early. Payment plans cannot be rescheduled after payments. Changing draft charges clears the plan; staff must set it again. Autocharge is not enabled.
+On an invoice, Payment installments records dates/amounts totaling the existing invoice. It never creates another principal charge. Recorded payments allocate oldest-first; the portal pays past/current installments together or the next installment early. Payment plans cannot be rescheduled after payments. Changing draft charges clears the plan; staff must set it again. Staff and portal aging only includes matured unpaid installments. Existing Stripe links must be retired successfully before changing a plan; new links collect the next payable amount. Autocharge is not enabled.
 
 ## QuickBooks and manual workflows
 
