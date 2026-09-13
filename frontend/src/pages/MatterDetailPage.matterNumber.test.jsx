@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 // vi.mock is hoisted above the file's own statements, so the spy has to be
@@ -24,7 +24,9 @@ vi.mock('../api', async (importOriginal) => {
 vi.mock('../App', () => ({ useAuth: () => ({ user: { hidden_matter_panels: [] } }) }))
 vi.mock('../components/toast/useToast', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
 
-import MatterDetailPage, { DueDateLabel, MatterNumberBadge } from './MatterDetailPage'
+afterEach(cleanup)
+
+import MatterDetailPage, { DueDateLabel, MatterNumberBadge, TimeEntryStatusBadge } from './MatterDetailPage'
 
 // Surfaces the current path so a redirect is observable without reaching into
 // router internals.
@@ -135,5 +137,19 @@ describe('matter number badge', () => {
   it('renders nothing for a matter that has no number', () => {
     const { container } = render(<MatterNumberBadge matterNumber={null} />)
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('time entry status badge', () => {
+  it('labels restored nonbillable work as non-billable, not its draft status', () => {
+    render(<TimeEntryStatusBadge status="draft" isBillable={false} />)
+    expect(screen.getByText('Non-billable')).toBeInTheDocument()
+    expect(screen.queryByText('draft')).not.toBeInTheDocument()
+  })
+
+  it('keeps the billing status for billable work', () => {
+    render(<TimeEntryStatusBadge status="invoiced" isBillable />)
+    expect(screen.getByText('invoiced')).toBeInTheDocument()
+    expect(screen.queryByText('Non-billable')).not.toBeInTheDocument()
   })
 })
