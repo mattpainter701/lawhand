@@ -10,6 +10,7 @@ from app.models.signature import SignatureRequest, SignatureSigner
 import app.routers.esignature as esignature_router
 from app.routers.esignature import _source_document_is_unchanged
 from app.schemas.signature import PortalSignRequest
+from app.services.esign.certificate import filled_field_count
 from app.services.esign.service import (
     complete_request_if_done,
     decline_event,
@@ -123,6 +124,27 @@ async def test_signature_audit_records_explicit_consent_and_client_evidence():
     assert signer.audit["signature_method"] == "typed"
     assert signer.audit["drawn_signature_sha256"] is None
     assert signer.drawn_signature_png is None
+
+
+def test_filled_field_count_excludes_blanks_and_unchecked_boxes():
+    assert filled_field_count(
+        {"name": "Jane", "notes": "", "spaces": "   ", "agree": "false", "ok": "true"}
+    ) == 2
+    assert filled_field_count(None) == 0
+    assert filled_field_count({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_signature_audit_field_count_counts_only_filled_fields():
+    signer = _signer(0)
+    await record_portal_signature(
+        signer,
+        typed_signature="Signer 0",
+        ip="203.0.113.10",
+        consent_text_version="clarity-esign-consent-v1",
+        field_values={"name": "Jane", "notes": "", "agree": "false", "ok": "true"},
+    )
+    assert signer.audit["field_count"] == 2
 
 
 @pytest.mark.asyncio
