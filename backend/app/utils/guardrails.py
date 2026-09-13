@@ -106,6 +106,31 @@ _SUPPLIED_SOURCE_RE = re.compile(
     r"\b(?:attach(?:ed|ment)?|exhibits?|provided|supplied|uploaded)\b",
     re.IGNORECASE,
 )
+
+# A trigger word inside one of these phrases is administrative, not a request
+# for a legal conclusion: "attorney assignment" is staffing, not a contract's
+# assignment clause.
+_ADMIN_COLLOCATION_RE = re.compile(
+    r"\b(?:attorney|lawyer|paralegal|staff|team|user|task|matter|case|work)\s+"
+    r"assignments?\b"
+    r"|\bassignments?\s+of\s+(?:the\s+)?(?:matter|case|task|file|work)\b",
+    re.IGNORECASE,
+)
+# An instruction NOT to do the thing. Deliberately narrow: a bare "not" is left
+# out because "is this not enforceable?" is still a legal question, and
+# "without" only counts before a gerund so "answer without case law" — a request
+# for an ungrounded legal answer — keeps the guard on.
+_NEGATED_REQUEST_RE = re.compile(
+    r"(?:do(?:es)?\s+not|don'?t|no\s+need\s+(?:to|for)|"
+    r"without\s+(?:doing|performing|conducting|running|any)|"
+    r"avoid|skip|rather\s+than|instead\s+of)\b",
+    re.IGNORECASE,
+)
+# A negation only governs the clause it is in, so "Do not email the client.
+# Is this enforceable?" and "Avoid case law, just tell me if it is enforceable"
+# both stay guarded.
+_CLAUSE_BREAK_RE = re.compile(r"[.!?;:,\n]")
+_NEGATION_WINDOW_CHARS = 40
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*$")
 _LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
 _QUOTED_SPAN_RE = re.compile(r'["“]([^"”]{20,})["”]')
@@ -262,9 +287,30 @@ def consolidate_unverified_model_knowledge(
     return f"{source_note}{cleaned}", replacements
 
 
+def _trigger_is_administrative(question: str, match: re.Match) -> bool:
+    """Report whether one trigger word carries no request for legal authority."""
+    for span in _ADMIN_COLLOCATION_RE.finditer(question):
+        if span.start() <= match.start() and match.end() <= span.end():
+            return True
+    window = question[max(0, match.start() - _NEGATION_WINDOW_CHARS) : match.start()]
+    clause_start = max(
+        (brk.end() for brk in _CLAUSE_BREAK_RE.finditer(window)), default=0
+    )
+    return bool(_NEGATED_REQUEST_RE.search(window[clause_start:]))
+
+
 def requires_retrieved_legal_authority(question: str | None) -> bool:
-    """Identify questions where an uncited legal conclusion is unsafe to publish."""
-    return bool(_LEGAL_RESEARCH_RE.search(question or ""))
+    """Identify questions where an uncited legal conclusion is unsafe to publish.
+
+    A trigger word alone does not make a request legal research. "Show me the
+    attorney assignment" is staffing and "do not do legal research, just list
+    the open tasks" is an instruction not to. The guard only stands down when
+    every trigger in the question is one of those, so a mixed request keeps it
+    on for the part that does ask for a legal conclusion.
+    """
+    text = question or ""
+    matches = list(_LEGAL_RESEARCH_RE.finditer(text))
+    return any(not _trigger_is_administrative(text, match) for match in matches)
 
 
 def _substantive_source_units(text: str) -> list[str]:

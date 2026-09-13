@@ -5,6 +5,7 @@ these cover the ways a real name is typed: reversed, comma-separated, or with a
 middle name the contact record does not carry.
 """
 
+import json
 import uuid
 
 import pytest
@@ -193,3 +194,107 @@ async def test_wildcard_characters_do_not_widen_the_search(
     result = await run_conflict_check(db_session, test_tenant.id, ["%"], ["_"])
 
     assert result == {"clear": True, "matches": []}
+
+
+@pytest.mark.asyncio
+async def test_conflict_check_route_withholds_matters_the_viewer_is_not_on(
+    client, db_session, test_tenant, test_user
+):
+    """The legacy route returned raw matches with no assignment-aware redaction.
+
+    Broadening counterparty matching turned that into a way for any signed-in
+    user to probe for the names of matters they are not assigned to.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from jose import jwt
+
+    from app.config import get_settings
+    from app.models.user import User
+
+    settings = get_settings()
+
+    other_user = User(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        email="associate@testfirm.com",
+        full_name="Unassigned Associate",
+        role="attorney",
+        oauth_provider="google",
+        oauth_subject=f"google-{uuid.uuid4().hex[:12]}",
+        is_active=True,
+    )
+    acme = _contact(
+        test_tenant.id,
+        entity_type="organization",
+        contact_type="opposing_party",
+        organization_name="Acme Holdings LLC",
+    )
+    db_session.add_all([other_user, acme])
+    await db_session.flush()
+    hidden = _matter(
+        test_tenant.id,
+        test_user.id,
+        "Confidential merger dispute",
+        counterparty="Acme Holdings LLC",
+    )
+    db_session.add(hidden)
+    await db_session.commit()
+
+    token = jwt.encode(
+        {
+            "sub": str(other_user.id),
+            "tenant_id": str(test_tenant.id),
+            "role": "attorney",
+            "email": other_user.email,
+            "billing_tier": "payg",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        },
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+    response = await client.post(
+        "/api/contacts/conflict-check",
+        json={"names": [], "emails": [], "organization_names": ["Acme Holdings"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    serialized = json.dumps(body)
+    assert "Confidential merger dispute" not in serialized
+    assert str(hidden.id) not in serialized
+    assert body["restricted_matter_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_conflict_check_route_shows_an_admin_the_whole_match(
+    client, db_session, test_tenant, test_user
+):
+    acme = _contact(
+        test_tenant.id,
+        entity_type="organization",
+        contact_type="opposing_party",
+        organization_name="Acme Holdings LLC",
+    )
+    db_session.add(acme)
+    await db_session.flush()
+    matter = _matter(
+        test_tenant.id,
+        test_user.id,
+        "Acme merger dispute",
+        counterparty="Acme Holdings LLC",
+    )
+    db_session.add(matter)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/contacts/conflict-check",
+        json={"names": [], "emails": [], "organization_names": ["Acme Holdings"]},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["restricted_matter_count"] == 0
+    assert "Acme merger dispute" in json.dumps(body)

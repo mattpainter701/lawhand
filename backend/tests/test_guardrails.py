@@ -1,11 +1,14 @@
 """Tests for guardrails utility."""
 
+import pytest
+
 from app.utils.guardrails import (
     apply_guardrails,
     build_citation_annotations,
     check_has_citation,
     prepare_provider_messages,
     prepare_provider_text,
+    requires_retrieved_legal_authority,
     sanitize_response,
     validate_citation_confidence,
 )
@@ -178,3 +181,50 @@ def test_retrieval_alone_does_not_prove_support():
     )
     assert text.endswith("[verify]")
     assert count == 1
+
+
+# The authority guard replaces an uncited answer with a coverage-gap notice, so
+# a false positive blocks ordinary administrative work and a false negative
+# publishes an ungrounded legal conclusion. Both directions are pinned here.
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Please do not do legal research - just tell me who is assigned.",
+        "Don't do legal research. List the open tasks.",
+        "Without doing legal research, summarize this matter.",
+        "Show me the attorney assignment for this matter.",
+        "Who owns the task assignment here?",
+        "What is the assignment of the matter right now?",
+        "List the open tasks for this matter.",
+    ],
+)
+def test_administrative_requests_do_not_demand_retrieved_authority(question):
+    assert requires_retrieved_legal_authority(question) is False
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What are the elements of a custody modification?",
+        "Is this clause enforceable?",
+        # A bare "not" is not an instruction to skip research.
+        "Is this not enforceable?",
+        # The negation governs its own clause only.
+        "Do not email the client. Is this enforceable?",
+        "Avoid case law, just tell me if it is enforceable.",
+        # Asking for an answer that ignores authority is exactly what the
+        # guard exists for.
+        "Answer without case law: is the contract enforceable?",
+        # Mixed: the guard stays on for the half that asks for a conclusion.
+        "Don't do legal research; what is the governing standard in Texas?",
+        "Who has the attorney assignment, and is the clause enforceable?",
+        "What is the assignment provision in the contract?",
+    ],
+)
+def test_legal_conclusions_still_demand_retrieved_authority(question):
+    assert requires_retrieved_legal_authority(question) is True
+
+
+def test_no_trigger_word_needs_no_authority():
+    assert requires_retrieved_legal_authority(None) is False
+    assert requires_retrieved_legal_authority("") is False

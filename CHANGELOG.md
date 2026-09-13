@@ -1,3 +1,17 @@
+## 2026.09.13.14 — Assistant intent, task context, and deadline push
+
+- Classify an authority-guard trigger by intent: exclude a trigger inside an administrative phrase ("attorney assignment") or an explicit instruction not to research, and only when every trigger in the question is excluded. A bare "not" is not a negation cue and "without" counts only before a gerund, so a request for an answer "without case law" stays guarded.
+- Load every open task for a matter into assistant context and render all of them, state when there are none, and report truncation. Privacy mode redacts the title and keeps status, priority and due date.
+- Write pushed deadlines in the requested IANA zone through the provider wall-clock helper instead of a hardcoded America/New_York, defaulting to UTC; send the browser zone from the calendar client.
+- Skip a deadline the calendar already holds so a repeat sync stops creating a second copy, and report the skipped count.
+
+## 2026.09.13.13 — Redact restricted matters in conflict results
+
+- Apply the saved conflict-check endpoint's assignment-aware redaction to `POST /api/contacts/conflict-check`, which returned raw matches. Broadening counterparty matching in 2026.09.13.11 made that route able to reveal the names and ids of matters the viewer is not assigned to.
+- Drop a counterparty-only row whose every matter is restricted, since its display name is the adverse party itself; keep contact rows, which the firm's address book already lists.
+- Snapshot the intake questionnaire's conflict record against the packet owner's visibility instead of storing every matched matter name, and record the real restricted count.
+- Report `restricted_matter_count` on the contacts conflict-check response so a narrowed result is visible rather than silent.
+
 ## 2026.09.13.12 — Bound the operator log tables, container logs, and cutover credentials
 
 - Add a nightly `log-retention` scheduler job (03:20 ET) that ages out `error_logs` after `ERROR_LOG_RETENTION_DAYS` (90) and `api_access_logs` after `API_ACCESS_LOG_RETENTION_DAYS` (30). Both tables previously grew unbounded — one row per 4xx/5xx and per tenant API request — and would eventually dominate the database and slow the operator console that reads them.

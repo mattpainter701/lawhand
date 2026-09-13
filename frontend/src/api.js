@@ -2202,9 +2202,19 @@ export const getCalendarEvents = (start, end) => {
   return api.get('/calendar/events', { params }).then(r => r.data)
 }
 
+// Send the browser's IANA zone so a pushed deadline keeps its wall-clock time.
+// Without it the server writes the deadline in UTC rather than the office's day.
+export const browserTimezone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
 export const syncCalendarDeadlines = (provider = 'microsoft', syncDeadlines = true) =>
   api
-    .post('/calendar/sync', { provider, sync_deadlines: syncDeadlines })
+    .post('/calendar/sync', { provider, sync_deadlines: syncDeadlines, timezone: browserTimezone() })
     .then(r => r.data)
 
 export const getCalendarProviders = () =>

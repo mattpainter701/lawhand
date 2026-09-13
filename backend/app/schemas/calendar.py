@@ -52,12 +52,17 @@ class CalendarSyncRequest(BaseModel):
     provider: str = "microsoft"
     user_id: str | None = None
     sync_deadlines: bool = False
+    # IANA name the pushed deadline times are written in. Callers that omit it
+    # get UTC rather than a guessed office location.
+    timezone: str | None = None
 
 
 class CalendarSyncResponse(BaseModel):
     provider: str
     events: list[ExternalCalendarEventResponse]
     deadlines_created: int = 0
+    # Deadlines a previous sync already put on the calendar.
+    deadlines_skipped: int = 0
 
 
 class ScheduledEventCreate(BaseModel):

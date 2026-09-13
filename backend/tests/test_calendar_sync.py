@@ -384,3 +384,113 @@ async def test_task_due_event_shows_the_task_title(
     assert len(matching) == 1
     assert matching[0]["event_type"] == "task_due"
     assert matching[0]["title"] == "Fee agreement signed — follow up with client"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("timezone_name", "expected"),
+    [("America/Chicago", "America/Chicago"), (None, "UTC")],
+)
+async def test_deadline_push_writes_the_requested_zone_not_a_hardcoded_one(
+    monkeypatch, timezone_name, expected
+):
+    """A deadline pushed to Outlook used to land at 9:00 New York for every firm."""
+    from app.services import calendar_sync as calendar_sync_module
+
+    captured: dict = {}
+
+    class FakeResponse:
+        status_code = 201
+
+        def json(self):
+            return {"id": "provider-event"}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *args, **kwargs):
+            captured.update(kwargs["json"])
+            return FakeResponse()
+
+    async def fake_token(*args, **kwargs):
+        return "token"
+
+    monkeypatch.setattr(calendar_sync_module, "get_fresh_user_token", fake_token)
+    monkeypatch.setattr(calendar_sync_module.httpx, "AsyncClient", FakeClient)
+
+    start = datetime(2026, 9, 20, 9, 0, 0)
+    kwargs = {} if timezone_name is None else {"timezone_name": timezone_name}
+    await calendar_sync_module.CalendarSyncService().ms_create_event(
+        None,
+        "tenant-id",
+        "user-id",
+        "[LawHand] Answer due: Acme",
+        start,
+        start + timedelta(minutes=30),
+        **kwargs,
+    )
+
+    assert captured["start"]["timeZone"] == expected
+    assert captured["start"]["dateTime"] == "2026-09-20T09:00:00"
+
+
+@pytest.mark.asyncio
+async def test_repeat_deadline_sync_does_not_create_a_second_copy(
+    db_session, test_tenant, test_user, monkeypatch
+):
+    """Re-running the sync put the same deadline on the calendar again."""
+    import uuid as _uuid
+    from datetime import date as _date
+
+    from app.models.plugin import Matter
+    from app.services import calendar_sync as calendar_sync_module
+
+    due = _date.today() + timedelta(days=30)
+    matter_id = _uuid.uuid4()
+    db_session.add(
+        Matter(
+            id=matter_id,
+            tenant_id=test_tenant.id,
+            user_id=test_user.id,
+            slug=f"deadline-sync-{matter_id.hex[:8]}",
+            matter_name="Acme acquisition",
+            matter_type="litigation",
+            key_dates={"Answer due": due.isoformat()},
+        )
+    )
+    await db_session.commit()
+
+    service = calendar_sync_module.CalendarSyncService()
+    subject = "[LawHand] Answer due: Acme acquisition"
+    created_subjects: list[str] = []
+
+    async def fake_create(*args, **kwargs):
+        created_subjects.append(args[3])
+        return {"id": "provider-event"}
+
+    monkeypatch.setattr(service, "ms_create_event", fake_create)
+
+    async def no_existing_events(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(service, "ms_get_events", no_existing_events)
+    first = await service.sync_deadlines_to_calendar(
+        db_session, str(test_tenant.id), str(test_user.id), "microsoft"
+    )
+    assert first == {"created": 1, "skipped": 0, "provider": "microsoft"}
+    assert created_subjects == [subject]
+
+    async def already_on_the_calendar(*args, **kwargs):
+        return [{"subject": subject, "start": f"{due.isoformat()}T09:00:00Z"}]
+
+    monkeypatch.setattr(service, "ms_get_events", already_on_the_calendar)
+    second = await service.sync_deadlines_to_calendar(
+        db_session, str(test_tenant.id), str(test_user.id), "microsoft"
+    )
+
+    assert second == {"created": 0, "skipped": 1, "provider": "microsoft"}
+    assert created_subjects == [subject]

@@ -1,5 +1,6 @@
 """PostgreSQL coverage for intake questionnaire write-back proposals (issue #402)."""
 
+import json
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -442,3 +443,63 @@ def test_question_bindings_built_from_intake_form():
     }
     for key in pure_conflict_keys:
         assert key not in intake_writeback.QUESTION_BINDINGS
+
+
+@pytest.mark.asyncio
+async def test_intake_conflict_record_hides_matters_the_packet_owner_cannot_see(
+    db_session, test_user, monkeypatch
+):
+    """The stored snapshot named every matched matter regardless of assignment.
+
+    The record is readable by anyone on its own matter, so an unfiltered
+    snapshot hands them the names of matters they are not on.
+    """
+    from app.models.user import User
+
+    env = await make_packet(db_session, test_user, monkeypatch)
+
+    associate = User(
+        id=uuid.uuid4(),
+        tenant_id=env.user.tenant_id,
+        email="associate@testfirm.com",
+        full_name="Unassigned Associate",
+        role="attorney",
+        oauth_provider="google",
+        oauth_subject=f"google-{uuid.uuid4().hex[:12]}",
+        is_active=True,
+    )
+    rival = Contact(
+        id=uuid.uuid4(),
+        tenant_id=env.user.tenant_id,
+        organization_name="Acme Logistics LLC",
+        entity_type="organization",
+        contact_type="opposing_party",
+    )
+    db_session.add_all([associate, rival])
+    await db_session.flush()
+    hidden = Matter(
+        id=uuid.uuid4(),
+        tenant_id=env.user.tenant_id,
+        user_id=test_user.id,
+        slug=f"hidden-{uuid.uuid4().hex[:8]}",
+        matter_name="Confidential rival engagement",
+        client_contact_id=rival.id,
+        status="open",
+    )
+    db_session.add(hidden)
+    # The packet belongs to the associate, who is on no matter at all.
+    env.packet.created_by = associate.id
+    await db_session.commit()
+
+    await submit(db_session, env, {"conflict_businesses": "Acme Logistics"})
+
+    record = await db_session.scalar(
+        select(ConflictCheckRecord).where(
+            ConflictCheckRecord.matter_id == env.matter.id
+        )
+    )
+    assert record is not None
+    serialized = json.dumps(record.result_snapshot)
+    assert "Confidential rival engagement" not in serialized
+    assert str(hidden.id) not in serialized
+    assert record.restricted_matter_count >= 1

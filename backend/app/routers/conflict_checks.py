@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
 from app.models.conflict_check import ConflictCheckRecord
-from app.models.matter_assignment import MatterAssignment
 from app.models.plugin import Matter
 from app.schemas.conflict_check import (
     ConflictCheckClose,
@@ -18,7 +17,7 @@ from app.schemas.conflict_check import (
     ConflictCheckList,
     ConflictCheckResponse,
 )
-from app.services.conflict_check import run_conflict_check
+from app.services.conflict_check import run_conflict_check, visible_matter_ids
 from app.services.conflict_report_pdf import generate_conflict_report_pdf
 
 
@@ -45,29 +44,8 @@ def _clean_terms(values: list[str]) -> list[str]:
 
 
 async def _visible_matter_ids(db: AsyncSession, user) -> set[uuid.UUID] | None:
-    if user.role == "admin":
-        return None
-    assigned = set(
-        (
-            await db.scalars(
-                select(MatterAssignment.matter_id).where(
-                    MatterAssignment.tenant_id == user.tenant_id,
-                    MatterAssignment.user_id == user.id,
-                )
-            )
-        ).all()
-    )
-    owned = set(
-        (
-            await db.scalars(
-                select(Matter.id).where(
-                    Matter.tenant_id == user.tenant_id,
-                    Matter.user_id == user.id,
-                )
-            )
-        ).all()
-    )
-    return assigned | owned
+    """Kept as the router-local name; the rule itself is shared with /contacts."""
+    return await visible_matter_ids(db, user)
 
 
 def _snapshot_matches(
