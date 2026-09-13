@@ -146,7 +146,18 @@ async def test_a_drawn_signature_is_retained_and_hashed_into_the_audit():
 
 @pytest.mark.asyncio
 async def test_bound_source_detects_document_mutation(monkeypatch):
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
     state = {"matches": True}
+    storage_db = SimpleNamespace()
+
+    @asynccontextmanager
+    async def storage_session():
+        yield storage_db
+
+    monkeypatch.setattr(esignature_router, "async_session_maker", storage_session)
+    monkeypatch.setattr(esignature_router, "set_tenant_context", AsyncMock())
 
     class DB:
         async def get(self, _model, _id):
@@ -157,6 +168,7 @@ async def test_bound_source_detects_document_mutation(monkeypatch):
             )
 
     async def fake_read(**kwargs):
+        assert kwargs["db"] is storage_db
         assert kwargs["tenant_id"] == str(req.tenant_id)
         assert kwargs["expected_sha256"] == req.source_document_sha256
         if not state["matches"]:

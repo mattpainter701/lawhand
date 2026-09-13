@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.database import get_db, set_tenant_context
+from app.database import async_session_maker, get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
 from app.models.matter_document import MatterDocument
 from app.models.plugin import Matter
@@ -246,13 +246,18 @@ async def _verified_source_bytes(
     ):
         return None
     try:
-        return await matter_file_store.read_matter_file_bytes(
-            db=db,
-            tenant_id=str(req.tenant_id),
-            document=doc,
-            expected_sha256=req.source_document_sha256,
-            expected_size=req.source_document_size,
-        )
+        # Cloud reads lock the OAuth credential, even for a fresh token. Release
+        # that lock before completion opens its separate storage transaction.
+        # Refresh commits must also never commit the signing transaction.
+        async with async_session_maker() as storage_db:
+            await set_tenant_context(storage_db, str(req.tenant_id))
+            return await matter_file_store.read_matter_file_bytes(
+                db=storage_db,
+                tenant_id=str(req.tenant_id),
+                document=doc,
+                expected_sha256=req.source_document_sha256,
+                expected_size=req.source_document_size,
+            )
     except (MatterFileReadError, ProviderError) as exc:
         logger.warning(
             "E-sign source validation failed for request %s: %s",

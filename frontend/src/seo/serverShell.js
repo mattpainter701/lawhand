@@ -21,6 +21,7 @@ const LEGAL_SHELLS = Object.freeze({
       { id: 'information', heading: 'Information we handle', body: 'We may handle account and contact details, authentication and device information, service usage and support communications, billing records, and documents or other workspace content submitted by authorized users or connected services.' },
       { id: 'use', heading: 'How information is used', body: 'Information is used to provide, secure, maintain, troubleshoot, and improve the service; administer accounts and subscriptions; respond to requests; meet legal obligations; and prevent misuse. Workspace content is used to perform the features requested by authorized users.' },
       { id: 'ai-integrations', heading: 'AI features and connected services', body: 'When an organization enables an AI provider or third-party integration, relevant information may be sent to that provider to complete the requested task. Provider handling, retention, and training terms depend on the provider, agreement, and tenant configuration selected by the organization.' },
+      { id: 'google-user-data', heading: 'Google user data and Limited Use', body: 'LawHand\u2019s use and transfer of information received from Google APIs to any other app will adhere to the Google API Services User Data Policy, including the Limited Use requirements, published at https://developers.google.com/terms/api-services-user-data-policy. Where an organization connects Google, LawHand requests sign-in, directory read, Gmail read and send, Google Drive read and write, and Google Calendar read and write access, each only for the workflows the organization has enabled. Google user data is used only to provide and improve those user-facing features; it is not used for advertising and is not sold; people do not read it except with explicit permission for a specific support request, where necessary for security or legal compliance, or where it has been aggregated and de-identified. It is not used to develop, improve, or train generalized artificial intelligence or machine-learning models. An administrator may disconnect Google at any time, and access can be revoked from https://myaccount.google.com/permissions.' },
       { id: 'sharing', heading: 'Sharing and disclosures', body: 'Information may be disclosed to service providers supporting hosting, security, communications, payments, and enabled integrations; to the subscribing organization and its authorized administrators; or when required for legal compliance, safety, or a business transaction. Provider-specific processing is also governed by the provider’s terms and the configuration selected by the organization.' },
       { id: 'retention-security', heading: 'Retention and security', body: 'Retention depends on the type of information, tenant settings, contractual requirements, and legal obligations. LawHand uses administrative, technical, and organizational safeguards, including tenant isolation, but no system can guarantee absolute security.' },
       { id: 'choices', heading: 'Choices and privacy requests', body: 'Users may update certain account information through the service. Requests concerning workspace content should usually be directed to the subscribing organization. Other access, correction, deletion, or objection rights may apply based on location and can be submitted using the contact information below.' },
@@ -134,7 +135,11 @@ const MARKETING_SHELLS = Object.freeze({
 
 const PUBLIC_SHELLS = Object.freeze({ ...LEGAL_SHELLS, ...MARKETING_SHELLS })
 
-const LAST_UPDATED = 'July 27, 2026'
+const LAST_UPDATED = Object.freeze({
+  '/privacy': { label: 'September 13, 2026', iso: '2026-09-13' },
+  '/terms': { label: 'July 27, 2026', iso: '2026-07-27' },
+})
+const DEFAULT_UPDATED = LAST_UPDATED['/terms']
 
 const FALLBACK_CONTACT_URL = 'mailto:support@getlawhand.com'
 
@@ -190,13 +195,14 @@ function legalShellMarkup(pathname, contactUrl) {
             <p>${escapeHtml(section.body)}</p>
           </section>`)
     .join('\n')
+  const updated = LAST_UPDATED[pathname] || DEFAULT_UPDATED
   return `      <main class="server-legal">
         <article class="server-legal__article">
           <header class="server-legal__header">
             <a class="server-legal__brand" href="/">LawHand</a>
             <h1>${escapeHtml(route.heading)}</h1>
             <p class="server-legal__lead">${escapeHtml(route.lead)}</p>
-            <p class="server-legal__updated">Last updated: <time datetime="2026-07-27">${LAST_UPDATED}</time></p>
+            <p class="server-legal__updated">Last updated: <time datetime="${updated.iso}">${escapeHtml(updated.label)}</time></p>
           </header>
           <nav class="server-legal__contents" aria-label="On this page">
             <h2>On this page</h2>

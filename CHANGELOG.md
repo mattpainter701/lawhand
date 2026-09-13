@@ -1,3 +1,14 @@
+## 2026.09.13.6 — Recover signed forms and client copies
+
+- Isolate signing source reads from the evidence transaction so OAuth row locks are released before cloud filing and token refresh cannot commit pending signature evidence.
+- Restore tenant context between completion retries and reload requests after rollback; log stable IDs and count only committed completions.
+- Verify real PostgreSQL credential locks, saved answers, original signature timestamps, outage recovery, portal downloads of both artifacts, and continuation after a failed flush.
+
+## 2026.09.13.5 — Client portal legal team labels
+
+- Omit internal matter assignment roles from the client portal's legal team card while preserving names and email links.
+- Add a portal regression check for contact details with a `lead_attorney` assignment.
+
 ## 2026.09.13.4 — Flexible matter billing
 
 - Add fixed-fee-only generation, stable request keys, fee readiness/reservation, calendar schedules and a ready-to-bill query.
