@@ -27,6 +27,8 @@ on:
     branches: [main]
   # Kept in step with ci.yml so these checks also report for a merge queue.
   merge_group:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
