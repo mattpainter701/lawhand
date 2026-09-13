@@ -30,7 +30,7 @@ and billing boundary.
 
 Do not move DNS when any item below is true:
 
-- the candidate is not the current `origin/main` SHA with green CI and CodeQL;
+- the candidate is not the current `origin/main` SHA with green CI and security scanners;
 - `/etc/lawhand/core.env` is absent, symlinked, broadly readable, or contains
   development/shared credentials;
 - the IONOS runner is the interactive administrator, belongs to `docker`, or
