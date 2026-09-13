@@ -430,17 +430,26 @@ reader through `azure.microsoft.com/free` as though a subscription were a
 prerequisite; it is not, and that signup is the most failure-prone way in.
 
 1. Get a directory. In order of preference:
-   - **Sign in at `https://entra.microsoft.com`** with the company Microsoft
-     account. Signing a personal Microsoft account into the Azure or Entra
-     portal provisions a **Default Directory** for it automatically, and you
-     are its Global Administrator. Check **Identity → Overview** before doing
-     anything else — the tenant may already exist, including as a side effect
-     of a failed Azure signup attempt.
-   - **Identity → Overview → Manage tenants → Create** for an explicitly named
-     tenant rather than the auto-created default. No subscription required.
-   - Only if both are unavailable: a **Microsoft 365 Business Standard free
-     trial**, which reliably provisions a full tenant. The tenant and its app
-     registrations outlive the trial.
+   - **`https://portal.azure.com` → Microsoft Entra ID → Manage tenants →
+     Create.** No card and no subscription. This is the cheapest path *if* the
+     account can reach the portal at all.
+   - **A Microsoft 365 Business Basic or Standard free trial**
+     (`signup.microsoft.com`). This is the reliable path, because it does not
+     depend on an existing directory: the flow *creates* the tenant, its
+     `.onmicrosoft.com` domain and a work admin account
+     (`admin@<name>.onmicrosoft.com`) as part of signup. It runs through the
+     Microsoft 365 commerce pipeline rather than Azure's, so an Azure
+     eligibility rejection does not predict an M365 one. Cancel the
+     subscription before it renews; the tenant, the admin account and every app
+     registration survive on Entra ID Free.
+
+   A personal Microsoft account with **no directory** cannot sign in to
+   `entra.microsoft.com` at all. It fails with *"Selected user account does not
+   exist in tenant 'Microsoft Services'"* — consumer accounts live in that
+   pseudo-tenant, and the Entra admin center only exists inside organizational
+   ones. Signing in does **not** provision a Default Directory; earlier
+   revisions of this document claimed it does. Create the tenant first by one
+   of the two routes above, then use the Entra admin center.
    - `azure.microsoft.com/free` is a last resort. Its fraud checks reject
      newly created Microsoft accounts, accounts on consumer mail domains,
      prepaid and virtual cards, and any card/address country mismatch, with a
