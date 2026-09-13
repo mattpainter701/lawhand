@@ -50,6 +50,13 @@ ends that session immediately; revoking the invitation ends every session on it.
 
 ## Signature and document requests
 
+After all parties sign, the signed PDF and evidence certificate are filed to
+the matter and appear in the client's **Documents** tab. If storage is
+temporarily unavailable, **Signed — filing** means the answers and signatures
+are recorded but filing is pending. Automatic retries reuse that saved evidence;
+the client does not need to sign again. Staff should verify that both files
+appear before treating filing as complete.
+
 Portal access may accompany document or signature requests. Confirm that each attachment is final and appropriate for the recipient. Do not expose internal notes, other-party materials, draft strategy, or documents from another matter.
 
 Revoke or correct access promptly when a recipient, matter, or sharing decision is wrong. Preserve the relevant audit history and report suspected cross-matter access immediately.
