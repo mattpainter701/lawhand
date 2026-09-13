@@ -196,7 +196,9 @@ def _validate_key_controls(
 async def deliver_mcp_meter_event(payload: dict[str, Any]) -> dict[str, str]:
     """Deliver one durable usage event to Stripe with a stable identifier."""
     if settings.PLATFORM_BILLING_PROVIDER != "stripe":
-        raise RuntimeError("Legacy Stripe usage delivery is disabled for the configured billing provider")
+        raise RuntimeError(
+            "Legacy Stripe usage delivery is disabled for the configured billing provider"
+        )
     if not settings.STRIPE_SECRET_KEY or not settings.STRIPE_MCP_METER_EVENT_NAME:
         raise RuntimeError("Stripe MCP metering is not configured")
     meter_event = getattr(getattr(stripe, "billing", None), "MeterEvent", None)
