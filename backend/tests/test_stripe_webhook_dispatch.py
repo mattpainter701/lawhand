@@ -390,3 +390,9 @@ async def test_a_malformed_payload_does_not_leak_the_parser_error(
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid Stripe webhook payload"
     assert secret_detail not in response.text
+
+
+@pytest.fixture(autouse=True)
+def legacy_stripe_billing_provider(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "PLATFORM_BILLING_PROVIDER", "stripe")

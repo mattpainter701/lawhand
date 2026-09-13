@@ -1,6 +1,8 @@
 """Unit tests for billing workflow helpers (timer rounding, invoice
 numbering, status transitions) — pure logic, no DB required."""
 
+import pytest
+
 from datetime import date
 from decimal import Decimal
 
@@ -105,3 +107,49 @@ class TestIsInvoiceOverdue:
         assert is_invoice_overdue(
             "partially_paid", date(2026, 1, 1), today=date(2026, 2, 1)
         )
+
+
+@pytest.mark.parametrize("current,months,anchor,expected", [
+    (date(2028, 1, 31), 1, 31, date(2028, 2, 29)),
+    (date(2028, 2, 29), 1, 31, date(2028, 3, 31)),
+    (date(2026, 11, 30), 3, 30, date(2027, 2, 28)),
+])
+def test_billing_calendar_preserves_anchor(current, months, anchor, expected):
+    from app.services.scheduled_billing import next_calendar_date
+    assert next_calendar_date(current, months, anchor) == expected
+
+
+def test_installment_allocation_does_not_duplicate_principal():
+    from app.services.billing_workflow import payment_plan_balances, installment_payment_amount
+    rows = [{"due_date": "2026-09-01", "amount": "100"}, {"due_date": "2026-10-01", "amount": "100"}]
+    allocated = payment_plan_balances(rows, Decimal("125"))
+    assert [Decimal(row["balance_due"]) for row in allocated] == [Decimal("0"), Decimal("75")]
+    assert installment_payment_amount(rows, Decimal("25"), date(2026, 9, 13)) == Decimal("75")
+    assert installment_payment_amount(rows, Decimal("125"), date(2026, 9, 13)) == Decimal("75")
+    assert installment_payment_amount(rows, Decimal("200"), date(2026, 11, 1)) == Decimal("0")
+
+
+@pytest.mark.parametrize("paid,expected_date,expected_amount", [
+    ("0", date(2026, 9, 1), "100"),
+    ("25", date(2026, 9, 1), "75"),
+    ("100", None, "0"),
+    ("125", None, "0"),
+    ("200", None, "0"),
+])
+def test_installment_overdue_excludes_future_principal(paid, expected_date, expected_amount):
+    from app.services.billing_workflow import invoice_past_due
+    details = {"installments": [{"due_date": "2026-09-01", "amount": "100"}, {"due_date": "2026-10-01", "amount": "100"}]}
+    result = invoice_past_due("partially_paid", date(2026, 8, 15), Decimal("200"), Decimal(paid), details, date(2026, 9, 13))
+    assert result == (expected_date, Decimal(expected_amount))
+
+
+@pytest.mark.parametrize("status", ["draft", "paid", "void", "written_off"])
+def test_terminal_and_draft_invoices_never_past_due(status):
+    from app.services.billing_workflow import invoice_past_due
+    assert invoice_past_due(status, date(2025, 1, 1), Decimal("100"), Decimal("0")) == (None, Decimal("0"))
+
+
+def test_unplanned_invoice_past_due_preserves_existing_behavior():
+    from app.services.billing_workflow import invoice_past_due
+    assert invoice_past_due("sent", date(2026, 9, 1), Decimal("100"), Decimal("25"), today=date(2026, 9, 2)) == (date(2026, 9, 1), Decimal("75"))
+    assert invoice_past_due("sent", date(2026, 9, 1), Decimal("100"), Decimal("0"), today=date(2026, 9, 1)) == (None, Decimal("0"))

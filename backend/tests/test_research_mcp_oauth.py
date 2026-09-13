@@ -24,6 +24,7 @@ from fastapi import HTTPException
 
 @pytest.fixture(autouse=True)
 def research_oauth_settings(monkeypatch):
+    monkeypatch.setattr(mcp_product.settings, "PLATFORM_BILLING_PROVIDER", "stripe")
     monkeypatch.setattr(
         oauth.settings,
         "RESEARCH_MCP_PUBLIC_URL",

@@ -1387,6 +1387,9 @@ function InvoicesTab({ matter, onSessionError }) {
                     Issued {fmtDate(inv.issue_date)} · Due {fmtDate(inv.due_date)} ·{' '}
                     <span className="capitalize">{inv.status.replace(/_/g, ' ')}</span>
                   </p>
+                  {inv.installments?.length > 0 && <ul className="mt-2 text-xs text-brand-ink-2" aria-label="Payment installments">
+                    {inv.installments.map(row => <li key={row.due_date}>Due {fmtDate(row.due_date)}: {fmtMoney(row.balance_due, currency)} remaining</li>)}
+                  </ul>}
                 </div>
                 <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
                   <div className="text-right">
@@ -1407,16 +1410,17 @@ function InvoicesTab({ matter, onSessionError }) {
                     >
                       <Download size={14} /> PDF
                     </a>
-                    {Number(inv.balance_due) > 0 && (
+                    {Number(inv.balance_due) > 0 && inv.online_payment_available && (
                       <a
                         href={inv.stripe_payment_link || '#'}
                         onClick={(event) => { event.preventDefault(); pay(inv.id) }}
                         aria-disabled={paying === inv.id}
                         className="px-3 py-1.5 bg-brand-green text-white rounded-lg hover:opacity-90 transition-all whitespace-nowrap"
                       >
-                        <CreditCard size={14} className="inline mr-1" /> {paying === inv.id ? 'Opening…' : 'Pay now'}
+                        <CreditCard size={14} className="inline mr-1" /> {paying === inv.id ? 'Opening…' : inv.installments?.length ? 'Pay installment' : 'Pay now'}
                       </a>
                     )}
+                    {Number(inv.balance_due) > 0 && !inv.online_payment_available && <p className="text-sm text-brand-muted">Contact your firm for payment instructions.</p>}
                   </div>
                 </div>
               </li>

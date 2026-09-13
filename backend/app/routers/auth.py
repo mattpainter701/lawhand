@@ -2127,7 +2127,13 @@ async def get_me(
         created_at=user.created_at,
         billing_tier=user.tenant.billing_tier if user.tenant else "payg",
         subscription_status=(
-            user.tenant.stripe_subscription_status if user.tenant else None
+            (
+                user.tenant.platform_subscription_status
+                if user.tenant.platform_billing_provider == "helcim"
+                else user.tenant.stripe_subscription_status
+            )
+            if user.tenant
+            else None
         ),
         billing_status=user.tenant.mcp_billing_status if user.tenant else None,
         enabled_modules=enabled_modules,
@@ -2231,7 +2237,13 @@ async def update_me(
         created_at=user.created_at,
         billing_tier=user.tenant.billing_tier if user.tenant else "payg",
         subscription_status=(
-            user.tenant.stripe_subscription_status if user.tenant else None
+            (
+                user.tenant.platform_subscription_status
+                if user.tenant.platform_billing_provider == "helcim"
+                else user.tenant.stripe_subscription_status
+            )
+            if user.tenant
+            else None
         ),
         billing_status=user.tenant.mcp_billing_status if user.tenant else None,
         enabled_modules=enabled_modules,

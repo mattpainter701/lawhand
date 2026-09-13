@@ -644,6 +644,22 @@ async def update_billing(
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
+    if (
+        settings.PLATFORM_BILLING_PROVIDER == "helcim"
+        and body.billing_tier != tenant.billing_tier
+    ):
+        raise HTTPException(
+            409, "Change your plan through LawHand subscription billing"
+        )
+    if (
+        tenant.platform_billing_provider == "helcim"
+        and tenant.platform_subscription_status
+        not in (None, "cancelled", "term_ended", "none")
+    ):
+        raise HTTPException(
+            409,
+            "Manage the active LawHand subscription through subscription billing; contact support for seat changes",
+        )
     tenant.billing_tier = body.billing_tier
 
     if body.seat_count is not None:
@@ -652,7 +668,11 @@ async def update_billing(
         tenant.flat_seat_count = body.seat_count
 
     # Sync with Stripe if customer exists and Stripe is configured
-    if tenant.stripe_customer_id and settings.STRIPE_SECRET_KEY:
+    if (
+        settings.PLATFORM_BILLING_PROVIDER == "stripe"
+        and tenant.stripe_customer_id
+        and settings.STRIPE_SECRET_KEY
+    ):
         try:
             stripe.api_key = settings.STRIPE_SECRET_KEY
             stripe.Customer.modify(

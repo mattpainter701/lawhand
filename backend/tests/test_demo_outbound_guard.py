@@ -23,6 +23,10 @@ from .test_task_automation import _approved_email_task, _matter
 # template is asserted against the live route table so a guard prefix can never
 # silently drift away from the router that actually mounts the endpoint.
 BLOCKED_DEMO_ROUTES = [
+    ("POST", "/api/billing/subscription/checkout", "/api/billing/subscription/checkout"),
+    ("POST", "/api/billing/subscription/complete", "/api/billing/subscription/complete"),
+    ("POST", "/api/billing/subscription/cancel", "/api/billing/subscription/cancel"),
+    ("POST", "/api/billing/subscription/refresh", "/api/billing/subscription/refresh"),
     ("POST", "/api/calendar/sync", "/api/calendar/sync"),
     ("POST", "/api/calendar/scheduled-events", "/api/calendar/scheduled-events"),
     (

@@ -872,8 +872,32 @@ class LegalScheduler:
             next_run_time=datetime.now(timezone.utc),
         )
         agent_count += 1
+        self.scheduler.add_job(
+            self._guarded("billing-drafts", self.run_billing_drafts),
+            "interval",
+            minutes=60,
+            jitter=INTERVAL_JOB_JITTER_SECONDS,
+            id="billing-drafts",
+            name="Scheduled billing drafts",
+            replace_existing=True,
+            max_instances=1,
+        )
+        agent_count += 1
         self.scheduler.start()
         logger.info("LegalScheduler started with %d agents", agent_count)
+
+    @tenant_scoped_job
+    async def run_billing_drafts(self):
+        from app.services.scheduled_billing import run_schedules
+
+        async with async_session_maker() as session:
+            await _apply_scheduler_tenant_context(session)
+            await run_schedules(session, _scheduler_tenant_id.get())
+        from app.services.platform_billing import reconcile_tenant_subscription
+
+        if settings.PLATFORM_BILLING_PROVIDER == "helcim" and settings.HELCIM_API_TOKEN:
+            async with async_session_maker() as session:
+                await reconcile_tenant_subscription(session, _scheduler_tenant_id.get())
 
     def shutdown(self) -> None:
         """Graceful shutdown of the scheduler."""
