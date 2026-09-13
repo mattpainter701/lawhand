@@ -67,13 +67,13 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Require successful CI and CodeQL for accepted release
+      - name: Require successful CI and security scanners for accepted release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
           python scripts/release_evidence.py --sha "$RELEASE_SHA" \
-            --workflow ci.yml --workflow codeql.yml
+            --workflow ci.yml --workflow security-scanners.yml
 
   production:
     name: Run acceptance on IONOS
@@ -153,7 +153,7 @@ jobs:
           RELEASE_SHA: ${{ needs.release-gate.outputs.release_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python scripts/release_evidence.py --sha "$RELEASE_SHA" --workflow ci.yml --workflow codeql.yml
+          python scripts/release_evidence.py --sha "$RELEASE_SHA" --workflow ci.yml --workflow security-scanners.yml
           python scripts/check_readiness.py --origin https://getlawhand.com --sha "$RELEASE_SHA"
 
       - name: Move the production tag after successful acceptance

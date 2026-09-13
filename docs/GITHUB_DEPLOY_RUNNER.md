@@ -34,8 +34,8 @@
 4. Choose **Deploy IONOS candidate**, then **Run workflow**; keep the branch
    set to `main` and select `stage`.
    Enter `STAGE-IONOS-CANDIDATE` as the confirmation. The stage requires green
-   CI and CodeQL for the exact SHA and, when enabled, a successful QA acceptance
-   for that same SHA.
+   CI and security scanners for the exact SHA and, when enabled, a successful QA
+   acceptance for that same SHA.
 5. Follow the job log and record the staged SHA and backup evidence.
 6. Choose **Production acceptance**, enter the full staged SHA, and run it from
    `main`. A successful run validates production and advances the release tag.
@@ -93,7 +93,7 @@ preserving on-host backup, and a fresh preflight.
 
 ## Machine-readable release checks
 
-`scripts/release_evidence.py --sha <sha> --workflow ci.yml --workflow codeql.yml`
+`scripts/release_evidence.py --sha <sha> --workflow ci.yml --workflow security-scanners.yml`
 reads GitHub's workflow-runs REST API and emits versioned JSON plus an Actions
 summary. Each check includes SHA, workflow, event, run ID, attempt, URL, status,
 conclusion, and a stable reason. Only a completed successful **newest** matching

@@ -60,13 +60,13 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Require successful CI and CodeQL for the QA release
+      - name: Require successful CI and security scanners for the QA release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
           python scripts/release_evidence.py --sha "$RELEASE_SHA" \
-            --workflow ci.yml --workflow codeql.yml
+            --workflow ci.yml --workflow security-scanners.yml
 
   qa-deploy:
     name: Deploy exact release to isolated Skynet QA
