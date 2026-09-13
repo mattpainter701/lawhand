@@ -28,6 +28,30 @@ CAPACITY_CHECK = ROOT / "scripts" / "check_host_capacity.sh"
 PRODUCTION_CHECK = ROOT / "scripts" / "production_check.sh"
 BASH_BIN = os.environ.get("BASH", "bash")
 NEW_FERNET_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+PLATFORM_SIGNING_KEY = "platform-token-signing-key-0123456789-abcdef"
+PLATFORM_KEY_HASH = "b" * 64
+
+
+def _platform_bootstrap_entry(*, expires_in_days: int = 365) -> str:
+    """One well-formed operator bootstrap entry, expiring relative to today.
+
+    A hardcoded expiry would quietly rot into a suite-wide failure the day it
+    passed, so the fixture always sits the configured distance from now.
+    """
+
+    expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+    return json.dumps(
+        [
+            {
+                "key_hash": PLATFORM_KEY_HASH,
+                "operator_id": "ops@ops-test.invalid",
+                "scopes": ["platform:read"],
+                "expires_at": expires_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        ]
+    )
+
+
 OLD_FERNET_KEY = "KxzLuxmIM2dFDWQmKJL9LVUK5ouA0c3_-4VqCMrn-jY="
 
 
@@ -278,6 +302,8 @@ def _production_env(**overrides: str) -> str:
         "MCP_PRODUCT_ENABLED": "false",
         "TEMPLATE_STUDIO_RENDER_ENABLED": "false",
         "PLATFORM_LEGACY_BOOTSTRAP_ENABLED": "false",
+        "PLATFORM_TOKEN_SIGNING_KEY": PLATFORM_SIGNING_KEY,
+        "PLATFORM_BOOTSTRAP_CREDENTIALS_JSON": _platform_bootstrap_entry(),
         "WORKSPACE_MCP_ENABLED": "false",
         "POSTGRES_PASSWORD": "owner-password-0123456789",
         "CLARITY_APP_PASSWORD": "runtime-password-0123456789",
@@ -361,6 +387,7 @@ def _run_preflight(
         "#!/bin/sh\n"
         'case "${2:-}" in\n'
         f'  *"base64,json,re,sys"*) exec {shlex.quote(Path(sys.executable).as_posix())} "$@" ;;\n'
+        f'  *PLATFORM_BOOTSTRAP_CREDENTIALS_JSON*) exec {shlex.quote(Path(sys.executable).as_posix())} "$@" ;;\n'
         "esac\n"
         "printf '%s' \"$FAKE_BIND_SOURCES\"\n",
         encoding="utf-8",
@@ -536,6 +563,101 @@ def test_production_preflight_accepts_staged_keyring_and_dedicated_mcp_auth(
     assert "Production preflight passed" in output
     assert "ops-secret-key-0123456789" not in output
     assert "mcp-upstream-key-0123456789" not in output
+
+
+def test_production_preflight_requires_platform_operator_access(
+    tmp_path: Path,
+) -> None:
+    """A host nobody can mint an operator token on is not a deployable host."""
+
+    env_text = _production_env()
+    stripped = "".join(
+        f"{line}\n"
+        for line in env_text.splitlines()
+        if not line.startswith(
+            ("PLATFORM_TOKEN_SIGNING_KEY=", "PLATFORM_BOOTSTRAP_CREDENTIALS_JSON=")
+        )
+    )
+
+    result = _run_preflight(tmp_path, stripped)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "PLATFORM_TOKEN_SIGNING_KEY must be at least 32 characters" in output
+    assert "must contain at least one operator entry" in output
+
+
+def test_production_preflight_rejects_expired_bootstrap_credential(
+    tmp_path: Path,
+) -> None:
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            PLATFORM_BOOTSTRAP_CREDENTIALS_JSON=_platform_bootstrap_entry(
+                expires_in_days=-1
+            )
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "has no unexpired operator entry" in output
+
+
+def test_production_preflight_rejects_malformed_bootstrap_credential(
+    tmp_path: Path,
+) -> None:
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            PLATFORM_BOOTSTRAP_CREDENTIALS_JSON=json.dumps(
+                [
+                    {
+                        "key_hash": "too-short",
+                        "operator_id": "ops@ops-test.invalid",
+                        "scopes": [],
+                        "expires_at": "2099-01-01T00:00:00Z",
+                    }
+                ]
+            )
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "needs a 64-character SHA-256 key_hash" in output
+    assert "needs a non-empty scopes list" in output
+
+
+def test_production_preflight_warns_before_a_bootstrap_credential_lapses(
+    tmp_path: Path,
+) -> None:
+    """Expiry locks the operator out, so it must be visible before it bites."""
+
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            PLATFORM_BOOTSTRAP_CREDENTIALS_JSON=_platform_bootstrap_entry(
+                expires_in_days=3
+            )
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 0, output
+    assert "rotate before it lapses" in output
+
+
+def test_production_preflight_warns_when_no_infrastructure_targets_configured(
+    tmp_path: Path,
+) -> None:
+    """Empty targets make the console read 'unconfigured', not fail — say so."""
+
+    result = _run_preflight(tmp_path, _production_env())
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 0, output
+    assert "PLATFORM_INFRASTRUCTURE_TARGETS_JSON is empty" in output
 
 
 def test_production_preflight_does_not_gate_zoom_on_commercial_plan(
