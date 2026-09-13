@@ -1,4 +1,4 @@
-## 2026.09.13.5 — Setup chooses document storage, and integrations show health first
+## 2026.09.13.7 — Setup chooses document storage, and integrations show health first
 
 - Route all four OAuth callback upserts (Google/Microsoft, admin/user) through `_record_fresh_grant`, which calls the new `clear_refresh_failure` before `apply_scope_audit`. A fresh consent now clears `health`, `last_refresh_error` and `last_refresh_at`; the `revoked` guard on the refresh path is unchanged. Report per-user token health (`user_tokens`) separately from the tenant credential on `/api/admin/permissions` and `/api/integrations/status`.
 - Onboarding gains an explicit Storage step (`POST /api/admin/onboarding/storage`) that records `primary_cloud_provider` and creates the root through `initialize_cloud_root_folder`; `/complete` refuses without a usable root. Wizard steps renumber to 0–5 and the post-connect hooks advance 1→2 and 3→4 only. Completed re-authorizations land back on the cloud card.

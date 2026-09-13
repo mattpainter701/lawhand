@@ -2,8 +2,8 @@
   "recent_release_days": 30,
   "releases": [
     {
-      "id": "2026.09.13.5",
-      "version": "2026.09.13.5",
+      "id": "2026.09.13.7",
+      "version": "2026.09.13.7",
       "title": "Setup chooses document storage, and integrations show health first",
       "published_at": "2026-09-13",
       "summary": "New firms confirm where matter documents live during setup, and the Integrations page now leads with whether each connection works, with operator tools tucked under Advanced.",

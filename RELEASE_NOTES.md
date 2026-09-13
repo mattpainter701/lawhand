@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.13.5 — Setup chooses document storage, and integrations show health first
+## 2026.09.13.7 — Setup chooses document storage, and integrations show health first
 
 Released September 13, 2026.
 
