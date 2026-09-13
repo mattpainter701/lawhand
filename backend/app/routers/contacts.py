@@ -33,7 +33,11 @@ from app.schemas.contact import (
     ContactUpdate,
 )
 from app.schemas.communication_log import CommunicationLogListResponse
-from app.services.conflict_check import run_conflict_check
+from app.services.conflict_check import (
+    restrict_matches_to_visible,
+    run_conflict_check,
+    visible_matter_ids,
+)
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -131,10 +135,19 @@ async def conflict_check(
         organization_names=payload.organization_names,
     )
 
-    matches = [ConflictMatch(**m) for m in result["matches"]]
+    # This route returns raw matches, so the assignment-aware redaction the
+    # saved conflict-check endpoint applies has to happen here too. Without it
+    # any signed-in user can probe for the names of matters they are not on.
+    visible = await visible_matter_ids(db, current_user)
+    restricted, restricted_matter_count = restrict_matches_to_visible(
+        result["matches"], visible
+    )
+
+    matches = [ConflictMatch(**m) for m in restricted]
     return ConflictCheckResult(
         clear=result["clear"],
         matches=matches,
+        restricted_matter_count=restricted_matter_count,
         checked_names=payload.names,
         checked_emails=payload.emails,
     )

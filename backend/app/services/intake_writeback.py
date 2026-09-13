@@ -23,7 +23,11 @@ from app.models.contact import Contact
 from app.models.plugin import Matter, MatterEvent
 from app.models.task import Task
 from app.models.user import User
-from app.services.conflict_check import run_conflict_check
+from app.services.conflict_check import (
+    restrict_matches_to_visible,
+    run_conflict_check,
+    visible_matter_ids,
+)
 from app.services.intake_starter_pack import CLIENT_INTAKE_FORM
 from app.services.matter_access import can_access_matter
 from app.services.task_workflow import append_task_event, transition_task
@@ -244,7 +248,27 @@ def oversized_answers(questions, answers):
     return reported
 
 
-def _snapshot_matches(raw_matches):
+async def _snapshot_visibility(db, packet):
+    """Visibility of the firm user the packet belongs to, or None for an admin.
+
+    The record is written when the client submits, so there is no viewer to ask.
+    Snapshotting against the packet's own user mirrors the saved conflict-check
+    endpoint and keeps matter names the firm user cannot see out of a row that
+    others may later read.
+    """
+    if packet.created_by is None:
+        return set()
+    user = await db.scalar(
+        select(User).where(
+            User.id == packet.created_by, User.tenant_id == packet.tenant_id
+        )
+    )
+    if user is None:
+        return set()
+    return await visible_matter_ids(db, user)
+
+
+def _snapshot_matches(raw_matches, restricted_matter_count=0):
     snapshot = []
     for raw in raw_matches:
         ids = list(raw.get("matter_ids") or [])
@@ -260,7 +284,7 @@ def _snapshot_matches(raw_matches):
                 "match_value": raw.get("match_value"),
                 "matter_ids": [str(matter_id) for matter_id in ids],
                 "matter_names": [str(n) for n in (raw.get("matter_names") or [])],
-                "restricted_matter_count": 0,
+                "restricted_matter_count": restricted_matter_count,
             }
         )
     return snapshot
@@ -281,7 +305,11 @@ async def _record_conflict_check(db, packet, matter, answers):
             organization_names=organizations,
             exclude_matter_ids=[matter.id],
         )
-        snapshot = _snapshot_matches(result["matches"])
+        visible = await _snapshot_visibility(db, packet)
+        allowed, restricted_matter_count = restrict_matches_to_visible(
+            result["matches"], visible
+        )
+        snapshot = _snapshot_matches(allowed, restricted_matter_count)
         record = ConflictCheckRecord(
             id=uuid.uuid4(),
             tenant_id=packet.tenant_id,
@@ -294,7 +322,7 @@ async def _record_conflict_check(db, packet, matter, answers):
             },
             result_snapshot=snapshot,
             match_count=len(snapshot),
-            restricted_matter_count=0,
+            restricted_matter_count=restricted_matter_count,
             created_by_user_id=packet.created_by,
         )
         db.add(record)

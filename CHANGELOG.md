@@ -1,3 +1,10 @@
+## 2026.09.13.13 — Redact restricted matters in conflict results
+
+- Apply the saved conflict-check endpoint's assignment-aware redaction to `POST /api/contacts/conflict-check`, which returned raw matches. Broadening counterparty matching in 2026.09.13.11 made that route able to reveal the names and ids of matters the viewer is not assigned to.
+- Drop a counterparty-only row whose every matter is restricted, since its display name is the adverse party itself; keep contact rows, which the firm's address book already lists.
+- Snapshot the intake questionnaire's conflict record against the packet owner's visibility instead of storing every matched matter name, and record the real restricted count.
+- Report `restricted_matter_count` on the contacts conflict-check response so a narrowed result is visible rather than silent.
+
 ## 2026.09.13.11 — Conflict search finds names in any order
 
 - Match a conflict-search name when its words appear in any order, so "Smith, Alice" from a caption and a search carrying a middle name find the contact stored as "Alice Smith".
