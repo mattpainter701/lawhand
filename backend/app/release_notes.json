@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.9",
+      "version": "2026.09.13.9",
+      "title": "Keep AI connections working through updates",
+      "published_at": "2026-09-13",
+      "summary": "Existing AI routes keep their working connections, and the maintenance notice stays readable during updates.",
+      "highlights": [
+        {
+          "title": "Keep existing AI routes working",
+          "description": "Saved AI connections retain their registered names until a replacement is activated. Your selected models and data permissions stay the same."
+        },
+        {
+          "title": "See the maintenance notice during updates",
+          "description": "The maintenance page remains readable while application services restart, avoiding a permission error in place of the notice."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.8",
       "version": "2026.09.13.8",
       "title": "Reliable signed files and matter numbering",

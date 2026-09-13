@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.9 — Keep AI connections working through updates
+
+Released September 13, 2026.
+
+Existing AI routes keep their working connections, and the maintenance notice stays readable during updates.
+
+- **Keep existing AI routes working.** Saved AI connections retain their registered names until a replacement is activated. Your selected models and data permissions stay the same.
+- **See the maintenance notice during updates.** The maintenance page remains readable while application services restart, avoiding a permission error in place of the notice.
+
 ## 2026.09.13.8 — Reliable signed files and matter numbering
 
 Released September 13, 2026.
