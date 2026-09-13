@@ -57,12 +57,18 @@ MAX_FIELD_VALUES = 200
 MAX_FIELD_VALUE_CHARS = 10_000
 
 _UNDERSCORES = re.compile(r"_{8,}")
-_SIGNATURE_WORD = re.compile(r"(?i)\b(signature|signed|sign here|by)\b\s*:?")
+#: Words that mark signature blanks. Bare "by" only counts on its own ("By:"),
+#: never as the tail of another label: "Referred by" / "reviewed by" are
+#: firm-use fields, not client signature lines.
+_SIGNATURE_WORD = re.compile(
+    r"(?i)\b(signature|signed|sign here)\b\s*:?|^\s*by\b\s*:?"
+)
 #: A bare label reads as "…signature", "Signed by:", "Sign here" or "By:"; a
 #: sentence that merely mentions signing ("is signed by the parties") does not.
 _SIGNATURE_LABEL = re.compile(
-    r"(?i)^[A-Za-z0-9'’()/&., -]{0,28}?\b(signature|signed(?: by)?|sign here|by)\b\s*:?\s*$"
+    r"(?i)^[A-Za-z0-9'’()/&., -]{0,28}?\b(signature(?:\s+by)?|signed(?:\s+by)?|sign here)\b\s*:?\s*$"
 )
+_BARE_BY_LABEL = re.compile(r"(?i)^\s*by\s*:?\s*$")
 _DATE_LABEL = re.compile(r"(?i)^\s*date(?:\s+signed)?\s*:?\s*$")
 _DATE_WORD = re.compile(r"(?i)\bdate\b")
 _LABEL_LINE_MAX_CHARS = 48
@@ -514,7 +520,10 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                     )
                     dates.append((segment_x, line.y, _clamp_rect(rect, width, height)))
                     continue
-                if not _SIGNATURE_LABEL.match(segment_text):
+                if not (
+                    _SIGNATURE_LABEL.match(segment_text)
+                    or _BARE_BY_LABEL.match(segment_text)
+                ):
                     continue
                 rule = _nearest_rule(rules, segment_x, line.y)
                 if rule:
