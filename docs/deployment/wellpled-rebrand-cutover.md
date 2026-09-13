@@ -11,7 +11,7 @@ The product rebrand and the hostname change are separate releases. This branch c
 
 The existing `clarity_app` database role, `clarity-*` model aliases, token issuer, protocol identifiers, storage keys, manifest IDs, and `X-Clarity-*` headers intentionally remain unchanged. They are compatibility identifiers, not customer-facing branding. Rename them only through dedicated migrations.
 
-The `claritylegal-records` cloud root folder now has one: new tenants provision `lawhand-records` (`app.services.cloud_init.ROOT_FOLDER_NAME`). Existing tenants keep their `claritylegal-records` folder — bound by a stable provider folder ID, unaffected — until an operator runs `backend/scripts/rename_legacy_root_folders.py --apply`, which relabels the folder in place on Google Drive/OneDrive/SharePoint via the provider API.
+The `claritylegal-records` cloud root folder now has one, and is no longer on that list: see [LawHand identifier migration](lawhand-identifier-migration.md), which supersedes this document.
 
 ## If the hostname stays the same
 
