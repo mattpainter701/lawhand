@@ -33,6 +33,7 @@ from app.models.plugin import Matter, MatterEvent
 from app.models.signature import SignatureRequest, SignatureSigner
 from app.services.esign.certificate import (
     build_certificate,
+    filled_field_count,
     immutable_certificate_filename,
 )
 from app.services.esign.followups import close_signature_followup, matter_timezone
@@ -168,7 +169,7 @@ async def record_portal_signature(
             else None
         ),
         "method": "portal_inline",
-        "field_count": len(signer.field_values),
+        "field_count": filled_field_count(signer.field_values),
         "consent_to_electronic_signature": True,
         "consent_text_version": consent_text_version,
         "user_agent": user_agent,
