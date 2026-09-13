@@ -1,3 +1,10 @@
+## 2026.09.13.15 — Signature fields, void balance, and closed-matter paperwork
+
+- Require an explicit "By:", "Signed by", or "Signature" label to detect a signature line; a bare "by" tail no longer makes "Referred by" or "reviewed by" a client signature field. On the intake form those false fields had stolen round-robin role assignment so the real client line could be offered to the attorney. Detection applies to new field detection only; historical executed copies are untouched.
+- Report no staff-visible balance for void and written-off invoices from the invoice detail and list endpoints, matching the client portal and receivables reports. The recorded total and the void status are preserved.
+- Add Court and Judge inputs to the matter edit form and the new-matter modal. The values were stored, displayed, and accepted by the API but had no editor, so a value written by intake capture or mediation sync could not be corrected.
+- Suppress "Send client paperwork" on a closed matter, where the server already refuses start with a 409 and cancels any existing packet, and explain that the matter must be reopened.
+
 ## 2026.09.13.14 — Assistant intent, task context, and deadline push
 
 - Classify an authority-guard trigger by intent: exclude a trigger inside an administrative phrase ("attorney assignment") or an explicit instruction not to research, and only when every trigger in the question is excluded. A bare "not" is not a negation cue and "without" counts only before a gerund, so a request for an answer "without case law" stays guarded.
