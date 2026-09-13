@@ -659,7 +659,7 @@ async def test_cloud_root_provisions_both_connected_providers(monkeypatch):
 
     root = await cloud_init.initialize_cloud_root_folder(None, "tenant-1")
 
-    assert root["path"] == "claritylegal-records"
+    assert root["path"] == "lawhand-records"
     assert root["subfolders"] == [
         "client_uploads",
         "documents",
@@ -669,8 +669,8 @@ async def test_cloud_root_provisions_both_connected_providers(monkeypatch):
     ]
     assert "onedrive" in root
     assert "google_drive" in root
-    assert root["onedrive"]["id"] == "od:root:claritylegal-records"
-    assert root["google_drive"]["id"] == "gd:root:claritylegal-records"
+    assert root["onedrive"]["id"] == "od:root:lawhand-records"
+    assert root["google_drive"]["id"] == "gd:root:lawhand-records"
 
 
 @pytest.mark.asyncio
@@ -689,7 +689,7 @@ async def test_cloud_root_preserves_legacy_provider_and_adds_missing_provider(
     async def fake_google_metadata(_token, folder_id):
         return {
             "id": folder_id,
-            "name": "claritylegal-records",
+            "name": "lawhand-records",
             "webViewLink": f"https://drive/{folder_id}",
         }
 
@@ -774,6 +774,241 @@ async def test_reauth_preserves_legacy_root_and_adds_missing_provider(
         "onedrive": legacy_root["onedrive"],
         "google_drive": {"id": "google-root"},
     }
+
+
+@pytest.mark.asyncio
+async def test_rename_legacy_root_relabels_every_provider(
+    db_session, test_tenant, monkeypatch
+):
+    """The rebrand migration renames in place and keeps the folder IDs."""
+    from app.services import cloud_init
+
+    test_tenant.cloud_root_folder = {
+        "onedrive": {"id": "od-root", "folder_name": "claritylegal-records"},
+        "sharepoint": {
+            "id": "sp-root",
+            "drive_id": "drive-1",
+            "folder_name": "claritylegal-records",
+        },
+        "google_drive": {"id": "gd-root", "folder_name": "claritylegal-records"},
+        "path": "claritylegal-records",
+    }
+    await db_session.commit()
+
+    async def fake_token(_db, _tenant_id, provider):
+        return {"microsoft": "ms-token", "google": "g-token"}.get(provider)
+
+    onedrive = AsyncMock(return_value={"name": cloud_init.ROOT_FOLDER_NAME})
+    sharepoint = AsyncMock(return_value={"name": cloud_init.ROOT_FOLDER_NAME})
+    gdrive = AsyncMock(return_value={"name": cloud_init.ROOT_FOLDER_NAME})
+    monkeypatch.setattr(cloud_init, "get_fresh_token", fake_token)
+    monkeypatch.setattr(cloud_init, "_rename_onedrive_folder", onedrive)
+    monkeypatch.setattr(cloud_init, "_rename_sharepoint_folder", sharepoint)
+    monkeypatch.setattr(cloud_init, "_rename_gdrive_folder", gdrive)
+
+    renamed = await cloud_init.rename_legacy_root_folder(
+        db_session, str(test_tenant.id)
+    )
+
+    assert set(renamed) == {"onedrive", "sharepoint", "google_drive"}
+    onedrive.assert_awaited_once_with(
+        "ms-token", "od-root", cloud_init.ROOT_FOLDER_NAME
+    )
+    sharepoint.assert_awaited_once_with(
+        "ms-token", "drive-1", "sp-root", cloud_init.ROOT_FOLDER_NAME
+    )
+    gdrive.assert_awaited_once_with("g-token", "gd-root", cloud_init.ROOT_FOLDER_NAME)
+
+    root = test_tenant.cloud_root_folder
+    assert root["path"] == cloud_init.ROOT_FOLDER_NAME
+    # Folder IDs stay authoritative; only the display name changes.
+    assert root["onedrive"] == {
+        "id": "od-root",
+        "folder_name": cloud_init.ROOT_FOLDER_NAME,
+    }
+    assert root["sharepoint"]["id"] == "sp-root"
+    assert root["sharepoint"]["drive_id"] == "drive-1"
+    assert root["google_drive"]["folder_name"] == cloud_init.ROOT_FOLDER_NAME
+
+
+@pytest.mark.asyncio
+async def test_rename_legacy_root_leaves_firm_named_folders_alone(
+    db_session, test_tenant, monkeypatch
+):
+    """A root the firm renamed itself is not reclaimed by the migration."""
+    from app.services import cloud_init
+
+    firm_named = {
+        "onedrive": {"id": "od-root", "folder_name": "CyberSafeadvisor"},
+        "path": "CyberSafeadvisor",
+    }
+    test_tenant.cloud_root_folder = firm_named
+    await db_session.commit()
+
+    async def should_not_rename(*_args, **_kwargs):
+        raise AssertionError("a firm-named root must not be renamed")
+
+    monkeypatch.setattr(cloud_init, "_rename_onedrive_folder", should_not_rename)
+
+    renamed = await cloud_init.rename_legacy_root_folder(
+        db_session, str(test_tenant.id)
+    )
+
+    assert renamed == {}
+    assert test_tenant.cloud_root_folder == firm_named
+
+
+class _RenameResponse:
+    def __init__(self, status_code, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def _rename_client(response, seen):
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def patch(self, url, **kwargs):
+            seen["url"] = url
+            seen["json"] = kwargs.get("json")
+            seen["headers"] = kwargs.get("headers")
+            return response
+
+    return FakeClient
+
+
+RENAME_HELPERS = [
+    (
+        "_rename_onedrive_folder",
+        ("ms-token", "item-1"),
+        "https://graph.microsoft.com/v1.0/me/drive/items/item-1",
+    ),
+    (
+        "_rename_sharepoint_folder",
+        ("ms-token", "drive-1", "item-1"),
+        "https://graph.microsoft.com/v1.0/drives/drive-1/items/item-1",
+    ),
+    (
+        "_rename_gdrive_folder",
+        ("g-token", "item-1"),
+        "https://www.googleapis.com/drive/v3/files/item-1",
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper,args,expected_url", RENAME_HELPERS)
+async def test_root_rename_patches_the_item_and_sends_only_a_new_name(
+    helper, args, expected_url, monkeypatch
+):
+    """Each provider renames its own item in place, changing nothing else."""
+    from app.services import cloud_init
+
+    seen: dict = {}
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _rename_client(
+            _RenameResponse(200, {"id": "item-1", "name": cloud_init.ROOT_FOLDER_NAME}),
+            seen,
+        ),
+    )
+
+    item = await getattr(cloud_init, helper)(*args, cloud_init.ROOT_FOLDER_NAME)
+
+    assert item["name"] == cloud_init.ROOT_FOLDER_NAME
+    assert seen["url"] == expected_url
+    # A rename must not carry a parent or any other field that would move it.
+    assert seen["json"] == {"name": cloud_init.ROOT_FOLDER_NAME}
+    assert seen["headers"]["Authorization"] == f"Bearer {args[0]}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("helper,args,_expected_url", RENAME_HELPERS)
+async def test_root_rename_raises_when_the_provider_rejects_it(
+    helper, args, _expected_url, monkeypatch
+):
+    """A refused rename raises rather than reporting a name that never changed."""
+    from app.services import cloud_init
+
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _rename_client(_RenameResponse(403, text="insufficient privileges"), {}),
+    )
+
+    with pytest.raises(RuntimeError, match=cloud_init.ROOT_FOLDER_NAME):
+        await getattr(cloud_init, helper)(*args, cloud_init.ROOT_FOLDER_NAME)
+
+
+@pytest.mark.asyncio
+async def test_rename_legacy_root_keeps_the_saved_name_when_a_provider_fails(
+    db_session, test_tenant, monkeypatch
+):
+    """A failed rename leaves the binding describing the folder as it still is."""
+    from app.services import cloud_init
+
+    saved = {
+        "onedrive": {"id": "od-root", "folder_name": "claritylegal-records"},
+        "sharepoint": {
+            "id": "sp-root",
+            "drive_id": "drive-1",
+            "folder_name": "claritylegal-records",
+        },
+        "google_drive": {"id": "gd-root", "folder_name": "claritylegal-records"},
+        "path": "claritylegal-records",
+    }
+    test_tenant.cloud_root_folder = dict(saved)
+    await db_session.commit()
+
+    async def fake_token(_db, _tenant_id, provider):
+        return {"microsoft": "ms-token", "google": "g-token"}.get(provider)
+
+    async def refuse(*_args, **_kwargs):
+        raise RuntimeError("provider refused the rename")
+
+    monkeypatch.setattr(cloud_init, "get_fresh_token", fake_token)
+    monkeypatch.setattr(cloud_init, "_rename_onedrive_folder", refuse)
+    monkeypatch.setattr(cloud_init, "_rename_sharepoint_folder", refuse)
+    monkeypatch.setattr(cloud_init, "_rename_gdrive_folder", refuse)
+
+    renamed = await cloud_init.rename_legacy_root_folder(
+        db_session, str(test_tenant.id)
+    )
+
+    assert renamed == {}
+    assert test_tenant.cloud_root_folder == saved
+
+
+@pytest.mark.asyncio
+async def test_rename_legacy_root_ignores_a_tenant_with_no_saved_root(
+    db_session, test_tenant, monkeypatch
+):
+    """A tenant that never finished cloud setup has nothing to rename."""
+    from app.services import cloud_init
+
+    async def should_not_fetch_tokens(*_args, **_kwargs):
+        raise AssertionError("a tenant without a root must not resolve credentials")
+
+    monkeypatch.setattr(cloud_init, "get_fresh_token", should_not_fetch_tokens)
+
+    assert test_tenant.cloud_root_folder is None
+    renamed = await cloud_init.rename_legacy_root_folder(
+        db_session, str(test_tenant.id)
+    )
+
+    assert renamed == {}
 
 
 @pytest.mark.asyncio
@@ -891,13 +1126,13 @@ async def test_matter_folder_metadata_uses_canonical_layout(monkeypatch):
         matter_id="12345678-1234-4567-8123-123456789012",
     )
 
-    assert metadata["path"] == "claritylegal-records/acme-v-smith (12345678)"
+    assert metadata["path"] == "lawhand-records/acme-v-smith (12345678)"
     assert metadata["subfolder_paths"] == {
-        "client_uploads": "claritylegal-records/acme-v-smith (12345678)/client_uploads",
-        "documents": "claritylegal-records/acme-v-smith (12345678)/documents",
-        "pleadings": "claritylegal-records/acme-v-smith (12345678)/pleadings",
-        "correspondence": "claritylegal-records/acme-v-smith (12345678)/correspondence",
-        "billing": "claritylegal-records/acme-v-smith (12345678)/billing",
+        "client_uploads": "lawhand-records/acme-v-smith (12345678)/client_uploads",
+        "documents": "lawhand-records/acme-v-smith (12345678)/documents",
+        "pleadings": "lawhand-records/acme-v-smith (12345678)/pleadings",
+        "correspondence": "lawhand-records/acme-v-smith (12345678)/correspondence",
+        "billing": "lawhand-records/acme-v-smith (12345678)/billing",
     }
     assert set(metadata["onedrive"]["subfolders"]) == set(metadata["subfolder_paths"])
     assert set(metadata["google_drive"]["subfolders"]) == set(
@@ -912,22 +1147,22 @@ def test_cloud_folder_selection_prefers_existing_canonical_before_duplicates():
     items = [
         {
             "id": "folder-6",
-            "name": "claritylegal-records 6",
+            "name": "lawhand-records 6",
             "createdDateTime": "2026-06-15T10:00:00Z",
         },
         {
             "id": "folder-2",
-            "name": "claritylegal-records 2",
+            "name": "lawhand-records 2",
             "createdDateTime": "2026-06-10T10:00:00Z",
         },
         {
             "id": "folder-root",
-            "name": "claritylegal-records",
+            "name": "lawhand-records",
             "createdDateTime": "2026-06-14T10:00:00Z",
         },
     ]
 
-    chosen = cloud_init._choose_existing_folder(items, "claritylegal-records")
+    chosen = cloud_init._choose_existing_folder(items, "lawhand-records")
 
     assert chosen["id"] == "folder-root"
 
@@ -938,17 +1173,17 @@ def test_cloud_folder_selection_falls_back_to_lowest_duplicate_suffix():
     items = [
         {
             "id": "folder-6",
-            "name": "claritylegal-records 6",
+            "name": "lawhand-records 6",
             "createdDateTime": "2026-06-15T10:00:00Z",
         },
         {
             "id": "folder-2",
-            "name": "claritylegal-records 2",
+            "name": "lawhand-records 2",
             "createdDateTime": "2026-06-10T10:00:00Z",
         },
     ]
 
-    chosen = cloud_init._choose_existing_folder(items, "claritylegal-records")
+    chosen = cloud_init._choose_existing_folder(items, "lawhand-records")
 
     assert chosen["id"] == "folder-2"
 

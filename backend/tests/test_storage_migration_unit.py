@@ -16,7 +16,7 @@ def _matter(**kwargs):
 
 
 def test_marker_wins_over_name_and_path():
-    matter = _matter(cloud_folder={"path": "claritylegal-records/acme-v-acme"})
+    matter = _matter(cloud_folder={"path": "lawhand-records/acme-v-acme"})
     items = [
         {"id": "renamed", "name": "Renamed matter", "is_folder": True,
          "marker": {"schema_version": 1, "tenant_id": "tenant-1", "matter_id": matter.id}},
@@ -39,8 +39,8 @@ def test_duplicate_id_suffix_is_ambiguous():
 
 
 def test_canonical_path_is_fallback():
-    matter = _matter(cloud_folder={"path": "claritylegal-records/acme-v-acme"})
-    items = [{"id": "path", "name": "acme-v-acme", "path": "claritylegal-records/acme-v-acme", "is_folder": True}]
+    matter = _matter(cloud_folder={"path": "lawhand-records/acme-v-acme"})
+    items = [{"id": "path", "name": "acme-v-acme", "path": "lawhand-records/acme-v-acme", "is_folder": True}]
     matches, rung = StorageMigrationService._match_matter(matter, items, "tenant-1")
     assert rung == "canonical_path"
     assert matches[0]["id"] == "path"

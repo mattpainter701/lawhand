@@ -37,7 +37,7 @@ The Microsoft tenant grant requests directory read, mail read, file read/write, 
 
 LawHand currently uses that access to enumerate permitted directory users; list and search Outlook message metadata and previews; retrieve a selected full message for capture; list, search, download, and index supported OneDrive or configured SharePoint files; write files and matter folders through enabled workflows; and create or update calendar events tied to tasks and key dates.
 
-The current Microsoft file grant is delegated `Files.ReadWrite.All`. It is sufficient for the implemented folders but broader than `claritylegal-records`. Prefer an organization-owned service identity with only the required business access, or an approved SharePoint binding. Verify create/read/update/delete using a non-sensitive file; do not rely only on the consent screen.
+The current Microsoft file grant is delegated `Files.ReadWrite.All`. It is sufficient for the implemented folders but broader than `lawhand-records`. Prefer an organization-owned service identity with only the required business access, or an approved SharePoint binding. Verify create/read/update/delete using a non-sensitive file; do not rely only on the consent screen.
 
 ### Google Workspace permission and use notes
 

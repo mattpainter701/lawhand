@@ -14,6 +14,7 @@ from app.models.matter_document import MatterDocument
 from app.models.plugin import Matter
 from app.models.storage_migration import StorageMigration, StorageMigrationMatch
 from app.models.tenant import Tenant, TenantSettings
+from app.services.cloud_init import LEGACY_ROOT_FOLDER_NAME, ROOT_FOLDER_NAME
 from app.services.storage_discovery import StorageDiscovery
 from app.database import set_tenant_context
 
@@ -316,13 +317,23 @@ class StorageMigrationService:
             if isinstance(matter.cloud_folder, dict)
             else ""
         )
-        if not canonical:
-            canonical = _text(f"claritylegal-records/{getattr(matter, 'slug', '')}")
+        # A matter with no saved path predates path tracking. Its physical
+        # root folder may still carry the pre-rebrand name if the tenant
+        # hasn't run the root-folder rename migration, so match either.
+        canonical_candidates = (
+            {canonical}
+            if canonical
+            else {
+                _text(f"{ROOT_FOLDER_NAME}/{getattr(matter, 'slug', '')}"),
+                _text(f"{LEGACY_ROOT_FOLDER_NAME}/{getattr(matter, 'slug', '')}"),
+            }
+        )
+        canonical_names = {c.rsplit("/", 1)[-1] for c in canonical_candidates}
         path_matches = [
             i
             for i in folders
-            if _text(i.get("path")) == canonical
-            or _text(i.get("name")) == canonical.rsplit("/", 1)[-1]
+            if _text(i.get("path")) in canonical_candidates
+            or _text(i.get("name")) in canonical_names
         ]
         return path_matches, "canonical_path" if path_matches else None
 
