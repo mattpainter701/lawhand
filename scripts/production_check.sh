@@ -359,9 +359,14 @@ PY
 # Standard and Premium aliases resolved from the platform database so managed
 # route revisions and their fallback chains are tested exactly as customers use
 # them. The checker emits sanitized route/status evidence only.
-timeout --kill-after=10s 140s "${compose[@]}" exec -T backend \
-  python -m app.services.llm_availability >/dev/null 2>&1 \
-  || fail "LiteLLM customer-route completion probe failed"
+if ! probe_evidence="$(timeout --kill-after=10s 140s "${compose[@]}" exec -T backend \
+    python -m app.services.llm_availability 2>&1)"; then
+  # The probe prints sanitized route/alias/status JSON with no prompts or
+  # credentials. Surface it so a failing tier and HTTP status are visible in
+  # the deploy log instead of only the generic failure line below.
+  printf '%s\n' "$probe_evidence" >&2
+  fail "LiteLLM customer-route completion probe failed"
+fi
 
 sql() {
   "${compose[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq -v ON_ERROR_STOP=1 -c "$1" 2>/dev/null
