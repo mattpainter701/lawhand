@@ -31,7 +31,7 @@ MICROS_PER_USD = 1_000_000
 
 # Bumped whenever a rate below changes. Every reservation records the version it
 # was priced under so a mid-window price change stays auditable.
-PRICE_CARD_VERSION = "2026-09-07.1"
+PRICE_CARD_VERSION = "2026-09-13.1"
 
 PRICE_CARD_SETTING_KEY = "ai_price_card_v1"
 
@@ -60,6 +60,15 @@ _DEFAULT_RATES: dict[str, dict[str, float]] = {
         "input": 0.44,
         "output": 1.32,
         "cached_read": 0.014,
+    },
+    # OpenRouter DeepSeek V4.1 Flash, the platform-global Background route's
+    # default target when the OpenCode Go pool is exhausted. OpenRouter prices
+    # vary by weekday/UTC window; reserve the peak (weekday) rate, verified
+    # 2026-09-13. Off-peak is half.
+    "openrouter/deepseek/deepseek-v4.1-flash": {
+        "input": 0.30,
+        "output": 1.20,
+        "cached_read": 0.006,
     },
     # Explicit provider-published free endpoints, verified 2026-09-07.
     # Never infer a zero price from a name suffix or a UI catalog label.

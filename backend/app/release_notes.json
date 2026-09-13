@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.11",
+      "version": "2026.09.13.11",
+      "title": "Conflict searches catch more of the same name",
+      "published_at": "2026-09-13",
+      "summary": "Find a person whose name you typed in a different order or with a middle name, and see opposing parties recorded only on the matter.",
+      "highlights": [
+        {
+          "title": "Type the name the way you have it",
+          "description": "A search matches when the words of a name appear in any order, so \"Smith, Alice\" from a caption or a name entered with a middle name still finds the contact on file."
+        },
+        {
+          "title": "See opposing parties recorded on the matter",
+          "description": "A matter whose counterparty matches your search is reported even when it also stores a client contact. Each matter is still listed once."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.10",
       "version": "2026.09.13.10",
       "title": "Clearer matter checks and follow-ups",
