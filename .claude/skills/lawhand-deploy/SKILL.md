@@ -18,8 +18,8 @@ When the user asks to deploy, promote, release, or roll out LawHand, execute
 this sequence rather than searching for an older deployment path:
 
 1. Fetch `origin/main`, resolve its full 40-character SHA, and require a
-   successful exact-SHA `ci.yml` run. Require successful exact-SHA `codeql.yml`
-   before IONOS.
+   successful exact-SHA `ci.yml` run. Require successful exact-SHA
+   `security-scanners.yml` before IONOS.
 2. For a production candidate, dispatch `qa-acceptance.yml` from `main` with
    `release_sha=<SHA>`. It deploys isolated dev1 and validates authenticated
    readiness, exact version, and TLS. Do not treat a queued or merely green

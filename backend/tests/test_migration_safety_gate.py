@@ -188,8 +188,8 @@ def test_production_acceptance_preflights_root_entrypoint_capability() -> None:
     assert "runs-on: [self-hosted, Linux, X64, ionos, lawhand-prod]" in workflow
     assert "group: law-hand-ionos-production" in workflow
     assert "release_sha is not a forward update from the production tag" in workflow
-    assert "Require successful CI and CodeQL for accepted release" in workflow
-    assert "--workflow ci.yml --workflow codeql.yml" in workflow
+    assert "Require successful CI and security scanners for accepted release" in workflow
+    assert "--workflow ci.yml --workflow security-scanners.yml" in workflow
     assert '--sha "$RELEASE_SHA"' in workflow
     assert "Preflight root-owned acceptance entrypoint" in workflow
     assert 'if ! test -f "$entrypoint" || ! test -x "$entrypoint"' in workflow
@@ -231,8 +231,8 @@ def test_ionos_candidate_uses_pinned_main_without_runner_checkout_or_release_tag
         encoding="utf-8"
     )
 
-    assert "Require successful CI and CodeQL for mutation" in workflow
-    assert "--workflow ci.yml --workflow codeql.yml" in workflow
+    assert "Require successful CI and security scanners for mutation" in workflow
+    assert "--workflow ci.yml --workflow security-scanners.yml" in workflow
     assert '--sha "$RELEASE_SHA"' in workflow
     assert "runs-on: [self-hosted, Linux, X64, ionos, lawhand-prod]" in workflow
     assert "environment:" in workflow and "ionos-production" in workflow
@@ -268,7 +268,7 @@ def test_qa_acceptance_deploys_and_validates_exact_main() -> None:
     assert "QA acceptance must be dispatched from main" in workflow
     assert "release_sha must be a full lowercase commit SHA" in workflow
     assert "release_sha must equal the main SHA selected for this dispatch" in workflow
-    assert "--workflow ci.yml --workflow codeql.yml" in workflow
+    assert "--workflow ci.yml --workflow security-scanners.yml" in workflow
     assert "runs-on: [self-hosted, Linux, X64, skynet, lawhand-prod]" in workflow
     assert "environment:" in workflow and "skynet-development" in workflow
     qa_deploy_block = workflow.split("  qa-deploy:", 1)[1].split(

@@ -65,14 +65,14 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Require successful CI and CodeQL for mutation
+      - name: Require successful CI and security scanners for mutation
         if: inputs.operation == 'stage'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
           python scripts/release_evidence.py --sha "$RELEASE_SHA" \
-            --workflow ci.yml --workflow codeql.yml
+            --workflow ci.yml --workflow security-scanners.yml
 
       - name: Require successful QA acceptance when enabled
         if: inputs.operation == 'stage' && vars.LAWHAND_QA_GATE_REQUIRED == 'true'
