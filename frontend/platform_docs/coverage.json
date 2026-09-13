@@ -218,6 +218,18 @@
     {
       "section": "mcp",
       "chapter": "mcp-server-operations"
+    },
+    {
+      "section": "storage-migration",
+      "chapter": "storage-imports-and-readiness"
+    },
+    {
+      "section": "data-import",
+      "chapter": "storage-imports-and-readiness"
+    },
+    {
+      "section": "readiness",
+      "chapter": "storage-imports-and-readiness"
     }
   ]
 }

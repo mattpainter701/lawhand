@@ -7,16 +7,12 @@ import {
   getAdminSettings,
   updateAdminSettings,
   triggerCloudSync,
-  getIntegrationReadiness,
   getSharePointBinding,
   listSharePointSites,
   listSharePointDrives,
   saveSharePointBinding,
-  uploadTabs3ImportBundle,
-  getExternalImportTables,
-  reconcileExternalImport,
 } from '../api'
-import StorageMigrationPanel from './StorageMigrationPanel'
+import { Disclosure } from './ui'
 
 const SCOPE_LABELS_MS = {
   offline_access: 'Offline access (refresh tokens)',
@@ -60,162 +56,26 @@ const CAP_BADGE = {
   unavailable: { text: 'Not on this tier', cls: 'bg-gray-100 text-gray-500' },
 }
 
-const CORE_READINESS_ENV_KEYS = new Set([
-  'FRONTEND_URL',
-  'BACKEND_URL',
-  'MICROSOFT_CLIENT_ID',
-  'MICROSOFT_CLIENT_SECRET',
-  'MICROSOFT_TENANT_ID',
-  'GOOGLE_CLIENT_ID',
-  'GOOGLE_CLIENT_SECRET',
-  'TEAMS_APP_ID',
-])
+export const PRIMARY_CLOUD_LABELS = {
+  onedrive: 'Microsoft OneDrive',
+  sharepoint: 'Microsoft SharePoint',
+  google_drive: 'Google Drive',
+}
 
-function Tabs3ImportPanel() {
-  const [file, setFile] = useState(null)
-  const [passphrase, setPassphrase] = useState('')
-  const [accountingMode, setAccountingMode] = useState('tabs3_reference')
-  const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState(null)
-  const [run, setRun] = useState(null)
-  const [tables, setTables] = useState([])
-  const [reconcile, setReconcile] = useState(null)
+// A credential in one of these states cannot be used, whatever its stored
+// scope string says. The card leads with the remedy and hides the scope
+// tally, which describes what was once consented, not whether it works now.
+const UNUSABLE_HEALTH = new Set(['revoked', 'refresh_failed'])
 
-  const handleUpload = async (event) => {
-    event.preventDefault()
-    if (!file) {
-      setError('Choose a Tabs3 export bundle first.')
-      return
-    }
-    setUploading(true)
-    setError(null)
-    setRun(null)
-    setTables([])
-    setReconcile(null)
-    try {
-      const uploaded = await uploadTabs3ImportBundle({ file, passphrase, accountingMode })
-      setRun(uploaded)
-      const [tableData, reconcileData] = await Promise.all([
-        getExternalImportTables(uploaded.id),
-        reconcileExternalImport(uploaded.id),
-      ])
-      setTables(tableData.tables || [])
-      setReconcile(reconcileData)
-    } catch (err) {
-      setError(err?.response?.data?.detail || 'Tabs3 import upload failed.')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <div className="bg-brand-surface border border-brand-line rounded-xl p-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-        <div>
-          <h3 className="text-brand-ink font-sans text-base font-bold">Tabs3 Import</h3>
-          <p className="text-brand-ink-2 font-sans text-xs mt-1">
-            Stage an on-prem Tabs3 export bundle for review before cutover.
-          </p>
-        </div>
-        {run && (
-          <span className="px-2.5 py-1 rounded-lg bg-green-100 text-green-700 border border-green-200 text-xs font-bold">
-            {run.status}
-          </span>
-        )}
-      </div>
-
-      <form onSubmit={handleUpload} className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr_1fr_auto] gap-3 items-end">
-        <label className="block">
-          <span className="block text-xs font-bold text-brand-ink mb-1">Export bundle</span>
-          <input
-            type="file"
-            accept=".zip,.tabs3bundle,application/zip,application/octet-stream"
-            onChange={(event) => setFile(event.target.files?.[0] || null)}
-            className="block w-full text-sm text-brand-ink file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:border-brand-line file:bg-brand-bg file:text-brand-ink file:text-xs file:font-bold"
-          />
-        </label>
-        <label className="block">
-          <span className="block text-xs font-bold text-brand-ink mb-1">Passphrase</span>
-          <input
-            type="password"
-            value={passphrase}
-            onChange={(event) => setPassphrase(event.target.value)}
-            placeholder="Encrypted bundles"
-            className="w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-brand-ink font-sans text-sm focus:outline-none focus:ring-2 focus:ring-brand-ink/20"
-          />
-        </label>
-        <label className="block">
-          <span className="block text-xs font-bold text-brand-ink mb-1">Accounting mode</span>
-          <select
-            value={accountingMode}
-            onChange={(event) => setAccountingMode(event.target.value)}
-            className="w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-brand-ink font-sans text-sm focus:outline-none focus:ring-2 focus:ring-brand-ink/20"
-          >
-            <option value="tabs3_reference">Tabs3 reference</option>
-            <option value="clarity_native">LawHand native</option>
-            <option value="qbo">QuickBooks Online</option>
-          </select>
-        </label>
-        <button
-          type="submit"
-          disabled={uploading}
-          className="px-4 py-2 bg-brand-ink text-white rounded-lg font-sans text-sm font-bold hover:bg-brand-ink/90 disabled:opacity-50"
-        >
-          {uploading ? 'Uploading...' : 'Upload'}
-        </button>
-      </form>
-
-      {error && (
-        <div className="mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-medium">
-          {error}
-        </div>
-      )}
-
-      {reconcile && (
-        <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-brand-bg border border-brand-line rounded-lg p-3">
-            <div className="text-[11px] uppercase font-bold text-brand-ink-2">Run</div>
-            <div className="text-sm font-bold text-brand-ink truncate">{reconcile.export_id || run?.id}</div>
-          </div>
-          <div className="bg-brand-bg border border-brand-line rounded-lg p-3">
-            <div className="text-[11px] uppercase font-bold text-brand-ink-2">Tables</div>
-            <div className="text-sm font-bold text-brand-ink">{reconcile.table_count}</div>
-          </div>
-          <div className="bg-brand-bg border border-brand-line rounded-lg p-3">
-            <div className="text-[11px] uppercase font-bold text-brand-ink-2">Rows</div>
-            <div className="text-sm font-bold text-brand-ink">{reconcile.total_rows}</div>
-          </div>
-          <div className="bg-brand-bg border border-brand-line rounded-lg p-3">
-            <div className="text-[11px] uppercase font-bold text-brand-ink-2">Warnings</div>
-            <div className="text-sm font-bold text-brand-ink">{reconcile.warnings?.length || 0}</div>
-          </div>
-        </div>
-      )}
-
-      {tables.length > 0 && (
-        <div className="mt-5 overflow-x-auto border border-brand-line rounded-lg">
-          <table className="min-w-full text-sm">
-            <thead className="bg-brand-bg-soft text-brand-ink-2 text-xs uppercase">
-              <tr>
-                <th className="text-left px-3 py-2 font-bold">Table</th>
-                <th className="text-right px-3 py-2 font-bold">Rows</th>
-                <th className="text-left px-3 py-2 font-bold">Checksum</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-brand-line">
-              {tables.map((table) => (
-                <tr key={table.source_table}>
-                  <td className="px-3 py-2 font-mono text-xs text-brand-ink">{table.source_table}</td>
-                  <td className="px-3 py-2 text-right text-brand-ink">{table.row_count}</td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-brand-ink-2 truncate max-w-sm">{table.checksum || 'metadata-only'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
+export function relTime(iso, now = Date.now()) {
+  if (!iso) return 'never'
+  const diffMs = now - new Date(iso).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
 }
 
 export default function IntegrationsPanel() {
@@ -230,20 +90,8 @@ export default function IntegrationsPanel() {
   const [cloudSaved, setCloudSaved] = useState(false)
   const [contentSyncing, setContentSyncing] = useState(false)
   const [contentSyncResult, setContentSyncResult] = useState(null)
-  const [readiness, setReadiness] = useState(null)
   const [sharePointBinding, setSharePointBinding] = useState(null)
   const [sharePointFlash, setSharePointFlash] = useState(null)
-
-  const relTime = (iso) => {
-    if (!iso) return 'never'
-    const diffMs = Date.now() - new Date(iso).getTime()
-    const mins = Math.floor(diffMs / 60000)
-    if (mins < 1) return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    const hrs = Math.floor(mins / 60)
-    if (hrs < 24) return `${hrs}h ago`
-    return `${Math.floor(hrs / 24)}d ago`
-  }
 
   const handleRetryCloudInit = async () => {
     setRetrying(true)
@@ -293,13 +141,11 @@ export default function IntegrationsPanel() {
     Promise.all([
       getAdminPermissions(),
       getAdminSettings(),
-      getIntegrationReadiness().catch(() => null),
       getSharePointBinding().catch(() => ({ binding: null })),
     ])
-      .then(([perms, settings, readinessData, bindingData]) => {
+      .then(([perms, settings, bindingData]) => {
         setData(perms)
         setPrimaryCloud(settings.primary_cloud_provider ?? null)
-        setReadiness(readinessData)
         setSharePointBinding(bindingData?.binding || null)
       })
       .catch(() => setError('Failed to load permissions.'))
@@ -308,13 +154,17 @@ export default function IntegrationsPanel() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
+      <div className="flex justify-center py-12" role="status" aria-label="Loading integrations">
         <div className="w-8 h-8 border-4 border-brand-ink border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
-  if (!data) return null
+  if (!data) {
+    return error ? (
+      <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">{error}</div>
+    ) : null
+  }
 
   const handleReauthorize = (provider) => {
     const intent = 'admin'
@@ -343,6 +193,11 @@ export default function IntegrationsPanel() {
     attention_needed: 'bg-amber-100 text-amber-700 border-amber-200',
     disconnected: 'bg-red-100 text-red-700 border-red-200',
   }
+  const anyConnected = Boolean(data.microsoft?.connected || data.google?.connected)
+  const storageSummary = primaryCloud
+    ? `Matter documents go to ${PRIMARY_CLOUD_LABELS[primaryCloud] || primaryCloud}`
+    : 'Automatic: OneDrive for Microsoft 365 tenants, otherwise Google Drive'
+  const storageTone = !anyConnected ? 'off' : (primaryCloud === 'sharepoint' && !sharePointBinding?.drive_id) ? 'warn' : 'ok'
 
   return (
     <div className="space-y-6">
@@ -350,7 +205,7 @@ export default function IntegrationsPanel() {
         <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">{error}</div>
       )}
 
-      {/* Overall status */}
+      {/* Overall status — the one line an administrator needs first */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold ${overallColors[data.overall_health] || overallColors.disconnected}`}>
           <span className={`w-2 h-2 rounded-full ${
@@ -361,102 +216,38 @@ export default function IntegrationsPanel() {
             data.overall_health === 'attention_needed' ? 'Needs Attention' : 'No integrations connected'}
         </div>
 
-        {/* Cloud folder setup */}
-        <div className="flex items-center gap-3 flex-wrap justify-end">
-          {contentSyncResult && !contentSyncResult.error && (
-            <span className="text-xs text-green-700 font-medium">
-              Synced {contentSyncResult.total ?? 0} cloud item{contentSyncResult.total === 1 ? '' : 's'}
-            </span>
-          )}
-          {contentSyncResult?.error && (
-            <span className="text-xs text-red-600 font-medium">{contentSyncResult.error}</span>
-          )}
-          <button
-            onClick={handleContentSync}
-            disabled={contentSyncing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
-          >
-            {contentSyncing ? (
-              <>
-                <span className="w-3 h-3 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
-                Syncing…
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                Sync files + email
-              </>
+        {anyConnected && (
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {contentSyncResult && !contentSyncResult.error && (
+              <span className="text-xs text-green-700 font-medium">
+                Synced {contentSyncResult.total ?? 0} cloud item{contentSyncResult.total === 1 ? '' : 's'}
+              </span>
             )}
-          </button>
-          <CloudRetryStatus result={retryResult} />
-          {retryResult?.error && (
-            <span className="text-xs text-red-600 font-medium">{retryResult.error}</span>
-          )}
-          <button
-            onClick={handleRetryCloudInit}
-            disabled={retrying}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
-          >
-            {retrying ? (
-              <>
-                <span className="w-3 h-3 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
-                Setting up…
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 018-8V2L14 4l-2 2V4a6 6 0 100 12h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                Retry cloud setup
-              </>
+            {contentSyncResult?.error && (
+              <span className="text-xs text-red-600 font-medium">{contentSyncResult.error}</span>
             )}
-          </button>
-        </div>
+            <button
+              onClick={handleContentSync}
+              disabled={contentSyncing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
+            >
+              {contentSyncing ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
+                  Syncing…
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  Sync files + email
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
-      <Tabs3ImportPanel />
-
-      {/* Primary cloud storage selector */}
-      <div className="bg-brand-surface border border-brand-line rounded-xl p-6">
-        <h3 className="text-brand-ink font-sans text-base font-bold mb-1">Cloud Document Storage</h3>
-        <p className="text-brand-ink-2 font-sans text-xs mb-4">
-          Choose the customer-owned datastore for matter files. Auto binds Microsoft 365 tenants to OneDrive, otherwise Google Drive. Cloud-bound writes fail instead of saving a durable copy on LawHand infrastructure.
-        </p>
-        <div className="flex items-center gap-3">
-          <select
-            value={primaryCloud ?? ''}
-            onChange={(e) => handlePrimaryCloudChange(e.target.value)}
-            disabled={cloudSaving}
-            className="flex-1 max-w-xs px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-brand-ink font-sans text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand-ink/20"
-          >
-            <option value="">Auto (Microsoft 365 → OneDrive)</option>
-            <option value="onedrive">Microsoft OneDrive</option>
-            <option value="sharepoint">Microsoft SharePoint</option>
-            <option value="google_drive">Google Drive</option>
-          </select>
-          {cloudSaving && (
-            <span className="w-4 h-4 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
-          )}
-          {!cloudSaving && cloudSaved && (
-            <span className="text-xs text-green-700 font-medium">Saved</span>
-          )}
-        </div>
-      </div>
-
-      <StorageMigrationPanel primaryProvider={primaryCloud} permissions={data} sharePointBinding={sharePointBinding} />
-
-      <ReadinessCard readiness={readiness} />
-
-      <SharePointBindingCard
-        binding={sharePointBinding}
-        onSaved={(binding) => {
-          setSharePointBinding(binding)
-          setPrimaryCloud(binding?.is_primary ? 'sharepoint' : primaryCloud)
-          setSharePointFlash('SharePoint binding saved.')
-        }}
-        flash={sharePointFlash}
-        onFlashClear={() => setSharePointFlash(null)}
-      />
-
-      {/* Microsoft card */}
+      {/* Provider cards come first: they answer "is this working?" */}
       <ProviderCard
         name="Microsoft 365"
         provider="microsoft"
@@ -467,8 +258,6 @@ export default function IntegrationsPanel() {
         onSyncNow={handleSyncNow}
         syncing={syncing}
       />
-
-      {/* Google card */}
       <ProviderCard
         name="Google Workspace"
         provider="google"
@@ -479,56 +268,127 @@ export default function IntegrationsPanel() {
         onSyncNow={handleSyncNow}
         syncing={syncing}
       />
+
+      {/* Storage settings are rarely changed and dangerous to change casually */}
+      <Disclosure
+        title="Document storage"
+        summary={storageSummary}
+        tone={storageTone}
+        testId="document-storage"
+      >
+        <div className="space-y-6">
+          <PrimaryCloudSelector
+            value={primaryCloud}
+            saving={cloudSaving}
+            saved={cloudSaved}
+            onChange={handlePrimaryCloudChange}
+          />
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleRetryCloudInit}
+              disabled={retrying || !anyConnected}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
+            >
+              {retrying ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
+                  Setting up…
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 018-8V2L14 4l-2 2V4a6 6 0 100 12h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  Create missing matter folders
+                </>
+              )}
+            </button>
+            <CloudRetryStatus result={retryResult} />
+            {retryResult?.error && (
+              <span className="text-xs text-red-600 font-medium">{retryResult.error}</span>
+            )}
+            <span className="text-[11px] text-brand-muted font-sans">
+              Safe to run again: existing folders are detected and reused.
+            </span>
+          </div>
+
+          {data.microsoft?.connected && (
+            <SharePointBindingCard
+              binding={sharePointBinding}
+              onSaved={(binding) => {
+                setSharePointBinding(binding)
+                setPrimaryCloud(binding?.is_primary ? 'sharepoint' : primaryCloud)
+                setSharePointFlash('SharePoint binding saved.')
+              }}
+              flash={sharePointFlash}
+              onFlashClear={() => setSharePointFlash(null)}
+            />
+          )}
+        </div>
+      </Disclosure>
     </div>
   )
 }
 
-function ReadinessCard({ readiness }) {
-  if (!readiness) return null
-  const envEntries = Object.entries(readiness.env || {})
-    .filter(([key]) => CORE_READINESS_ENV_KEYS.has(key))
-  const redirects = Object.fromEntries(
-    Object.entries(readiness.expected_redirect_uris || {})
-      .filter(([provider]) => !['zoom', 'zoom_phone'].includes(provider))
-  )
+/**
+ * Changing the primary provider repoints where every new matter document is
+ * written. Cloud-bound writes fail rather than fall back to LawHand storage,
+ * so this asks for an explicit confirmation instead of saving on change.
+ */
+export function PrimaryCloudSelector({ value, saving, saved, onChange }) {
+  const [pending, setPending] = useState(null)
+  const current = value ?? ''
 
   return (
-    <div className="bg-brand-surface border border-brand-line rounded-xl p-6">
-      <h3 className="text-brand-ink font-sans text-base font-bold mb-1">Cloud Integration Readiness</h3>
-      <p className="text-brand-ink-2 font-sans text-xs mb-4">
-        Redacted setup status for Microsoft, Google, Teams, and cloud document callbacks.
+    <div>
+      <h3 className="text-brand-ink font-sans text-sm font-bold mb-1">Primary provider for matter documents</h3>
+      <p className="text-brand-ink-2 font-sans text-xs mb-3">
+        Customer-owned storage for matter files. Changing this repoints new writes; existing folders are not moved.
+        Use Storage migration under Advanced to rebind existing matters.
       </p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-widest text-brand-muted mb-2">Environment</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {envEntries.map(([key, value]) => (
-              <div key={key} className="flex items-center justify-between gap-3 bg-brand-bg rounded-lg px-3 py-2">
-                <span className="text-xs font-mono text-brand-ink truncate">{key}</span>
-                <span className={`text-[10px] font-bold uppercase ${value.configured ? 'text-green-700' : 'text-red-600'}`}>
-                  {value.configured ? 'Set' : 'Missing'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-widest text-brand-muted mb-2">Expected Redirect URIs</h4>
-          <div className="space-y-2">
-            {Object.entries(redirects).map(([provider, uris]) => (
-              <div key={provider} className="bg-brand-bg rounded-lg px-3 py-2">
-                <div className="text-xs font-bold text-brand-ink capitalize mb-1">{provider}</div>
-                {(uris || []).map((uri) => (
-                  <div key={uri} className="text-[11px] font-mono text-brand-muted break-all">{uri}</div>
-                ))}
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-[11px] font-mono text-brand-muted bg-brand-bg px-3 py-2 rounded-lg break-all">
-            {readiness.entra_verification_command}
-          </div>
-        </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <select
+          aria-label="Primary cloud provider"
+          value={pending ?? current}
+          onChange={(e) => setPending(e.target.value === current ? null : e.target.value)}
+          disabled={saving}
+          className="flex-1 max-w-xs px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-brand-ink font-sans text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand-ink/20"
+        >
+          <option value="">Auto (Microsoft 365 → OneDrive, otherwise Google Drive)</option>
+          <option value="onedrive">Microsoft OneDrive</option>
+          <option value="sharepoint">Microsoft SharePoint</option>
+          <option value="google_drive">Google Drive</option>
+        </select>
+        {saving && (
+          <span className="w-4 h-4 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
+        )}
+        {!saving && saved && pending === null && (
+          <span className="text-xs text-green-700 font-medium">Saved</span>
+        )}
       </div>
+      {pending !== null && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 font-sans">
+          <p className="font-semibold">
+            Switch new matter documents to {pending ? PRIMARY_CLOUD_LABELS[pending] : 'automatic selection'}?
+          </p>
+          <p className="mt-1">Existing matter folders stay where they are. If the new provider is not connected, document writes will fail until it is.</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => { const next = pending; setPending(null); onChange(next) }}
+              className="px-3 py-1.5 bg-brand-ink text-white rounded-lg text-xs font-bold"
+            >
+              Confirm change
+            </button>
+            <button
+              type="button"
+              onClick={() => setPending(null)}
+              className="px-3 py-1.5 border border-brand-line rounded-lg text-xs font-medium text-brand-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -620,10 +480,10 @@ function SharePointBindingCard({ binding, onSaved, flash, onFlashClear }) {
   }
 
   return (
-    <div className="bg-brand-surface border border-brand-line rounded-xl p-6">
+    <div className="border-t border-brand-line pt-5">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div>
-          <h3 className="text-brand-ink font-sans text-base font-bold mb-1">SharePoint Storage Binding</h3>
+          <h3 className="text-brand-ink font-sans text-sm font-bold mb-1">SharePoint library</h3>
           <p className="text-brand-ink-2 font-sans text-xs">
             Select the SharePoint site and document library used for matter folders and uploads.
           </p>
@@ -664,6 +524,7 @@ function SharePointBindingCard({ binding, onSaved, flash, onFlashClear }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <select
+          aria-label="SharePoint site"
           value={siteId}
           onChange={(e) => handleSiteSelect(e.target.value)}
           className="px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-brand-ink font-sans text-sm focus:outline-none focus:ring-2 focus:ring-brand-ink/20"
@@ -677,6 +538,7 @@ function SharePointBindingCard({ binding, onSaved, flash, onFlashClear }) {
           ))}
         </select>
         <select
+          aria-label="SharePoint document library"
           value={driveId}
           onChange={(e) => handleDriveSelect(e.target.value)}
           disabled={!siteId || loadingDrives}
@@ -730,106 +592,48 @@ export function CloudRetryStatus({ result }) {
   )
 }
 
+const HEALTH_TEXT = {
+  healthy: 'Healthy',
+  missing_scopes: 'Missing Scopes',
+  refresh_failed: 'Refresh Failed',
+  revoked: 'Reconnect Required',
+  disconnected: 'Disconnected',
+}
+
+const HEALTH_REMEDY = {
+  revoked: 'The provider has revoked this grant. Re-authorize as an administrator to restore email, calendar and document access for the firm.',
+  refresh_failed: 'LawHand could not refresh the firm-wide token. Re-authorize as an administrator; if it fails again, check the provider app configuration under Advanced.',
+}
+
 export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize, relTime, onSyncNow, syncing }) {
-  const healthText = {
-    healthy: 'Healthy',
-    missing_scopes: 'Missing Scopes',
-    refresh_failed: 'Refresh Failed',
-    revoked: 'Reconnect Required',
-    disconnected: 'Disconnected',
-  }[info.health] || 'Needs Attention'
+  const healthText = HEALTH_TEXT[info.health] || 'Needs Attention'
   const grantedScopes = info.granted_scopes || []
   const missingScopes = info.missing_required || []
   const requiredScopes = info.required_scopes || []
   const extraScopes = info.extra_scopes || []
   const requiredRows = requiredScopes.length ? requiredScopes : [...new Set([...grantedScopes, ...missingScopes])]
-  const grantedRequiredCount = info.connected ? Math.max(requiredRows.length - missingScopes.length, 0) : 0
+  const unusable = info.connected && UNUSABLE_HEALTH.has(info.health)
+  // Scope counts describe consent, not whether the credential works now, so
+  // an unusable credential never advertises a full green tally.
+  const grantedRequiredCount = info.connected && !unusable ? Math.max(requiredRows.length - missingScopes.length, 0) : 0
+  const directorySync = info.capabilities?.directory_sync
+  const canSyncDirectory = info.connected && !unusable && directorySync?.status !== 'unavailable'
+  const userTokens = info.user_tokens
 
-  return (
-    <div className="bg-brand-surface border border-brand-line rounded-xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-brand-ink font-sans text-base font-bold">{name}</h3>
-          <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-            info.health === 'healthy' ? 'bg-green-100 text-green-700' :
-            info.health === 'missing_scopes' || info.health === 'refresh_failed' ? 'bg-amber-100 text-amber-700' :
-            'bg-red-100 text-red-700'
-          }`}>
-            {healthText}
-          </span>
-          {info.account_label && (
-            <span className="inline-block mt-1 ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-              {info.account_label}
-            </span>
-          )}
-          {info.connected && (
-            <p className="mt-1 text-xs text-brand-ink-2 font-sans">
-              {info.user_count ?? 0} users synced
-              {info.last_sync_status === 'failed' ? ' · last sync failed' : info.last_sync_status === 'not_applicable' ? ' · directory sync not available on this tier' : ` · last run ${relTime(info.last_sync_at)}`}
-            </p>
-          )}
-          {info.connected && (
-            <p className="mt-1 text-xs text-brand-ink-2 font-sans">
-              Token refresh {info.last_refresh_at ? relTime(info.last_refresh_at) : 'not yet recorded'}
-            </p>
-          )}
-          {info.connected && info.last_sync_error && info.last_sync_status === 'failed' && (
-            <p className="mt-1 text-xs text-red-600 font-mono bg-red-50 px-2 py-1 rounded">
-              {info.last_sync_error}
-            </p>
-          )}
-          {info.connected && info.last_refresh_error && (
-            <p className="mt-1 text-xs text-red-600 font-mono bg-red-50 px-2 py-1 rounded">
-              {info.last_refresh_error}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {info.connected && (
-            <button
-              onClick={onSyncNow}
-              disabled={syncing}
-              className="px-4 py-2 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
-            >
-              {syncing ? 'Syncing…' : 'Sync now'}
-            </button>
-          )}
-          <button
-            onClick={() => onReauthorize(provider)}
-            className="px-4 py-2 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors"
-          >
-            {info.connected ? 'Re-authorize' : 'Connect'}
-          </button>
-        </div>
-      </div>
-
-      {info.recent_sync_runs?.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-          {info.recent_sync_runs.slice(0, 3).map((run) => (
-            <div key={`${run.job_type}-${run.started_at}`} className="bg-brand-bg border border-brand-line rounded-lg px-3 py-2">
-              <div className="text-[11px] uppercase font-bold text-brand-ink-2">{run.job_type}</div>
-              <div className={`text-xs font-bold ${run.status === 'completed' ? 'text-green-700' : 'text-red-600'}`}>
-                {run.status} · {relTime(run.started_at)}
-              </div>
-              <div className="text-[11px] text-brand-ink-2">
-                {run.items_ok || 0} ok · {run.items_failed || 0} failed
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+  const scopeDetail = (
+    <>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div className="px-3 py-2 rounded-lg bg-brand-bg">
           <p className="text-[11px] uppercase text-brand-ink-2 font-bold">Required</p>
-          <p className="text-sm text-brand-ink font-bold">{requiredRows.length}</p>
+          <p className="text-sm text-brand-ink font-bold" data-testid="scope-tally-required">{requiredRows.length}</p>
         </div>
         <div className="px-3 py-2 rounded-lg bg-brand-bg">
           <p className="text-[11px] uppercase text-brand-ink-2 font-bold">Granted</p>
-          <p className="text-sm text-green-700 font-bold">{grantedRequiredCount}</p>
+          <p className={`text-sm font-bold ${grantedRequiredCount ? 'text-green-700' : 'text-brand-ink'}`} data-testid="scope-tally-granted">{grantedRequiredCount}</p>
         </div>
         <div className="px-3 py-2 rounded-lg bg-brand-bg">
           <p className="text-[11px] uppercase text-brand-ink-2 font-bold">Missing</p>
-          <p className={`text-sm font-bold ${missingScopes.length ? 'text-red-600' : 'text-brand-ink'}`}>
+          <p className={`text-sm font-bold ${missingScopes.length ? 'text-red-600' : 'text-brand-ink'}`} data-testid="scope-tally-missing">
             {missingScopes.length}
           </p>
         </div>
@@ -838,7 +642,7 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
       <div className="space-y-1.5">
         {requiredRows.map((scope) => {
           const missing = missingScopes.includes(scope)
-          const granted = info.connected && !missing
+          const granted = info.connected && !unusable && !missing
           const label = scopeLabels[scope] || scope
           return (
             <div key={scope} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-brand-bg">
@@ -851,7 +655,7 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
                 {label}
               </span>
               {!granted && (
-                <span className="ml-auto text-xs text-red-500 font-medium">Missing</span>
+                <span className="ml-auto text-xs text-red-500 font-medium">{unusable ? 'Unusable' : 'Missing'}</span>
               )}
               {granted && (
                 <span className="ml-auto text-xs text-green-700 font-medium">Granted</span>
@@ -872,11 +676,136 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
             </div>
           </div>
         )}
-        {requiredRows.length === 0 && (
-          <p className="text-brand-ink-2 font-sans text-sm py-2">Not connected. Grant access to enable integration features.</p>
-        )}
       </div>
-      {info.connected && info.capabilities && (
+    </>
+  )
+
+  return (
+    <div className="bg-brand-surface border border-brand-line rounded-xl p-6" data-testid={`provider-card-${provider}`}>
+      <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+        <div className="min-w-0">
+          <h3 className="text-brand-ink font-sans text-base font-bold">{name}</h3>
+          <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+            info.health === 'healthy' ? 'bg-green-100 text-green-700' :
+            info.health === 'missing_scopes' || info.health === 'refresh_failed' ? 'bg-amber-100 text-amber-700' :
+            'bg-red-100 text-red-700'
+          }`}>
+            {healthText}
+          </span>
+          {info.account_label && (
+            <span className="inline-block mt-1 ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+              {info.account_label}
+            </span>
+          )}
+          {info.connected && (
+            <p className="mt-2 text-[11px] uppercase tracking-wider font-bold text-brand-muted font-sans">Firm-wide connection</p>
+          )}
+          {info.connected && info.service_account_email && (
+            <p className="text-xs text-brand-ink-2 font-sans">Granted by {info.service_account_email}</p>
+          )}
+          {info.connected && (
+            <p className="mt-1 text-xs text-brand-ink-2 font-sans">
+              {info.user_count ?? 0} users synced
+              {info.last_sync_status === 'failed' ? ' · last sync failed' : info.last_sync_status === 'not_applicable' ? ' · directory sync not available on this tier' : ` · last run ${relTime(info.last_sync_at)}`}
+            </p>
+          )}
+          {info.connected && (
+            <p className="mt-1 text-xs text-brand-ink-2 font-sans">
+              {info.last_refresh_error
+                ? `Last token refresh attempt ${info.last_refresh_at ? relTime(info.last_refresh_at) : 'not recorded'} failed`
+                : `Last successful token refresh ${info.last_refresh_at ? relTime(info.last_refresh_at) : 'not yet recorded'}`}
+            </p>
+          )}
+          {info.connected && info.last_sync_error && info.last_sync_status === 'failed' && (
+            <p className="mt-1 text-xs text-red-600 font-mono bg-red-50 px-2 py-1 rounded">
+              {info.last_sync_error}
+            </p>
+          )}
+          {info.connected && info.last_refresh_error && (
+            <p className="mt-1 text-xs text-red-600 font-mono bg-red-50 px-2 py-1 rounded">
+              {info.last_refresh_error}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {canSyncDirectory && (
+            <button
+              onClick={onSyncNow}
+              disabled={syncing}
+              className="px-4 py-2 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
+            >
+              {syncing ? 'Syncing…' : 'Sync now'}
+            </button>
+          )}
+          <button
+            onClick={() => onReauthorize(provider)}
+            className={`px-4 py-2 font-sans text-xs font-medium rounded-lg transition-colors ${
+              unusable || !info.connected
+                ? 'bg-brand-ink text-white hover:bg-brand-ink/90'
+                : 'border border-brand-line text-brand-ink hover:bg-brand-bg-soft'
+            }`}
+          >
+            {info.connected ? 'Re-authorize' : 'Connect'}
+          </button>
+        </div>
+      </div>
+
+      {unusable && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800 font-sans" role="alert">
+          <p className="font-semibold">{healthText}: this firm-wide connection cannot be used right now.</p>
+          <p className="mt-1">{HEALTH_REMEDY[info.health]}</p>
+        </div>
+      )}
+
+      {info.connected && userTokens && (
+        <div className="mb-4 rounded-lg border border-brand-line bg-brand-bg px-4 py-3" data-testid={`user-tokens-${provider}`}>
+          <p className="text-[11px] uppercase tracking-wider font-bold text-brand-muted font-sans">Per-user connections</p>
+          {userTokens.total > 0 ? (
+            <p className="mt-1 text-xs text-brand-ink-2 font-sans">
+              {userTokens.healthy} of {userTokens.total} connected
+              {userTokens.needs_reauth > 0 && (
+                <span className="text-amber-700 font-medium"> · {userTokens.needs_reauth} need to reconnect from their own profile</span>
+              )}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-brand-ink-2 font-sans">No users have connected their own account yet. Users connect from their profile; an administrator cannot do it for them.</p>
+          )}
+        </div>
+      )}
+
+      {info.recent_sync_runs?.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+          {info.recent_sync_runs.slice(0, 3).map((run) => (
+            <div key={`${run.job_type}-${run.started_at}`} className="bg-brand-bg border border-brand-line rounded-lg px-3 py-2">
+              <div className="text-[11px] uppercase font-bold text-brand-ink-2">{run.job_type}</div>
+              <div className={`text-xs font-bold ${run.status === 'completed' ? 'text-green-700' : 'text-red-600'}`}>
+                {run.status} · {relTime(run.started_at)}
+              </div>
+              <div className="text-[11px] text-brand-ink-2">
+                {run.items_ok || 0} ok · {run.items_failed || 0} failed
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {unusable ? (
+        <details className="group rounded-lg border border-brand-line">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-bold text-brand-ink marker:hidden [&::-webkit-details-marker]:hidden">
+            Scope detail for support <span className="text-brand-muted transition-transform group-open:rotate-180 inline-block" aria-hidden="true">⌄</span>
+          </summary>
+          <div className="px-3 pb-3 pt-1">{scopeDetail}</div>
+        </details>
+      ) : (
+        <>
+          {scopeDetail}
+          {requiredRows.length === 0 && (
+            <p className="text-brand-ink-2 font-sans text-sm py-2">Not connected. Grant access to enable integration features.</p>
+          )}
+        </>
+      )}
+
+      {info.connected && !unusable && info.capabilities && (
         <div className="mt-4 pt-4 border-t border-brand-line">
           <p className="text-xs font-bold text-brand-ink mb-2 font-sans">Features on this account</p>
           <div className="space-y-1.5">

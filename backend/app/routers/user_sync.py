@@ -15,12 +15,18 @@ router = APIRouter(prefix="/api/sync/users", tags=["user-sync"])
 
 
 async def _advance_onboarding_step(db: AsyncSession, tenant_id: str) -> None:
-    """If tenant is in onboarding step 2 (syncing), advance to step 3 (review)."""
+    """If tenant is in onboarding step 3 (syncing), advance to step 4 (review)."""
+    from app.routers.onboarding import STEP_REVIEW, STEP_SYNC
+
     try:
         result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
         tenant = result.scalar_one_or_none()
-        if tenant and not tenant.onboarding_completed and tenant.onboarding_step == 2:
-            tenant.onboarding_step = 3
+        if (
+            tenant
+            and not tenant.onboarding_completed
+            and tenant.onboarding_step == STEP_SYNC
+        ):
+            tenant.onboarding_step = STEP_REVIEW
             await db.commit()
     except Exception as exc:
         logger.warning("Failed to advance onboarding step: %s", exc)

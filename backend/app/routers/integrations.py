@@ -30,7 +30,12 @@ from app.services.teams import TEAMS_CONNECT_SCOPES
 from app.services.teams_gate import missing_teams_scopes
 from app.services import capabilities as cap, account_detect
 from app.services.token_vault import decrypt_token, encrypt_token, revoke_provider_token
-from app.services.integration_observability import apply_scope_audit, missing_scopes
+from app.services.integration_observability import (
+    apply_scope_audit,
+    clear_refresh_failure,
+    missing_scopes,
+    summarize_user_tokens,
+)
 from app.services.durable_jobs import enqueue_job
 from app.services.connected_mail import (
     GOOGLE_MAIL_SEND_SCOPE,
@@ -263,6 +268,38 @@ SCOPE_ALIASES_GOOGLE = {
     "email": {"email", "https://www.googleapis.com/auth/userinfo.email"},
     "profile": {"profile", "https://www.googleapis.com/auth/userinfo.profile"},
 }
+
+
+# Wizard step numbers shared with app.routers.onboarding (imported lazily
+# there to avoid a router import cycle).
+ONBOARDING_STEP_STORAGE = 2
+ONBOARDING_STEP_SYNC = 3
+ONBOARDING_STEP_REVIEW = 4
+
+
+def _record_fresh_grant(
+    row,
+    *,
+    access_token: str,
+    refresh_token: str | None,
+    expires_in: int,
+    scope_str: str,
+) -> None:
+    """Store a freshly exchanged authorization-code grant on a credential row.
+
+    Shared by all four callback upsert paths (Google/Microsoft, admin/user) so
+    none of them can forget the health reset again. A successful exchange
+    supersedes any stale refresh failure, so the failure fields are cleared
+    here — before ``apply_scope_audit`` runs — which lets a genuine scope gap
+    still win while a weeks-old ``invalid_grant`` does not.
+    """
+    row.encrypted_access_token = encrypt_token(access_token)
+    row.encrypted_refresh_token = (
+        encrypt_token(refresh_token) if refresh_token else None
+    )
+    row.token_expires_at = _expires_at(expires_in)
+    row.scopes = scope_str
+    clear_refresh_failure(row)
 
 
 def _expires_at(expires_in: int) -> datetime:
@@ -520,13 +557,6 @@ async def microsoft_callback(
             )
             existing = result.scalar_one_or_none()
             if existing:
-                existing.encrypted_access_token = encrypt_token(access_token)
-                existing.encrypted_refresh_token = (
-                    encrypt_token(refresh_token) if refresh_token else None
-                )
-                existing.token_expires_at = _expires_at(expires_in)
-                existing.scopes = scope_str
-                existing.is_active = True
                 existing.granted_by_user_id = uuid.UUID(admin_user_id)
                 if service_email:
                     existing.service_account_email = service_email
@@ -536,15 +566,17 @@ async def microsoft_callback(
                     tenant_id=uuid.UUID(tenant_id),
                     provider="microsoft",
                     encrypted_access_token=encrypt_token(access_token),
-                    encrypted_refresh_token=(
-                        encrypt_token(refresh_token) if refresh_token else None
-                    ),
-                    token_expires_at=_expires_at(expires_in),
-                    scopes=scope_str,
                     granted_by_user_id=uuid.UUID(admin_user_id),
                     service_account_email=service_email,
                 )
                 db.add(cred_row)
+            _record_fresh_grant(
+                cred_row,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=expires_in,
+                scope_str=scope_str,
+            )
             apply_scope_audit(cred_row, "microsoft", expected_scopes, _scope_is_granted)
             account_type, account_domain = account_detect.detect_microsoft(claims)
             account_detect.apply_detection(cred_row, account_type, account_domain)
@@ -559,26 +591,21 @@ async def microsoft_callback(
                 )
             )
             row = existing.scalar_one_or_none()
-            if row:
-                row.encrypted_access_token = encrypt_token(access_token)
-                row.encrypted_refresh_token = (
-                    encrypt_token(refresh_token) if refresh_token else None
-                )
-                row.token_expires_at = _expires_at(expires_in)
-                row.scopes = scope_str
-            else:
+            if not row:
                 row = UserOAuthToken(
                     user_id=uuid.UUID(user_id),
                     tenant_id=uuid.UUID(tenant_id),
                     provider="microsoft",
                     encrypted_access_token=encrypt_token(access_token),
-                    encrypted_refresh_token=(
-                        encrypt_token(refresh_token) if refresh_token else None
-                    ),
-                    token_expires_at=_expires_at(expires_in),
-                    scopes=scope_str,
                 )
                 db.add(row)
+            _record_fresh_grant(
+                row,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=expires_in,
+                scope_str=scope_str,
+            )
             apply_scope_audit(
                 row, "microsoft", MICROSOFT_USER_SCOPES, _scope_is_granted
             )
@@ -718,13 +745,6 @@ async def google_callback(
             )
             row = existing.scalar_one_or_none()
             if row:
-                row.encrypted_access_token = encrypt_token(access_token)
-                row.encrypted_refresh_token = (
-                    encrypt_token(refresh_token) if refresh_token else None
-                )
-                row.token_expires_at = _expires_at(expires_in)
-                row.scopes = scope_str
-                row.is_active = True
                 row.granted_by_user_id = uuid.UUID(admin_user_id)
                 if service_email:
                     row.service_account_email = service_email
@@ -733,15 +753,17 @@ async def google_callback(
                     tenant_id=uuid.UUID(tenant_id),
                     provider="google",
                     encrypted_access_token=encrypt_token(access_token),
-                    encrypted_refresh_token=(
-                        encrypt_token(refresh_token) if refresh_token else None
-                    ),
-                    token_expires_at=_expires_at(expires_in),
-                    scopes=scope_str,
                     granted_by_user_id=uuid.UUID(admin_user_id),
                     service_account_email=service_email,
                 )
                 db.add(row)
+            _record_fresh_grant(
+                row,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=expires_in,
+                scope_str=scope_str,
+            )
             apply_scope_audit(row, "google", GOOGLE_ADMIN_SCOPES, _scope_is_granted)
             account_type, account_domain = account_detect.detect_google(decoded)
             account_detect.apply_detection(row, account_type, account_domain)
@@ -756,26 +778,21 @@ async def google_callback(
                 )
             )
             row = existing.scalar_one_or_none()
-            if row:
-                row.encrypted_access_token = encrypt_token(access_token)
-                row.encrypted_refresh_token = (
-                    encrypt_token(refresh_token) if refresh_token else None
-                )
-                row.token_expires_at = _expires_at(expires_in)
-                row.scopes = scope_str
-            else:
+            if not row:
                 row = UserOAuthToken(
                     user_id=uuid.UUID(user_id),
                     tenant_id=uuid.UUID(tenant_id),
                     provider="google",
                     encrypted_access_token=encrypt_token(access_token),
-                    encrypted_refresh_token=(
-                        encrypt_token(refresh_token) if refresh_token else None
-                    ),
-                    token_expires_at=_expires_at(expires_in),
-                    scopes=scope_str,
                 )
                 db.add(row)
+            _record_fresh_grant(
+                row,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=expires_in,
+                scope_str=scope_str,
+            )
             apply_scope_audit(row, "google", GOOGLE_USER_SCOPES, _scope_is_granted)
 
         await db.commit()
@@ -1613,8 +1630,14 @@ async def _sync_users_post_connect_with_session(
 
         result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
         tenant = result.scalar_one_or_none()
-        if tenant and not tenant.onboarding_completed and tenant.onboarding_step < 3:
-            tenant.onboarding_step = 3
+        # Directory sync finishing only moves the wizard from "syncing" to
+        # "review". It must never skip the storage step in between.
+        if (
+            tenant
+            and not tenant.onboarding_completed
+            and tenant.onboarding_step == ONBOARDING_STEP_SYNC
+        ):
+            tenant.onboarding_step = ONBOARDING_STEP_REVIEW
             await db.commit()
     except Exception as exc:
         logger.warning(
@@ -1666,8 +1689,12 @@ async def _post_connect_redirect(
 
     base = settings.FRONTEND_URL.rstrip("/")
     if completed:
-        tab = "zoom" if provider in {"zoom", ZOOM_PHONE_PROVIDER} else "cloud-search"
-        target = f"{base}/admin?tab={tab}&connected={provider}"
+        # Land back on the card the administrator re-authorized from, not on
+        # Cloud Search: that is where the refreshed health is shown.
+        section = "zoom" if provider in {"zoom", ZOOM_PHONE_PROVIDER} else "cloud"
+        target = (
+            f"{base}/admin?tab=integrations&integration={section}&connected={provider}"
+        )
     else:
         target = f"{base}/onboarding?connected={provider}"
     return RedirectResponse(target, status_code=302)
@@ -1779,6 +1806,7 @@ async def integration_status(
         ),
         account_domain=ms_row.account_domain if ms_row else None,
         capabilities=ms_caps,
+        user_tokens=summarize_user_tokens(users_list, "microsoft"),
     )
     google_connected = google_row is not None and google_row.is_active
     google_missing = missing_scopes(
@@ -1821,6 +1849,7 @@ async def integration_status(
             google_row.scopes if google_row else None,
             google_row.last_user_sync_status if google_row else None,
         ),
+        user_tokens=summarize_user_tokens(users_list, "google"),
     )
 
     return IntegrationsListResponse(

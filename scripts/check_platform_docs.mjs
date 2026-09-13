@@ -15,7 +15,13 @@ const allowedRouteRoots = new Set([
   'firm-memory', 'invoices', 'matters', 'onboarding', 'plugins', 'profile', 'reports', 'tasks',
   'teams', 'templates', 'time-tracking', 'trust',
 ])
-const adminTabsBlock = adminPageSource.match(/const ADMIN_TABS = \[([\s\S]*?)\n\]/)?.[1] || ''
+// Tabs are declared either flat (`const ADMIN_TABS = [...]`) or grouped
+// (`export const ADMIN_TAB_GROUPS = [{ id, label, tabs: [...] }]`). Only the
+// ids inside `tabs: [...]` are tabs; group ids are navigation labels.
+const adminTabGroupsBlock = adminPageSource.match(/const ADMIN_TAB_GROUPS = \[([\s\S]*?)\n\]/)?.[1] || ''
+const adminTabsBlock = adminTabGroupsBlock
+  ? Array.from(adminTabGroupsBlock.matchAll(/tabs:\s*\[([\s\S]*?)\]/g), ([, tabs]) => tabs).join('\n')
+  : adminPageSource.match(/const ADMIN_TABS = \[([\s\S]*?)\n\]/)?.[1] || ''
 const adminTabs = new Set(Array.from(adminTabsBlock.matchAll(/id:\s*'([^']+)'/g), ([, tab]) => tab))
 const integrationSectionsBlock = integrationsHubSource.match(/export const INTEGRATION_SECTIONS = \[([\s\S]*?)\n\]/)?.[1] || ''
 const integrationSections = new Set(Array.from(integrationSectionsBlock.matchAll(/id:\s*'([^']+)'/g), ([, section]) => section))

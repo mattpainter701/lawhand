@@ -29,6 +29,9 @@ class IntegrationStatus(BaseModel):
     account_label: Optional[str] = None
     account_domain: Optional[str] = None
     capabilities: dict = {}
+    # Per-user tokens refresh independently of the tenant credential above and
+    # fail independently of it. Keyed: total, healthy, needs_reauth.
+    user_tokens: dict = {}
 
 
 class OAuthRedirectResponse(BaseModel):

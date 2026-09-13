@@ -13,9 +13,13 @@ The [Integrations](/admin?tab=integrations) tab combines provider authorization 
 
 ![How tasks and customer-owned document storage are separated](/guide-assets/customer-data-task-lifecycle.svg)
 
+## Where these controls live
+
+Storage settings sit under **Document storage** on [Integrations → Cloud](/admin?tab=integrations&integration=cloud), collapsed beneath the provider cards. Operator tooling — [Storage migration](/admin?tab=integrations&integration=storage-migration), [Data import](/admin?tab=integrations&integration=data-import) (Tabs3) and [Provider app readiness](/admin?tab=integrations&integration=readiness) — lives under **Advanced** on the Integrations overview and is only rendered for administrators holding the `manage_integrations` capability. New firms choose the provider and create the root during setup; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup).
+
 ## Cloud document storage
 
-Select the tenant's intended primary storage provider only after confirming ownership, account tier, granted scopes, and supported capabilities. Microsoft and Google account types can expose different directory, mail, drive, and shared-storage features.
+Select the tenant's intended primary storage provider only after confirming ownership, account tier, granted scopes, and supported capabilities. Changing the provider asks for confirmation: it repoints new writes and does not move existing folders. Microsoft and Google account types can expose different directory, mail, drive, and shared-storage features.
 
 The storage selector is authoritative:
 
@@ -53,7 +57,7 @@ Before rebinding, identify workflows that depend on the current location. Changi
 
 Cloud setup creates `client_uploads` under each matter. Portal originals stay in this folder to preserve stable provider IDs and intake history. Staff-reviewed or revised work product should be saved as a new document in the appropriate matter folder; do not move the original as a classification side effect.
 
-For matters created before this folder existed, use **Retry cloud setup**, verify the new folder, then test a portal upload. SharePoint uploads fail closed when the approved drive/folder metadata is missing rather than substituting a general documents folder.
+For matters created before this folder existed, use **Create missing matter folders** under Document storage, verify the new folder, then test a portal upload. SharePoint uploads fail closed when the approved drive/folder metadata is missing rather than substituting a general documents folder.
 
 ## Tabs3 import
 
