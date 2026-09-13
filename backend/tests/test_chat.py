@@ -113,8 +113,8 @@ async def test_routing_profile_controls_standard_and_premium_matter_policy(db_se
         activation={
             "status": "active",
             "aliases": {
-                "standard": "clarity-standard-rpolicy",
-                "premium": "clarity-premium-rpolicy",
+                "standard": "lawhand-standard-rpolicy",
+                "premium": "lawhand-premium-rpolicy",
             },
         },
     )
@@ -622,24 +622,24 @@ async def test_resolve_llm_route_cache_invalidates_on_tenant_settings_update(
         TenantSettings(
             tenant_id=test_tenant.id,
             default_llm_provider="litellm",
-            default_llm_model="clarity-standard-a",
+            default_llm_model="lawhand-standard-a",
         )
     )
     await db_session.commit()
 
     route = await resolve_llm_route(db_session, test_tenant.id, use_premium=False)
-    assert route.model == "clarity-standard-a"
+    assert route.model == "lawhand-standard-a"
 
     settings_record = (
         await db_session.execute(
             select(TenantSettings).where(TenantSettings.tenant_id == test_tenant.id)
         )
     ).scalar_one()
-    settings_record.default_llm_model = "clarity-standard-b"
+    settings_record.default_llm_model = "lawhand-standard-b"
     await db_session.commit()
 
     route = await resolve_llm_route(db_session, test_tenant.id, use_premium=False)
-    assert route.model == "clarity-standard-b"
+    assert route.model == "lawhand-standard-b"
 
 
 def test_join_context_sections_omits_empty_sections():
@@ -3265,7 +3265,7 @@ async def test_premium_message_uses_tenant_premium_route(
         TenantSettings(
             tenant_id=test_tenant.id,
             premium_llm_provider="litellm",
-            premium_llm_model="clarity-premium-openrouter",
+            premium_llm_model="lawhand-premium-openrouter",
         )
     )
     await db_session.commit()
@@ -3283,7 +3283,7 @@ async def test_premium_message_uses_tenant_premium_route(
     assert resp.status_code == 201
     call = mock_llm.call_args.kwargs
     assert call["provider"] == "litellm"
-    assert call["model"] == "clarity-premium-openrouter"
+    assert call["model"] == "lawhand-premium-openrouter"
 
 
 @pytest.mark.asyncio

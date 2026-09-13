@@ -63,7 +63,7 @@ async def test_concurrent_final_background_pool_slot_has_one_winner(
             idempotency_key=key,
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background-test",
+            route_alias="lawhand-background-test",
             estimated_micros=1_000,
         )
 
@@ -97,7 +97,7 @@ async def test_account_pool_limit_is_shared_across_tenants(test_engine, db_sessi
         idempotency_key="pool-a-first",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background-test",
+        route_alias="lawhand-background-test",
         estimated_micros=1_000,
     )
     with pytest.raises(BackgroundQuotaExceeded, match="account five-hour"):
@@ -106,7 +106,7 @@ async def test_account_pool_limit_is_shared_across_tenants(test_engine, db_sessi
             idempotency_key="pool-b-first",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background-test",
+            route_alias="lawhand-background-test",
             estimated_micros=1_000,
         )
     assert first.tenant_id == tenant_a
@@ -130,7 +130,7 @@ async def test_tenant_fairness_does_not_consume_another_firms_capacity(
         idempotency_key="tenant-a-first",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background-test",
+        route_alias="lawhand-background-test",
         estimated_micros=1_000,
     )
     with pytest.raises(BackgroundQuotaExceeded, match="tenant five-hour"):
@@ -139,7 +139,7 @@ async def test_tenant_fairness_does_not_consume_another_firms_capacity(
             idempotency_key="tenant-a-second",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background-test",
+            route_alias="lawhand-background-test",
             estimated_micros=1_000,
         )
     second_firm = await ledger.reserve(
@@ -147,7 +147,7 @@ async def test_tenant_fairness_does_not_consume_another_firms_capacity(
         idempotency_key="tenant-b-first",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background-test",
+        route_alias="lawhand-background-test",
         estimated_micros=1_000,
     )
     assert first.tenant_id == tenant_a
@@ -170,7 +170,7 @@ async def test_release_restores_capacity_but_idempotency_stays_consumed(
         idempotency_key="released-operation",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background-test",
+        route_alias="lawhand-background-test",
         estimated_micros=1_000,
     )
     await ledger.release(reservation, error_code="provider_rejected")
@@ -180,7 +180,7 @@ async def test_release_restores_capacity_but_idempotency_stays_consumed(
             idempotency_key="released-operation",
             request_id=str(uuid.uuid4()),
             surface="background_test",
-            route_alias="clarity-background-test",
+            route_alias="lawhand-background-test",
             estimated_micros=1_000,
         )
     replacement = await ledger.reserve(
@@ -188,7 +188,7 @@ async def test_release_restores_capacity_but_idempotency_stays_consumed(
         idempotency_key="replacement-operation",
         request_id=str(uuid.uuid4()),
         surface="background_test",
-        route_alias="clarity-background-test",
+        route_alias="lawhand-background-test",
         estimated_micros=1_000,
     )
     await ledger.settle(

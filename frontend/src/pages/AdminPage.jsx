@@ -1245,7 +1245,7 @@ function SettingsTab() {
               type="text"
               value={modelOverride}
               onChange={(e) => setModelOverride(e.target.value)}
-              placeholder="e.g. clarity-standard, clarity-standard-openrouter-free"
+              placeholder="e.g. lawhand-standard, lawhand-standard-openrouter-free"
               className="w-full px-3 py-2.5 border border-brand-line rounded-lg text-sm font-sans bg-white focus:outline-none focus:ring-2 focus:ring-brand-ink/20 placeholder:text-brand-muted"
             />
             <p className="text-xs text-brand-muted font-sans mt-1.5">Leave blank to use the platform standard alias.</p>
