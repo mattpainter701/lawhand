@@ -99,6 +99,18 @@ curl -s "${auth[@]}" "$HOST/api/platform/audit?days=7&actor_id=ops@example.com" 
 Filters: `action`, `actor_id`, `resource_id`, `days`. This is also the answer to
 "what did we touch in this tenant, and when".
 
+## Retention
+
+Both tables these routes read are pruned nightly by the `log-retention`
+scheduler job: `error_logs` after `ERROR_LOG_RETENTION_DAYS` (default 90) and
+`api_access_logs` after `API_ACCESS_LOG_RETENTION_DAYS` (default 30). So an
+error id from four months ago returns 404, and a trace older than a month
+returns its error half with no access half — that is retention, not a lost
+record. Widen the window on the host before an investigation that needs to
+reach further back, or set it to `0` to retain that table indefinitely under a
+litigation hold. The sweep is age-based only: resolving an error does not
+shorten its life, and leaving one unresolved does not extend it.
+
 ## Performance note
 
 Postgres RLS stays on for operator reads: the registry is enumerated and each
