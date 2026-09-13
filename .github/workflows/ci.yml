@@ -1,7 +1,10 @@
 # =============================================================================
 # CI Pipeline — Clarity Legal
 # =============================================================================
-# Runs on every pull request targeting main, and on every push to main.
+# Runs on every pull request targeting main. There is deliberately no `push`
+# trigger: the merged result is already validated by the PR run (and by the
+# merge queue when used), so re-running the whole suite after each merge only
+# spends runner concurrency and starves the queued pull requests behind it.
 #
 # Required GitHub repository secrets: none (CI uses fake/test values).
 # Optional secrets for extended checks:
@@ -21,8 +24,6 @@ concurrency:
 
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
   # Recovery path for GitHub pull_request event-delivery incidents. This runs
   # the exact same required jobs against the explicitly selected ref.
