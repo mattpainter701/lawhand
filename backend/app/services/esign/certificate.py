@@ -35,8 +35,27 @@ def _signer_method(signer) -> str:
     )
 
 
+def filled_field_count(field_values) -> int:
+    """Fields a reader sees completed on the executed copy.
+
+    The portal serializes every fillable field owned by the acting signer,
+    including the ones left blank: an unfilled text, choice, or radio as an
+    empty string and an unchecked checkbox as "false". Neither is a filled
+    field, so both are excluded; counting the raw entries overstated how much
+    the signer actually completed.
+    """
+    count = 0
+    for value in (field_values or {}).values():
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text.lower() != "false":
+            count += 1
+    return count
+
+
 def _field_count(signer) -> int:
-    return len(getattr(signer, "field_values", None) or {})
+    return filled_field_count(getattr(signer, "field_values", None))
 
 
 def build_certificate(
