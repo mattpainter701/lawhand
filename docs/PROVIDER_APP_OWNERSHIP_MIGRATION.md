@@ -430,9 +430,19 @@ reader through `azure.microsoft.com/free` as though a subscription were a
 prerequisite; it is not, and that signup is the most failure-prone way in.
 
 1. Get a directory. In order of preference:
-   - **`https://portal.azure.com` → Microsoft Entra ID → Manage tenants →
-     Create.** No card and no subscription. This is the cheapest path *if* the
-     account can reach the portal at all.
+   - **Sign in to `https://portal.azure.com` with a work or school account you
+     already have, then Microsoft Entra ID → Manage tenants → Create.** No
+     card, no subscription, no trial. Tenant creation requires an existing
+     directory, and any organizational account supplies one — including an
+     account in an unrelated company's tenant. The new tenant is independent of
+     the one you signed in from; nothing is shared but the identity that
+     clicked Create, and step 4 below removes even that.
+     - If **Create** is greyed out, the home tenant has *Restrict non-admin
+       users from creating tenants* set to Yes (Entra → Identity → Users →
+       User settings). A Global Administrator there can clear it.
+     - `https://login.microsoftonline.com/getuserrealm.srf?login=<address>&xml=1`
+       says whether an address is usable this way. `NameSpaceType: Managed`
+       means it is a work account in a real tenant; `Unknown` means it is not.
    - **A Microsoft 365 Business Basic or Standard free trial**
      (`signup.microsoft.com`). This is the reliable path, because it does not
      depend on an existing directory: the flow *creates* the tenant, its
@@ -476,9 +486,15 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
      tenant at all. Publisher verification, the consent-screen publisher name
      and the blue verified marker all work identically either way. Do not
      unpick a working mail setup for a cosmetic gain.
-4. Create a second Global Administrator account and store its credentials with
-   the LLC's records. A tenant with one admin is a single point of failure and a
-   diligence finding.
+4. Create Global Administrator accounts **native to this tenant**, on its
+   `.onmicrosoft.com` domain, and use them from here on. Two of them: a tenant
+   with one admin is a single point of failure and a diligence finding. Store
+   the credentials with the LLC's records.
+   - This matters most when the tenant was created from an account belonging to
+     another company, as in step 1. Until a native admin exists, control of
+     LawHand's identity platform rests on an identity that other company
+     administers and could disable. Creating the tenant that way is fine;
+     leaving it that way is the coupling this whole document exists to remove.
 
 You do **not** need a paid Microsoft 365 license or an Azure subscription for
 any of this. Entra ID Free supports app registrations, multitenant apps, and
