@@ -1,3 +1,9 @@
+## 2026.09.13.8 — File signed artifacts alongside pending signature records
+
+- Use PostgreSQL FOR NO KEY UPDATE for the cloud write binding guard, allowing pending tenant foreign-key references from signature events and document folders without weakening exclusion against storage-provider cutover.
+- Exercise the actual token and cloud binding locks in both fresh portal signing and outage recovery; preserve answers, signature times, and client downloads of executed PDFs and certificates.
+- Verify concurrent cutover locks and tenant updates remain blocked, and an upload rejects its stale provider after cutover commits.
+
 ## 2026.09.13.7 — Setup chooses document storage, and integrations show health first
 
 - Route all four OAuth callback upserts (Google/Microsoft, admin/user) through `_record_fresh_grant`, which calls the new `clear_refresh_failure` before `apply_scope_audit`. A fresh consent now clears `health`, `last_refresh_error` and `last_refresh_at`; the `revoked` guard on the refresh path is unchanged. Report per-user token health (`user_tokens`) separately from the tenant credential on `/api/admin/permissions` and `/api/integrations/status`.

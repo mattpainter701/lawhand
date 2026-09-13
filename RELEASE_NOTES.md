@@ -5,6 +5,14 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.8 — Signed paperwork reaches your matter files
+
+Released September 13, 2026.
+
+Signed forms and evidence certificates can finish filing while the signature records are being saved.
+
+- **Keep completed forms with the matter.** Filing retries reuse the saved answers and signatures. Once filed, clients can download the completed forms and their evidence certificates from Documents.
+
 ## 2026.09.13.7 — Setup chooses document storage, and integrations show health first
 
 Released September 13, 2026.
