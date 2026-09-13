@@ -323,15 +323,24 @@ async def test_subscription_api_card_update_cancel_and_reconcile(
     assert completed.status_code == 200, completed.text
     replay = await client.post("/api/billing/subscription/complete", json=body)
     assert replay.status_code == 200
+    original_consent = (
+        await db_session.get(PlatformSubscription, test_tenant.id)
+    ).consent_at
     updated = await client.post(
         "/api/billing/subscription/checkout", json={"update_method": True}
     )
     assert updated.status_code == 200, updated.text
     assert (
+        await db_session.get(PlatformSubscription, test_tenant.id)
+    ).consent_at == original_consent
+    assert (
         await client.post("/api/billing/subscription/complete", json=body)
     ).status_code == 200
     status = await client.get("/api/billing/status")
     assert status.json()["provider"] == "helcim"
+    profile = await client.get("/api/auth/me")
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["subscription_status"] == "active"
     assert "encrypted_secret" not in status.text
     assert "checkout_token" not in status.text
     refresh = await client.post("/api/billing/subscription/refresh")

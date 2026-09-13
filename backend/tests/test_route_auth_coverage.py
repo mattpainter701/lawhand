@@ -271,6 +271,10 @@ PUBLIC_ROUTES: dict[tuple[frozenset[str], str], str] = {
     (frozenset({"POST"}), "/api/billing/webhook"): "verifies Stripe-Signature header",
     (
         frozenset({"POST"}),
+        "/api/billing/provider-events",
+    ): "verifies Helcim HMAC over event ID, timestamp and raw body, rejects stale signatures, then derives the firm from the canonical provider transaction",
+    (
+        frozenset({"POST"}),
         "/api/billing/webhooks/stripe",
     ): "verifies Stripe-Signature header",
     (

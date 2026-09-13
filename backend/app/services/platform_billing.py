@@ -261,7 +261,8 @@ async def begin_checkout(db, tenant_id, user, fingerprint, *, update_method=Fals
     row.checkout_expires_at = now + timedelta(minutes=60)
     row.offer = {**(offer or row.offer or {}), "update_method": update_method}
     row.phase = "checkout"
-    row.consent_by, row.consent_at = user.id, now
+    if not update_method:
+        row.consent_by, row.consent_at = user.id, now
     await db.commit()
     return {"provider": "helcim", "checkout_token": row.checkout_token}
 
