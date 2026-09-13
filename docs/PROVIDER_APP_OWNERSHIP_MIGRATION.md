@@ -469,8 +469,15 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
    - Do **not** use an address whose domain already belongs to another Entra
      tenant. Signing in with it authenticates against *that* tenant instead of
      creating a new one.
-2. In **Microsoft Entra admin center → Identity → Overview → Properties**, set
-   the organization name to **Perevaga Group LLC**.
+2. Choose **Governed Workforce** when asked for a tenant configuration.
+   *Workforce (legacy)* can no longer be created for add-on tenants as of
+   31 August 2026. Do **not** choose *External*: that is the CIAM
+   configuration, for authenticating an application's own end users inside
+   Entra. LawHand authenticates against each customer's existing tenant, so a
+   workforce tenant is what hosts its app registrations.
+
+   Then in **Microsoft Entra admin center → Identity → Overview → Properties**,
+   set the organization name to **Perevaga Group LLC**.
 3. **Identity → Domain names → Add custom domain** → `getlawhand.com` → add the
    TXT record at your DNS provider → verify. This both looks right on consent
    screens and is the simplest route to publisher-domain verification in 4.4.
@@ -762,3 +769,35 @@ Have a one-page answer to each before you go to market:
    endpoints.)
 6. What is the customer-visible blast radius of rotating any one provider
    secret, and is that rotation rehearsed?
+
+### How the provider identities actually change hands
+
+**An Entra app registration cannot be moved between tenants, and a Google
+OAuth client cannot be moved between projects.** Re-registering in the buyer's
+own tenant mints a new client ID, and section 2's blast radius lands on the
+buyer's first week: every stored refresh token dies and every customer firm has
+to re-consent. That is not a sale, it is a migration project handed to someone
+who just paid for a working product.
+
+What transfers cleanly is the **container**, not the app:
+
+- The **Entra tenant** changes hands by changing who administers it — add the
+  buyer's Global Administrators, remove the seller's. The app registration, its
+  client ID, its secrets and every customer's existing consent are untouched,
+  because nothing moved.
+- The **Google Cloud project** transfers the same way, by moving it to the
+  buyer's organization or reassigning project owners. The OAuth client ID
+  survives.
+- **Publisher verification** does not transfer. The buyer associates their own
+  Partner Center account and MPN ID, which changes the publisher name on the
+  consent screen but forces no re-consent. Google verification is tied to the
+  project, but the reviewed entity changes, so expect Google to want it
+  re-confirmed.
+- **Domains and DNS** go with the sale, which is what keeps the redirect URIs
+  and the `microsoft-identity-association.json` publisher-domain proof valid.
+
+Everything above works only if the container is cleanly owned. A tenant whose
+sole Global Administrator is a personal account, or an account in an unrelated
+company's directory, cannot be handed over without handing over that account
+too. That is the whole reason this document exists, and it is why the native
+admin accounts in 4.1 step 4 are not housekeeping.
