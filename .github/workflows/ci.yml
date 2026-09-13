@@ -366,6 +366,7 @@ jobs:
     env:
       # Database
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
+      TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
       RLS_TEST_DATABASE_URL: postgresql+asyncpg://clarity_app:clarity-ci-runtime-password@localhost:5432/legalapp_test
 
       # Redis
@@ -588,6 +589,7 @@ jobs:
     env:
       # Database
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
+      TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/legalapp_test
       RLS_TEST_DATABASE_URL: postgresql+asyncpg://clarity_app:clarity-ci-runtime-password@localhost:5432/legalapp_test
 
       # Redis
@@ -660,6 +662,22 @@ jobs:
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO clarity_app;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO clarity_app;
           SQL
+
+      - name: Create per-worker test databases
+        env:
+          PGPASSWORD: test
+        run: |
+          # pytest-xdist runs four workers; each needs its own clone of the
+          # migrated database because the per-test TRUNCATE in conftest would
+          # otherwise cross workers. conftest rewrites each worker's URLs to
+          # legalapp_test_gw<i>.
+          psql -h localhost -U test -d postgres -v ON_ERROR_STOP=1 -q <<'SQL'
+          SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+            WHERE datname = 'legalapp_test' AND pid <> pg_backend_pid();
+          SQL
+          for i in $(seq 0 3); do
+            createdb -h localhost -U test -T legalapp_test "legalapp_test_gw${i}"
+          done
 
       - name: Verify real Word-to-PDF preview and save determinism
         if: matrix.shard == 1
@@ -743,7 +761,7 @@ jobs:
           COVERAGE_FILE: .coverage.shard${{ matrix.shard }}
         run: >-
           pytest ${{ steps.split.outputs.files }} -v --tb=short --maxfail=1
-          --cov=app --cov-report=
+          --cov=app --cov-report= -n 4 --dist loadfile
 
       - name: Upload this shard's coverage data
         if: always()
