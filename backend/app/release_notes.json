@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.13.10",
+      "version": "2026.09.13.10",
+      "title": "Clearer matter checks and follow-ups",
+      "published_at": "2026-09-13",
+      "summary": "Find contacts by full name, see accurate deadline labels, and understand when an action needs a retry.",
+      "highlights": [
+        {
+          "title": "Find full names and keep follow-ups current",
+          "description": "Conflict searches match a contact's combined first and last name. Once required paperwork is complete, its document-chasing task gives way to the scheduling follow-up."
+        },
+        {
+          "title": "See clearer dates and errors",
+          "description": "Deadlines keep their calendar day. Save errors explain the failure and retry wait. A failed document load no longer looks like an empty folder."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.9",
       "version": "2026.09.13.9",
       "title": "Keep AI connections working through updates",

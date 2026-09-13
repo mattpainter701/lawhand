@@ -8,7 +8,7 @@ from both the contacts router (manual check) and the plugins router
 
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.contact import Contact
@@ -59,6 +59,11 @@ async def run_conflict_check(
             or_(
                 Contact.first_name.ilike(pattern),
                 Contact.last_name.ilike(pattern),
+                func.trim(
+                    func.coalesce(Contact.first_name, "")
+                    + " "
+                    + func.coalesce(Contact.last_name, "")
+                ).ilike(pattern),
                 Contact.organization_name.ilike(pattern),
                 Contact.email.ilike(pattern),
             ),

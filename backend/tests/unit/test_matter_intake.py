@@ -263,6 +263,38 @@ async def test_both_required_in_either_order_and_completion_replays(ctx, first):
 
 
 @pytest.mark.asyncio
+async def test_completed_paperwork_replaces_chase_with_scheduling(ctx):
+    c = ctx
+    c.packet.signature_id = None
+    c.packet.requirements = {"questionnaire": {"completed": False}}
+    c.packet.sent_at = TIME
+    await s.reconcile(c.db, c.packet)
+    chase = c.db.tasks[uuid.uuid5(c.packet.id, "signed")]
+    assert chase.status not in ("completed", "cancelled")
+    complete(c, "questionnaire")
+    await s.reconcile(c.db, c.packet)
+    assert chase.status == "cancelled"
+    schedule = c.db.tasks[uuid.uuid5(c.packet.id, "scheduling")]
+    assert schedule.status not in ("completed", "cancelled")
+    task_ids = set(c.db.tasks)
+    await s.reconcile(c.db, c.packet)
+    assert set(c.db.tasks) == task_ids
+    assert chase.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_completed_documents_preserve_engagement_followup(ctx):
+    c = ctx
+    c.packet.config = {**c.packet.config, "portal_after_signing": True}
+    complete(c, "fee_agreement")
+    complete(c, "questionnaire")
+    await s.reconcile(c.db, c.packet)
+    assert c.db.tasks[uuid.uuid5(c.packet.id, "signed")].status not in (
+        "completed", "cancelled"
+    )
+
+
+@pytest.mark.asyncio
 async def test_signature_requires_artifact_and_bound_source(ctx):
     c = ctx
     c.signature.status = "completed"

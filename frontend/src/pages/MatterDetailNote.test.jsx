@@ -20,6 +20,24 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+it.each(['details', 'people'])('shows the API save error and keeps the %s editor open', async section => {
+  api.updateMatterV2.mockRejectedValueOnce(new Error('Hourly request limit exceeded. Please retry in 20 minutes.'))
+  render(<MemoryRouter initialEntries={['/matters/A?tab=settings']}>
+    <Routes><Route path="/matters/:id" element={<MatterDetailPage />} /></Routes>
+  </MemoryRouter>)
+  await screen.findByRole('heading', { name: 'Matter A' })
+  const editors = screen.getAllByRole('button', { name: 'Edit', exact: true })
+  fireEvent.click(editors[section === 'details' ? 0 : 1])
+  if (section === 'details') {
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Details', exact: true }))
+    fireEvent.change(screen.getByLabelText('Description', { exact: true }), { target: { value: 'Preserve this draft' } })
+  }
+  fireEvent.click(screen.getByRole('button', { name: section === 'details' ? 'Save Changes' : 'Save', exact: true }))
+  expect((await screen.findAllByText('Hourly request limit exceeded. Please retry in 20 minutes.')).length).toBeGreaterThan(0)
+  expect(screen.getAllByRole('button', { name: 'Cancel', exact: true }).length).toBeGreaterThan(0)
+  if (section === 'details') expect(screen.getByLabelText('Description', { exact: true })).toHaveValue('Preserve this draft')
+})
+
 it.each(['resolve', 'reject'])('ignores a late note %s after switching away and back to the same matter', async outcome => {
   let settle
   api.addMatterNote.mockImplementationOnce(() => new Promise((resolve, reject) => { settle = outcome === 'resolve' ? resolve : reject }))

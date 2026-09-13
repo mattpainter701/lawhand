@@ -343,6 +343,19 @@ describe('ClientPortalMatterPage', () => {
     expect(screen.getByText('Tow receipt')).toBeInTheDocument()
   })
 
+  it('does not report an empty folder when loading documents failed, and can retry', async () => {
+    listClientPortalDocuments.mockRejectedValueOnce(new Error('Hourly request limit exceeded'))
+    const user = userEvent.setup()
+    render(<ClientPortalMatterPage />)
+    await user.click(await screen.findByRole('tab', { name: /Documents/ }))
+    expect(await screen.findByText(/Unable to load documents/)).toBeInTheDocument()
+    expect(screen.queryByText(/No shared documents yet/)).not.toBeInTheDocument()
+    listClientPortalDocuments.mockResolvedValue([])
+    await user.click(screen.getByRole('button', { name: 'Refresh list' }))
+    expect(await screen.findByText(/No shared documents yet/)).toBeInTheDocument()
+    expect(screen.queryByText(/Unable to load documents/)).not.toBeInTheDocument()
+  })
+
   it('explains what to do when the session has expired', async () => {
     getClientPortalMatter.mockRejectedValue(sessionExpired())
     render(<ClientPortalMatterPage />)

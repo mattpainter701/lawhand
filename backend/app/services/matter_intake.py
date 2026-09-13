@@ -1031,6 +1031,12 @@ async def reconcile(db, packet):
         await close_task(
             db, packet, "documents", "All required intake documents completed"
         )
+        # The no-agreement paperwork chase is superseded by scheduling. Keep
+        # a fee-agreement follow-up: that may include separate engagement work.
+        if agreement is None:
+            await close_task(
+                db, packet, "signed", "Paperwork completed; scheduling follow-up created"
+            )
         await ensure_task(
             db,
             packet,

@@ -58,7 +58,7 @@ async def test_conflict_search_is_saved_reviewed_and_locked(
         json={
             "label": "Smith intake",
             "names": ["Alice Smith", " Alice Smith "],
-            "emails": ["alice@example.com"],
+            "emails": [],
             "organization_names": [],
         },
     )
