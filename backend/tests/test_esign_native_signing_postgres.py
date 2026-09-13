@@ -35,8 +35,14 @@ CLIENT_EMAIL = "client@example.com"
 
 @pytest.mark.asyncio
 async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
-    client, db_session, test_tenant, test_user, portal_matter, portal_cookie,
-    local_storage, monkeypatch,
+    client,
+    db_session,
+    test_tenant,
+    test_user,
+    portal_matter,
+    portal_cookie,
+    local_storage,
+    monkeypatch,
 ):
     from app.models.tenant_credential import TenantCredential
     from app.services import token_vault
@@ -48,12 +54,15 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
     request = await _sent_request(
         db_session, test_tenant, test_user, portal_matter, document, source
     )
-    db_session.add(TenantCredential(
-        tenant_id=test_tenant.id, provider="microsoft",
-        encrypted_access_token=token_vault.encrypt_token("fixture-token"),
-        token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-        is_active=True,
-    ))
+    db_session.add(
+        TenantCredential(
+            tenant_id=test_tenant.id,
+            provider="microsoft",
+            encrypted_access_token=token_vault.encrypt_token("fixture-token"),
+            token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            is_active=True,
+        )
+    )
     await db_session.commit()
     monkeypatch.setattr(token_vault, "DB_LOCK_TIMEOUT_MS", 100)
     original_read = MatterFileStore.read_matter_file_bytes
@@ -61,9 +70,12 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
     async def cloud_read(self, **kwargs):
         # Exercise the real PostgreSQL credential row lock used by cloud reads;
         # only the provider's byte transport is replaced with a local fixture.
-        assert await token_vault.get_fresh_token(
-            kwargs["db"], kwargs["tenant_id"], "microsoft"
-        ) == "fixture-token"
+        assert (
+            await token_vault.get_fresh_token(
+                kwargs["db"], kwargs["tenant_id"], "microsoft"
+            )
+            == "fixture-token"
+        )
         return await original_read(self, **kwargs)
 
     monkeypatch.setattr(MatterFileStore, "read_matter_file_bytes", cloud_read)
@@ -73,27 +85,43 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
     async def cloud_store(**kwargs):
         # A second session must acquire the same real credential lock while
         # the signing transaction is still open. Previously this timed out.
-        assert await token_vault.get_fresh_token(
-            kwargs["db"], kwargs["tenant_id"], "microsoft"
-        ) == "fixture-token"
+        assert (
+            await token_vault.get_fresh_token(
+                kwargs["db"], kwargs["tenant_id"], "microsoft"
+            )
+            == "fixture-token"
+        )
         if unavailable:
-            return StorageResult(provider="microsoft", backend="onedrive", error="Provider outage")
+            return StorageResult(
+                provider="microsoft", backend="onedrive", error="Provider outage"
+            )
         uploads.append(kwargs["content"])
         return await MatterFileStore()._store_local(
-            kwargs["tenant_id"], kwargs["matter_slug"], kwargs["category"],
-            kwargs["filename"], kwargs["content"],
+            kwargs["tenant_id"],
+            kwargs["matter_slug"],
+            kwargs["category"],
+            kwargs["filename"],
+            kwargs["content"],
         )
 
-    monkeypatch.setattr(esign_service._file_store, "store_matter_file_result", cloud_store)
+    monkeypatch.setattr(
+        esign_service._file_store, "store_matter_file_result", cloud_store
+    )
     headers = _portal_headers(portal_cookie)
     values = {
-        "acroform:client_name": "Jane Q. Client", "acroform:agree": "true",
-        "acroform:state": "OK", "acroform:plan": "B",
+        "acroform:client_name": "Jane Q. Client",
+        "acroform:agree": "true",
+        "acroform:state": "OK",
+        "acroform:plan": "B",
     }
     response = await client.post(
-        f"{PORTAL}/signatures/{request.id}/sign", headers=headers,
-        json={"typed_signature": "Jane Q. Client", "consent_to_electronic_signature": True,
-              "field_values": values},
+        f"{PORTAL}/signatures/{request.id}/sign",
+        headers=headers,
+        json={
+            "typed_signature": "Jane Q. Client",
+            "consent_to_electronic_signature": True,
+            "field_values": values,
+        },
     )
     assert response.status_code == 200, response.text
     assert response.json()["completion_pending"] is True
@@ -118,7 +146,9 @@ async def test_cloud_signing_releases_token_locks_and_recovers_client_copies(
     assert listed.status_code == 200, listed.text
     assert artifact_ids <= {row["id"] for row in listed.json()}
     for artifact_id in artifact_ids:
-        downloaded = await client.get(f"{PORTAL}/documents/{artifact_id}/download", headers=headers)
+        downloaded = await client.get(
+            f"{PORTAL}/documents/{artifact_id}/download", headers=headers
+        )
         assert downloaded.status_code == 200, downloaded.text
         assert downloaded.content in uploads
     text = PdfReader(BytesIO(uploads[0])).pages[0].extract_text()
@@ -677,8 +707,13 @@ async def test_pending_completion_is_retried_once_storage_returns(
 
 @pytest.mark.asyncio
 async def test_retry_batch_restores_tenant_after_failure_and_commit(
-    db_session, test_tenant, test_user, portal_matter, local_storage,
-    captured_uploads, monkeypatch,
+    db_session,
+    test_tenant,
+    test_user,
+    portal_matter,
+    local_storage,
+    captured_uploads,
+    monkeypatch,
 ):
     from sqlalchemy import text
 
@@ -705,14 +740,23 @@ async def test_retry_batch_restores_tenant_after_failure_and_commit(
     seen = []
 
     async def complete(db, request, matter):
-        assert await db.scalar(text("SELECT current_setting('app.tenant_id')")) == tenant_id
+        assert (
+            await db.scalar(text("SELECT current_setting('app.tenant_id')"))
+            == tenant_id
+        )
         seen.append(request.id)
         if request.id == ids[0]:
             # A failed flush expires ORM attributes and leaves a failed
             # transaction: logging must not access the expired request object.
-            db.add(MatterEvent(tenant_id=uuid.UUID(tenant_id), matter_id=matter.id,
-                               event_type="signature", title="Invalid fixture event",
-                               created_by=None))
+            db.add(
+                MatterEvent(
+                    tenant_id=uuid.UUID(tenant_id),
+                    matter_id=matter.id,
+                    event_type="signature",
+                    title="Invalid fixture event",
+                    created_by=None,
+                )
+            )
             await db.flush()
         return await original_complete(db, request, matter)
 

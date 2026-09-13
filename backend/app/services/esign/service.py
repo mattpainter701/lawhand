@@ -819,8 +819,10 @@ async def retry_pending_completions(
             request = await db.scalar(
                 select(SignatureRequest)
                 .options(selectinload(SignatureRequest.signers))
-                .where(SignatureRequest.id == request_id,
-                       SignatureRequest.tenant_id == tenant_id)
+                .where(
+                    SignatureRequest.id == request_id,
+                    SignatureRequest.tenant_id == tenant_id,
+                )
                 .execution_options(populate_existing=True)
             )
             if request is None or awaiting_review(request):
