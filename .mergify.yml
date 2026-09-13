@@ -1,21 +1,21 @@
-# Mergify configuration — read from the default branch (main).
+# Mergify configuration - read from the default branch (main).
 #
-# The queue is manual: nothing merges until a maintainer comments
-# `@mergifyio queue` on the PR (or uses the "Queue this pull request" control).
-# Mergify then tests the PR against the latest main and merges it once the
-# required checks from main's branch protection pass. That removes the
-# "re-run an already-green PR because main moved" step.
+# Auto-queue: any PR targeting main that passes the required checks (injected
+# from main's branch protection) enters the queue automatically. Mergify then
+# tests it against the latest main and merges it once those checks pass, so a
+# green PR never needs a manual update-and-rerun when main moves.
 #
-# To auto-queue PRs that pass every required check instead, add:
-#   merge_protections_settings:
-#     auto_merge_conditions:
-#       - base = main
-# There are no required reviews on main, so auto-queue would merge unreviewed
-# PRs; this file deliberately leaves it off.
+# main requires no approving review, so this merges green PRs without a human
+# click. To return to manual queueing, drop merge_protections_settings below and
+# use `@mergifyio queue` (or the queue-control checkbox) instead.
 
 merge_queue:
   # One comment when a PR leaves the queue, instead of a running commentary.
   status_comments: outcomes
+
+merge_protections_settings:
+  auto_merge_conditions:
+    - base = main
 
 queue_rules:
   - name: default
