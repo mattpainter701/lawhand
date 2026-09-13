@@ -71,6 +71,76 @@ def test_format_injects_high_value_matter_fields():
     assert "Recent Communications:" in context
 
 
+def test_every_open_task_is_rendered_not_just_the_first_few():
+    """A truncated task list reads as complete, so the formatter lists all of them."""
+    service = MatterContextService()
+    tasks = [
+        {
+            "title": f"Task {index}",
+            "status": "pending",
+            "task_type": "general",
+            "priority": "medium",
+            "due_date": "2026-09-20",
+        }
+        for index in range(8)
+    ]
+
+    rendered = service.format_matter_context(
+        {"matter_name": "Acme acquisition", "open_tasks": tasks}
+    )
+
+    assert "Open Tasks (8):" in rendered
+    # MAX_RECENT_ITEMS caps notes and events at 5; tasks must not inherit it.
+    for index in range(8):
+        assert f"Task {index}" in rendered
+    assert "more open tasks exist" not in rendered
+
+
+def test_a_truncated_task_list_says_so():
+    service = MatterContextService()
+
+    rendered = service.format_matter_context(
+        {
+            "matter_name": "Acme acquisition",
+            "open_tasks": [{"title": "Task", "status": "pending", "priority": "high"}],
+            "open_tasks_truncated": True,
+        }
+    )
+
+    assert "more open tasks exist" in rendered
+
+
+def test_no_open_tasks_is_stated_rather_than_left_blank():
+    rendered = MatterContextService().format_matter_context(
+        {"matter_name": "Acme acquisition", "open_tasks": []}
+    )
+
+    assert "Open Tasks: none" in rendered
+
+
+def test_privacy_mode_redacts_task_titles_but_keeps_workflow_metadata():
+    service = MatterContextService()
+
+    scrubbed = service.scrub_matter_context(
+        {
+            "open_tasks": [
+                {
+                    "title": "Call Jane Doe about the settlement",
+                    "status": "waiting",
+                    "priority": "high",
+                    "due_date": "2026-09-20",
+                }
+            ]
+        },
+        privacy_mode=True,
+    )
+    rendered = service.format_matter_context(scrubbed, scrubbed=True)
+
+    assert "Jane" not in rendered
+    assert "[waiting]" in rendered
+    assert "2026-09-20" in rendered
+
+
 def test_privacy_mode_redacts_new_free_text_context_fields():
     service = MatterContextService()
     scrubbed = service.scrub_matter_context(
@@ -130,7 +200,10 @@ async def test_next_chat_context_is_fresh_after_invalidation():
     assert await cache.get_cached_matter_context("matter-a", "tenant-a") is None
 
     await cache.set_cached_matter_context("matter-a", "tenant-a", "updated memory")
-    assert await cache.get_cached_matter_context("matter-a", "tenant-a") == "updated memory"
+    assert (
+        await cache.get_cached_matter_context("matter-a", "tenant-a")
+        == "updated memory"
+    )
 
 
 @pytest.mark.asyncio
@@ -151,3 +224,58 @@ async def test_privacy_context_uses_a_separate_cache_entry():
         await cache.get_cached_matter_context("matter-a", "tenant-a", privacy_mode=True)
         == "redacted"
     )
+
+
+@pytest.mark.asyncio
+async def test_matter_context_loads_every_open_task_and_omits_closed_ones(
+    db_session, test_tenant, test_user
+):
+    """The assistant answered "what is outstanding?" without any task data.
+
+    Matter context carried notes, events and communications but no tasks, so a
+    task list could only come from whatever a note happened to mention.
+    """
+    import uuid as _uuid
+
+    from app.models.plugin import Matter
+    from app.models.task import Task
+
+    matter_id = _uuid.uuid4()
+    db_session.add(
+        Matter(
+            id=matter_id,
+            tenant_id=test_tenant.id,
+            user_id=test_user.id,
+            slug=f"context-tasks-{matter_id.hex[:8]}",
+            matter_name="Acme acquisition",
+            matter_type="litigation",
+        )
+    )
+    await db_session.flush()
+    statuses = ["pending", "in_progress", "waiting", "review", "completed", "cancelled"]
+    for status in statuses:
+        db_session.add(
+            Task(
+                id=_uuid.uuid4(),
+                tenant_id=test_tenant.id,
+                matter_id=matter_id,
+                title=f"{status} task",
+                task_type="general",
+                priority="medium",
+                status=status,
+            )
+        )
+    await db_session.commit()
+
+    context, _has_pii, _findings = await MatterContextService().get_matter_context(
+        db_session, str(matter_id), tenant_id=test_tenant.id
+    )
+
+    titles = {task["title"] for task in context["open_tasks"]}
+    assert titles == {
+        "pending task",
+        "in_progress task",
+        "waiting task",
+        "review task",
+    }
+    assert context["open_tasks_truncated"] is False

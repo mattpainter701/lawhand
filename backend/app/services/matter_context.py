@@ -12,7 +12,9 @@ from app.models.matter_assignment import MatterAssignment
 from app.models.matter_note import MatterNote
 from app.models.plugin import Matter, MatterEvent
 from app.models.retainer import Retainer
+from app.models.task import Task
 from app.models.tenant import TenantSettings
+from app.schemas.task import OPEN_TASK_STATUSES
 from app.services.pii_detection import detect_pii, scrub_pii
 from app.services.matter_budget import load_matter_billable_totals
 
@@ -35,6 +37,7 @@ class MatterContextService:
     MAX_TEXT_FIELD_CHARS = 1_000
     MAX_KEY_DATES = 12
     MAX_RECENT_ITEMS = 5
+    MAX_OPEN_TASKS = 50
 
     async def is_enabled(
         self,
@@ -208,6 +211,33 @@ class MatterContextService:
             for c in comms
         ]
 
+        # Open tasks. Without these the assistant answers "what is outstanding
+        # on this matter?" from whatever notes and events happen to mention a
+        # task, which reads as a complete list and is not one. Truncation is
+        # reported rather than silent.
+        tasks_q = await db.execute(
+            select(Task)
+            .where(
+                Task.tenant_id == matter.tenant_id,
+                Task.matter_id == matter.id,
+                Task.status.in_(tuple(OPEN_TASK_STATUSES)),
+            )
+            .order_by(Task.due_date.asc().nullslast(), Task.created_at.asc())
+            .limit(self.MAX_OPEN_TASKS + 1)
+        )
+        open_tasks = tasks_q.scalars().all()
+        matter_data["open_tasks_truncated"] = len(open_tasks) > self.MAX_OPEN_TASKS
+        matter_data["open_tasks"] = [
+            {
+                "title": t.title,
+                "status": t.status,
+                "task_type": t.task_type,
+                "priority": t.priority,
+                "due_date": t.due_date.isoformat() if t.due_date else None,
+            }
+            for t in open_tasks[: self.MAX_OPEN_TASKS]
+        ]
+
         # Cloud file storage locations
         matter_data["cloud_folder"] = matter.cloud_folder
 
@@ -317,6 +347,13 @@ class MatterContextService:
                     "summary": "[REDACTED]",
                 }
                 for communication in scrubbed["recent_communications"]
+            ]
+        # A task title routinely names the client or the counterparty. Keep the
+        # workflow metadata, which is what makes the list useful, and drop the
+        # free text.
+        if "open_tasks" in scrubbed:
+            scrubbed["open_tasks"] = [
+                {**task, "title": "[REDACTED]"} for task in scrubbed["open_tasks"]
             ]
 
         # Matter/team labels and storage locations often identify a client even
@@ -485,6 +522,25 @@ class MatterContextService:
                     f"    - [{communication.get('direction')}/{communication.get('channel')}] "
                     f"{subject}: {summary[:300]}"
                 )
+
+        # Every open task, not the first few: a truncated list of what is
+        # outstanding reads as complete and is not. Any truncation is stated.
+        open_tasks = matter_data.get("open_tasks", [])
+        if open_tasks:
+            lines.append(f"  Open Tasks ({len(open_tasks)}):")
+            for task in open_tasks:
+                due = task.get("due_date") or "no due date"
+                lines.append(
+                    f"    - [{task.get('status')}] {task.get('title')} "
+                    f"(due {due}, {task.get('priority')} priority)"
+                )
+            if matter_data.get("open_tasks_truncated"):
+                lines.append(
+                    "    - (more open tasks exist than are listed here; "
+                    "check the matter task board)"
+                )
+        elif "open_tasks" in matter_data:
+            lines.append("  Open Tasks: none")
 
         return "\n".join(lines)
 
