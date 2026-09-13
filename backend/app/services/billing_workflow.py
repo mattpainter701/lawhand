@@ -38,6 +38,22 @@ def is_invoice_overdue(status: str, due_date: date, today: date | None = None) -
     return (today or date.today()) > due_date
 
 
+#: Invoice states where nothing can be collected. The invoice keeps its
+#: recorded total for the record, but must contribute no staff-visible balance.
+NON_RECEIVABLE_INVOICE_STATUSES = frozenset({"void", "written_off"})
+
+
+def invoice_balance_due(status: str, total: Decimal, paid: Decimal) -> Decimal:
+    """Outstanding amount a staff member should see for an invoice.
+
+    Voided and written-off invoices keep their recorded total but show no
+    balance, matching the client portal and the receivables reports.
+    """
+    if status in NON_RECEIVABLE_INVOICE_STATUSES:
+        return Decimal("0")
+    return total - paid
+
+
 def round_timer_hours(elapsed_seconds: float, rounding_minutes: int | None) -> Decimal:
     """Round elapsed timer seconds UP to the billing increment, in hours.
 

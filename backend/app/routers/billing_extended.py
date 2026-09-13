@@ -77,6 +77,7 @@ from app.schemas.billing import (
 from app.services.billing_workflow import (
     DEFAULT_ROUNDING_MINUTES,
     can_transition_invoice,
+    invoice_balance_due,
     invoice_past_due,
     next_invoice_number,
     round_timer_hours,
@@ -1694,7 +1695,7 @@ async def _load_invoice_response(
         billing_period_end=invoice.billing_period_end,
         sent_at=invoice.sent_at,
         amount_paid=amount_paid,
-        balance_due=invoice.total - amount_paid,
+        balance_due=invoice_balance_due(invoice.status, invoice.total, amount_paid),
         is_overdue=invoice_past_due(
             invoice.status,
             invoice.due_date,
@@ -1789,7 +1790,7 @@ async def list_invoices(
                 billing_period_end=inv.billing_period_end,
                 sent_at=inv.sent_at,
                 amount_paid=amount_paid,
-                balance_due=inv.total - amount_paid,
+                balance_due=invoice_balance_due(inv.status, inv.total, amount_paid),
                 is_overdue=overdue,
                 matter_name=matter_name,
                 created_by=str(inv.created_by),
