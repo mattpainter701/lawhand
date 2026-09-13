@@ -430,13 +430,19 @@ reader through `azure.microsoft.com/free` as though a subscription were a
 prerequisite; it is not, and that signup is the most failure-prone way in.
 
 1. Get a directory. In order of preference:
-   - **Sign in to `https://portal.azure.com` with a work or school account you
-     already have, then Microsoft Entra ID → Manage tenants → Create.** No
-     card, no subscription, no trial. Tenant creation requires an existing
-     directory, and any organizational account supplies one — including an
-     account in an unrelated company's tenant. The new tenant is independent of
-     the one you signed in from; nothing is shared but the identity that
-     clicked Create, and step 4 below removes even that.
+   - **`https://portal.azure.com` → Microsoft Entra ID → Manage tenants →
+     Create**, signed in with a work or school account you already have. Any
+     organizational account supplies the directory that tenant creation
+     requires — including an account in an unrelated company's tenant — and the
+     new tenant is independent of the one you signed in from; nothing is shared
+     but the identity that clicked Create, and step 4 below removes even that.
+     - **This path is no longer free.** Since 31 August 2026 an add-on tenant
+       must use the *Governed Workforce* experience, which provisions the
+       tenant as an **Azure resource**: the creation form requires an Azure
+       subscription and a resource group, and will not submit without them.
+       A Microsoft 365 subscription is not an Azure subscription and never
+       appears in that dropdown. Confirm what a Governed Workforce tenant
+       costs before attaching a subscription to one.
      - If **Create** is greyed out, the home tenant has *Restrict non-admin
        users from creating tenants* set to Yes (Entra → Identity → Users →
        User settings). A Global Administrator there can clear it.
@@ -444,10 +450,13 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
        says whether an address is usable this way. `NameSpaceType: Managed`
        means it is a work account in a real tenant; `Unknown` means it is not.
    - **A Microsoft 365 Business Basic or Standard free trial**
-     (`signup.microsoft.com`). This is the reliable path, because it does not
-     depend on an existing directory: the flow *creates* the tenant, its
-     `.onmicrosoft.com` domain and a work admin account
-     (`admin@<name>.onmicrosoft.com`) as part of signup. It runs through the
+     (`signup.microsoft.com`) — in practice the path that still works. It does
+     not depend on an existing directory, and it does not go through Azure at
+     all: the flow *creates* the tenant, its `.onmicrosoft.com` domain and a
+     work admin account (`admin@<name>.onmicrosoft.com`) as part of an M365
+     signup, so neither an Azure subscription nor the Governed Workforce
+     resource model applies. The tenant it produces is a primary tenant rather
+     than an add-on one. It runs through the
      Microsoft 365 commerce pipeline rather than Azure's, so an Azure
      eligibility rejection does not predict an M365 one. Cancel the
      subscription before it renews; the tenant, the admin account and every app
