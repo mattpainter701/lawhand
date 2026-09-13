@@ -15,7 +15,7 @@ The [Integrations](/admin?tab=integrations) tab combines provider authorization 
 
 ## Where these controls live
 
-Storage settings sit under **Document storage** on [Integrations → Cloud](/admin?tab=integrations&integration=cloud), collapsed beneath the provider cards. Operator tooling — **Storage migration**, **Data import** (Tabs3) and **Provider app readiness** — lives under **Advanced** on the Integrations overview and is only rendered for administrators holding the `manage_integrations` capability. New firms choose the provider and create the root during setup; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup).
+Storage settings sit under **Document storage** on [Integrations → Cloud](/admin?tab=integrations&integration=cloud), collapsed beneath the provider cards. Operator tooling — [Storage migration](/admin?tab=integrations&integration=storage-migration), [Data import](/admin?tab=integrations&integration=data-import) (Tabs3) and [Provider app readiness](/admin?tab=integrations&integration=readiness) — lives under **Advanced** on the Integrations overview and is only rendered for administrators holding the `manage_integrations` capability. New firms choose the provider and create the root during setup; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup).
 
 ## Cloud document storage
 
