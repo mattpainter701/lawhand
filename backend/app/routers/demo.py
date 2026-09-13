@@ -246,7 +246,7 @@ async def create_demo_session(
             is_active=True,
             expires_at=expires_at,
             onboarding_completed=True,
-            onboarding_step=4,
+            onboarding_step=5,
             rag_corpus_revision=fixture.rag_corpus_revision,
         )
         db.add(tenant)

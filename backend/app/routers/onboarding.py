@@ -1,11 +1,16 @@
 """Tenant onboarding wizard — guided setup after first admin login.
 
 Steps:
-  0 = not started
+  0 = welcome
   1 = consent (connect MS/Google integrations)
-  2 = syncing (directory users being pulled)
-  3 = review (review imported users)
-  4 = complete
+  2 = storage (choose the provider and confirm the root folder)
+  3 = syncing (directory users being pulled)
+  4 = review (review imported users)
+  5 = complete
+
+Storage is an explicit step. ``initialize_cloud_root_folder`` used to run
+silently inside ``/complete``, so a firm never chose a provider or saw where
+its documents would live. ``/complete`` now refuses until a root exists.
 """
 
 import logging
@@ -17,12 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user, require_admin
-from app.models.tenant import Tenant
+from app.models.tenant import Tenant, TenantSettings
 from app.models.tenant_credential import TenantCredential
 from app.models.user import User
 from app.schemas.onboarding import (
     OnboardingStatusResponse,
     OnboardingCompleteResponse,
+    OnboardingStorageRequest,
+    OnboardingStorageResponse,
     IntegrationConnectionStatus,
 )
 from app.services.compliance import agreement_status
@@ -30,9 +37,44 @@ from app.services.compliance import agreement_status
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/onboarding", tags=["onboarding"])
 
+STEP_WELCOME = 0
+STEP_CONNECT = 1
+STEP_STORAGE = 2
+STEP_SYNC = 3
+STEP_REVIEW = 4
+STEP_COMPLETE = 5
+
+# Storage provider → the tenant credential that must be connected for it.
+STORAGE_PROVIDER_CREDENTIAL = {
+    "google_drive": "google",
+    "onedrive": "microsoft",
+    "sharepoint": "microsoft",
+}
+STORAGE_PROVIDER_LABELS = {
+    "google_drive": "Google Drive",
+    "onedrive": "Microsoft OneDrive",
+    "sharepoint": "Microsoft SharePoint",
+}
+
 
 class OnboardingReentryRequest(BaseModel):
     target_provider: str | None = None
+
+
+def _root_binding(cloud_root, provider: str) -> dict | None:
+    """Return the saved root binding for ``provider`` when it is usable."""
+    if not isinstance(cloud_root, dict):
+        return None
+    binding = cloud_root.get(provider)
+    if isinstance(binding, dict) and str(binding.get("id") or "").strip():
+        return binding
+    return None
+
+
+def _has_any_root(cloud_root) -> bool:
+    return any(
+        _root_binding(cloud_root, provider) for provider in STORAGE_PROVIDER_CREDENTIAL
+    )
 
 
 async def _get_integration_status(
@@ -61,6 +103,34 @@ async def _get_integration_status(
     return status
 
 
+async def _load_tenant(db: AsyncSession, tenant_id) -> Tenant:
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
+async def _load_or_create_settings(db: AsyncSession, tenant_id) -> TenantSettings:
+    result = await db.execute(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+    )
+    record = result.scalar_one_or_none()
+    if not record:
+        record = TenantSettings(tenant_id=tenant_id)
+        db.add(record)
+    return record
+
+
+async def _load_primary_provider(db: AsyncSession, tenant_id) -> str | None:
+    result = await db.execute(
+        select(TenantSettings.primary_cloud_provider).where(
+            TenantSettings.tenant_id == tenant_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 @router.get("/status", response_model=OnboardingStatusResponse)
 async def get_onboarding_status(
     request: Request,
@@ -70,10 +140,7 @@ async def get_onboarding_status(
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
 
-    result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-    tenant = result.scalar_one_or_none()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
+    tenant = await _load_tenant(db, user.tenant_id)
 
     # Count synced users per provider
     ms_count = (
@@ -103,6 +170,10 @@ async def get_onboarding_status(
     )
 
     integrations = await _get_integration_status(db, str(user.tenant_id))
+    primary = await _load_primary_provider(db, user.tenant_id)
+    cloud_root = (
+        tenant.cloud_root_folder if isinstance(tenant.cloud_root_folder, dict) else None
+    )
 
     return OnboardingStatusResponse(
         onboarding_completed=tenant.onboarding_completed,
@@ -110,6 +181,9 @@ async def get_onboarding_status(
         integrations=integrations,
         synced_users={"microsoft": ms_count, "google": google_count},
         total_users=total,
+        primary_cloud_provider=primary,
+        cloud_root=cloud_root,
+        storage_ready=_has_any_root(cloud_root),
     )
 
 
@@ -123,14 +197,12 @@ async def update_onboarding_step(
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
 
-    if step < 0 or step > 4:
-        raise HTTPException(status_code=400, detail="Invalid step (0-4)")
+    if step < STEP_WELCOME or step > STEP_COMPLETE:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid step ({STEP_WELCOME}-{STEP_COMPLETE})"
+        )
 
-    result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-    tenant = result.scalar_one_or_none()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
+    tenant = await _load_tenant(db, user.tenant_id)
     tenant.onboarding_step = step
     await db.commit()
     return {"status": "ok", "step": step}
@@ -160,7 +232,7 @@ async def reenter_onboarding(
                 actor_id=admin.id,
             )
         )
-    tenant.onboarding_step = 1
+    tenant.onboarding_step = STEP_CONNECT
     # Keep completed true so existing writes remain available during setup.
     if body.target_provider:
         from app.services.storage_migration import storage_migration
@@ -176,13 +248,132 @@ async def reenter_onboarding(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         await db.commit()
-        return {"status": "ok", "onboarding_step": 1, "migration_id": str(migration.id)}
+        return {
+            "status": "ok",
+            "onboarding_step": STEP_CONNECT,
+            "migration_id": str(migration.id),
+        }
     await db.commit()
     return {
         "status": "ok",
-        "onboarding_step": 1,
+        "onboarding_step": STEP_CONNECT,
         "cloud_root": tenant.cloud_root_folder,
     }
+
+
+@router.post("/storage", response_model=OnboardingStorageResponse)
+async def confirm_onboarding_storage(
+    body: OnboardingStorageRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Choose the document storage provider and create its root folder.
+
+    The chosen provider becomes ``primary_cloud_provider``. A root that already
+    exists for it is kept and shown, never recreated or repointed: folder IDs
+    are the authority for every matter binding underneath them.
+    """
+    admin = await require_admin(request, db)
+    tenant_id = str(admin.tenant_id)
+    await set_tenant_context(db, tenant_id)
+
+    provider = (body.provider or "").strip()
+    credential = STORAGE_PROVIDER_CREDENTIAL.get(provider)
+    if not credential:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose Google Drive, Microsoft OneDrive or Microsoft SharePoint.",
+        )
+    integrations = await _get_integration_status(db, tenant_id)
+    if not integrations[credential].connected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Connect {'Google Workspace' if credential == 'google' else 'Microsoft 365'} "
+            f"before choosing {STORAGE_PROVIDER_LABELS[provider]} for documents.",
+        )
+
+    tenant = await _load_tenant(db, admin.tenant_id)
+    settings_record = await _load_or_create_settings(db, admin.tenant_id)
+    if settings_record.primary_cloud_provider != provider:
+        from app.services.storage_migration import assert_provider_change_allowed
+
+        try:
+            await assert_provider_change_allowed(db, tenant_id, provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        settings_record.primary_cloud_provider = provider
+
+    from app.services.cloud_init import (
+        cloud_root_binding_repair_needed,
+        initialize_cloud_root_folder,
+    )
+
+    existing_root = (
+        tenant.cloud_root_folder if isinstance(tenant.cloud_root_folder, dict) else {}
+    )
+    repair_needed = cloud_root_binding_repair_needed(tenant.cloud_root_folder)
+    if repair_needed:
+        # Never silently rebind a tenant whose saved root is malformed.
+        await db.commit()
+        return OnboardingStorageResponse(
+            status="repair_needed",
+            provider=provider,
+            cloud_root=existing_root or None,
+            root_repair_needed=repair_needed,
+            error=(
+                "A saved storage root needs administrator repair before setup can continue. "
+                "Open Admin → Integrations → Advanced → Storage migration."
+            ),
+        )
+
+    binding = _root_binding(existing_root, provider)
+    created = False
+    error = None
+    if not binding:
+        try:
+            fresh = await initialize_cloud_root_folder(
+                db, tenant_id, existing_root=existing_root
+            )
+        except Exception as exc:  # provider or token failure
+            logger.warning(
+                "Onboarding storage root init failed for tenant %s: %s", tenant_id, exc
+            )
+            fresh = {}
+            error = str(exc)
+        if fresh:
+            existing_root = {**existing_root, **fresh}
+            tenant.cloud_root_folder = existing_root
+        binding = _root_binding(existing_root, provider)
+        created = binding is not None
+
+    if binding:
+        tenant.onboarding_step = max(tenant.onboarding_step, STEP_SYNC)
+        await db.commit()
+        return OnboardingStorageResponse(
+            status="ready",
+            provider=provider,
+            cloud_root=existing_root,
+            root=binding,
+            created=created,
+        )
+
+    await db.commit()
+    if provider == "sharepoint":
+        hint = (
+            "Select a SharePoint site and library first (Admin → Integrations → Cloud → "
+            "Document storage), or choose OneDrive for now."
+        )
+    else:
+        hint = (
+            f"LawHand could not create the root folder in {STORAGE_PROVIDER_LABELS[provider]}. "
+            "Check the connected account has Drive access, then try again."
+        )
+    return OnboardingStorageResponse(
+        status="failed",
+        provider=provider,
+        cloud_root=existing_root or None,
+        error=f"{hint} {error}".strip() if error else hint,
+    )
 
 
 @router.post("/complete", response_model=OnboardingCompleteResponse)
@@ -190,7 +381,7 @@ async def complete_onboarding(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark onboarding as complete and initialize cloud folders."""
+    """Mark onboarding as complete once storage has been confirmed."""
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
 
@@ -218,33 +409,32 @@ async def complete_onboarding(
             detail="At least one integration (Microsoft or Google) must be connected to complete onboarding.",
         )
 
-    # Re-entry is deliberately distinct from first-run setup.  Preserve the
-    # existing root and record that it was observed; only initialize a root
-    # when this tenant has never completed cloud setup.
+    # Storage is confirmed in its own step; completing without a root would
+    # leave the firm with no place for matter documents.
     cloud_root = tenant.cloud_root_folder
-    if cloud_root:
-        from app.models.storage_migration import OnboardingRootAudit
-
-        db.add(
-            OnboardingRootAudit(
-                tenant_id=tenant.id,
-                root=cloud_root,
-                action="onboarding_rerun",
-                actor_id=user.id,
-            )
+    if not _has_any_root(cloud_root):
+        raise HTTPException(
+            status_code=400,
+            detail="Confirm where matter documents will be stored before completing setup.",
         )
-    else:
-        try:
-            from app.services.cloud_init import initialize_cloud_root_folder
 
-            cloud_root = await initialize_cloud_root_folder(db, str(user.tenant_id))
-            tenant.cloud_root_folder = cloud_root
-        except Exception as exc:
-            logger.warning("Cloud folder init failed during onboarding: %s", exc)
-            # Non-fatal — admin can retry later
+    # Re-entry is deliberately distinct from first-run setup: preserve the
+    # existing root and record that it was observed.
+    from app.models.storage_migration import OnboardingRootAudit
+
+    db.add(
+        OnboardingRootAudit(
+            tenant_id=tenant.id,
+            root=cloud_root,
+            action="onboarding_rerun"
+            if tenant.onboarding_completed
+            else "onboarding_complete",
+            actor_id=user.id,
+        )
+    )
 
     tenant.onboarding_completed = True
-    tenant.onboarding_step = 4
+    tenant.onboarding_step = STEP_COMPLETE
     await db.commit()
 
     return OnboardingCompleteResponse(status="ok", cloud_root=cloud_root)
@@ -271,7 +461,7 @@ async def skip_onboarding(
             detail="Current tenant agreements must be accepted before skipping onboarding.",
         )
     tenant.onboarding_completed = True
-    tenant.onboarding_step = 4
+    tenant.onboarding_step = STEP_COMPLETE
     await db.commit()
     return {
         "status": "ok",

@@ -270,6 +270,13 @@ SCOPE_ALIASES_GOOGLE = {
 }
 
 
+# Wizard step numbers shared with app.routers.onboarding (imported lazily
+# there to avoid a router import cycle).
+ONBOARDING_STEP_STORAGE = 2
+ONBOARDING_STEP_SYNC = 3
+ONBOARDING_STEP_REVIEW = 4
+
+
 def _record_fresh_grant(
     row,
     *,
@@ -1623,8 +1630,14 @@ async def _sync_users_post_connect_with_session(
 
         result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
         tenant = result.scalar_one_or_none()
-        if tenant and not tenant.onboarding_completed and tenant.onboarding_step < 3:
-            tenant.onboarding_step = 3
+        # Directory sync finishing only moves the wizard from "syncing" to
+        # "review". It must never skip the storage step in between.
+        if (
+            tenant
+            and not tenant.onboarding_completed
+            and tenant.onboarding_step == ONBOARDING_STEP_SYNC
+        ):
+            tenant.onboarding_step = ONBOARDING_STEP_REVIEW
             await db.commit()
     except Exception as exc:
         logger.warning(
@@ -1676,8 +1689,12 @@ async def _post_connect_redirect(
 
     base = settings.FRONTEND_URL.rstrip("/")
     if completed:
-        tab = "zoom" if provider in {"zoom", ZOOM_PHONE_PROVIDER} else "cloud-search"
-        target = f"{base}/admin?tab={tab}&connected={provider}"
+        # Land back on the card the administrator re-authorized from, not on
+        # Cloud Search: that is where the refreshed health is shown.
+        section = "zoom" if provider in {"zoom", ZOOM_PHONE_PROVIDER} else "cloud"
+        target = (
+            f"{base}/admin?tab=integrations&integration={section}&connected={provider}"
+        )
     else:
         target = f"{base}/onboarding?connected={provider}"
     return RedirectResponse(target, status_code=302)

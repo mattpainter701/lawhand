@@ -16,6 +16,11 @@ class OnboardingStatusResponse(BaseModel):
     integrations: dict[str, IntegrationConnectionStatus]  # "microsoft", "google"
     synced_users: dict[str, int]  # "microsoft": N, "google": N
     total_users: int
+    # Storage step state: the chosen provider, the saved root bindings keyed by
+    # provider, and whether at least one usable root exists.
+    primary_cloud_provider: str | None = None
+    cloud_root: dict | None = None
+    storage_ready: bool = False
 
 
 class OnboardingCompleteResponse(BaseModel):
@@ -25,3 +30,17 @@ class OnboardingCompleteResponse(BaseModel):
 
 class OnboardingStepUpdate(BaseModel):
     step: int
+
+
+class OnboardingStorageRequest(BaseModel):
+    provider: str  # google_drive | onedrive | sharepoint
+
+
+class OnboardingStorageResponse(BaseModel):
+    status: str  # ready | failed | repair_needed
+    provider: str
+    cloud_root: dict | None = None
+    root: dict | None = None  # the chosen provider's binding when ready
+    created: bool = False
+    root_repair_needed: list[str] = []
+    error: str | None = None

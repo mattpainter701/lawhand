@@ -757,6 +757,8 @@ export const getOnboardingStatus = () =>
   api.get('/admin/onboarding/status').then((r) => r.data)
 export const completeOnboarding = () =>
   api.post('/admin/onboarding/complete').then((r) => r.data)
+export const confirmOnboardingStorage = (provider) =>
+  api.post('/admin/onboarding/storage', { provider }).then((r) => r.data)
 export const reenterOnboarding = () =>
   api.post('/admin/onboarding/reenter', {}).then((r) => r.data)
 export const skipOnboarding = () =>

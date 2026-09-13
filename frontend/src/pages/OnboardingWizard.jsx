@@ -4,6 +4,7 @@ import { useAuth } from '../App'
 import {
   getOnboardingStatus,
   completeOnboarding,
+  confirmOnboardingStorage,
   reenterOnboarding,
   skipOnboarding,
   updateOnboardingStep,
@@ -12,18 +13,53 @@ import {
 import { AgreementAcceptancePanel } from '../components/CompliancePanel'
 import WorkflowSynthesisPanel from '../components/workflows/WorkflowSynthesisPanel'
 
+// Step numbers are shared with backend/app/routers/onboarding.py.
+export const STEP = {
+  WELCOME: 0,
+  CONNECT: 1,
+  STORAGE: 2,
+  SYNC: 3,
+  REVIEW: 4,
+  COMPLETE: 5,
+}
+
 const STEPS = [
-  { id: 0, label: 'Welcome' },
-  { id: 1, label: 'Connect' },
-  { id: 2, label: 'Sync Users' },
-  { id: 3, label: 'Review' },
-  { id: 4, label: 'Complete' },
+  { id: STEP.WELCOME, label: 'Welcome' },
+  { id: STEP.CONNECT, label: 'Connect' },
+  { id: STEP.STORAGE, label: 'Storage' },
+  { id: STEP.SYNC, label: 'Sync Users' },
+  { id: STEP.REVIEW, label: 'Review' },
+  { id: STEP.COMPLETE, label: 'Complete' },
 ]
+
+const STORAGE_OPTIONS = [
+  {
+    id: 'google_drive',
+    label: 'Google Drive',
+    credential: 'google',
+    detail: 'A "claritylegal-records" folder is created in the connected Google account. Every matter gets its own folder inside it.',
+  },
+  {
+    id: 'onedrive',
+    label: 'Microsoft OneDrive',
+    credential: 'microsoft',
+    detail: 'A "claritylegal-records" folder is created in the connected Microsoft account. Every matter gets its own folder inside it.',
+  },
+]
+
+// Tenants that completed onboarding before the Storage step existed stored
+// step 4 as "complete". Map that to the new final step so a revisit shows
+// the completed screen rather than the review screen.
+export function normalizeStep(status) {
+  if (!status) return STEP.WELCOME
+  if (status.onboarding_completed && status.onboarding_step >= STEP.REVIEW) return STEP.COMPLETE
+  return status.onboarding_step ?? STEP.WELCOME
+}
 
 export default function OnboardingWizard() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(STEP.WELCOME)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -31,6 +67,9 @@ export default function OnboardingWizard() {
   const [completing, setCompleting] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [agreementStatus, setAgreementStatus] = useState(null)
+  const [storageChoice, setStorageChoice] = useState(null)
+  const [storageBusy, setStorageBusy] = useState(false)
+  const [storageResult, setStorageResult] = useState(null)
 
   useEffect(() => {
     loadStatus()
@@ -40,9 +79,11 @@ export default function OnboardingWizard() {
     try {
       const data = await getOnboardingStatus()
       setStatus(data)
-      setStep(data.onboarding_step)
+      setStep(normalizeStep(data))
+      return data
     } catch (err) {
       setError('Failed to load onboarding status.')
+      return null
     } finally {
       setLoading(false)
     }
@@ -69,19 +110,43 @@ export default function OnboardingWizard() {
   const handleSyncUsers = async () => {
     setSyncing(true)
     try {
-      await advanceStep(2)
+      await advanceStep(STEP.SYNC)
       await loadStatus()
       // After integration connect, the backend auto-syncs.
       // If it already happened, advance to review.
       const msConnected = status?.integrations?.microsoft?.connected
       const googleConnected = status?.integrations?.google?.connected
       if (msConnected || googleConnected) {
-        await advanceStep(3)
+        await advanceStep(STEP.REVIEW)
       }
     } catch {
       setError('User sync failed. Try again from the Admin panel later.')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handleConfirmStorage = async (provider) => {
+    if (!provider) return
+    setStorageBusy(true)
+    setError(null)
+    setStorageResult(null)
+    try {
+      const result = await confirmOnboardingStorage(provider)
+      setStorageResult(result)
+      if (result.status === 'ready') {
+        // Refresh the saved root so Continue sees it, but stay on this step:
+        // the folder's identity is shown here, not assumed.
+        try {
+          setStatus(await getOnboardingStatus())
+        } catch {
+          // The confirmation result already carries the root; keep going.
+        }
+      }
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to set up document storage.')
+    } finally {
+      setStorageBusy(false)
     }
   }
 
@@ -142,6 +207,12 @@ export default function OnboardingWizard() {
   const agreementReady = agreementStatus !== null && !agreementStatus.blocking
   const syncedUsers = status?.synced_users || {}
   const totalSynced = (syncedUsers.microsoft || 0) + (syncedUsers.google || 0)
+  const cloudRoot = status?.cloud_root || {}
+  const storageOptions = STORAGE_OPTIONS.filter((option) => status?.integrations?.[option.credential]?.connected)
+  const selectedProvider = storageChoice || status?.primary_cloud_provider || storageOptions[0]?.id || null
+  const existingRoot = selectedProvider ? cloudRoot[selectedProvider] : null
+  const storageReady = Boolean(existingRoot?.id)
+  const confirmedRoot = storageResult?.status === 'ready' ? storageResult.root : existingRoot
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col">
@@ -162,6 +233,13 @@ export default function OnboardingWizard() {
 
       {/* Step indicator */}
       <div className="px-6 py-4 border-b border-brand-line bg-white">
+        <div className="max-w-3xl mx-auto mb-3 flex items-center justify-between text-[11px] font-sans font-semibold uppercase tracking-wider text-brand-muted">
+          <span>Step {Math.min(step, STEPS.length - 1) + 1} of {STEPS.length} · {STEPS[Math.min(step, STEPS.length - 1)].label}</span>
+          <span aria-hidden="true">{Math.round((Math.min(step, STEPS.length - 1) / (STEPS.length - 1)) * 100)}%</span>
+        </div>
+        <div className="max-w-3xl mx-auto mb-4 h-1 rounded-full bg-brand-line overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={STEPS.length - 1} aria-valuenow={Math.min(step, STEPS.length - 1)} aria-label="Setup progress">
+          <div className="h-full rounded-full bg-brand-ink transition-all duration-500" style={{ width: `${(Math.min(step, STEPS.length - 1) / (STEPS.length - 1)) * 100}%` }} />
+        </div>
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           {STEPS.map((s, i) => (
             <React.Fragment key={s.id}>
@@ -205,7 +283,7 @@ export default function OnboardingWizard() {
 
       {/* Step content */}
       <div className="flex-1 flex items-start justify-center px-6 py-10">
-        <div className="max-w-lg w-full">
+        <div className="max-w-lg w-full animate-in fade-in slide-in-from-bottom-2 duration-300" key={step}>
           {error && (
             <div className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
               {error}
@@ -219,7 +297,7 @@ export default function OnboardingWizard() {
           )}
 
           {/* Step 0: Welcome */}
-          {step === 0 && (
+          {step === STEP.WELCOME && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <div className="text-center mb-8">
                 <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-ink/5 mb-4">
@@ -232,16 +310,16 @@ export default function OnboardingWizard() {
                   Welcome, {user?.full_name || user?.email?.split('@')[0]}
                 </h2>
                 <p className="text-brand-ink-2 font-sans text-sm leading-relaxed">
-                  Let's set up your firm in 4 quick steps. Connect your Microsoft 365 or
-                  Google Workspace to import users, sync email, and organize case files.
+                  Let's set up your firm in a few quick steps. Connect your Microsoft 365 or
+                  Google Workspace, choose where case documents live, and import your team.
                 </p>
               </div>
 
               <div className="space-y-3 mb-8">
                 {[
                   { icon: '🔗', text: 'Connect your firm\'s Microsoft 365 or Google Workspace' },
+                  { icon: '📁', text: 'Choose where case documents are stored and confirm the folder' },
                   { icon: '👥', text: 'Import your team from the directory' },
-                  { icon: '📁', text: 'Create shared folders for case documents' },
                   { icon: '⚙️', text: 'Configure licenses and permissions' },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3 px-4 py-3 bg-brand-bg rounded-xl">
@@ -252,7 +330,7 @@ export default function OnboardingWizard() {
               </div>
 
               <button
-                onClick={() => advanceStep(1)}
+                onClick={() => advanceStep(STEP.CONNECT)}
                 className="w-full py-3 px-6 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm"
               >
                 Get Started
@@ -261,7 +339,7 @@ export default function OnboardingWizard() {
           )}
 
           {/* Step 1: Connect Integrations */}
-          {step === 1 && (
+          {step === STEP.CONNECT && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Connect Your Firm</h2>
               <p className="text-brand-ink-2 font-sans text-sm mb-8">
@@ -325,14 +403,145 @@ export default function OnboardingWizard() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => advanceStep(0)}
+                  onClick={() => advanceStep(STEP.WELCOME)}
+                  className="flex-1 py-2.5 px-4 border border-brand-line text-brand-ink font-sans text-sm font-medium rounded-xl hover:bg-brand-bg-soft transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => advanceStep(STEP.STORAGE)}
+                  disabled={!hasIntegration || !agreementReady}
+                  className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Choose Storage
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Storage */}
+          {step === STEP.STORAGE && (
+            <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
+              <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Where Should Documents Live?</h2>
+              <p className="text-brand-ink-2 font-sans text-sm mb-6">
+                Matter documents are stored in your firm's own cloud account, never on LawHand infrastructure.
+                Choose the provider and confirm the folder before any matter is created.
+              </p>
+
+              {storageOptions.length === 0 ? (
+                <div className="mb-6 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-xs font-sans">
+                  Connect Microsoft 365 or Google Workspace first. Document storage uses the connected account.
+                </div>
+              ) : (
+                <div className="space-y-3 mb-6" role="radiogroup" aria-label="Document storage provider">
+                  {storageOptions.map((option) => {
+                    const checked = selectedProvider === option.id
+                    const rootForOption = cloudRoot[option.id]
+                    return (
+                      <label
+                        key={option.id}
+                        className={`block p-4 rounded-xl border cursor-pointer transition-colors ${checked ? 'border-brand-ink bg-brand-bg' : 'border-brand-line bg-brand-surface hover:border-brand-line-2'}`}
+                      >
+                        <span className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="storage-provider"
+                            value={option.id}
+                            checked={checked}
+                            disabled={storageBusy}
+                            onChange={() => { setStorageChoice(option.id); setStorageResult(null) }}
+                          />
+                          <span className="text-brand-ink font-sans text-sm font-semibold">{option.label}</span>
+                          {rootForOption?.id && (
+                            <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[11px] font-bold">Folder exists</span>
+                          )}
+                        </span>
+                        <span className="mt-2 block text-brand-ink-2 font-sans text-xs leading-relaxed pl-7">{option.detail}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+
+              {msConnected && (
+                <p className="mb-6 text-[11px] text-brand-muted font-sans">
+                  Prefer a SharePoint library? Finish setup with OneDrive, then choose the site and library under Admin → Integrations → Cloud → Document storage.
+                </p>
+              )}
+
+              {storageResult?.status === 'failed' && (
+                <div className="mb-6 px-4 py-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-sans" role="alert">
+                  {storageResult.error}
+                </div>
+              )}
+              {storageResult?.status === 'repair_needed' && (
+                <div className="mb-6 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-xs font-sans" role="alert">
+                  {storageResult.error}
+                </div>
+              )}
+
+              {confirmedRoot?.id && (
+                <div className="mb-6 px-4 py-3 rounded-xl border border-green-200 bg-green-50 text-xs font-sans" data-testid="storage-root">
+                  <p className="text-green-800 font-semibold">
+                    {storageResult?.created ? 'Folder created' : 'Folder confirmed'}: {confirmedRoot.folder_name || 'claritylegal-records'}
+                  </p>
+                  {confirmedRoot.url && (
+                    <a href={confirmedRoot.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-green-800 underline break-all">
+                      Open in {STORAGE_OPTIONS.find((o) => o.id === selectedProvider)?.label || 'provider'}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => advanceStep(STEP.CONNECT)}
+                  className="flex-1 py-2.5 px-4 border border-brand-line text-brand-ink font-sans text-sm font-medium rounded-xl hover:bg-brand-bg-soft transition-colors"
+                >
+                  Back
+                </button>
+                {storageReady || storageResult?.status === 'ready' ? (
+                  <button
+                    onClick={() => advanceStep(STEP.SYNC)}
+                    className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity"
+                  >
+                    Continue
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleConfirmStorage(selectedProvider)}
+                    disabled={!selectedProvider || storageBusy}
+                    className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {storageBusy ? 'Creating folder...' : storageResult?.status === 'failed' ? 'Try again' : 'Create folder'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Syncing */}
+          {step === STEP.SYNC && (
+            <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm text-center">
+              <h2 className="text-brand-ink font-sans text-lg font-bold mb-2">Import Your Team</h2>
+              <p className="text-brand-ink-2 font-sans text-sm leading-relaxed mb-6">
+                {syncing
+                  ? 'Pulling users from your connected directory. This may take a moment.'
+                  : 'LawHand imports users from your connected directory. On personal accounts there is no directory to import; you can invite users from the Admin panel instead.'}
+              </p>
+              {syncing && (
+                <div className="inline-block w-12 h-12 border-4 border-brand-ink border-t-transparent rounded-full animate-spin mb-5" />
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => advanceStep(STEP.STORAGE)}
                   className="flex-1 py-2.5 px-4 border border-brand-line text-brand-ink font-sans text-sm font-medium rounded-xl hover:bg-brand-bg-soft transition-colors"
                 >
                   Back
                 </button>
                 <button
                   onClick={() => handleSyncUsers()}
-                  disabled={syncing || !hasIntegration || !agreementReady}
+                  disabled={syncing || !hasIntegration}
                   className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {syncing ? 'Syncing...' : 'Sync Users'}
@@ -341,25 +550,8 @@ export default function OnboardingWizard() {
             </div>
           )}
 
-          {/* Step 2: Syncing */}
-          {step === 2 && (
-            <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm text-center">
-              <div className="inline-block w-12 h-12 border-4 border-brand-ink border-t-transparent rounded-full animate-spin mb-5" />
-              <h2 className="text-brand-ink font-sans text-lg font-bold mb-2">Syncing Users</h2>
-              <p className="text-brand-ink-2 font-sans text-sm leading-relaxed mb-6">
-                Pulling users from your connected directory. This may take a moment.
-              </p>
-              <button
-                onClick={() => advanceStep(3)}
-                className="py-2.5 px-6 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity"
-              >
-                Continue to Review
-              </button>
-            </div>
-          )}
-
-          {/* Step 3: Review */}
-          {step === 3 && (
+          {/* Step 4: Review */}
+          {step === STEP.REVIEW && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Review Imported Users</h2>
               <WorkflowSynthesisPanel user={user} onboarding />
@@ -382,18 +574,29 @@ export default function OnboardingWizard() {
                     <span className="text-brand-ink font-sans text-sm font-bold">{syncedUsers.google || 0}</span>
                   </div>
                 )}
+                {status?.storage_ready ? (
+                  <div className="flex items-center justify-between px-4 py-3 bg-brand-bg rounded-xl">
+                    <span className="text-brand-ink font-sans text-sm">Document storage</span>
+                    <span className="text-green-700 font-sans text-sm font-bold">Confirmed</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <span className="text-amber-800 font-sans text-sm">Document storage not confirmed</span>
+                    <button onClick={() => advanceStep(STEP.STORAGE)} className="text-amber-800 font-sans text-sm font-bold underline">Fix</button>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => advanceStep(1)}
+                  onClick={() => advanceStep(STEP.SYNC)}
                   className="flex-1 py-2.5 px-4 border border-brand-line text-brand-ink font-sans text-sm font-medium rounded-xl hover:bg-brand-bg-soft transition-colors"
                 >
                   Back
                 </button>
                 <button
                   onClick={handleComplete}
-                  disabled={completing}
+                  disabled={completing || !status?.storage_ready}
                   className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40"
                 >
                   {completing ? 'Completing...' : 'Complete Setup'}
@@ -402,8 +605,8 @@ export default function OnboardingWizard() {
             </div>
           )}
 
-          {/* Step 4: Complete (shown briefly before redirect) */}
-          {step === 4 && (
+          {/* Step 5: Complete (shown briefly before redirect) */}
+          {step === STEP.COMPLETE && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm text-center">
               <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 mb-4">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
