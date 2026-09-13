@@ -480,13 +480,18 @@ async def _read_source(
     source = await db.get(MatterDocument, request.document_id)
     if source is None or str(source.tenant_id) != str(request.tenant_id):
         return None, None
-    content = await _file_store.read_matter_file_bytes(
-        db=db,
-        tenant_id=str(request.tenant_id),
-        document=source,
-        expected_sha256=request.source_document_sha256,
-        expected_size=request.source_document_size,
-    )
+    # The read takes an OAuth row lock. It must end before _store_signed opens
+    # another transaction for that same credential, including scheduler retries.
+    # An OAuth refresh must not commit pending signature evidence either.
+    async with async_session_maker() as storage_db:
+        await set_tenant_context(storage_db, str(request.tenant_id))
+        content = await _file_store.read_matter_file_bytes(
+            db=storage_db,
+            tenant_id=str(request.tenant_id),
+            document=source,
+            expected_sha256=request.source_document_sha256,
+            expected_size=request.source_document_size,
+        )
     return source, content
 
 
@@ -795,8 +800,7 @@ async def retry_pending_completions(
         .exists()
     )
     rows = await db.execute(
-        select(SignatureRequest)
-        .options(selectinload(SignatureRequest.signers))
+        select(SignatureRequest.id, SignatureRequest.tenant_id)
         .where(
             SignatureRequest.status.in_(OPEN_STATUSES),
             any_signer,
@@ -807,21 +811,32 @@ async def retry_pending_completions(
         .order_by(SignatureRequest.created_at)
     )
     completed = 0
-    for request in rows.scalars().unique():
-        if awaiting_review(request):
-            continue
-        matter = await db.get(Matter, request.matter_id)
-        if matter is None:
-            continue
+    # Commits clear transaction-local tenant settings; rollbacks also expire
+    # ORM rows. Keep scalar IDs and reload each item in its tenant context.
+    for request_id, tenant_id in rows.all():
         try:
+            await set_tenant_context(db, str(tenant_id))
+            request = await db.scalar(
+                select(SignatureRequest)
+                .options(selectinload(SignatureRequest.signers))
+                .where(SignatureRequest.id == request_id,
+                       SignatureRequest.tenant_id == tenant_id)
+                .execution_options(populate_existing=True)
+            )
+            if request is None or awaiting_review(request):
+                continue
+            matter = await db.get(Matter, request.matter_id)
+            if matter is None:
+                continue
             await complete_request_if_done(db, request, matter)
             if request.status == "completed":
                 await after_completion(db, request)
-                completed += 1
+            did_complete = request.status == "completed"
             await db.commit()
+            completed += int(did_complete)
         except Exception:
             logger.exception(
-                "Retrying completion of signature request %s failed", request.id
+                "Retrying completion of signature request %s failed", request_id
             )
             await db.rollback()
     return completed

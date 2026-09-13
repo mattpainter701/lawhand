@@ -5,6 +5,14 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.6 — Reliable filing after clients sign
+
+Released September 13, 2026.
+
+Signed forms can finish filing without waiting on their own cloud connection lock, and background retries keep each matter's tenant context.
+
+- **Recover signed forms without signing again.** Saved answers and signatures are reused when filing retries. Once filed, the signed PDF and evidence certificate are available in the client's Documents tab.
+
 ## 2026.09.13.4 — Flexible matter billing and Helcim subscriptions
 
 Released September 13, 2026.
