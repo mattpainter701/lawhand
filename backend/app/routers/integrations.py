@@ -2219,7 +2219,7 @@ async def cloud_init_retry(
 ):
     """Re-create missing cloud folders for this tenant.
 
-    Creates the root 'claritylegal-records' folder if absent, then backfills
+    Creates the root 'lawhand-records' folder if absent, then backfills
     missing matter subfolders for every matter. Safe to call multiple times:
     existing folders are detected and reused.
     """

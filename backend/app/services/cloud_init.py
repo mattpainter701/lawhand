@@ -1,6 +1,6 @@
 """Cloud folder initialization for tenant onboarding and matter creation.
 
-Creates the 'claritylegal-records' root folder in the customer's cloud storage
+Creates the 'lawhand-records' root folder in the customer's cloud storage
 (OneDrive / Google Drive) and per-matter subfolder structures.
 """
 
@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 GOOGLE_DRIVE_BASE = "https://www.googleapis.com/drive/v3"
 
-ROOT_FOLDER_NAME = "claritylegal-records"
+ROOT_FOLDER_NAME = "lawhand-records"
+# Pre-rebrand default. New tenants never see it; `rename_legacy_root_folder`
+# below is the only path that reads it, to find and rename a tenant's
+# existing root folder that still carries the old name.
+LEGACY_ROOT_FOLDER_NAME = "claritylegal-records"
 MATTER_SUBFOLDERS = [
     "client_uploads",
     "documents",
@@ -223,6 +227,124 @@ async def initialize_cloud_root_folder(
             result["subfolders"] = list(MATTER_SUBFOLDERS)
 
     return result
+
+
+async def rename_legacy_root_folder(db: AsyncSession, tenant_id: str) -> dict:
+    """Rename a tenant's existing root folder(s) off the pre-rebrand default.
+
+    Folder IDs remain authoritative and are never touched; only the display
+    name on the provider side and the cached ``folder_name``/``path`` in
+    ``cloud_root_folder`` change. A provider is renamed only when its saved
+    ``folder_name`` still matches ``LEGACY_ROOT_FOLDER_NAME`` exactly, so a
+    firm that renamed its root folder to something of its own choosing is
+    left untouched. Safe to call repeatedly.
+    """
+    from app.models.tenant import Tenant
+
+    def _is_legacy(binding: object) -> bool:
+        return (
+            _has_valid_root_binding(binding)
+            and (binding.get("folder_name") or "").strip().lower()
+            == LEGACY_ROOT_FOLDER_NAME
+        )
+
+    tenant_uuid = uuid.UUID(str(tenant_id))
+    # Resolve credentials before locking the tenant row: token refresh commits
+    # its own state, which would release the lock taken below.
+    preview = (
+        await db.execute(
+            select(Tenant.cloud_root_folder).where(Tenant.id == tenant_uuid)
+        )
+    ).scalar_one_or_none()
+    if not isinstance(preview, dict):
+        return {}
+    tokens: dict[str, str | None] = {}
+    if any(_is_legacy(preview.get(p)) for p in ("onedrive", "sharepoint")):
+        tokens["microsoft"] = await get_fresh_token(db, tenant_id, "microsoft")
+    if _is_legacy(preview.get("google_drive")):
+        tokens["google"] = await get_fresh_token(db, tenant_id, "google")
+    if not tokens:
+        return {}
+
+    tenant = (
+        await db.execute(
+            select(Tenant).where(Tenant.id == tenant_uuid).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if not tenant or not isinstance(tenant.cloud_root_folder, dict):
+        return {}
+
+    roots = dict(tenant.cloud_root_folder)
+    renamed: dict[str, dict] = {}
+
+    onedrive = roots.get("onedrive")
+    if _is_legacy(onedrive) and tokens.get("microsoft"):
+        try:
+            item = await _rename_onedrive_folder(
+                tokens["microsoft"], onedrive["id"], ROOT_FOLDER_NAME
+            )
+            roots["onedrive"] = {
+                **onedrive,
+                "folder_name": item.get("name") or ROOT_FOLDER_NAME,
+            }
+            renamed["onedrive"] = roots["onedrive"]
+        except Exception as exc:
+            logger.warning(
+                "Failed to rename OneDrive root folder for tenant %s: %s",
+                tenant_id,
+                exc,
+            )
+
+    sharepoint = roots.get("sharepoint")
+    if (
+        _is_legacy(sharepoint)
+        and sharepoint.get("drive_id")
+        and tokens.get("microsoft")
+    ):
+        try:
+            item = await _rename_sharepoint_folder(
+                tokens["microsoft"],
+                sharepoint["drive_id"],
+                sharepoint["id"],
+                ROOT_FOLDER_NAME,
+            )
+            roots["sharepoint"] = {
+                **sharepoint,
+                "folder_name": item.get("name") or ROOT_FOLDER_NAME,
+            }
+            renamed["sharepoint"] = roots["sharepoint"]
+        except Exception as exc:
+            logger.warning(
+                "Failed to rename SharePoint root folder for tenant %s: %s",
+                tenant_id,
+                exc,
+            )
+
+    google_drive = roots.get("google_drive")
+    if _is_legacy(google_drive) and tokens.get("google"):
+        try:
+            item = await _rename_gdrive_folder(
+                tokens["google"], google_drive["id"], ROOT_FOLDER_NAME
+            )
+            roots["google_drive"] = {
+                **google_drive,
+                "folder_name": item.get("name") or ROOT_FOLDER_NAME,
+            }
+            renamed["google_drive"] = roots["google_drive"]
+        except Exception as exc:
+            logger.warning(
+                "Failed to rename Google Drive root folder for tenant %s: %s",
+                tenant_id,
+                exc,
+            )
+
+    if renamed:
+        if (roots.get("path") or "").strip().lower() == LEGACY_ROOT_FOLDER_NAME:
+            roots["path"] = ROOT_FOLDER_NAME
+        tenant.cloud_root_folder = roots
+        await db.flush()
+
+    return renamed
 
 
 async def get_matter_provisioning_tokens(
@@ -610,6 +732,21 @@ async def _ensure_onedrive_folder(token: str, folder_name: str, parent_id: str) 
         )
 
 
+async def _rename_onedrive_folder(token: str, folder_id: str, new_name: str) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(
+            f"{GRAPH_BASE}/me/drive/items/{folder_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": new_name},
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Failed to rename OneDrive folder to '{new_name}': "
+            f"{resp.status_code} {resp.text[:200]}"
+        )
+    return resp.json()
+
+
 async def _get_sharepoint_binding(db: AsyncSession, tenant_id: str) -> dict | None:
     result = await db.execute(
         select(TenantSettings).where(
@@ -707,6 +844,23 @@ async def _get_sharepoint_folder_metadata(
     return item
 
 
+async def _rename_sharepoint_folder(
+    token: str, drive_id: str, folder_id: str, new_name: str
+) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(
+            f"{GRAPH_BASE}/drives/{drive_id}/items/{folder_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": new_name},
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Failed to rename SharePoint folder to '{new_name}': "
+            f"{resp.status_code} {resp.text[:200]}"
+        )
+    return resp.json()
+
+
 async def _get_onedrive_web_url(token: str, folder_id: str) -> str:
     """Get web URL for a OneDrive folder."""
     try:
@@ -751,6 +905,22 @@ async def _ensure_gdrive_folder(token: str, folder_name: str, parent_id: str) ->
             f"Failed to create Google Drive folder '{folder_name}': "
             f"{resp.status_code} {resp.text[:200]}"
         )
+
+
+async def _rename_gdrive_folder(token: str, folder_id: str, new_name: str) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(
+            f"{GOOGLE_DRIVE_BASE}/files/{folder_id}",
+            params={"supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": new_name},
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Failed to rename Google Drive folder to '{new_name}': "
+            f"{resp.status_code} {resp.text[:200]}"
+        )
+    return resp.json()
 
 
 async def build_matter_folder_metadata(

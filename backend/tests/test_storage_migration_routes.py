@@ -53,7 +53,7 @@ async def test_start_returns_state_and_constructs_target_root(monkeypatch):
     assert response.json()["target_provider"] == "sharepoint"
     routes.service.start.assert_awaited_once()
     assert routes.service.start.call_args.kwargs["target_root"] == {
-        "id": "root-7", "path": "claritylegal-records", "drive_id": "drive-9"
+        "id": "root-7", "path": "lawhand-records", "drive_id": "drive-9"
     }
 
 

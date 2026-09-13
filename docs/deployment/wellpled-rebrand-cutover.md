@@ -9,7 +9,9 @@ The product rebrand and the hostname change are separate releases. This branch c
 - Teams packaging output to `wellpled-teams.zip`.
 - Safe defaults no longer point at an old Clarity-owned domain.
 
-The existing `clarity_app` database role, `clarity-*` model aliases, `claritylegal-records` cloud folder, token issuer, protocol identifiers, storage keys, manifest IDs, and `X-Clarity-*` headers intentionally remain unchanged. They are compatibility identifiers, not customer-facing branding. Rename them only through dedicated migrations.
+The existing `clarity_app` database role, `clarity-*` model aliases, token issuer, protocol identifiers, storage keys, manifest IDs, and `X-Clarity-*` headers intentionally remain unchanged. They are compatibility identifiers, not customer-facing branding. Rename them only through dedicated migrations.
+
+The `claritylegal-records` cloud root folder now has one: new tenants provision `lawhand-records` (`app.services.cloud_init.ROOT_FOLDER_NAME`). Existing tenants keep their `claritylegal-records` folder — bound by a stable provider folder ID, unaffected — until an operator runs `backend/scripts/rename_legacy_root_folders.py --apply`, which relabels the folder in place on Google Drive/OneDrive/SharePoint via the provider API.
 
 ## If the hostname stays the same
 

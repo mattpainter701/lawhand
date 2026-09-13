@@ -83,7 +83,7 @@ Record the business owner, technical owner, granted scopes, and disconnect proce
 
 ## Matter folders and correspondence
 
-Matter folders retain the `claritylegal-records` root and use one canonical matter folder name that includes the matter identifier. Captured `.eml` messages are stored in the provisioned `correspondence` subfolder. New captures retain the provider file and library identity so LawHand can reopen the archived message. Older captures missing that identity may need administrator reconciliation. Folder setup is tenant-owned cloud storage; LawHand does not silently create a second slug-only tree when provisioning is pending.
+Matter folders retain the tenant's root folder (`lawhand-records` for new tenants; existing tenants keep their `claritylegal-records` root until an operator renames it) and use one canonical matter folder name that includes the matter identifier. Captured `.eml` messages are stored in the provisioned `correspondence` subfolder. New captures retain the provider file and library identity so LawHand can reopen the archived message. Older captures missing that identity may need administrator reconciliation. Folder setup is tenant-owned cloud storage; LawHand does not silently create a second slug-only tree when provisioning is pending.
 
 For a read-only audit of realized matter bindings, an operator can run the repository maintenance report:
 

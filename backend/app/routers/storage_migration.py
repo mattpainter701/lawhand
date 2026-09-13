@@ -15,6 +15,7 @@ from app.database import (
 )
 from app.middleware.tenant import require_admin
 from app.models.storage_migration import StorageMigration, StorageMigrationMatch
+from app.services.cloud_init import ROOT_FOLDER_NAME
 from app.services.storage_migration import StorageMigrationService
 from app.services.storage_migration_reindex import storage_migration_reindex
 
@@ -88,7 +89,7 @@ async def start_migration(
     user = await _user_tenant(request, db)
     root = None
     if body.target_root_id:
-        root = {"id": body.target_root_id, "path": "claritylegal-records"}
+        root = {"id": body.target_root_id, "path": ROOT_FOLDER_NAME}
         if body.target_drive_id:
             root["drive_id"] = body.target_drive_id
     elif body.target_drive_id:
