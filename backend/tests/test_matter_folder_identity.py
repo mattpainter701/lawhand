@@ -28,10 +28,10 @@ def test_logical_path_survives_provider_remap_and_rename():
     first = _apply_cloud_provider_metadata(matter, 'onedrive', {'folder_name': 'Renamed by firm', 'subfolders': {'documents': 'd1'}})
     path = first['path']
     result = _apply_cloud_provider_metadata(matter, 'google_drive', {'folder_name': 'Moved again', 'subfolders': {'documents': 'd2'}})
-    assert path == 'claritylegal-records/Smith (12345678)'
+    assert path == 'lawhand-records/Smith (12345678)'
     assert result['path'] == path
-    assert result['onedrive']['path'] == 'claritylegal-records/Renamed by firm'
-    assert result['google_drive']['path'] == 'claritylegal-records/Moved again'
+    assert result['onedrive']['path'] == 'lawhand-records/Renamed by firm'
+    assert result['google_drive']['path'] == 'lawhand-records/Moved again'
 
 
 @pytest.mark.asyncio
@@ -47,7 +47,7 @@ async def test_provision_uses_same_name_and_reuses_saved_id(monkeypatch, provide
     root = {provider: {'id': 'root-id', 'drive_id': 'drive-id'}}
     result = await cloud_init.initialize_matter_folders(None, str(uuid.uuid4()), 'smith', root, folder_name='Smith', matter_id=MATTER_ID)
     assert ensure.call_args_list[0].args[-2] == 'Smith (12345678)'
-    assert result['path'] == 'claritylegal-records/Smith (12345678)'
+    assert result['path'] == 'lawhand-records/Smith (12345678)'
     assert 'emails' not in result[provider]['subfolders']
     marker.assert_awaited_once()
     ensure.reset_mock()
@@ -111,7 +111,7 @@ async def test_provision_derives_number_from_locked_matter_when_not_passed(monke
         folder_name='Smith', matter_id=MATTER_ID,
     )
     assert ensure.call_args_list[0].args[-2] == 'Smith (CYBE0012)'
-    assert result['path'] == 'claritylegal-records/Smith (CYBE0012)'
+    assert result['path'] == 'lawhand-records/Smith (CYBE0012)'
 
 
 @pytest.mark.asyncio
@@ -127,11 +127,11 @@ async def test_provision_uses_matter_number_for_new_folder_name(monkeypatch):
         folder_name='Smith', matter_id=MATTER_ID, matter_number='CYBE0012',
     )
     assert ensure.call_args_list[0].args[-2] == 'Smith (CYBE0012)'
-    assert result['path'] == 'claritylegal-records/Smith (CYBE0012)'
+    assert result['path'] == 'lawhand-records/Smith (CYBE0012)'
 
 
 def test_logical_path_prefers_matter_number_over_uuid():
     from app.routers.matters import _apply_cloud_provider_metadata
     matter = SimpleNamespace(id=MATTER_ID, slug='smith', matter_name='Smith', matter_number='CYBE0012', cloud_folder=None)
     result = _apply_cloud_provider_metadata(matter, 'onedrive', {'folder_name': 'Smith (CYBE0012)', 'subfolders': {}})
-    assert result['path'] == 'claritylegal-records/Smith (CYBE0012)'
+    assert result['path'] == 'lawhand-records/Smith (CYBE0012)'

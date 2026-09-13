@@ -18,6 +18,14 @@
 - Add Helcim platform subscription checkout, price consent, cancellation, payment-method updates and canonical reconciliation. Default new deployments to Helcim and prevent signup, subscription webhooks and usage jobs from making Stripe billing calls in Helcim mode.
 - Preserve MCP usage with frozen rates for manual Helcim review; automated variable-usage invoicing remains outside this release.
 
+## Unreleased — Cloud root folder renamed to `lawhand-records`
+
+- Point `cloud_init.ROOT_FOLDER_NAME` at `lawhand-records`. Onboarding a Google or Microsoft 365 tenant provisioned `claritylegal-records`, a pre-rebrand name, into the firm's own Drive, OneDrive or SharePoint — the one piece of old branding that lands in customer-owned storage rather than staying an internal identifier.
+- Add `rename_legacy_root_folder` and `backend/scripts/rename_legacy_root_folders.py` so existing tenants are migrated rather than stranded on the old name. `docs/deployment/wellpled-rebrand-cutover.md` had listed this folder among the compatibility identifiers to rename only through a dedicated migration; this is that migration.
+- Folder IDs remain authoritative throughout, so matter folders and document bindings are unaffected either way. The migration relabels the root in place through each provider's API and refreshes the cached `folder_name`/`path`. A firm that renamed its own root is skipped, and the script reports affected tenants without `--apply`.
+- Resolve provider credentials before locking the tenant row: `get_fresh_token` commits its own transaction, so refreshing under the lock would have released it mid-migration.
+- `StorageMigrationService._match_matter`'s canonical-path fallback now accepts either root name, so a tenant that has not yet run the rename still reconciles during a cross-provider migration. That rung only matters for matters predating markers and ID suffixes, which both take precedence.
+
 ## Unreleased — Client correspondence can no longer fall back to the platform relay
 
 - Gate `connected_mail.send_client_email`'s SMTP fallback behind `CLIENT_MAIL_SMTP_FALLBACK_ENABLED`, off by default. The fallback assumed `EMAIL_*` might be a firm's own mail server, but there is no per-tenant SMTP configuration: on the hosted product `EMAIL_*` is LawHand's relay, so a tenant with no Microsoft or Google grant would have had a client's matter correspondence sent from a LawHand address.

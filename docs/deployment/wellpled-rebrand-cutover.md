@@ -9,7 +9,9 @@ The product rebrand and the hostname change are separate releases. This branch c
 - Teams packaging output to `wellpled-teams.zip`.
 - Safe defaults no longer point at an old Clarity-owned domain.
 
-The existing `clarity_app` database role, `clarity-*` model aliases, `claritylegal-records` cloud folder, token issuer, protocol identifiers, storage keys, manifest IDs, and `X-Clarity-*` headers intentionally remain unchanged. They are compatibility identifiers, not customer-facing branding. Rename them only through dedicated migrations.
+The existing `clarity_app` database role, `clarity-*` model aliases, token issuer, protocol identifiers, storage keys, manifest IDs, and `X-Clarity-*` headers intentionally remain unchanged. They are compatibility identifiers, not customer-facing branding. Rename them only through dedicated migrations.
+
+The `claritylegal-records` cloud root folder now has one, and is no longer on that list: see [LawHand identifier migration](lawhand-identifier-migration.md), which supersedes this document.
 
 ## If the hostname stays the same
 

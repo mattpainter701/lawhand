@@ -158,10 +158,19 @@ release.
 - **Calendar extended properties**: `clarity_task_id` and the Graph property
   GUID in `services/{google,microsoft}_calendar.py`. Dual-read old and new,
   write new, backfill, then retire.
-- **Cloud folder**: `claritylegal-records` in `services/cloud_init.py`,
-  `routers/integrations.py`, `services/storage_migration.py`, and the in-product
-  platform docs. New tenants get `lawhand-records`; existing folders are renamed
-  in the provider or dual-read. This is customer-visible.
+- **Cloud folder**: **done in code, migration not yet run.** `ROOT_FOLDER_NAME`
+  in `services/cloud_init.py` is now `lawhand-records`, with
+  `LEGACY_ROOT_FOLDER_NAME` kept so the old name can still be recognised;
+  `routers/integrations.py`, `services/storage_migration.py` and the platform
+  docs follow it. New tenants get `lawhand-records`. Existing folders are
+  renamed in the provider — bound by folder ID, so matter folders and document
+  bindings are untouched — by
+  `backend/scripts/rename_legacy_root_folders.py`, which reports affected
+  tenants without `--apply`. `_match_matter`'s canonical-path fallback accepts
+  either name so an un-migrated tenant still reconciles. This is
+  customer-visible: the `--apply` run renames a folder inside the firm's own
+  Drive/OneDrive/SharePoint, so it needs its own customer communication and is
+  an operator decision rather than a deploy step.
 - **localStorage**: `clarity.workspace.*`, `clarity.chat.*`. Migrate on load,
   then remove.
 - **Accounting mode**: `clarity_native` across backend, frontend, and stored

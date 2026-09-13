@@ -129,7 +129,7 @@ materialization.
 Portal uploads use the canonical `client_uploads` category:
 
 ```text
-claritylegal-records/
+lawhand-records/
   {matter folder}/
     client_uploads/
       original-filename.pdf
@@ -160,7 +160,7 @@ connected identity's effective access and is broader than one matter root.
 Use an organization-owned service identity with durable ownership, or bind
 SharePoint to the approved site/drive. Verify that the identity can create,
 read, update, and delete a non-sensitive test file beneath
-`claritylegal-records`.
+`lawhand-records`.
 
 Microsoft's app-folder permission model is a future least-privilege option if
 firms accept an app-owned root. It does not transparently cover arbitrary
