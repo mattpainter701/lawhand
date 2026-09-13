@@ -646,6 +646,32 @@ jobs:
           pip install -r backend/requirements-dev.txt
           pip install pytest-cov==7.1.0 diff-cover==10.5.1
 
+      - name: Raise the Postgres lock limit for parallel workers
+        # Four xdist workers each TRUNCATE every table, and Postgres defaults
+        # max_locks_per_transaction to 64, so the shared lock table runs out
+        # ("out of shared memory" / asyncpg OutOfMemoryError). Raise it and
+        # restart the service; the migrated schema survives the restart.
+        run: |
+          wait_for_postgres() {
+            for _ in $(seq 1 30); do
+              if docker exec "${{ job.services.postgres.id }}" \
+                   pg_isready -U test -d legalapp_test >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+          wait_for_postgres
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -U test -d postgres -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET max_locks_per_transaction = 1000;"
+          docker restart "${{ job.services.postgres.id }}"
+          wait_for_postgres || {
+            echo "Postgres did not become ready after the lock-limit restart" >&2
+            exit 1
+          }
+
       - name: Run database migrations
         working-directory: backend
         run: alembic upgrade head

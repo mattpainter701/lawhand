@@ -612,6 +612,13 @@
     },
     {
       "ecosystem": "pypi",
+      "name": "pytest-xdist",
+      "scope": "runtime/dev",
+      "source": "backend/requirements-dev.txt",
+      "specifier": "==3.8.0"
+    },
+    {
+      "ecosystem": "pypi",
       "name": "ruff",
       "scope": "runtime/dev",
       "source": "backend/requirements-dev.txt",
