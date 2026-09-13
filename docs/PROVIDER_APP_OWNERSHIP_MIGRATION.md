@@ -536,7 +536,14 @@ prerequisite; it is not, and that signup is the most failure-prone way in.
 4. Create Global Administrator accounts **native to this tenant**, on its
    `.onmicrosoft.com` domain, and use them from here on. Two of them: a tenant
    with one admin is a single point of failure and a diligence finding. Store
-   the credentials with the LLC's records.
+   the credentials with the LLC's records. Admin-only accounts need no licence,
+   so the second one costs nothing.
+   - Enrol **both** in MFA, and register the second one's factor on a device or
+     token held with the company records rather than on the founder's phone.
+     The appendix asks whether any production credential is recoverable only
+     through an individual's personal MFA device; a tenant that owns every
+     Microsoft client secret is the sharpest instance of that question, and
+     the answer has to be no before the first firm connects.
    - This matters most when the tenant was created from an account belonging to
      another company, as in step 1. Until a native admin exists, control of
      LawHand's identity platform rests on an identity that other company
