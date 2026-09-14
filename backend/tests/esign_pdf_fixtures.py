@@ -113,6 +113,23 @@ def label_below_rule_pdf(label: str = "Client signature") -> bytes:
     return buffer.getvalue()
 
 
+def firm_use_lines_pdf() -> bytes:
+    """Firm-use "…by" labels beside a real client signature label.
+
+    "Referred by" / "Reviewed by" end in "by" but are not signature lines; only
+    the explicit "Client signature" label is. Regression for issue #485.
+    """
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(72, 700, "Referred by")
+    pdf.drawString(72, 660, "Reviewed by")
+    pdf.drawString(72, 620, "Client signature")
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
 def blank_pdf(pages: int = 2, width: float = 612, height: float = 792) -> bytes:
     writer = PdfWriter()
     for _ in range(pages):

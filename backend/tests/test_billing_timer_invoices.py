@@ -276,6 +276,39 @@ class TestInvoiceWorkflow:
         )
         assert resp.status_code == 201
 
+    async def test_void_invoice_shows_no_staff_balance(self, client, test_matter):
+        await _log_time(client, test_matter.id)
+        inv = (
+            await client.post(
+                "/api/billing/invoices/generate",
+                json={"matter_id": str(test_matter.id)},
+            )
+        ).json()
+        await client.patch(
+            f"/api/billing/invoices/{inv['id']}", json={"status": "sent"}
+        )
+
+        void = await client.patch(
+            f"/api/billing/invoices/{inv['id']}", json={"status": "void"}
+        )
+        assert void.status_code == 200, void.text
+        assert void.json()["status"] == "void"
+        # The record keeps its total; the staff-visible balance is zero.
+        assert Decimal(void.json()["total"]) > 0
+        assert Decimal(void.json()["balance_due"]) == Decimal("0")
+
+        detail = (await client.get(f"/api/billing/invoices/{inv['id']}")).json()
+        assert Decimal(detail["balance_due"]) == Decimal("0")
+
+        listing = (
+            await client.get(
+                "/api/billing/invoices",
+                params={"matter_id": str(test_matter.id)},
+            )
+        ).json()
+        row = next(item for item in listing["items"] if item["id"] == inv["id"])
+        assert Decimal(row["balance_due"]) == Decimal("0")
+
     async def test_cannot_void_paid_invoice(self, client, test_matter):
         await _log_time(client, test_matter.id)
         inv = (

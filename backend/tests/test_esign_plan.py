@@ -23,6 +23,7 @@ from app.services.esign.plan import (
 from tests.esign_pdf_fixtures import (
     acroform_pdf,
     blank_pdf,
+    firm_use_lines_pdf,
     flat_agreement_pdf,
     label_below_rule_pdf,
 )
@@ -158,6 +159,28 @@ def test_the_fee_agreement_signature_lines_each_go_to_their_party(
     signatures = _by_kind(plan, "signature")
     assert signatures and all(f.role == "client" for f in signatures)
     assert all(f.source == "detected" for f in signatures)
+
+
+def test_firm_use_by_lines_are_not_offered_as_signature_fields():
+    """A label ending in "by" is not a signature line; "Client signature" is."""
+    plan = build_plan(firm_use_lines_pdf(), signers=[CLIENT])
+
+    assert [f.label for f in _by_kind(plan, "signature")] == ["Client signature"]
+
+
+def test_the_intake_forms_referred_and_reviewed_lines_are_not_signatures(
+    starter_generator, tmp_path
+):
+    """The firm-use "Referred by" / "reviewed by" lines must not become fields,
+    while the form's own Signature blank survives (issue #485)."""
+    path = starter_generator.render_document(
+        pack.CLIENT_INTAKE_FORM, tmp_path / "intake.pdf"
+    )
+    plan = build_plan(path.read_bytes(), signers=[CLIENT])
+
+    labels = [f.label.lower() for f in _by_kind(plan, "signature")]
+    assert not any("referred by" in label or "reviewed by" in label for label in labels)
+    assert any("signature" in label for label in labels)
 
 
 def test_blank_document_falls_back_to_a_block_per_role_on_the_last_page():

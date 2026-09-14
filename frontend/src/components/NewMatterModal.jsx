@@ -45,6 +45,8 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
     status: 'open',
     case_number: '',
     jurisdiction: '',
+    court: '',
+    judge: '',
     role: '',
     counterparty: '',
     primary_plugin: '',
@@ -139,6 +141,8 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
         status: form.status,
         case_number: form.case_number.trim() || undefined,
         jurisdiction: form.jurisdiction.trim() || undefined,
+        court: form.court.trim() || undefined,
+        judge: form.judge.trim() || undefined,
         role: form.role || undefined,
         counterparty: form.counterparty.trim() || undefined,
         primary_plugin: form.primary_plugin || undefined,
@@ -149,6 +153,7 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
         matter_name: '', description: '', practice_area: '', matter_type: '',
         client_contact_id: '', attorney_of_record_id: '', partner_attorney_id: '',
         assigned_user_ids: [], status: 'open', case_number: '', jurisdiction: '',
+        court: '', judge: '',
         role: '', counterparty: '', primary_plugin: '',
       })
       onClose()
@@ -436,6 +441,16 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
                 <div>
                   <label htmlFor="newmattermodal-case-number" className={labelCls}>Case Number</label>
                   <input id="newmattermodal-case-number" type="text" value={form.case_number} onChange={e => set('case_number', e.target.value)} placeholder="e.g., 2026-CV-1234" className={inputCls} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="newmattermodal-court" className={labelCls}>Court</label>
+                  <input id="newmattermodal-court" type="text" value={form.court} onChange={e => set('court', e.target.value)} placeholder="e.g., Cook County Circuit Court" className={inputCls} />
+                </div>
+                <div>
+                  <label htmlFor="newmattermodal-judge" className={labelCls}>Judge</label>
+                  <input id="newmattermodal-judge" type="text" value={form.judge} onChange={e => set('judge', e.target.value)} placeholder="e.g., Hon. A. Rivera" className={inputCls} />
                 </div>
               </div>
               <div>

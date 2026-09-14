@@ -41,6 +41,9 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
   const [meeting, setMeeting] = useState({ kind: 'conference_call', starts_at: '', details: '' })
 
   const timeZone = packet?.timezone || matter?.client_timezone || 'America/Chicago'
+  // Sending paperwork starts intake, which the server refuses on a closed
+  // matter (and it cancels any existing packet). Do not offer the action here.
+  const closed = Boolean(matter?.is_closed || matter?.status === 'closed')
 
   const load = useCallback(async () => {
     try {
@@ -142,25 +145,29 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <h2 className="font-serif text-lg font-bold text-brand-ink">
-                {packet ? 'Client paperwork cancelled' : 'Start this case'}
+                {closed ? 'Matter closed' : packet ? 'Client paperwork cancelled' : 'Start this case'}
               </h2>
               <p className="mt-0.5 text-[13px] text-brand-muted">
-                {packet
-                  ? 'Follow-ups were cancelled for this matter. Send a new packet to restart the engagement.'
-                  : 'Send the fee agreement, intake form, questionnaire, and any other forms in one message, then track each signature here.'}
+                {closed
+                  ? 'Reopen the matter to send client paperwork.'
+                  : packet
+                    ? 'Follow-ups were cancelled for this matter. Send a new packet to restart the engagement.'
+                    : 'Send the fee agreement, intake form, questionnaire, and any other forms in one message, then track each signature here.'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={openDrawer}
-              className="flex min-h-11 items-center gap-2 rounded-xl bg-brand-ink px-5 text-[13px] font-semibold text-white shadow-sm transition-all hover:-translate-y-[1px] hover:bg-brand-ink-2"
-            >
-              <Send size={15} /> Send client paperwork
-            </button>
+            {!closed && (
+              <button
+                type="button"
+                onClick={openDrawer}
+                className="flex min-h-11 items-center gap-2 rounded-xl bg-brand-ink px-5 text-[13px] font-semibold text-white shadow-sm transition-all hover:-translate-y-[1px] hover:bg-brand-ink-2"
+              >
+                <Send size={15} /> Send client paperwork
+              </button>
+            )}
           </div>
           {error && <p role="alert" className="mt-3 text-[13px] text-brand-rose">{error}</p>}
         </Shell>
-        {drawerOpen && (
+        {drawerOpen && !closed && (
           <PaperworkDrawer
             matterId={matterId}
             documents={documents}

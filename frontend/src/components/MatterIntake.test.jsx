@@ -201,6 +201,22 @@ it('creates the matter from the modal without starting client intake', async () 
   expect(api.post).not.toHaveBeenCalled()
 })
 
+it('sends the court and judge entered in the new-matter form', async () => {
+  const user = userEvent.setup()
+  createMatterV2.mockResolvedValue({ id: 'matter', matter_name: 'Smith case' })
+  render(<NewMatterModal open onClose={vi.fn()} onCreated={vi.fn()} />)
+  await user.type(screen.getByLabelText(/Matter Title/), 'Smith case')
+  await user.click(screen.getByText('Litigation / Court Details (optional)'))
+  await user.type(screen.getByLabelText('Court'), 'Cook County Circuit Court')
+  await user.type(screen.getByLabelText('Judge'), 'Hon. A. Rivera')
+  await user.click(screen.getByRole('button', { name: 'Open Matter' }))
+  await waitFor(() => expect(createMatterV2).toHaveBeenCalledOnce())
+  expect(createMatterV2).toHaveBeenCalledWith(expect.objectContaining({
+    court: 'Cook County Circuit Court',
+    judge: 'Hon. A. Rivera',
+  }))
+})
+
 it('clears the previous intake when switching to a matter without a packet', async () => {
   const { rerender } = render(<CaseSetupCard matterId="first" />)
   await screen.findByRole('heading', { name: 'Client paperwork' })

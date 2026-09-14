@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.13.15 — Cleaner signing fields and matter details
+
+Released September 13, 2026.
+
+Signature lines are offered only where a client signs, court and judge can be edited, closed matters no longer offer paperwork, and a voided invoice shows no balance.
+
+- **Only real signature lines.** Firm-use lines such as Referred by and Reviewed by are no longer offered as fields for the client to sign.
+- **Court and judge are editable.** Add or correct a matter's court and judge from the matter's details and the new-matter form.
+- **Closed matters do not offer paperwork.** A closed matter shows why sending client paperwork is unavailable instead of offering an action that cannot run.
+- **Voided invoices show no balance.** Voiding an invoice clears the balance staff see while keeping the invoice record and its total.
+
 ## 2026.09.13.14 — Straighter answers about tasks and deadlines
 
 Released September 13, 2026.
