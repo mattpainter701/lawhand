@@ -296,6 +296,33 @@ export function MatterNumberBadge({ matterNumber, className = '' }) {
 }
 
 /**
+ * The status a staff member reads for one time entry.
+ *
+ * A restored nonbillable entry keeps `status: "draft"` (the field means
+ * "unbilled"), so the raw status would read as DRAFT even though the work is
+ * nonbillable. The billable flag is the source of truth for that label.
+ */
+export function TimeEntryStatusBadge({ status, isBillable = true }) {
+  if (isBillable === false) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold uppercase border bg-brand-bg-soft text-brand-muted border-brand-line">
+        Non-billable
+      </span>
+    )
+  }
+  const tone = status === 'invoiced'
+    ? 'bg-brand-green/10 text-brand-green border-brand-green/20'
+    : status === 'approved'
+      ? 'bg-blue-50 text-blue-700 border-blue-200'
+      : 'bg-brand-bg-soft text-brand-muted border-brand-line'
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold uppercase border ${tone}`}>
+      {status || 'draft'}
+    </span>
+  )
+}
+
+/**
  * Swap a /matters/SMIT0001 URL for /matters/:uuid.
  *
  * The replace is deliberate: the number URL is an entry point, not a step in
@@ -1689,11 +1716,7 @@ function MatterWorkspace() {
                             <td className="px-4 py-3 text-brand-ink font-mono">{e.hours}</td>
                             <td className="px-4 py-3 text-brand-ink font-mono">{e.amount ? `$${Number(e.amount).toLocaleString()}` : '—'}</td>
                             <td className="px-4 py-3">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold uppercase border ${
-                                e.status === 'invoiced' ? 'bg-brand-green/10 text-brand-green border-brand-green/20' :
-                                e.status === 'approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                'bg-brand-bg-soft text-brand-muted border-brand-line'
-                              }`}>{e.status || 'draft'}</span>
+                              <TimeEntryStatusBadge status={e.status} isBillable={e.is_billable} />
                             </td>
                           </tr>
                         ))}

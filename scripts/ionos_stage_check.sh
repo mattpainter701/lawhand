@@ -109,11 +109,18 @@ raise SystemExit(0 if p.get("status") == "ok" and all(p.get("components", {}).ge
 ' || { echo "FAIL: local IONOS readiness is not complete" >&2; exit 1; }
 
 version="$(origin_get "$domain" /api/version)"
-VERSION_JSON="$version" EXPECTED_COMMIT="$expected_commit" python3 -c '
-import json, os
-p = json.loads(os.environ["VERSION_JSON"])
+# Pipe the body on stdin, never through an environment variable: /api/version
+# carries the full release-notes catalog, which is far larger than ARG_MAX.
+# Passing it via the environment made this "mismatch" report a false failure
+# whenever the catalog grew, rather than comparing the commit at all.
+if ! printf '%s' "$version" | EXPECTED_COMMIT="$expected_commit" python3 -c '
+import json, os, sys
+p = json.load(sys.stdin)
 raise SystemExit(0 if p.get("commit") == os.environ["EXPECTED_COMMIT"] else 1)
-' || { echo "FAIL: local IONOS version does not match the release" >&2; exit 1; }
+'; then
+  echo "FAIL: local IONOS version does not match the release" >&2
+  exit 1
+fi
 origin_get "$domain" / >/dev/null
 
 research_enabled="$(get_env MCP_PRODUCT_ENABLED)"
