@@ -4,9 +4,12 @@ import { getSampleTemplates, getSampleTemplateSource } from '../../api'
 import SampleFillDialog from './SampleFillDialog'
 
 // The catalog API returns an unordered flat list. Present samples grouped by
-// document type, with the catch-all "other" last, and within each type ordered
-// by jurisdiction then title so a firm can find its state's form quickly.
+// document type, with the paperwork every matter opens with first, the
+// catch-all "other" last, and within each type ordered by jurisdiction then
+// title so a firm can find its state's form quickly.
 const CATEGORY_ORDER = [
+  'engagement_letter',
+  'intake',
   'advance_directive',
   'bill_of_sale',
   'contract',
@@ -18,6 +21,8 @@ const CATEGORY_ORDER = [
 ]
 
 const CATEGORY_LABELS = {
+  engagement_letter: 'Fee Agreement',
+  intake: 'Client Intake',
   advance_directive: 'Advance Directive',
   bill_of_sale: 'Bill of Sale',
   contract: 'Contract',

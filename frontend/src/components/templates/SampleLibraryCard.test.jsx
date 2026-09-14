@@ -162,6 +162,37 @@ describe('SampleLibraryCard', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('lists the firm paperwork first, under its own labels', async () => {
+    // The fee agreement and the two intake forms are what a firm opens a matter
+    // with, so they lead the catalog rather than sorting alphabetically into it.
+    getSampleTemplates.mockResolvedValue({
+      items: [
+        ...samples,
+        {
+          id: 'fee-1',
+          title: 'Fee Agreement — Legal Services (All Matter Types)',
+          category: 'engagement_letter',
+          jurisdictions: [],
+          field_count: 100,
+          variable_schema: { version: 1, fields: [] },
+        },
+        {
+          id: 'intake-1',
+          title: 'Prospective Client Intake Form',
+          category: 'intake',
+          jurisdictions: [],
+          field_count: 71,
+          variable_schema: { version: 1, fields: [] },
+        },
+      ],
+      total: 7,
+    })
+    render(<SampleLibraryCard />)
+    await screen.findByText('Durable Power of Attorney')
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent)
+    expect(headings.slice(0, 2)).toEqual(['Fee Agreement', 'Client Intake'])
+  })
+
   it('shows a load error when the catalog fails', async () => {
     getSampleTemplates.mockRejectedValue(new Error('offline'))
     render(<SampleLibraryCard />)

@@ -30,12 +30,33 @@ from sqlalchemy import select  # noqa: E402
 from app.database import async_session_maker  # noqa: E402
 from app.models.sample_template import SampleTemplate  # noqa: E402
 from app.services.pdf_templates import TemplatePdfError, discover_pdf_fields  # noqa: E402
+from app.services.template_bindings import is_valid_binding  # noqa: E402
 
 SEED_DIR = Path(__file__).resolve().parents[1] / "seed" / "sample_templates"
 
 
-def _variable_schema(content: bytes) -> dict:
+def _variable_schema(content: bytes, bindings: dict | None = None) -> dict:
+    """Derive the field schema from the PDF, carrying the manifest's bindings.
+
+    Field discovery stays the single source of truth for what is in the form.
+    A manifest may additionally declare where a field's value comes from — the
+    authored firm-paperwork samples name their fields after the platform's own
+    variables — and those declarations are attached here so Smart Fill resolves
+    them without a firm re-declaring anything. A path the catalogue does not
+    recognise is a build error, not a field that quietly fills from nothing.
+    """
+
     fields = discover_pdf_fields(content)
+    declared = bindings or {}
+    unknown = sorted(
+        path for path in set(declared.values()) if not is_valid_binding(path)
+    )
+    if unknown:
+        raise SystemExit(f"Unknown binding path in manifest: {', '.join(unknown)}")
+    for field in fields:
+        binding = declared.get(field["name"])
+        if binding:
+            field["binding"] = binding
     return {
         "version": 1,
         "source": "sample_library",
@@ -67,7 +88,7 @@ async def seed(prune: bool = False) -> None:
                     f"Sample source integrity mismatch: {form['filename']}"
                 )
             try:
-                schema = _variable_schema(content)
+                schema = _variable_schema(content, form.get("bindings"))
             except TemplatePdfError as exc:
                 print(f"SKIP {form['slug']}: {exc}")
                 continue
