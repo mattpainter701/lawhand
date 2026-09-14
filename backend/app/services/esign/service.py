@@ -159,6 +159,10 @@ async def record_portal_signature(
         **(signer.audit or {}),
         "signed_at": now.isoformat(),
         "ip": ip,
+        # Says what the address on the certificate is: a caller address our own
+        # proxy vouched for, or nothing we are willing to attribute to the
+        # signer. Never our infrastructure's own address dressed as theirs.
+        "ip_source": "client" if ip else "unattributable",
         "typed_signature": typed_signature,
         # The drawing is evidence too: its hash binds the stamped image to
         # this signing, and the certificate carries the audit verbatim.
