@@ -48,6 +48,14 @@ from app.services.matter_number import assign_matter_number
 router = APIRouter(prefix="/api/matter-imports", tags=["matter-imports"])
 PROVIDER = "matter_folder_v1"
 
+# The stage an imported matter starts in, by how its engagement was reviewed.
+# Shared with the CSV importer so both read the same way in the matter list.
+INTAKE_STAGES = {
+    "existing": "Active",
+    "review": "Transfer / Review Required",
+    "required": "Intake / Awaiting Documents",
+}
+
 
 class ImportFile(BaseModel):
     path: str
@@ -298,11 +306,7 @@ async def approve(
                 matter_name=mapping.matter_name.strip(),
                 matter_type="general",
                 status="open",
-                stage={
-                    "existing": "Active",
-                    "review": "Transfer / Review Required",
-                    "required": "Intake / Awaiting Documents",
-                }[mapping.intake],
+                stage=INTAKE_STAGES[mapping.intake],
                 source="folder_import",
                 client_contact_id=contact.id,
                 case_number=mapping.case_number or None,

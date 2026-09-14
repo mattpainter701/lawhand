@@ -39,6 +39,7 @@ from app.schemas.client import (
     ClientSummaryResponse,
     ClientUpdate,
 )
+from app.services.csv_upload import CSV_FORMULA_LEADS, csv_safe
 from app.services.operator_audit import record_operator_audit
 from app.utils.sql_filters import escape_like
 
@@ -815,15 +816,10 @@ async def client_matters(
     ]
 
 
-#: Leading characters a spreadsheet treats as the start of a formula. Tab and
-#: carriage return belong here alongside the obvious four: Excel and LibreOffice
-#: strip them during cell parsing and evaluate whatever follows.
-_CSV_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _csv_safe(value) -> str:
-    text = "" if value is None else str(value)
-    return f"'{text}" if text.startswith(_CSV_FORMULA_LEADS) else text
+#: Formula-lead hardening lives with the other CSV helpers; the private names
+#: stay for the callers and tests that import them from here.
+_CSV_FORMULA_LEADS = CSV_FORMULA_LEADS
+_csv_safe = csv_safe
 
 
 def _parse_bool(value: str, field: str) -> bool:
