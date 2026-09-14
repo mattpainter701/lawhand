@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.models.tenant import Tenant
 from app.routers.client_portal import portal_matter_dep
 from app.routers.firm import get_firm_branding
 from app.schemas.matter_intake import (
+    EngagementRecord,
     IntakeAnswers,
     IntakeChangeDecision,
     IntakeMeeting,
@@ -25,7 +26,7 @@ from app.schemas.matter_intake import (
     IntakeStart,
     IntakeSubmission,
 )
-from app.services import intake_writeback, matter_intake as service
+from app.services import intake_writeback, matter_engagement, matter_intake as service
 from app.services.access_control import require_capability
 from app.services.matter_access import can_access_matter
 from app.services.matter_document_organization import autofile_folder_id
@@ -106,6 +107,46 @@ async def start(
         content,
     )
     return service.public_packet(packet)
+
+
+@router.post("/{matter_id}/engagement")
+async def record_engagement(
+    matter_id: uuid.UUID,
+    response: Response,
+    options: str = Form(...),
+    agreement: UploadFile | None = File(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_capability("manage_matters")),
+):
+    """Record an existing engagement without sending client paperwork.
+
+    A signed fee agreement on file (uploaded here or already a matter
+    document), a signed agreement the firm holds no copy of, or no fee
+    agreement at all with the reason. The matter becomes Active; no portal
+    invitation, signature request or message is created.
+    """
+    try:
+        body = EngagementRecord.model_validate_json(options)
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(
+            422, "Check the engagement status, signing date, document and note."
+        ) from exc
+    matter = await staff_matter(db, user, matter_id)
+    filename, content = "", b""
+    if agreement is not None and not body.document_id:
+        filename = agreement.filename or "Signed fee agreement.pdf"
+        content = await agreement.read(service.MAX_AGREEMENT_BYTES + 1)
+        if not content:
+            raise HTTPException(422, "The uploaded fee agreement was empty.")
+    matter, created = await matter_engagement.record_engagement(
+        db, user, matter, body, filename, content
+    )
+    response.status_code = 201 if created else 200
+    return {
+        "matter_id": str(matter.id),
+        "engagement": matter_engagement.engagement_payload(matter),
+        "stage": matter.stage,
+    }
 
 
 @router.get("/{matter_id}/intake")
@@ -226,6 +267,26 @@ async def receipt(
             signature.status = "voided"
             signature.voided_at = service.now()
             signature.void_reason = "Signed agreement received and verified by staff"
+    if body.requirement == "fee_agreement":
+        # The verified paper copy is the signed agreement on file, so the
+        # matter's engagement record says so too, wherever it was recorded.
+        matter = await db.get(Matter, matter_id)
+        if matter is not None and matter.engagement_status != "signed_on_file":
+            matter_engagement.apply_engagement(
+                matter,
+                status="signed_on_file",
+                signed_on=matter.engagement_signed_on,
+                note=body.note,
+                document_id=doc.id,
+                user_id=user.id,
+            )
+            matter_engagement.engagement_event(
+                db,
+                matter,
+                user_id=user.id,
+                actor=getattr(user, "full_name", None) or getattr(user, "email", None) or str(user.id),
+                extra="Verified as an intake document receipt.",
+            )
     await service.reconcile(db, packet)
     await db.commit()
     return service.public_packet(packet)

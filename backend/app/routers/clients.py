@@ -807,6 +807,8 @@ async def client_matters(
             "matter_type": matter.matter_type,
             "status": matter.status,
             "jurisdiction": matter.jurisdiction,
+            "opened_on": matter.opened_on.isoformat() if matter.opened_on else None,
+            "engagement_status": matter.engagement_status,
             "created_at": matter.created_at.isoformat(),
         }
         for matter in matters

@@ -67,7 +67,7 @@ async def live_observations(db, tenant_id, as_of):
             await db.execute(
                 text("""SELECT t.id,t.title,t.task_type,t.due_date,t.created_at,
       t.assigned_to_user_id,t.review_policy,m.id AS matter_id,m.matter_name,m.matter_type,
-      m.practice_area,m.stage,m.created_at AS opened_at,m.user_id,m.attorney_of_record_id
+      m.practice_area,m.stage,m.opened_on AS opened_at,m.user_id,m.attorney_of_record_id
       FROM tasks t JOIN matters m ON m.id=t.matter_id AND m.tenant_id=t.tenant_id
       WHERE t.tenant_id=:tenant AND t.created_at>=:since AND t.status<>'cancelled'
       ORDER BY t.created_at DESC,t.id LIMIT :limit"""),
@@ -96,7 +96,7 @@ async def live_observations(db, tenant_id, as_of):
                 matter_type=row["matter_type"] or "",
                 practice_area=row["practice_area"],
                 title=label,
-                anchor_date=row["opened_at"].date(),
+                anchor_date=row["opened_at"],
                 due_date=row["due_date"] or row["created_at"].date(),
                 assignee_role=role,
                 task_type=row["task_type"]
@@ -114,7 +114,7 @@ async def live_observations(db, tenant_id, as_of):
         (
             await db.execute(
                 text("""SELECT g.id,g.kind,g.created_at,m.id AS matter_id,
-      m.matter_type,m.practice_area,m.stage,m.created_at AS opened_at,r.template_id,
+      m.matter_type,m.practice_area,m.stage,m.opened_on AS opened_at,r.template_id,
       r.template_sha256,d.title AS template_name,t.review_policy
       FROM generated_artifacts g JOIN matters m ON m.id=g.matter_id AND m.tenant_id=g.tenant_id
       JOIN generated_artifact_revisions r ON r.artifact_id=g.id AND r.tenant_id=g.tenant_id AND r.revision_no=g.current_revision_no
@@ -138,7 +138,7 @@ async def live_observations(db, tenant_id, as_of):
                 matter_type=row["matter_type"] or "",
                 practice_area=row["practice_area"],
                 title=label,
-                anchor_date=row["opened_at"].date(),
+                anchor_date=row["opened_at"],
                 due_date=row["created_at"].date(),
                 assignee_role="unassigned",
                 task_type="review",
@@ -155,7 +155,7 @@ async def live_observations(db, tenant_id, as_of):
         (
             await db.execute(
                 text("""SELECT c.id,c.channel,c.occurred_at,m.id AS matter_id,
-      m.matter_type,m.practice_area,m.stage,m.created_at AS opened_at
+      m.matter_type,m.practice_area,m.stage,m.opened_on AS opened_at
       FROM communication_logs c JOIN matters m ON m.id=c.matter_id AND m.tenant_id=c.tenant_id
       WHERE c.tenant_id=:tenant AND c.occurred_at>=:since AND c.status='sent' AND c.channel IN ('email','sms')
       ORDER BY c.occurred_at,c.id LIMIT :limit"""),
@@ -178,7 +178,7 @@ async def live_observations(db, tenant_id, as_of):
                 matter_type=row["matter_type"] or "",
                 practice_area=row["practice_area"],
                 title=label,
-                anchor_date=row["opened_at"].date(),
+                anchor_date=row["opened_at"],
                 due_date=row["occurred_at"].date(),
                 assignee_role="unassigned",
                 task_type="follow_up",

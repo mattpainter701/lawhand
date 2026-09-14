@@ -135,6 +135,15 @@ def _matter_summary(matter: Matter) -> dict[str, Any]:
             str(matter.attorney_of_record_id) if matter.attorney_of_record_id else None
         ),
         "memory": _clip(matter.memory_content, _MATTER_MEMORY_CHARS),
+        "opened_on": matter.opened_on.isoformat() if matter.opened_on else None,
+        # How the matter was engaged when no intake packet did it (signed
+        # agreement on file, signed without a copy, no agreement, copy pending).
+        "engagement_status": matter.engagement_status,
+        "engagement_signed_on": (
+            matter.engagement_signed_on.isoformat()
+            if matter.engagement_signed_on
+            else None
+        ),
         "created_at": _iso(matter.created_at),
         "updated_at": _iso(matter.updated_at),
     }

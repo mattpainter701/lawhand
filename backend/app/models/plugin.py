@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -157,11 +159,27 @@ class TenantPluginSetup(Base):
     )
 
 
+ENGAGEMENT_STATUSES = (
+    "signed_on_file",
+    "signed_no_copy",
+    "no_agreement",
+    "pending_copy",
+)
+
+
 class Matter(Base):
     """Case/matter ledger — one row per matter, any practice area."""
 
     __tablename__ = "matters"
     __table_args__ = (
+        CheckConstraint(
+            "engagement_status IS NULL OR engagement_status IN ("
+            + ", ".join(f"'{value}'" for value in ENGAGEMENT_STATUSES)
+            + ")",
+            name="ck_matters_engagement_status",
+        ),
+        Index("ix_matters_tenant_opened_on", "tenant_id", "opened_on"),
+        Index("ix_matters_tenant_engagement_status", "tenant_id", "engagement_status"),
         UniqueConstraint("tenant_id", "slug", name="uq_matters_tenant_slug"),
         UniqueConstraint("tenant_id", "id", name="uq_matters_tenant_id"),
         UniqueConstraint(
@@ -260,6 +278,37 @@ class Matter(Base):
     judge: Mapped[str | None] = mapped_column(String(200), nullable=True)
     case_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # The date the firm opened the matter (migration 187). Defaults to the day
+    # the row is created, but a matter transferred in from another firm keeps
+    # the date it was actually opened, which is what lists and reports show.
+    opened_on: Mapped[date] = mapped_column(
+        Date, nullable=False, default=date.today, server_default=text("CURRENT_DATE")
+    )
+
+    # Existing-engagement record (migration 187). Null means the matter has no
+    # recorded engagement outside the intake packet. Otherwise one of
+    # ENGAGEMENT_STATUSES: the signed fee agreement is on file, the client
+    # signed but the firm holds no copy, there is deliberately no fee
+    # agreement (legacy or unusual arrangement -- the note carries the reason),
+    # or a signed copy is still to be uploaded. Changed only through the
+    # record-engagement endpoint so every transition is evented.
+    engagement_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    engagement_signed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    engagement_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("matter_documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    engagement_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    engagement_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    engagement_recorded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Client portal access toggle (added in migration 044)
     portal_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
@@ -337,6 +386,14 @@ class Matter(Base):
     )
     partner_attorney: Mapped["User | None"] = relationship(  # noqa: F821
         "User", foreign_keys=[partner_attorney_id], lazy="joined"
+    )
+    # Eager by default: the response builders read these on every load and
+    # the async session cannot lazy-load after the fact.
+    engagement_document: Mapped["MatterDocument | None"] = relationship(  # noqa: F821
+        "MatterDocument", foreign_keys=[engagement_document_id], lazy="selectin"
+    )
+    engagement_recorder: Mapped["User | None"] = relationship(  # noqa: F821
+        "User", foreign_keys=[engagement_recorded_by], lazy="selectin"
     )
     assignments: Mapped[list["MatterAssignment"]] = relationship(  # noqa: F821
         "MatterAssignment", back_populates="matter", cascade="all, delete-orphan"
