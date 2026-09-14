@@ -18,6 +18,7 @@ class ScheduledEvent(Base):
         Index("idx_scheduled_events_tenant_start", "tenant_id", "start_at"),
         Index("idx_scheduled_events_matter_id", "tenant_id", "matter_id"),
         Index("idx_scheduled_events_created_by", "tenant_id", "created_by_user_id"),
+        Index("idx_scheduled_events_task_id", "tenant_id", "task_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -39,6 +40,13 @@ class ScheduledEvent(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Set when the event is time blocked out to work on a task. The task keeps
+    # owning its own due date; the block is only where the work happens.
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
 

@@ -12,7 +12,7 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["186_billing_parity"]
+    assert heads == ["187_scheduled_event_task_link"]
 
 
 def test_intake_optional_agreement_migration_widens_and_restores_the_column():
