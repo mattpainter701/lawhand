@@ -1,5 +1,22 @@
 # Sprint — open-issue burndown, 15–26 Sep 2026
 
+> **Status: the committed band is delivered.** #503, #502, #488, #492, #506 and
+> #484 are implemented with tests on `claude/sprint-planning-issues-6vmf80`.
+> The decision gate below was not held; each gated item shipped on its
+> recommended default, noted per item. Two corrections to this plan, kept
+> visible rather than edited away:
+>
+> - **A-2 needed a migration.** The Definition of Done said it added none.
+>   The failure counter had nowhere to live, so migration `187` takes the head
+>   from `186_billing_parity` and both hardcoded head expectations move with it.
+> - **C-1's save-400 did not reproduce.** The error-contract work landed and
+>   explains the 502 and the empty message; the 400 is documented on the issue
+>   rather than guessed at. See the item for what was ruled out.
+>
+> **#504 (stretch) was not taken**, and its blocker is unchanged: the manifest
+> still has no provenance field, so nothing in the repository says which court
+> form each duplicate-titled variant is.
+
 Planning artifact for the nine issues open on `mattpainter701/lawhand` as of
 2026-09-14 (`main` at `667f97c`, release `2026.09.13.15`). Each item below was
 checked against the tree, not taken from the issue text alone — two issues are
@@ -85,15 +102,15 @@ proxy configuration is confirmed* — is satisfiable, and the gap is now located
   environment. That is the whole defect.
 
 Tasks:
-- [ ] Resolve the signer address through an explicit trusted-proxy allowlist,
+- [x] Resolve the signer address through an explicit trusted-proxy allowlist,
       preferring an application-level helper over blanket `--proxy-headers` so the
       trusted set is expressed in one reviewable place and covers all six compose
       files at once.
-- [ ] Where the address cannot be attributed to a client, record that fact and have
+- [x] Where the address cannot be attributed to a client, record that fact and have
       the certificate say so plainly rather than printing an infrastructure address.
-- [ ] Regression coverage pinning the address source: trusted proxy → client address;
+- [x] Regression coverage pinning the address source: trusted proxy → client address;
       untrusted or absent header → "not attributable", never a silent proxy IP.
-- [ ] Do **not** rewrite certificates already issued (issue hard limit).
+- [x] Do **not** rewrite certificates already issued (issue hard limit).
 
 Out of scope: the field-count half, already fixed and tested on `main`.
 
@@ -104,13 +121,13 @@ failure writes `completion_error`, one passive `MatterEvent` and a staff banner.
 A permanently unreachable store therefore means silent non-filing.
 
 Tasks:
-- [ ] Add the attempt counter (none exists today) and the terminal exhausted state.
-- [ ] On exhaustion, raise one assigned follow-up task via the existing
+- [x] Add the attempt counter (none exists today) and the terminal exhausted state.
+- [x] On exhaustion, raise one assigned follow-up task via the existing
       `ensure_followup_task` + `notify_task_created` primitives — once, not per retry.
-- [ ] Keep retrying after escalation; resolve the task when filing finally succeeds.
-- [ ] Document the retry contract (attempts, window, terminal behaviour) — the issue
+- [x] Keep retrying after escalation; resolve the task when filing finally succeeds.
+- [x] Document the retry contract (attempts, window, terminal behaviour) — the issue
       requires the specification, not just the code.
-- [ ] Regression test that drives a filing to exhaustion and asserts the escalation
+- [x] Regression test that drives a filing to exhaustion and asserts the escalation
       exists, is assigned, and is not duplicated on further retries.
 
 ---
@@ -125,19 +142,19 @@ verification comment confirms release `.14` fixed the *matter key-date* path, no
 this one.
 
 Tasks:
-- [ ] Thread `due_time` through `push_task_to_calendars`
+- [x] Thread `due_time` through `push_task_to_calendars`
       (`backend/app/services/task_notifications.py:138`), which today passes
       `due_date` only and returns early on a missing date.
-- [ ] Build a timezone-aware timed event in both providers instead of forcing all-day
+- [x] Build a timezone-aware timed event in both providers instead of forcing all-day
       (`microsoft_calendar.py` `"isAllDay": True`; `google_calendar.py`
       `"start"/"end": {"date": ...}`). A task with no saved time keeps all-day.
-- [ ] Surface the existing provider identity (Microsoft `clarity_task_id`, Google
+- [x] Surface the existing provider identity (Microsoft `clarity_task_id`, Google
       `privateExtendedProperty`) on the calendar **read** path so
       `mergeCalendarEvents` (`frontend/src/pages/CalendarPage.jsx:223`) collapses the
       synced copy against the LawHand task instead of rendering both.
-- [ ] Make both entries navigate to the same task: provider entries carry `url: null`
+- [x] Make both entries navigate to the same task: provider entries carry `url: null`
       today and the local task links to `/tasks`, not `/tasks/{id}`.
-- [ ] Regression coverage: timed propagation across a non-UTC timezone, and a repeat
+- [x] Regression coverage: timed propagation across a non-UTC timezone, and a repeat
       sync that produces no second entry.
 
 ---
@@ -166,17 +183,22 @@ hypothesis is **wrong**. The reporter's console also names `POST` on a `PUT`-onl
 route, so the labels may be imprecise. This needs a reproduction before a fix.
 
 Tasks:
-- [ ] Reproduce the save 400 against a real operator session; fix or close out with
+- [~] Reproduce the save 400 against a real operator session; fix or close out with
       the finding. **Timebox to 0.5d** — if it does not reproduce, the error-surfacing
       work below makes the next report self-diagnosing.
-- [ ] Validate SID shapes on save: `account_sid` `AC…`, `messaging_service_sid` `MG…`,
+      **Outcome: did not reproduce.** Every 400 path in the save requires a field
+      the report says was set; the console names `POST` on a `PUT`-only route; and
+      the UI already rendered `detail`, so a genuine 400 would have been visible.
+      Most likely those were earlier attempts before the token was entered. Left
+      as a note on the issue rather than a guessed fix.
+- [x] Validate SID shapes on save: `account_sid` `AC…`, `messaging_service_sid` `MG…`,
       rejecting a Verify (`VA…`) SID by name rather than letting Twilio fail later.
-- [ ] Reclassify Twilio 4xx rejections as caller errors carrying Twilio's own message
+- [x] Reclassify Twilio 4xx rejections as caller errors carrying Twilio's own message
       and code; keep 502 for timeout/transport only.
-- [ ] Confirm the UI renders `detail` for every status the API can now return, and
+- [x] Confirm the UI renders `detail` for every status the API can now return, and
       that no response body large enough or slow enough to be replaced by Cloudflare
       remains on this path.
-- [ ] Tests for each: wrong SID type, unusable from-number, Twilio auth failure,
+- [x] Tests for each: wrong SID type, unusable from-number, Twilio auth failure,
       transport timeout.
 
 ---
@@ -192,9 +214,9 @@ so the sprint ships something on day 1.
 role, inside a row (`:342`) that has no handler either. It promises an action, does
 nothing, and is not keyboard-operable.
 
-- [ ] Make the affordance a real link to `/matters/{id}` (or remove it); if kept, it —
+- [x] Make the affordance a real link to `/matters/{id}` (or remove it); if kept, it —
       or the whole row — must be reachable by keyboard.
-- [ ] Regression test asserting the row's View affordance navigates.
+- [x] Regression test asserting the row's View affordance navigates.
 
 ### D-2. #502 — "Active" means three different things (1d)
 
@@ -202,9 +224,9 @@ Status filter tab (`:174-180`), `StatusBadge` (`:59-73`), and a per-row toggle
 (`:259-271`, `:361-375`) all read "Active". The toggle only flips
 `MatterAssignment.is_active_working` for the signed-in user.
 
-- [ ] Rename the control for what it does ("Working on this" / "Stop working").
-- [ ] Make the filter tab, the badge, and the assignment flag visually distinct.
-- [ ] Regression coverage pinning the label and confirming it patches the assignment,
+- [x] Rename the control for what it does ("Working on this" / "Stop working").
+- [x] Make the filter tab, the badge, and the assignment flag visually distinct.
+- [x] Regression coverage pinning the label and confirming it patches the assignment,
       not the matter status.
 
 ### D-3. #504 — duplicate-titled variants (stretch, 1d) — *blocked on provenance*
