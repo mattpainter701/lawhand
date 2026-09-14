@@ -36,7 +36,14 @@ from app.services.esign.certificate import (
     filled_field_count,
     immutable_certificate_filename,
 )
-from app.services.esign.followups import close_signature_followup, matter_timezone
+from app.services.esign.followups import (
+    FILING_FAILED_KIND,
+    close_filing_escalation,
+    close_signature_followup,
+    matter_timezone,
+)
+from app.services.matter_followups import ensure_followup_task
+from app.services.task_notifications import notify_task_created
 from app.services.esign.plan import (
     SigningPlan,
     build_plan,
@@ -60,6 +67,23 @@ OPEN_STATUSES = ("sent", "partially_signed")
 #: How long a failed filing attempt blocks the next automatic retry.
 COMPLETION_RETRY_INTERVAL = timedelta(minutes=5)
 STORAGE_FAILURE_EVENT_TITLE = "Signed copy could not be filed — storage unavailable"
+
+# ── Filing-retry exhaustion (issue #492) ─────────────────────────────────────
+# Filing is retried every COMPLETION_RETRY_INTERVAL for as long as it keeps
+# failing, and that is the right behaviour: storage outages usually end. What
+# was missing is the signal when one does not. A signed document that never
+# reaches durable storage is silent data loss, and until now the only trace was
+# a staff banner nobody is paged for.
+#
+# Retrying does not stop at exhaustion — giving up would guarantee the loss.
+# Instead a human becomes responsible for it. Both thresholds must be crossed:
+# the attempt count rules out a single blip, and the window rules out a fast
+# flap that a few minutes of retrying would have cleared anyway. At one attempt
+# per five minutes, twelve consecutive failures is an hour of continuous
+# unavailability, so the window is what binds if retries are ever slowed down.
+COMPLETION_ESCALATION_ATTEMPTS = 12
+COMPLETION_ESCALATION_WINDOW = timedelta(hours=1)
+STORAGE_ESCALATION_EVENT_TITLE = "Signed copy still unfiled — assigned for follow-up"
 
 
 class CompletionStorageError(RuntimeError):
@@ -505,8 +529,15 @@ def _record_completion_failure(
 ) -> None:
     """Note a filing failure for staff; the client's signature stays recorded."""
     first_failure = not request.completion_error
+    now = datetime.now(timezone.utc)
     request.completion_error = message[:2000]
-    request.completion_attempted_at = datetime.now(timezone.utc)
+    request.completion_attempted_at = now
+    # Count consecutive failures and remember when the run started, so
+    # ``completion_retries_exhausted`` can tell a blip from an outage nobody is
+    # coming back from. Both reset on the next successful filing.
+    request.completion_failure_count = (request.completion_failure_count or 0) + 1
+    if request.completion_first_failed_at is None:
+        request.completion_first_failed_at = now
     logger.warning(
         "Signature request %s could not be completed: %s", request.id, message
     )
@@ -527,6 +558,99 @@ def _record_completion_failure(
                 created_by=request.created_by_user_id or matter.user_id,
             )
         )
+
+
+def completion_retries_exhausted(
+    request: SignatureRequest, *, now: datetime | None = None
+) -> bool:
+    """Has filing failed for long enough that retrying alone is not an answer?
+
+    False once an escalation exists: the point is to raise one owner, not to
+    re-raise them on every pass of the scheduler.
+    """
+    if request.completion_escalated_at is not None:
+        return False
+    if not request.completion_error:
+        return False
+    if (request.completion_failure_count or 0) < COMPLETION_ESCALATION_ATTEMPTS:
+        return False
+    first_failed = request.completion_first_failed_at
+    if first_failed is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return _as_aware_utc(now) - _as_aware_utc(first_failed) >= (
+        COMPLETION_ESCALATION_WINDOW
+    )
+
+
+async def escalate_completion_failure(
+    db: AsyncSession,
+    request: SignatureRequest,
+    matter: Matter,
+    *,
+    now: datetime | None = None,
+):
+    """Give a stuck filing an owner. Returns the task when one was raised.
+
+    Retrying continues afterwards — this makes the failure someone's job, it
+    does not give up on it. ``ensure_followup_task`` is keyed to the request
+    and kind, so even a double call cannot produce two tasks.
+    """
+    if not completion_retries_exhausted(request, now=now):
+        return None
+    now = _as_aware_utc(now or datetime.now(timezone.utc))
+    label = request.source_document_filename or "document"
+    description = (
+        f"Every party signed {label}, but the executed copy has failed to file "
+        f"to the matter {request.completion_failure_count} times since "
+        f"{_as_aware_utc(request.completion_first_failed_at).isoformat()}. "
+        f"Last error: {request.completion_error} "
+        "The signatures are recorded and filing is still being retried "
+        "automatically; this task exists so the failure is not silent. It "
+        "closes by itself if a retry succeeds."
+    )
+    task = await ensure_followup_task(
+        db,
+        tenant_id=request.tenant_id,
+        matter_id=request.matter_id,
+        namespace=request.id,
+        kind=FILING_FAILED_KIND,
+        title=f"Signed copy could not be filed: {label}",
+        due=now,
+        timezone_name=await matter_timezone(db, request.tenant_id, request.matter_id),
+        owner_id=request.created_by_user_id,
+        created_by=request.created_by_user_id,
+        description=description,
+        source="signature",
+        external_ref=f"signature:{request.id}:filing-failed",
+        priority="high",
+    )
+    request.completion_escalated_at = now
+    db.add(
+        MatterEvent(
+            tenant_id=matter.tenant_id,
+            matter_id=matter.id,
+            event_type="signature",
+            title=STORAGE_ESCALATION_EVENT_TITLE,
+            content=description,
+            note_type="system",
+            created_by=request.created_by_user_id or matter.user_id,
+        )
+    )
+    logger.error(
+        "Signature request %s filing unresolved after %s attempts; escalated",
+        request.id,
+        request.completion_failure_count,
+    )
+    if task is not None:
+        await db.flush()
+        try:
+            await notify_task_created(db, task, str(request.tenant_id))
+        except Exception:  # noqa: BLE001 - the task is the escalation, not the email
+            logger.exception(
+                "Notifying the owner of filing escalation for %s failed", request.id
+            )
+    return task
 
 
 async def _existing_completion(
@@ -761,6 +885,11 @@ async def _finalize(
     request.completed_at = now
     request.completion_error = render_error
     request.completion_attempted_at = now
+    # Filing succeeded, so the failure run is over. Clearing these is what lets
+    # a later, unrelated outage start counting from zero instead of inheriting
+    # an old run and escalating on its first failure.
+    request.completion_failure_count = 0
+    request.completion_first_failed_at = None
     # The certificate is the completion artifact the intake packet reconciles
     # against; the executed copy is referenced separately.
     request.provider_envelope_id = str(certificate.id)
@@ -772,6 +901,8 @@ async def after_completion(db: AsyncSession, request: SignatureRequest) -> None:
     from app.services import matter_intake
 
     await close_signature_followup(db, request, "Document signed")
+    # The filing escalation, if one was raised, is answered by this completion.
+    await close_filing_escalation(db, request)
     await db.flush()
     packet = await matter_intake.get_packet(
         db, request.tenant_id, request.matter_id, lock=True
@@ -838,6 +969,12 @@ async def retry_pending_completions(
             await complete_request_if_done(db, request, matter)
             if request.status == "completed":
                 await after_completion(db, request)
+            else:
+                # Still failing. Retrying continues either way, but once the
+                # failures have run long enough the outage stops being a
+                # transient the scheduler can absorb on its own and becomes
+                # someone's job.
+                await escalate_completion_failure(db, request, matter, now=now)
             did_complete = request.status == "completed"
             await db.commit()
             completed += int(did_complete)
@@ -850,6 +987,8 @@ async def retry_pending_completions(
 
 
 __all__ = [
+    "COMPLETION_ESCALATION_ATTEMPTS",
+    "COMPLETION_ESCALATION_WINDOW",
     "COMPLETION_RETRY_INTERVAL",
     "CompletionStorageError",
     "accept_submission",
@@ -858,6 +997,8 @@ __all__ = [
     "awaiting_review",
     "complete_request_if_done",
     "completion_pending",
+    "completion_retries_exhausted",
+    "escalate_completion_failure",
     "decline_event",
     "executed_filename",
     "mark_request_expired_if_needed",

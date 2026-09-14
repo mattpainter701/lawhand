@@ -83,3 +83,27 @@ async def close_signature_followup(db, req, reason):
         reason=reason,
         actor_user_id=req.created_by_user_id,
     )
+
+
+# ── Filing-failure escalation ────────────────────────────────────────────────
+# A chase task is keyed to the request and its own kind, so the escalation
+# raised when filing cannot be completed never collides with the task that
+# chases the signer for a signature.
+FILING_FAILED_KIND = "signature_filing_failed"
+
+
+async def close_filing_escalation(db, req):
+    """Cancel the filing escalation once the executed copy is finally filed.
+
+    Unlike the signature chase task this does not depend on ``due_at``: an
+    undated request can still fail to file, and the person told about it is
+    owed the resolution either way.
+    """
+    return await close_followup_task(
+        db,
+        tenant_id=req.tenant_id,
+        namespace=req.id,
+        kind=FILING_FAILED_KIND,
+        reason="Signed copy filed",
+        actor_user_id=req.created_by_user_id,
+    )
