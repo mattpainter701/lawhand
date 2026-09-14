@@ -60,9 +60,7 @@ _UNDERSCORES = re.compile(r"_{8,}")
 #: Words that mark signature blanks. Bare "by" only counts on its own ("By:"),
 #: never as the tail of another label: "Referred by" / "reviewed by" are
 #: firm-use fields, not client signature lines.
-_SIGNATURE_WORD = re.compile(
-    r"(?i)\b(signature|signed|sign here)\b\s*:?|^\s*by\b\s*:?"
-)
+_SIGNATURE_WORD = re.compile(r"(?i)\b(signature|signed|sign here)\b\s*:?|^\s*by\b\s*:?")
 #: A bare label reads as "…signature", "Signed by:", "Sign here" or "By:"; a
 #: sentence that merely mentions signing ("is signed by the parties") does not.
 _SIGNATURE_LABEL = re.compile(
