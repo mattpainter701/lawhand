@@ -116,15 +116,25 @@ class CalendarSyncService:
             ),
         }
 
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Prefer": 'outlook.timezone="UTC"',
+        }
+
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                cal_url,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Prefer": 'outlook.timezone="UTC"',
-                },
-                params=params,
-            )
+            resp = await client.get(cal_url, headers=headers, params=params)
+            if resp.status_code != 200 and "$expand" in params:
+                # The marker is what lets a task's synced copy be collapsed into
+                # the task, but it is worth strictly less than the calendar
+                # itself. If Graph will not serve the expansion, read without it
+                # and lose the de-duplication rather than the whole view.
+                logger.warning(
+                    "Microsoft calendar read with the task marker failed (HTTP %s); "
+                    "retrying without it",
+                    resp.status_code,
+                )
+                params = {k: v for k, v in params.items() if k != "$expand"}
+                resp = await client.get(cal_url, headers=headers, params=params)
             if resp.status_code != 200:
                 raise ValueError(
                     f"Microsoft calendar read failed (HTTP {resp.status_code}). Please try again or reconnect your calendar in Settings."

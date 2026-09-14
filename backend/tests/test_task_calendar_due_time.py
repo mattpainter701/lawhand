@@ -221,3 +221,91 @@ def test_graph_task_marker_treats_an_empty_value_as_absent():
         "singleValueExtendedProperties": [{"id": CLARITY_TASK_PROP_ID, "value": ""}]
     }
     assert calendar_sync._graph_task_id(event) is None
+
+
+# ── The marker must never cost us the calendar itself ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_calendar_read_falls_back_when_graph_rejects_the_expansion(monkeypatch):
+    """De-duplication is worth less than the calendar view.
+
+    ``$expand`` on an extended property is the only part of this read we cannot
+    exercise against a real tenant here, so a rejection must degrade to a plain
+    read rather than fail the whole calendar.
+    """
+    requests = []
+
+    class _Response:
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {"value": []}
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, headers=None, params=None):
+            requests.append(params)
+            if "$expand" in (params or {}):
+                return _Response(400)
+            return _Response(200, {"value": [{"id": "evt-1", "subject": "Client call"}]})
+
+    async def _token(*args, **kwargs):
+        return "token"
+
+    monkeypatch.setattr(calendar_sync.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(calendar_sync, "get_fresh_token", _token)
+    monkeypatch.setattr(calendar_sync, "get_fresh_user_token", _token)
+    monkeypatch.setattr(calendar_sync, "set_tenant_context", _token)
+
+    events = await calendar_sync.calendar_sync.ms_get_events(None, "tenant-1")
+
+    assert len(requests) == 2
+    assert "$expand" in requests[0]
+    assert "$expand" not in requests[1]
+    assert [e["subject"] for e in events] == ["Client call"]
+    # Without the marker there is nothing to collapse against, and that is fine.
+    assert events[0]["task_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_calendar_read_still_fails_loudly_when_graph_is_really_broken(monkeypatch):
+    class _Response:
+        status_code = 503
+
+        def json(self):
+            return {}
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, headers=None, params=None):
+            return _Response()
+
+    async def _token(*args, **kwargs):
+        return "token"
+
+    monkeypatch.setattr(calendar_sync.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(calendar_sync, "get_fresh_token", _token)
+    monkeypatch.setattr(calendar_sync, "get_fresh_user_token", _token)
+    monkeypatch.setattr(calendar_sync, "set_tenant_context", _token)
+
+    with pytest.raises(ValueError, match="Microsoft calendar read failed"):
+        await calendar_sync.calendar_sync.ms_get_events(None, "tenant-1")
