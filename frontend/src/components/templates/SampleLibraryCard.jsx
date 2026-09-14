@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Download, Eye, LibraryBig, Loader2 } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronRight, Download, Eye, LibraryBig, Loader2, Search } from 'lucide-react'
 import { getSampleTemplates, getSampleTemplateSource } from '../../api'
 import SampleFillDialog from './SampleFillDialog'
 
@@ -51,6 +51,8 @@ export default function SampleLibraryCard() {
   const [error, setError] = useState('')
   const [category, setCategory] = useState('all')
   const [jurisdiction, setJurisdiction] = useState('all')
+  const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState(() => new Set())
   const [previewing, setPreviewing] = useState(null)
   const [filling, setFilling] = useState(null)
   const objectUrls = useRef([])
@@ -83,10 +85,17 @@ export default function SampleLibraryCard() {
     [samples],
   )
 
-  const visible = useMemo(() => samples.filter((sample) => (
-    (category === 'all' || sample.category === category)
-    && (jurisdiction === 'all' || (sample.jurisdictions || []).includes(jurisdiction))
-  )), [samples, category, jurisdiction])
+  const normalizedQuery = query.trim().toLowerCase()
+  const searching = normalizedQuery.length > 0
+  const visible = useMemo(() => samples.filter((sample) => {
+    if (category !== 'all' && sample.category !== category) return false
+    if (jurisdiction !== 'all' && !(sample.jurisdictions || []).includes(jurisdiction)) return false
+    if (normalizedQuery) {
+      const haystack = `${sample.title || ''} ${jurisdictionLabel(sample)}`.toLowerCase()
+      if (!haystack.includes(normalizedQuery)) return false
+    }
+    return true
+  }), [samples, category, jurisdiction, normalizedQuery])
 
   const groups = useMemo(() => {
     const byCategory = new Map()
@@ -106,6 +115,21 @@ export default function SampleLibraryCard() {
         }),
       }))
   }, [visible])
+
+  const isGroupOpen = (key) => searching || expanded.has(key)
+
+  const toggleGroup = (key) => {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const setAllGroups = (open) => {
+    setExpanded(open ? new Set(groups.map((group) => group.key)) : new Set())
+  }
 
   const preview = async (sample) => {
     setPreviewing(sample.id)
@@ -134,7 +158,7 @@ export default function SampleLibraryCard() {
       </p>
 
       {samples.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs font-semibold text-brand-muted">
             Type
             <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-brand-line bg-brand-bg px-2 py-1 text-xs text-brand-ink">
@@ -149,6 +173,22 @@ export default function SampleLibraryCard() {
               {jurisdictions.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
+          <label htmlFor="sample-library-search" className="flex items-center gap-1.5 text-xs font-semibold text-brand-muted">
+            <Search size={13} aria-hidden="true" /> Search
+          </label>
+          <input
+            id="sample-library-search"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by form title"
+            className="min-w-[12rem] flex-1 rounded-lg border border-brand-line bg-brand-bg px-2 py-1 text-xs text-brand-ink"
+          />
+          <div className="ml-auto flex items-center gap-2 text-xs font-semibold text-brand-accent">
+            <button type="button" onClick={() => setAllGroups(true)} className="hover:underline">Expand all</button>
+            <span className="text-brand-muted" aria-hidden="true">·</span>
+            <button type="button" onClick={() => setAllGroups(false)} className="hover:underline">Collapse all</button>
+          </div>
         </div>
       )}
 
@@ -161,46 +201,62 @@ export default function SampleLibraryCard() {
           {error}
         </p>
       ) : visible.length ? (
-        <div className="mt-3 space-y-4">
-          {groups.map((group) => (
-            <section key={group.key} aria-label={`${group.label} forms`}>
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-brand-muted">{group.label}</h3>
-                <span className="text-[11px] font-semibold text-brand-muted" aria-label={`${group.items.length} forms`}>{group.items.length}</span>
-              </div>
-              <ul className="mt-1 divide-y divide-brand-line border-t border-brand-line">
-                {group.items.map((sample) => (
-                  <li key={sample.id} className="flex items-center justify-between gap-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-brand-ink">{sample.title}</p>
-                      <p className="truncate text-xs text-brand-muted">
-                        {jurisdictionLabel(sample)}
-                        {sample.field_count ? ` · ${sample.field_count} fields` : ''}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => preview(sample)}
-                        disabled={previewing === sample.id}
-                        className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50"
-                      >
-                        {previewing === sample.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
-                        Preview
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFilling(sample)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-brand-ink px-2.5 py-1.5 text-xs font-semibold text-white"
-                      >
-                        <Download size={13} aria-hidden="true" /> Fill
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+        <div className="mt-3 space-y-2">
+          {groups.map((group) => {
+            const open = isGroupOpen(group.key)
+            const panelId = `sample-group-${group.key}`
+            return (
+              <section key={group.key} aria-label={`${group.label} forms`} className="rounded-lg border border-brand-line">
+                <div className="flex items-center justify-between gap-2 px-2">
+                  <h3 className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.key)}
+                      aria-expanded={open}
+                      aria-controls={panelId}
+                      aria-label={group.label}
+                      className="flex min-h-[36px] w-full items-center gap-1.5 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-brand-muted hover:text-brand-ink"
+                    >
+                      {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+                      <span className="truncate">{group.label}</span>
+                    </button>
+                  </h3>
+                  <span className="text-[11px] font-semibold text-brand-muted" aria-label={`${group.items.length} forms`}>{group.items.length}</span>
+                </div>
+                <ul id={panelId} hidden={!open} className="divide-y divide-brand-line border-t border-brand-line">
+                  {group.items.map((sample) => (
+                    <li key={sample.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
+                        <p title={sample.title} className="truncate text-sm font-semibold text-brand-ink">{sample.title}</p>
+                        <p className="truncate text-xs text-brand-muted">
+                          {jurisdictionLabel(sample)}
+                          {sample.field_count ? ` · ${sample.field_count} fields` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => preview(sample)}
+                          disabled={previewing === sample.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50"
+                        >
+                          {previewing === sample.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
+                          Preview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilling(sample)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-brand-ink px-2.5 py-1.5 text-xs font-semibold text-white"
+                        >
+                          <Download size={13} aria-hidden="true" /> Fill
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )
+          })}
         </div>
       ) : (
         <p className="mt-3 rounded-lg border border-dashed border-brand-line px-3 py-4 text-xs leading-5 text-brand-muted">
