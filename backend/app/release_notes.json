@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.14.1",
+      "version": "2026.09.14.1",
+      "title": "Existing engagements, open dates, and bulk matter creation",
+      "published_at": "2026-09-14",
+      "summary": "Open a matter that is already engaged without sending paperwork, set the date it was really opened, and create many matters and clients at once from a CSV template.",
+      "highlights": [
+        {
+          "title": "Record an existing engagement",
+          "description": "Open a matter as already engaged: file the signed fee agreement, note it was signed with no copy on hand, or record that there is no agreement and why. Nothing is sent."
+        },
+        {
+          "title": "Add the signed copy later",
+          "description": "A matter recorded without its signed agreement offers Add signed copy on its paperwork card; the matters list badges and filters these engagements."
+        },
+        {
+          "title": "Open date",
+          "description": "New matters take the date the firm actually opened them. Lists and the matter page show it, and it can be corrected from the matter details."
+        },
+        {
+          "title": "Bulk create from CSV",
+          "description": "Download a template, fill one row per matter, review how each client and attorney resolves, and create the matters and any new clients together."
+        }
+      ]
+    },
+    {
       "id": "2026.09.13.15",
       "version": "2026.09.13.15",
       "title": "Cleaner signing fields and matter details",
@@ -200,7 +225,7 @@
         },
         {
           "title": "Manage your LawHand subscription with Helcim",
-          "description": "Review subscription pricing, securely add a card, update payment details and manage your LawHand plan. Your firm\u2019s manual invoices and QuickBooks integration remain separate."
+          "description": "Review subscription pricing, securely add a card, update payment details and manage your LawHand plan. Your firm’s manual invoices and QuickBooks integration remain separate."
         }
       ]
     },
@@ -209,7 +234,7 @@
       "version": "2026.09.13.3",
       "title": "Password reset emails that actually arrive",
       "published_at": "2026-09-13",
-      "summary": "LawHand now sends its own account emails \u2014 password resets and address verification \u2014 through a dedicated mail service, from an address reserved for security messages.",
+      "summary": "LawHand now sends its own account emails — password resets and address verification — through a dedicated mail service, from an address reserved for security messages.",
       "highlights": [
         {
           "title": "Reset your password without waiting on email that never comes",
@@ -280,11 +305,11 @@
       "version": "2026.09.12.7",
       "title": "Rename your firm and edit its profile in one place",
       "published_at": "2026-09-12",
-      "summary": "Administration has a Firm Profile tab. It renames the firm \u2014 including the name sign-up guessed from your email domain \u2014 and holds the contact details and branding that clients see on portal invitations, invoices and statements.",
+      "summary": "Administration has a Firm Profile tab. It renames the firm — including the name sign-up guessed from your email domain — and holds the contact details and branding that clients see on portal invitations, invoices and statements.",
       "highlights": [
         {
           "title": "Fix the firm name sign-up guessed from your domain",
-          "description": "Sign-up derived a firm name from your email domain and nothing could change it. Administration \u2192 Firm Profile now renames the firm everywhere clients see it."
+          "description": "Sign-up derived a firm name from your email domain and nothing could change it. Administration → Firm Profile now renames the firm everywhere clients see it."
         },
         {
           "title": "Firm details moved out of the Settings tab",
@@ -470,7 +495,7 @@
     {
       "id": "2026.09.11.15",
       "version": "2026.09.11.15",
-      "title": "Fee agreements fill themselves \u2014 drafts can't be approved half-empty",
+      "title": "Fee agreements fill themselves — drafts can't be approved half-empty",
       "published_at": "2026-09-11",
       "summary": "The retainer, its replenishment threshold, the contingency percentage, and the venue in your fee agreement now fill from the matter and its retainer record; a template whose required placeholders nothing can fill can't be approved.",
       "highlights": [
@@ -522,7 +547,7 @@
       "highlights": [
         {
           "title": "Review questionnaire updates instead of retyping them",
-          "description": "Answers that map to the client contact or the matter \u2014 address, phone, case number, court, jurisdiction \u2014 become changes staff accept or reject, nothing retyped."
+          "description": "Answers that map to the client contact or the matter — address, phone, case number, court, jurisdiction — become changes staff accept or reject, nothing retyped."
         },
         {
           "title": "Conflicts of interest checked automatically",
@@ -539,11 +564,11 @@
       "version": "2026.09.11.12",
       "title": "One practice resolver behind routing",
       "published_at": "2026-09-11",
-      "summary": "Plugin suggestions and workflow automations resolve matter labels through one shared alias-aware resolver, so \u201cDissolution of Marriage\u201d routes to family everywhere. Matters show the resolved practice so staff can correct mis-resolved ones.",
+      "summary": "Plugin suggestions and workflow automations resolve matter labels through one shared alias-aware resolver, so “Dissolution of Marriage” routes to family everywhere. Matters show the resolved practice so staff can correct mis-resolved ones.",
       "highlights": [
         {
           "title": "One resolver behind routing",
-          "description": "Plugin suggestions and workflow automations resolve matter labels through the same alias table the intake pack uses, so \u201cDissolution of Marriage\u201d is family everywhere."
+          "description": "Plugin suggestions and workflow automations resolve matter labels through the same alias table the intake pack uses, so “Dissolution of Marriage” is family everywhere."
         },
         {
           "title": "Plugin suggestions understand practice aliases",
@@ -669,7 +694,7 @@
       "highlights": [
         {
           "title": "Know the moment a client signs",
-          "description": "When the fee agreement is signed, an on-screen notification appears on the matter and the signature list refreshes itself \u2014 no reload needed."
+          "description": "When the fee agreement is signed, an on-screen notification appears on the matter and the signature list refreshes itself — no reload needed."
         },
         {
           "title": "The email composer does the typing",
@@ -816,7 +841,7 @@
       "version": "2026.09.10.2",
       "title": "A friendly heads-up while we polish things",
       "published_at": "2026-09-10",
-      "summary": "When a new version of LawHand is on its way, everyone signed in \u2014 clients included \u2014 now sees a short, kindly worded notice before anything changes.",
+      "summary": "When a new version of LawHand is on its way, everyone signed in — clients included — now sees a short, kindly worded notice before anything changes.",
       "highlights": [
         {
           "title": "A gentle warning before an update",
@@ -1750,7 +1775,7 @@
       "highlights": [
         {
           "title": "Tell a field where its value comes from",
-          "description": "Pick a data source for each field \u2014 case number, client address, plaintiff, attorney \u2014 and it fills from the matter every time, whatever you named it."
+          "description": "Pick a data source for each field — case number, client address, plaintiff, attorney — and it fills from the matter every time, whatever you named it."
         },
         {
           "title": "One template instead of near-identical copies",
@@ -1758,7 +1783,7 @@
         },
         {
           "title": "Repeating sections that follow the matter",
-          "description": "Wrap a block in {{#each parties}} and it renders once per party on the matter \u2014 a signature block each \u2014 with no editing afterwards."
+          "description": "Wrap a block in {{#each parties}} and it renders once per party on the matter — a signature block each — with no editing afterwards."
         },
         {
           "title": "Version history with restore",
@@ -1816,7 +1841,7 @@
         },
         {
           "title": "Know what a search did not cover",
-          "description": "Every incomplete response states in one sentence why, so \u201cno matches\u201d is only ever said about a search that actually covered its sources."
+          "description": "Every incomplete response states in one sentence why, so “no matches” is only ever said about a search that actually covered its sources."
         }
       ]
     },
@@ -1833,7 +1858,7 @@
         },
         {
           "title": "Label documents across matters",
-          "description": "Firm-wide tags apply to any case document and filter the list conjunctively, so \u201cSigned\u201d plus \u201cFiled\u201d narrows to documents carrying both."
+          "description": "Firm-wide tags apply to any case document and filter the list conjunctively, so “Signed” plus “Filed” narrows to documents carrying both."
         },
         {
           "title": "Find a document without scrolling",
@@ -2464,7 +2489,7 @@
           "description": "Independent scans and tenant background work can progress within bounded capacity instead of waiting behind one unrelated long-running job."
         },
         {
-          "title": "Save the reviewed PDF\u0393\u00c7\u00f6not a surprise",
+          "title": "Save the reviewed PDFΓÇönot a surprise",
           "description": "Final PDF saves recheck the exact reviewed output and clean up or quarantine staged files when storage and database results cannot be proven consistent."
         }
       ]
@@ -2713,7 +2738,7 @@
         },
         {
           "title": "Connected assistants are yours to review",
-          "description": "The guide explains the Workspace MCP list in your profile \u0393\u00c7\u00f6 what each connection holds, when it was last used, and how revoking one takes effect immediately."
+          "description": "The guide explains the Workspace MCP list in your profile ΓÇö what each connection holds, when it was last used, and how revoking one takes effect immediately."
         },
         {
           "title": "Administrators can see who may connect",
@@ -2724,13 +2749,13 @@
     {
       "id": "2026.08.25.1",
       "version": "2026.08.25.1",
-      "title": "Workspace MCP connections respect your firm\u0393\u00c7\u00d6s access settings",
+      "title": "Workspace MCP connections respect your firmΓÇÖs access settings",
       "published_at": "2026-08-25",
       "summary": "Claude, ChatGPT, Codex, and other compatible assistants can connect when your firm administrator enables Workspace MCP for your account and Privacy Mode is off.",
       "highlights": [
         {
           "title": "Firm access settings take effect directly",
-          "description": "Admin \u0393\u00e5\u00c6 Users now separates firm permission, effective availability, and active OAuth connections, with a drawer to review or revoke each client."
+          "description": "Admin ΓåÆ Users now separates firm permission, effective availability, and active OAuth connections, with a drawer to review or revoke each client."
         },
         {
           "title": "Your privacy choice remains independent",
