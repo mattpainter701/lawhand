@@ -9,7 +9,7 @@ from app.services import platform_sms
 from app.services.token_vault import decrypt_token
 from tests.platform_auth_helpers import platform_headers
 
-ACCOUNT_SID = "AC" + "a" * 30
+ACCOUNT_SID = "AC" + "a" * 32  # Twilio SIDs are a 2-letter prefix plus 32 hex
 AUTH_TOKEN = "super-secret-auth-token"
 FROM_NUMBER = "+15550001111"
 
@@ -103,7 +103,7 @@ async def test_provider_update_keeps_token_when_omitted(client: AsyncClient, db_
 
     resp = await client.put(
         "/api/platform/sms/provider",
-        json={"messaging_service_sid": "MG" + "b" * 30},
+        json={"messaging_service_sid": "MG" + "b" * 32},
         headers=platform_headers(),
     )
     assert resp.status_code == 200
@@ -120,7 +120,11 @@ async def test_provider_rejects_incomplete_sender(client: AsyncClient):
         headers=platform_headers(),
     )
     assert resp.status_code == 400
-    assert "Messaging Service" in resp.json()["detail"]
+    # detail is structured so the UI can show a message and an operator can
+    # act on the code; see test_platform_sms_errors.py for the full contract.
+    detail = resp.json()["detail"]
+    assert "Messaging Service" in detail["message"]
+    assert detail["code"] == "platform_sms_incomplete"
 
 
 @pytest.mark.asyncio
@@ -190,3 +194,124 @@ async def test_delete_provider_clears_configuration(client: AsyncClient, db_sess
 async def test_platform_sms_requires_operator_scope(client: AsyncClient):
     resp = await client.get("/api/platform/sms/provider")
     assert resp.status_code == 403
+
+
+# ── Issue #506: the reported configuration is refused with a usable message ──
+
+
+@pytest.mark.asyncio
+async def test_save_rejects_a_verify_sid_pasted_as_a_messaging_service_sid(
+    client: AsyncClient,
+):
+    resp = await client.put(
+        "/api/platform/sms/provider",
+        json={
+            "account_sid": ACCOUNT_SID,
+            "auth_token": AUTH_TOKEN,
+            "messaging_service_sid": "VA" + "c" * 32,
+            "from_number": FROM_NUMBER,
+        },
+        headers=platform_headers(),
+    )
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert detail["code"] == "platform_sms_invalid_messaging_service_sid"
+    assert "must start with MG" in detail["message"]
+    assert "Verify Service SID" in detail["message"]
+
+
+@pytest.mark.asyncio
+async def test_save_rejects_a_from_number_that_is_not_e164(client: AsyncClient):
+    resp = await client.put(
+        "/api/platform/sms/provider",
+        json={
+            "account_sid": ACCOUNT_SID,
+            "auth_token": AUTH_TOKEN,
+            "from_number": "555-1234",
+        },
+        headers=platform_headers(),
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "platform_sms_invalid_from_number"
+
+
+@pytest.mark.asyncio
+async def test_a_twilio_rejection_reaches_the_operator_as_a_400(
+    client: AsyncClient, monkeypatch
+):
+    """The reported 502 was ours, not Twilio's.
+
+    A 502 body is replaced by the edge proxy, so Twilio's message never
+    arrived. A caller-side rejection is now a 400 whose body survives.
+    """
+
+    class _RejectingResponse:
+        status_code = 400
+
+        def json(self):
+            return {"message": "The 'From' number is not a valid phone number", "code": 21606}
+
+    class _RejectingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _RejectingResponse()
+
+    await client.put(
+        "/api/platform/sms/provider",
+        json={
+            "account_sid": ACCOUNT_SID,
+            "auth_token": AUTH_TOKEN,
+            "from_number": FROM_NUMBER,
+        },
+        headers=platform_headers(),
+    )
+    monkeypatch.setattr(platform_sms.httpx, "AsyncClient", _RejectingClient)
+
+    resp = await client.post(
+        "/api/platform/sms/test",
+        json={"to": "+17015273866", "body": "lawhand test"},
+        headers=platform_headers(),
+    )
+
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert "not a valid phone number" in detail["message"]
+    assert detail["provider_code"] == 21606
+    assert detail["provider_status"] == 400
+
+
+@pytest.mark.asyncio
+async def test_a_sender_stored_before_validation_existed_is_still_reported(
+    client: AsyncClient, db_session
+):
+    """A bad SID saved earlier must not reach Twilio and come back as a 502."""
+    db_session.add(
+        PlatformSetting(
+            key=platform_sms.PLATFORM_SMS_KEY,
+            value={
+                "provider": "twilio",
+                "account_sid": ACCOUNT_SID,
+                "encrypted_auth_token": platform_sms.encrypt_token(AUTH_TOKEN),
+                "messaging_service_sid": "VA" + "c" * 32,
+                "is_active": True,
+            },
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/platform/sms/test",
+        json={"to": "+17015273866"},
+        headers=platform_headers(),
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "platform_sms_invalid_messaging_service_sid"
