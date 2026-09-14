@@ -70,12 +70,48 @@ describe('SampleLibraryCard', () => {
     expect(await screen.findByText('Last Will and Testament')).toBeInTheDocument()
     const headings = screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent)
     expect(headings).toEqual(['Contract', 'Lease', 'Power of Attorney', 'Will'])
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     const willSection = screen.getByRole('heading', { name: 'Will' }).closest('section')
     const willRows = within(willSection).getAllByRole('listitem')
     expect(willRows[0]).toHaveTextContent('Alaska Last Will and Testament')
     expect(willRows[1]).toHaveTextContent('North Dakota · 26 fields')
     expect(screen.getByText('Alabama · 42 fields')).toBeInTheDocument()
     expect(rowFor('Independent Contractor Agreement')).toHaveTextContent('General')
+  })
+
+  it('collapses each type by default and toggles it open', async () => {
+    render(<SampleLibraryCard />)
+    await screen.findByText('Durable Power of Attorney')
+    // Collapsed by default: rows are not in the accessibility tree yet.
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Will' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Will' }))
+    expect(screen.getByRole('button', { name: 'Will' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getAllByRole('button', { name: 'Preview' })).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }))
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument()
+  })
+
+  it('searches by title and opens only the matching groups', async () => {
+    render(<SampleLibraryCard />)
+    await screen.findByText('Durable Power of Attorney')
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'alaska' } })
+    expect(screen.getByText('Alaska Last Will and Testament')).toBeInTheDocument()
+    expect(screen.queryByText('Alabama Residential Lease Agreement')).not.toBeInTheDocument()
+    // The matching group is forced open while searching.
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: '' } })
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument()
+  })
+
+  it('exposes the full title as a tooltip on truncated rows', async () => {
+    render(<SampleLibraryCard />)
+    await screen.findByText('Durable Power of Attorney')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(screen.getByText('Alabama Residential Lease Agreement')).toHaveAttribute(
+      'title',
+      'Alabama Residential Lease Agreement',
+    )
   })
 
   it('filters the list by category and jurisdiction', async () => {
@@ -98,6 +134,7 @@ describe('SampleLibraryCard', () => {
     getSampleTemplateSource.mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
     render(<SampleLibraryCard />)
     await screen.findByText('Durable Power of Attorney')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     fireEvent.click(within(rowFor('Last Will and Testament')).getByRole('button', { name: 'Preview' }))
     await waitFor(() => expect(getSampleTemplateSource).toHaveBeenCalledWith('will-1'))
     await waitFor(() => expect(openSpy).toHaveBeenCalledWith('blob:preview', '_blank', 'noopener'))
@@ -109,6 +146,7 @@ describe('SampleLibraryCard', () => {
     getSampleTemplateSource.mockRejectedValue(new Error('offline'))
     render(<SampleLibraryCard />)
     await screen.findByText('Durable Power of Attorney')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     fireEvent.click(within(rowFor('Last Will and Testament')).getByRole('button', { name: 'Preview' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be opened')
   })
@@ -116,6 +154,7 @@ describe('SampleLibraryCard', () => {
   it('opens the fill dialog and closes it again', async () => {
     render(<SampleLibraryCard />)
     await screen.findByText('Durable Power of Attorney')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     fireEvent.click(within(rowFor('Last Will and Testament')).getByRole('button', { name: 'Fill' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Fill “Last Will and Testament”' })).toBeInTheDocument()
