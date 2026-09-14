@@ -118,19 +118,22 @@ function movedEventTimes(event, day, hour = null) {
   return { start, end: new Date(start.getTime() + eventDuration(event)) }
 }
 
-function mapProviderEvents(provider, rows) {
+export function mapProviderEvents(provider, rows) {
   return (rows || []).map((event) => {
     const date = providerEventDate(event)
     if (!date) return null
     return {
       id: `${provider}-${event.id}`,
       providerEventId: event.id,
+      // Present when this is the synced copy of a LawHand task. It both
+      // collapses the duplicate and gives the surviving entry somewhere to go.
+      task_id: event.task_id || null,
       title: event.subject || '(No title)',
       date,
       start: event.start,
       end: event.end,
       event_type: 'external_calendar',
-      url: null,
+      url: event.task_id ? `/tasks/${event.task_id}` : null,
       provider,
       location: event.location || '',
     }
@@ -220,9 +223,24 @@ export function providerEventDate(evt) {
   return Number.isNaN(parsed.getTime()) ? String(raw).slice(0, 10) : localIsoDate(parsed)
 }
 
-function mergeCalendarEvents(internalEvents, providerEvents) {
+// A task we pushed to Outlook or Google comes back on the provider read as an
+// event of its own, carrying the clarity_task_id marker we stamped on it. It is
+// the same deadline, so showing both leaves the reader to guess which entry is
+// authoritative. The LawHand task wins: it is the one that can be completed,
+// reassigned and reopened.
+export function mergeCalendarEvents(internalEvents, providerEvents) {
   const seen = new Set()
+  // UUID equality is case-insensitive, and an id makes a round trip through a
+  // provider before it comes back, so compare on a normalized form.
+  const taskKey = (value) => String(value).toLowerCase()
+  const internalTaskIds = new Set(
+    internalEvents.map((event) => event.task_id).filter(Boolean).map(taskKey),
+  )
   return [...internalEvents, ...providerEvents].filter((event) => {
+    if (event.event_type === 'external_calendar' && event.task_id
+        && internalTaskIds.has(taskKey(event.task_id))) {
+      return false
+    }
     const key = event.id || `${event.event_type}-${event.date}-${event.title}`
     if (seen.has(key)) return false
     seen.add(key)

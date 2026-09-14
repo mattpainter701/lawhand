@@ -94,6 +94,7 @@ async def run_calendar_sync(
                 start=e.get("start"),
                 end=e.get("end"),
                 location=e.get("location"),
+                task_id=e.get("task_id"),
             )
             for e in events
         ],
@@ -150,7 +151,7 @@ async def get_calendar_events(
                 event_type="task_due",
                 matter_id=task.matter_id,
                 task_id=task.id,
-                url="/tasks",
+                url=f"/tasks/{task.id}",
                 is_completed=is_done,
             )
         )

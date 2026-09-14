@@ -46,6 +46,9 @@ class ExternalCalendarEventResponse(BaseModel):
     start: str | None = None
     end: str | None = None
     location: str | None = None
+    # Set when this provider event is the synced copy of a LawHand task, so
+    # the calendar can collapse the two instead of rendering both.
+    task_id: str | None = None
 
 
 class CalendarSyncRequest(BaseModel):

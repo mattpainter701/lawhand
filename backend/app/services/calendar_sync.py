@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import set_tenant_context
+from app.services.microsoft_calendar import CLARITY_TASK_PROP_ID
 from app.services.token_vault import get_fresh_token, get_fresh_user_token
 
 settings = get_settings()
@@ -35,6 +36,19 @@ def _provider_local_datetime(value: datetime, timezone_name: str) -> str:
         .replace(tzinfo=None)
         .isoformat()
     )
+
+
+def _graph_task_id(event: dict) -> str | None:
+    """The LawHand task an Outlook event is a copy of, if it is one.
+
+    We stamp ``clarity_task_id`` on every event we push, which is what makes
+    the push an upsert. Reading it back is what lets the calendar collapse the
+    synced copy into the task itself instead of showing both.
+    """
+    for prop in event.get("singleValueExtendedProperties") or []:
+        if prop.get("id") == CLARITY_TASK_PROP_ID:
+            return prop.get("value") or None
+    return None
 
 
 def _graph_event_datetime(value: object | None, *, is_all_day: bool) -> str | None:
@@ -93,6 +107,13 @@ class CalendarSyncService:
             "$select": "id,subject,start,end,isAllDay,location,bodyPreview,organizer,attendees",
             "$top": 100,
             "$orderby": "start/dateTime",
+            # Surface the marker we stamp on events we pushed. Without it the
+            # UI cannot tell a task's synced copy from an unrelated meeting, so
+            # the task and its own calendar entry render side by side.
+            "$expand": (
+                "singleValueExtendedProperties("
+                f"$filter=id eq '{CLARITY_TASK_PROP_ID}')"
+            ),
         }
 
         async with httpx.AsyncClient() as client:
@@ -116,6 +137,7 @@ class CalendarSyncService:
                     {
                         "id": evt.get("id"),
                         "provider": "microsoft",
+                        "task_id": _graph_task_id(evt),
                         "subject": evt.get("subject", ""),
                         "start": _graph_event_datetime(
                             evt.get("start"), is_all_day=is_all_day
@@ -334,6 +356,9 @@ class CalendarSyncService:
                     {
                         "id": evt.get("id"),
                         "provider": "google",
+                        "task_id": (
+                            (evt.get("extendedProperties") or {}).get("private") or {}
+                        ).get("clarity_task_id"),
                         "subject": evt.get("summary", ""),
                         "start": evt.get("start", {}).get("dateTime")
                         or evt.get("start", {}).get("date"),
