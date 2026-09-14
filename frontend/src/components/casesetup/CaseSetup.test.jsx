@@ -5,7 +5,7 @@ import CaseSetupCard from './CaseSetupCard'
 import PaperworkDrawer from './PaperworkDrawer'
 import { dueDateToIso, orderedRequirements, paperworkOptions, requirementState } from './paperwork'
 import api, {
-  getAdminUsers, getIntakeStarterPack, getMatterDocuments, getMatterDocumentSigningSource, getMatterPaperwork, matterPaperworkAction, previewMatterPaperwork, uploadMatterDocument,
+  getAdminUsers, getIntakeStarterPack, getMatterDocuments, getMatterDocumentSigningSource, getMatterPaperwork, matterPaperworkAction, previewMatterPaperwork, recordMatterEngagement, uploadMatterDocument,
 } from '../../api'
 
 vi.mock('../../api', () => ({
@@ -13,7 +13,7 @@ vi.mock('../../api', () => ({
   getMatterPaperwork: vi.fn(), matterPaperworkAction: vi.fn(), previewMatterPaperwork: vi.fn(),
   getMatterDocuments: vi.fn(), getMatterDocumentSigningSource: vi.fn(),
   getAdminUsers: vi.fn(), getContacts: vi.fn(), getIntakeStarterPack: vi.fn(),
-  uploadMatterDocument: vi.fn(),
+  uploadMatterDocument: vi.fn(), recordMatterEngagement: vi.fn(),
 }))
 
 // The placement review renders the PDF with pdf.js; stand in for it with the
@@ -609,4 +609,82 @@ it('reports the absence of a packet as null', async () => {
   render(<CaseSetupCard matterId="matter" onPacketChange={onPacketChange} />)
   await screen.findByRole('button', { name: 'Send client paperwork' })
   expect(onPacketChange).toHaveBeenCalledWith(null)
+})
+
+it('records an existing engagement from the kickoff card without sending anything', async () => {
+  const user = userEvent.setup()
+  const onEngagementRecorded = vi.fn()
+  getMatterPaperwork.mockRejectedValue({ response: { status: 404 } })
+  getMatterDocuments.mockResolvedValue([{ id: 'scan', filename: 'Signed agreement scan.pdf', content_type: 'application/pdf' }])
+  recordMatterEngagement.mockResolvedValue({
+    matter_id: 'matter', stage: 'Active',
+    engagement: { status: 'signed_on_file', signed_on: '2024-06-01', document_id: 'scan', document_name: 'Signed agreement scan.pdf', note: null },
+  })
+  render(<CaseSetupCard matterId="matter" matter={{ status: 'open' }} onEngagementRecorded={onEngagementRecorded} />)
+
+  await user.click(await screen.findByRole('button', { name: 'Already engaged — record it' }))
+  // A scanned copy already on the matter can be chosen instead of uploaded again.
+  await user.selectOptions(await screen.findByLabelText('Signed copy already on the matter'), 'scan')
+  expect(screen.queryByLabelText('Signed fee agreement (PDF)')).not.toBeInTheDocument()
+  await user.type(screen.getByLabelText('Date signed (optional)'), '2024-06-01')
+  await user.click(screen.getByRole('button', { name: 'Record engagement' }))
+
+  await waitFor(() => expect(recordMatterEngagement).toHaveBeenCalledWith('matter', expect.any(FormData)))
+  const [, body] = recordMatterEngagement.mock.calls[0]
+  expect(JSON.parse(body.get('options'))).toMatchObject({ status: 'signed_on_file', document_id: 'scan', signed_on: '2024-06-01', confirm: true })
+  expect(body.get('agreement')).toBeNull()
+  expect(api.post).not.toHaveBeenCalled()
+  expect(onEngagementRecorded).toHaveBeenCalledWith(expect.objectContaining({ stage: 'Active' }))
+  expect(await screen.findByRole('heading', { name: 'Engaged' })).toBeInTheDocument()
+  expect(screen.getByTestId('engagement-summary')).toHaveTextContent('Fee agreement on file · signed Jun 1, 2024')
+  expect(screen.getByRole('link', { name: 'Signed agreement scan.pdf' })).toHaveAttribute('href', '/api/matters/matter/documents/scan/download')
+  // Other paperwork can still be sent; the record button is gone.
+  expect(screen.getByRole('button', { name: 'Send client paperwork' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Already engaged — record it' })).not.toBeInTheDocument()
+})
+
+it('shows a recorded engagement without a copy and offers to add the copy', async () => {
+  const user = userEvent.setup()
+  getMatterPaperwork.mockRejectedValue({ response: { status: 404 } })
+  getMatterDocuments.mockResolvedValue([])
+  render(<CaseSetupCard matterId="matter" matter={{ status: 'open', engagement: { status: 'no_agreement', note: 'Pro bono for a former partner' } }} />)
+
+  expect(await screen.findByRole('heading', { name: 'Engaged' })).toBeInTheDocument()
+  expect(screen.getByTestId('engagement-summary')).toHaveTextContent('No fee agreement')
+  expect(screen.getByTestId('engagement-summary')).toHaveTextContent('Pro bono for a former partner')
+  await user.click(screen.getByRole('button', { name: 'Add signed copy' }))
+  // Adding the copy pre-selects the on-file answer and needs the PDF.
+  expect(screen.getByRole('radio', { name: /Upload the signed fee agreement/ })).toBeChecked()
+  expect(screen.getByRole('button', { name: 'Record engagement' })).toBeDisabled()
+  expect(screen.getByText('Upload the signed fee agreement or choose it from the matter documents.')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('button', { name: 'Record engagement' })).not.toBeInTheDocument()
+})
+
+it('requires the reason before recording a matter with no fee agreement, and reports failure', async () => {
+  const user = userEvent.setup()
+  getMatterPaperwork.mockRejectedValue({ response: { status: 404 } })
+  getMatterDocuments.mockResolvedValue([])
+  recordMatterEngagement.mockRejectedValue({ response: { data: { detail: 'Reopen the matter before recording its engagement.' } } })
+  render(<CaseSetupCard matterId="matter" matter={{ status: 'open' }} />)
+
+  await user.click(await screen.findByRole('button', { name: 'Already engaged — record it' }))
+  await user.click(screen.getByRole('radio', { name: /No fee agreement/ }))
+  expect(screen.getByRole('button', { name: 'Record engagement' })).toBeDisabled()
+  await user.type(screen.getByLabelText('Why there is no fee agreement'), 'Legacy arrangement')
+  await user.click(screen.getByRole('button', { name: 'Record engagement' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Reopen the matter before recording its engagement.')
+  expect(JSON.parse(recordMatterEngagement.mock.calls[0][1].get('options'))).toMatchObject({ status: 'no_agreement', note: 'Legacy arrangement', signed_on: null })
+})
+
+it('does not offer to record an engagement on a closed matter', async () => {
+  getMatterPaperwork.mockRejectedValue({ response: { status: 404 } })
+  render(<CaseSetupCard matterId="matter" matter={{ status: 'closed', is_closed: true }} />)
+  await screen.findByRole('heading', { name: 'Matter closed' })
+  expect(screen.queryByRole('button', { name: 'Already engaged — record it' })).not.toBeInTheDocument()
+})
+
+it('tells the drawer the fee agreement is already handled when an engagement is on file', () => {
+  render(<PaperworkDrawer matterId="matter" documents={[]} engagementOnFile onClose={vi.fn()} onSent={vi.fn()} />)
+  expect(screen.getByText(/This matter already records its engagement/)).toBeInTheDocument()
 })

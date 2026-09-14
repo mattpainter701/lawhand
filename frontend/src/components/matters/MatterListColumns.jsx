@@ -85,7 +85,8 @@ export const MATTER_LIST_COLUMN_DEFS = [
     width: 124,
     minWidth: 108,
     firstDirection: 'desc',
-    sortValue: m => timestamp(m.created_at),
+    // The firm's open date; older payloads only carried the row timestamp.
+    sortValue: m => timestamp(m.opened_on || m.created_at),
   },
   {
     key: 'status',

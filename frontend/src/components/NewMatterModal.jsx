@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react'
 import MatterImportWizard from './MatterImportWizard'
-import { createMatterV2, getContacts, getAdminUsers, getPlugins, createContact } from '../api'
+import MatterCsvImport from './MatterCsvImport'
+import EngagementFields from './casesetup/EngagementFields'
+import { emptyEngagement, engagementFormData, engagementProblem } from './casesetup/engagement'
+import { createMatterV2, getContacts, getAdminUsers, getPlugins, createContact, recordMatterEngagement } from '../api'
+
+const today = () => new Date().toISOString().slice(0, 10)
+
+const MODES = [
+  { key: 'new', label: 'New matter' },
+  { key: 'import', label: 'Import existing matters' },
+  { key: 'csv', label: 'Bulk create from CSV' },
+]
 
 const PRACTICE_AREAS = [
   'Litigation', 'Corporate', 'Real Estate', 'Family Law', 'Criminal Defense',
@@ -31,26 +42,37 @@ function ChevronIcon({ size = 16 }) {
   )
 }
 
+const EMPTY_FORM = {
+  matter_name: '',
+  description: '',
+  practice_area: '',
+  matter_type: '',
+  client_contact_id: '',
+  attorney_of_record_id: '',
+  partner_attorney_id: '',
+  assigned_user_ids: [],
+  status: 'open',
+  opened_on: '',
+  case_number: '',
+  jurisdiction: '',
+  court: '',
+  judge: '',
+  role: '',
+  counterparty: '',
+  primary_plugin: '',
+}
+
 export default function NewMatterModal({ open, onClose, onCreated, onImportComplete }) {
-  const [importMode, setImportMode] = useState(false)
-  const [form, setForm] = useState({
-    matter_name: '',
-    description: '',
-    practice_area: '',
-    matter_type: '',
-    client_contact_id: '',
-    attorney_of_record_id: '',
-    partner_attorney_id: '',
-    assigned_user_ids: [],
-    status: 'open',
-    case_number: '',
-    jurisdiction: '',
-    court: '',
-    judge: '',
-    role: '',
-    counterparty: '',
-    primary_plugin: '',
-  })
+  const [mode, setMode] = useState('new')
+  const importMode = mode !== 'new'
+  const [form, setForm] = useState({ ...EMPTY_FORM, opened_on: today() })
+  // 'new' sends paperwork later; 'existing' records how the matter was
+  // already engaged right after it is created, without contacting the client.
+  const [engagementKind, setEngagementKind] = useState('new')
+  const [engagement, setEngagement] = useState(emptyEngagement)
+  // The matter created by a submit whose engagement step then failed. Kept so
+  // a retry records against it instead of opening a second matter.
+  const [pendingMatter, setPendingMatter] = useState(null)
   const [contacts, setContacts] = useState([])
   const [users, setUsers] = useState([])
   const [plugins, setPlugins] = useState([])
@@ -123,12 +145,39 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
     }))
   }
 
+  const engagementIssue = engagementKind === 'existing' ? engagementProblem(engagement) : ''
+
+  const finish = (created) => {
+    onCreated?.(created)
+    setForm({ ...EMPTY_FORM, opened_on: today() })
+    setEngagementKind('new')
+    setEngagement(emptyEngagement)
+    setPendingMatter(null)
+    onClose()
+  }
+
+  // Records the engagement against an already-created matter. Separate from
+  // creation so a failure here never opens the matter twice.
+  const recordEngagement = async (created) => {
+    try {
+      await recordMatterEngagement(created.id, engagementFormData(engagement))
+      finish(created)
+    } catch (err) {
+      setPendingMatter(created)
+      setError(err?.response?.data?.detail || 'The matter was opened, but recording its engagement failed.')
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.matter_name.trim()) return
+    if (!form.matter_name.trim() || engagementIssue) return
     setSaving(true)
     setError(null)
     try {
+      if (pendingMatter) {
+        await recordEngagement(pendingMatter)
+        return
+      }
       const payload = {
         matter_name: form.matter_name.trim(),
         description: form.description.trim() || undefined,
@@ -139,6 +188,7 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
         partner_attorney_id: form.partner_attorney_id || undefined,
         assigned_user_ids: [...new Set(form.assigned_user_ids)],
         status: form.status,
+        opened_on: form.opened_on || undefined,
         case_number: form.case_number.trim() || undefined,
         jurisdiction: form.jurisdiction.trim() || undefined,
         court: form.court.trim() || undefined,
@@ -148,15 +198,11 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
         primary_plugin: form.primary_plugin || undefined,
       }
       const created = await createMatterV2(payload)
-      onCreated?.(created)
-      setForm({
-        matter_name: '', description: '', practice_area: '', matter_type: '',
-        client_contact_id: '', attorney_of_record_id: '', partner_attorney_id: '',
-        assigned_user_ids: [], status: 'open', case_number: '', jurisdiction: '',
-        court: '', judge: '',
-        role: '', counterparty: '', primary_plugin: '',
-      })
-      onClose()
+      if (engagementKind === 'existing') {
+        await recordEngagement(created)
+        return
+      }
+      finish(created)
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to create matter.')
     } finally {
@@ -187,11 +233,21 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
           </button>
         </div>
 
-        <div className="flex gap-3 px-6 py-3 border-b border-brand-line">
-          <button type="button" aria-pressed={!importMode} onClick={() => setImportMode(false)}>New matter</button>
-          <button type="button" aria-pressed={importMode} onClick={() => setImportMode(true)}>Import existing matters</button>
+        <div className="flex flex-wrap gap-3 px-6 py-3 border-b border-brand-line">
+          {MODES.map(option => (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={mode === option.key}
+              onClick={() => setMode(option.key)}
+              className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold ${mode === option.key ? 'bg-brand-ink text-white' : 'text-brand-ink-2 hover:bg-brand-bg-soft'}`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
-        {importMode && <div className="overflow-y-auto"><MatterImportWizard onComplete={onImportComplete} /></div>}
+        {mode === 'import' && <div className="overflow-y-auto"><MatterImportWizard onComplete={onImportComplete} /></div>}
+        {mode === 'csv' && <div className="overflow-y-auto"><MatterCsvImport onComplete={onImportComplete} /></div>}
         {/* Form */}
         <form hidden={importMode} onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
           {/* Title */}
@@ -249,6 +305,46 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
                 <ChevronIcon size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-muted pointer-events-none" />
               </div>
             </div>
+          </div>
+
+          {/* Open date */}
+          <div>
+            <label htmlFor="newmattermodal-opened-on" className={labelCls}>Open date</label>
+            <input id="newmattermodal-opened-on"
+              type="date"
+              value={form.opened_on}
+              max={today()}
+              onChange={e => set('opened_on', e.target.value)}
+              className={inputCls}
+            />
+            <p className="text-[11px] text-brand-muted mt-1 font-sans">
+              A matter brought in from another firm keeps the date it was actually opened.
+            </p>
+          </div>
+
+          {/* Engagement */}
+          <div className="space-y-3">
+            <p className={labelCls}>Engagement</p>
+            <label className="flex items-start gap-2 text-[13px] text-brand-ink">
+              <input type="radio" name="newmattermodal-engagement" value="new" checked={engagementKind === 'new'} onChange={() => setEngagementKind('new')} className="mt-0.5" disabled={Boolean(pendingMatter)} />
+              <span>
+                <span className="font-semibold">New engagement</span>
+                <span className="block text-[12px] text-brand-muted">Send the fee agreement and paperwork from the matter once it is open.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-[13px] text-brand-ink">
+              <input type="radio" name="newmattermodal-engagement" value="existing" checked={engagementKind === 'existing'} onChange={() => setEngagementKind('existing')} className="mt-0.5" disabled={Boolean(pendingMatter)} />
+              <span>
+                <span className="font-semibold">Already engaged</span>
+                <span className="block text-[12px] text-brand-muted">The client is already engaged. Record how, and send nothing.</span>
+              </span>
+            </label>
+            {engagementKind === 'existing' && (
+              <div className="rounded-lg border border-brand-line p-4">
+                <EngagementFields value={engagement} onChange={setEngagement} idPrefix="newmattermodal-engagement" />
+                {engagementIssue && <p className="mt-2 text-[12px] text-brand-muted">{engagementIssue}</p>}
+              </div>
+            )}
           </div>
 
           {/* Plugin Workflow */}
@@ -461,8 +557,13 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
           </details>
 
           {error && (
-            <div className="bg-brand-rose/10 border border-brand-rose/20 rounded-lg px-4 py-3 text-brand-rose text-sm font-sans">
+            <div role="alert" className="bg-brand-rose/10 border border-brand-rose/20 rounded-lg px-4 py-3 text-brand-rose text-sm font-sans">
               {error}
+              {pendingMatter && (
+                <p className="mt-2 text-brand-ink-2">
+                  {pendingMatter.matter_number ? `Matter ${pendingMatter.matter_number}` : 'The matter'} is open. Retry recording the engagement, or open it and record the engagement from its paperwork card.
+                </p>
+              )}
             </div>
           )}
         </form>
@@ -476,12 +577,21 @@ export default function NewMatterModal({ open, onClose, onCreated, onImportCompl
           >
             Cancel
           </button>
+          {pendingMatter && (
+            <button
+              type="button"
+              onClick={() => finish(pendingMatter)}
+              className="px-5 py-2.5 text-brand-ink-2 text-sm font-sans font-medium hover:text-brand-ink transition-colors"
+            >
+              Open matter without recording
+            </button>
+          )}
           <button
             onClick={handleSubmit}
-            disabled={saving || !form.matter_name.trim()}
+            disabled={saving || !form.matter_name.trim() || Boolean(engagementIssue)}
             className="px-6 py-2.5 bg-brand-ink text-white text-sm font-sans font-semibold rounded-xl hover:bg-brand-ink-2 disabled:opacity-50 transition-all shadow-sm hover:-translate-y-[1px] active:translate-y-0"
           >
-            {saving ? 'Saving…' : 'Open Matter'}
+            {saving ? 'Saving…' : pendingMatter ? 'Retry recording engagement' : 'Open Matter'}
           </button>
         </div>
       </div>
