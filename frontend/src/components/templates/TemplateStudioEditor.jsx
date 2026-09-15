@@ -22,9 +22,16 @@ import {
   Undo2,
 } from 'lucide-react'
 
-import { getTemplateBindings, getTemplateCards } from '../../api'
 import DocxDocumentView from './DocxDocumentView'
 import TemplateBindingPicker from './TemplateBindingPicker'
+import useBindingCatalogue from './useBindingCatalogue'
+import {
+  FILL_STATES,
+  FILL_STATE_COLORS,
+  FILL_STATE_LABELS,
+  fillCoverage,
+  fillStateHelp,
+} from './fillCoverage'
 import DrawFieldLayer from './DrawFieldLayer'
 import WordDocumentPreview from './WordDocumentPreview'
 import { resolveWordPageSelection } from './wordPlaceholderMatches'
@@ -127,42 +134,6 @@ export const docxFieldName = (text) => {
 }
 
 
-/** Load the binding catalogue once and group it for the picker.
- *  The catalogue is static server-owned vocabulary, so a failure to load it
- *  degrades to name matching rather than blocking the editor.
- *
- *  Cards and the flat catalogue are loaded together and neither is required:
- *  cards drive the picker, while the flat catalogue still supplies tenant
- *  custom fields, the collections a repeating section may iterate, and the
- *  scenario lookup. Either request failing leaves the other usable. */
-function useBindingCatalogue() {
-  const [catalogue, setCatalogue] = useState({ groups: {}, collections: [], bindings: [], cards: [] })
-
-  useEffect(() => {
-    let cancelled = false
-    Promise.allSettled([getTemplateBindings(), getTemplateCards()])
-      .then(([flat, cards]) => {
-        if (cancelled) return
-        const loaded = flat.status === 'fulfilled' ? flat.value : null
-        const groups = {}
-        for (const entry of loaded?.bindings || []) {
-          if (!entry?.path) continue
-          ;(groups[entry.group || 'Other'] ||= []).push(entry)
-        }
-        setCatalogue({
-          groups,
-          collections: loaded?.collections || [],
-          bindings: loaded?.bindings || [],
-          cards: cards.status === 'fulfilled' ? (cards.value?.cards || []) : [],
-        })
-      })
-    return () => { cancelled = true }
-  }, [])
-
-  return catalogue
-}
-
-
 export default function TemplateStudioEditor({ template, source, sourceError, onSave, onDerived, onDirtyChange }) {
   const [fields, setFields] = useState(() => schemaFields(template))
   const [applicability, setApplicability] = useState(template.variable_schema?.applicability || null)
@@ -192,12 +163,17 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   const undoStack = useRef([])
   const redoStack = useRef([])
   const [historyVersion, setHistoryVersion] = useState(0)
+  const [highlightFills, setHighlightFills] = useState(false)
   const scrollerRef = useRef(null)
   const onPageRenderError = useCallback(error => setRenderError(`Page ${pageNumber} could not be rendered. (${error?.message || 'Preview unavailable'})`), [pageNumber])
   useEffect(() => { onDirtyChange?.(dirty || Boolean(wordingSelection)) }, [dirty, wordingSelection, onDirtyChange])
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
-  const { groups: bindingGroups, collections, bindings, cards } = useBindingCatalogue()
+  const { groups: bindingGroups, collections, bindings, cards, smartFillNames, catalogueLoaded } = useBindingCatalogue()
+  const coverage = fillCoverage(fields, { smartFillNames, bindings, cards })
+  // Until the catalogue lands every bound field would read as unresolvable, so
+  // the fill highlight is unavailable rather than briefly wrong.
+  const showFills = highlightFills && catalogueLoaded
 
   const scenarioBinding = fields.find(field => field.name === applicability?.field)?.binding
   const scenarioDefinition = Object.values(bindingGroups).flat().find(entry => entry.path === scenarioBinding)
@@ -532,7 +508,6 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
           </>
         ) : (
           <>
-            <span className="text-xs font-semibold text-brand-muted"><span>{fields.filter(field => field.included !== false).length} fields</span> · {fields.filter(field => field.included !== false && (field.review_required || field.ai_suggested || Number(field.confidence ?? 1) < 0.75)).length} need review</span>
             <ToolbarButton icon={Undo2} label="Undo" onClick={undo} disabled={!undoStack.current.length} />
             <ToolbarButton icon={Redo2} label="Redo" onClick={redo} disabled={!redoStack.current.length} />
           </>
@@ -560,6 +535,35 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
           </button>
         </div>
       </fieldset>
+      {/* Discovery coverage answered "what did we find?". This row answers the
+          question that decides whether the template is worth having: how much
+          of it arrives filled. It sits outside the PDF/Word branch above
+          because a PDF template previously carried no field count at all. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-brand-line bg-brand-bg px-3 py-1.5 text-[11px] text-brand-muted">
+        {/* Not a live region: the save status below already owns that role,
+            and two of them read out over each other. */}
+        <span className="font-semibold">
+          <span>{fields.filter(field => field.included !== false).length} fields</span> · {fields.filter(field => field.included !== false && (field.review_required || field.ai_suggested || Number(field.confidence ?? 1) < 0.75)).length} need review
+        </span>
+        {catalogueLoaded && coverage.total > 0 && (
+          <span className="font-semibold text-brand-ink">{coverage.fills} of {coverage.total} fill from the record</span>
+        )}
+        {pdfSource && (
+          <button
+            type="button"
+            aria-pressed={showFills}
+            disabled={!catalogueLoaded}
+            title={catalogueLoaded ? 'Colour each field by where its value comes from' : 'Loading the data-source catalogue…'}
+            onClick={() => setHighlightFills(value => !value)}
+            className={`rounded border border-brand-line px-2 py-0.5 disabled:opacity-40 ${showFills ? 'bg-brand-ink text-white' : 'bg-brand-surface-2'}`}
+          >
+            Highlight fill source
+          </button>
+        )}
+        {showFills && FILL_STATES.filter(state => coverage.counts[state] > 0).map(state => (
+          <span key={state}><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[state] }} />{FILL_STATE_LABELS[state]} {coverage.counts[state]}</span>
+        ))}
+      </div>
       {placingTool && <div className="flex flex-wrap items-center gap-3 border-b border-brand-line bg-brand-accent/10 px-3 py-2 text-sm"><span>Click on the document to place a {placingTool} field.</span><button type="button" onClick={() => addField(placingTool)} className="text-xs underline">Place at page center</button><button type="button" onClick={() => setPlacingTool(null)} className="text-xs underline">Cancel placement</button></div>}
 
       {(saveError || duplicateNames.size > 0 || invalidNames.length > 0) && (
@@ -704,6 +708,9 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
               )
               const active = entry.identity === selectedIdentity
               const locked = Boolean(entry.field.pdf_field_name)
+              const fillColor = showFills
+                ? FILL_STATE_COLORS[coverage.states.get(entry.field.name)] || '#64748b'
+                : ''
               return (
                 <Rnd
                   key={`${entry.identity}:${index}`}
@@ -722,9 +729,10 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                     height: ref.offsetHeight,
                   })}
                   onMouseDown={() => setSelectedIdentity(entry.identity)}
-                  className={`group rounded-sm border-2 ${active ? 'border-brand-accent bg-brand-accent/20' : 'border-brand-accent-2/70 bg-brand-accent-2/10'} ${locked ? 'cursor-not-allowed' : 'cursor-move'}`}
+                  className={`group rounded-sm border-2 ${fillColor ? 'bg-white/35' : active ? 'border-brand-accent bg-brand-accent/20' : 'border-brand-accent-2/70 bg-brand-accent-2/10'} ${active ? 'ring-2 ring-brand-accent ring-offset-1' : ''} ${locked ? 'cursor-not-allowed' : 'cursor-move'}`}
+                  style={fillColor ? { borderColor: fillColor } : undefined}
                 >
-                  <span className="pointer-events-none block max-w-full truncate rounded-sm bg-brand-ink px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  <span className={`pointer-events-none block max-w-full truncate rounded-sm px-1.5 py-0.5 text-[10px] font-semibold text-white ${fillColor ? '' : 'bg-brand-ink'}`} style={fillColor ? { backgroundColor: fillColor } : undefined}>
                     {entry.field.label || entry.field.name}
                   </span>
                 </Rnd>
@@ -810,13 +818,12 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                   onChange={(binding) => updateField(selectedEntry.identity, { binding })}
                 />
               </PropertyRow>
-              <p className="text-[11px] leading-4 text-brand-muted">
-                {selected.binding && selected.binding !== 'manual'
-                  ? (selected.binding.startsWith('firm.') ? 'Uses the shared firm profile in every matter.' : 'Uses the selected data source, whatever this field is named.')
-                  : selected.binding === 'manual'
-                    ? 'Never filled automatically.'
-                    : 'Filled only when the field name happens to match a known record.'}
-              </p>
+              {catalogueLoaded && coverage.states.has(selected.name) && (
+                <p className="flex items-start gap-1.5 text-[11px] leading-4 text-brand-muted">
+                  <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[coverage.states.get(selected.name)] }} />
+                  <span>{fillStateHelp(selected, coverage.states.get(selected.name))}</span>
+                </p>
+              )}
               <label className="flex items-center gap-2 text-sm text-brand-ink">
                 <input
                   type="checkbox"

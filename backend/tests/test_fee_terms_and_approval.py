@@ -73,6 +73,20 @@ class TestApprovalValidation:
                 [{"name": "our_rate", "binding": "matter.retired", "required": True}]
             )
 
+    def test_a_required_card_binding_is_allowed(self):
+        # The card rail is the control that produces most bindings, and it
+        # emits card paths — `client.full_name`, `defendant.2.full_name` —
+        # that the flat catalogue does not list. Approval used to resolve
+        # bindings through the flat catalogue alone, so binding a required
+        # field with the primary binding UI and then publishing was refused
+        # for "no data source" while the fill resolved it without trouble.
+        self._validate(
+            [{"name": "who", "binding": "client.full_name", "required": True}]
+        )
+        self._validate(
+            [{"name": "who", "binding": "defendant.2.full_name", "required": True}]
+        )
+
     def test_a_required_item_binding_is_allowed(self):
         self._validate(
             [{"name": "party_name", "binding": "item.party_name", "required": True}]

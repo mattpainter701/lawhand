@@ -65,6 +65,10 @@ vi.mock('../../api', () => ({
     ],
     collections: [],
     operators: ['present', 'absent'],
+    // Every field name Smart Fill can fill without a declared binding. Served
+    // rather than reimplemented on the client, so the editor and the fill
+    // cannot hold different ideas of which names resolve.
+    smart_fill_names: ['client_name', 'case_number'],
   }),
   getTemplateCards: () => Promise.resolve({
     cards: [
@@ -109,6 +113,40 @@ describe('TemplateStudioEditor', () => {
     expect(screen.getByText('1 reviewed')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ source_review: { synthetic: 'fixed' }, source_review_version: 1 })))
+  })
+
+  // Discovery coverage — fields found, fields needing review — was the only
+  // thing either editor reported. It never said how much of the template
+  // arrives filled, which is the number that decides whether it is worth
+  // having. A PDF template carried no field count at all.
+  it('reports how much of the template fills itself, for PDF as well as Word', async () => {
+    render(
+      <TemplateStudioEditor
+        template={templateWith([
+          { name: 'who', label: 'Who', binding: 'client.full_name' },
+          { name: 'client_name', label: 'Name' },
+          { name: 'injury', label: 'Injury' },
+        ])}
+        source={pdfSource()}
+        onSave={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByText('2 of 3 fill from the record')).toBeInTheDocument()
+    expect(screen.getByText('3 fields')).toBeInTheDocument()
+
+    // The rectangles carry no meaning until asked, so the legend is the proof
+    // the highlight switched rather than the colours themselves.
+    fireEvent.click(screen.getByRole('button', { name: 'Highlight fill source' }))
+    expect(screen.getByText('Fills from the record 1')).toBeInTheDocument()
+    expect(screen.getByText('Fills by field name 1')).toBeInTheDocument()
+    expect(screen.getByText('No source 1')).toBeInTheDocument()
+  })
+
+  it('warns that a field filling by name alone breaks on a rename', async () => {
+    render(<TemplateStudioEditor template={templateWith([{ name: 'client_name', label: 'Name' }])} source={pdfSource()} onSave={vi.fn()} />)
+
+    expect(await screen.findByText(/Rename it and the fill stops/)).toBeInTheDocument()
   })
 
   it('keeps repeating item bindings out of single-value links', () => {

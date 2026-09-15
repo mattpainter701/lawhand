@@ -74,6 +74,63 @@ class TestBindingCatalogue:
         }
         assert "present" in body["operators"]
 
+    async def test_the_catalogue_serves_the_smart_fill_vocabulary(self, client):
+        # The editors classify a field as "fills by field name" against this
+        # list. Serving it is what keeps the client from holding a second,
+        # drifting copy of a rule the fill path owns.
+        body = (await client.get("/api/templates/bindings")).json()
+
+        assert "client_name" in body["smart_fill_names"]
+        assert body["smart_fill_names"] == sorted(body["smart_fill_names"])
+        # Normalised keys, not display labels: this is matched against a field
+        # name reduced the same way.
+        assert all(name == name.lower() for name in body["smart_fill_names"])
+
+
+class TestFillCoverage:
+    """Every template read says how much of it fills itself.
+
+    The editors recompute the split live over an unsaved schema; this is the
+    saved truth, so a firm can tell a well-wired template from a badly-wired
+    one from the library list without opening each one.
+    """
+
+    async def test_a_template_read_reports_where_its_values_come_from(
+        self, client, db_session, test_tenant
+    ):
+        template = await _template(
+            db_session,
+            test_tenant.id,
+            variable_schema={
+                "fields": [
+                    {"name": "who", "binding": "client.full_name"},
+                    {"name": "client_name"},
+                    {"name": "ssn", "binding": "manual"},
+                    {"name": "injury_description"},
+                ]
+            },
+        )
+
+        coverage = (await client.get(f"/api/templates/{template.id}")).json()[
+            "fill_coverage"
+        ]
+
+        assert coverage["total"] == 4
+        assert coverage["fills"] == 2
+        assert coverage["bound"] == 1
+        assert coverage["name_matched"] == 1
+        assert coverage["manual"] == 1
+        assert coverage["unbound"] == 1
+
+    async def test_the_library_list_carries_it_too(
+        self, client, db_session, test_tenant
+    ):
+        await _template(db_session, test_tenant.id, is_active=True)
+
+        body = (await client.get("/api/templates")).json()
+
+        assert body["items"][0]["fill_coverage"]["total"] == 1
+
     async def test_the_catalogue_route_is_not_shadowed_by_the_template_route(
         self, client
     ):

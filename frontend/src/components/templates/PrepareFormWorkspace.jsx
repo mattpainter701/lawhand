@@ -25,6 +25,14 @@ import {
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 
 import { PdfPageCanvas, PdfThumbnail } from './PdfDocumentCanvas'
+import TemplateBindingPicker from './TemplateBindingPicker'
+import {
+  FILL_STATES,
+  FILL_STATE_COLORS,
+  FILL_STATE_LABELS,
+  fillCoverage,
+  fillStateHelp,
+} from './fillCoverage'
 import {
   MIN_FIELD_SIZE,
   VARIABLE_NAME_PATTERN,
@@ -62,7 +70,14 @@ export default function PrepareFormWorkspace({
   onReviewConfirmed,
   onSourceReviewReadyChange,
   previewUrl = '',
+  catalogue = {},
 }) {
+  const {
+    cards = [],
+    bindings = [],
+    smartFillNames = [],
+    catalogueLoaded = false,
+  } = catalogue
   const [selectedIdentity, setSelectedIdentity] = useState(() => fieldIdentity(fields[0], 0))
   const [pageNumber, setPageNumber] = useState(1)
   const [zoom, setZoom] = useState(0.9)
@@ -75,6 +90,10 @@ export default function PrepareFormWorkspace({
   const [drawing, setDrawing] = useState(false)
   const [previewValues, setPreviewValues] = useState({})
   const [historyVersion, setHistoryVersion] = useState(0)
+  // What the highlighted rectangles mean right now. Review status and fill
+  // source are two different questions an author asks in sequence, and putting
+  // both in one colour channel would make a matrix nobody can read.
+  const [highlight, setHighlight] = useState('review')
   const undoStack = useRef([])
   const redoStack = useRef([])
   const canvasScrollerRef = useRef(null)
@@ -300,6 +319,11 @@ export default function PrepareFormWorkspace({
     || placementsFor(field).some((placement) => placement.overlay?.source_kind === 'ocr')
   ))
   const activeFieldCount = fields.filter((field) => field.included !== false).length
+  const coverage = fillCoverage(fields, { smartFillNames, bindings, cards })
+  // Until the catalogue lands every bound field looks unresolvable, so the
+  // fill highlight stays unavailable rather than briefly libelling the form.
+  const showFills = highlight === 'fills' && catalogueLoaded
+  const selectedFillState = selected ? coverage.states.get(selected.name) : undefined
   const duplicateNames = new Set(fields.filter((field, index) => (
     fields.findIndex((candidate) => candidate.name === field.name) !== index
   )).map((field) => field.name))
@@ -375,10 +399,32 @@ export default function PrepareFormWorkspace({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-brand-line bg-brand-surface-2 px-3 py-1.5 text-[11px] text-brand-muted">
-          <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-blue-600" />Manual</span>
-          <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-600" />Needs review</span>
-          <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-green-600" />Verified / source field</span>
-          <span className="ml-auto">{activeFieldCount} included · {fields.length - activeFieldCount} excluded</span>
+          <div className="flex items-center rounded border border-brand-line bg-brand-bg p-0.5" aria-label="Field highlight">
+            <button type="button" aria-pressed={!showFills} onClick={() => setHighlight('review')} className={`rounded px-2 py-0.5 ${showFills ? '' : 'bg-brand-ink text-white'}`}>Review</button>
+            <button
+              type="button"
+              aria-pressed={showFills}
+              disabled={!catalogueLoaded}
+              title={catalogueLoaded ? 'Colour each field by where its value comes from' : 'Loading the data-source catalogue…'}
+              onClick={() => setHighlight('fills')}
+              className={`rounded px-2 py-0.5 disabled:opacity-40 ${showFills ? 'bg-brand-ink text-white' : ''}`}
+            >
+              Fill source
+            </button>
+          </div>
+          {showFills ? FILL_STATES.filter((state) => coverage.counts[state] > 0).map((state) => (
+            <span key={state}><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[state] }} />{FILL_STATE_LABELS[state]} {coverage.counts[state]}</span>
+          )) : (
+            <>
+              <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-blue-600" />Manual</span>
+              <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-600" />Needs review</span>
+              <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-green-600" />Verified / source field</span>
+            </>
+          )}
+          <span className="ml-auto" role="status">
+            {activeFieldCount} included · {fields.length - activeFieldCount} excluded
+            {catalogueLoaded && coverage.total > 0 && ` · ${coverage.fills} of ${coverage.total} fill from the record`}
+          </span>
         </div>
         {pdfError && (
           <div role="alert" className="m-3 mb-0 rounded border border-brand-amber/40 bg-brand-amber/10 p-2 text-xs text-brand-ink">
@@ -443,13 +489,16 @@ export default function PrepareFormWorkspace({
               const confidence = Number(entry.field.confidence)
               const kind = sourceKind(entry.field)
               const needsReview = !reviewConfirmed && (confidence < 0.75 || entry.field.review_required || kind === 'ocr')
+              const fillState = coverage.states.get(entry.field.name)
               const color = entry.field.included === false
                 ? '#64748b'
-                : kind === 'manual'
-                  ? '#2563eb'
-                  : needsReview
-                    ? '#d97706'
-                    : '#16a34a'
+                : showFills
+                  ? FILL_STATE_COLORS[fillState] || '#64748b'
+                  : kind === 'manual'
+                    ? '#2563eb'
+                    : needsReview
+                      ? '#d97706'
+                      : '#16a34a'
               const previewKey = entry.identity
               const previewValue = previewValues[previewKey] || ''
               return (
@@ -482,7 +531,9 @@ export default function PrepareFormWorkspace({
                   ) : (
                     <button
                       type="button"
-                      aria-label={`Select ${entry.field.label || entry.field.name}`}
+                      aria-label={showFills && fillState
+                        ? `Select ${entry.field.label || entry.field.name} — ${FILL_STATE_LABELS[fillState]}`
+                        : `Select ${entry.field.label || entry.field.name}`}
                       onClick={() => setSelectedIdentity(entry.identity)}
                       onKeyDown={(event) => {
                         if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -584,6 +635,29 @@ export default function PrepareFormWorkspace({
                 {selected.field_type === 'radio' && <option value="radio">Radio</option>}
               </select>
             </label>
+            {/* Where this field's value comes from, asked on the screen where
+                the field is first reviewed. Until this control was here, the
+                only place to answer it was a different editor, reached later,
+                against a field list the author had stopped looking at — so
+                every template a firm without premium AI uploaded arrived with
+                nothing bound. The intake state already carried `binding` and
+                the save path already validated it; only the control was
+                missing. */}
+            <div className="mt-2 text-xs text-brand-muted">
+              Fills from
+              <TemplateBindingPicker
+                value={selected.binding || ''}
+                cards={cards}
+                bindings={bindings}
+                onChange={(binding) => updateField(selectedEntry.identity, { binding })}
+              />
+              {catalogueLoaded && selectedFillState && (
+                <p className="mt-1 flex items-start gap-1.5 leading-4">
+                  <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[selectedFillState] }} />
+                  <span>{fillStateHelp(selected, selectedFillState)}</span>
+                </p>
+              )}
+            </div>
             {/* A source-required field keeps its requirement through save: the
                 server ORs the submitted value with the one the PDF asserts.
                 Checkboxes are the exception — the server honours review for

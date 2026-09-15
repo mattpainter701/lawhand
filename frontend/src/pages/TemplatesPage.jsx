@@ -12,6 +12,7 @@ import TemplateFillSource from '../components/templates/TemplateFillSource'
 import GeneratedPdfPreview from '../components/templates/GeneratedPdfPreview'
 import { applyFillSuggestions, discoverySuggestions, fillReview, fillValue, initialFillValues, isSigningField, suggestionConfidenceLabel } from '../components/templates/templateFillReview'
 import TemplateFieldLibrary from '../components/templates/TemplateFieldLibrary'
+import useBindingCatalogue from '../components/templates/useBindingCatalogue'
 import { buildOpenStudioTarget, canonicalStudioServerId, OPEN_STUDIO_EVENT, readStudioFocus } from '../components/templates/studioRouting'
 import {
   getTemplate,
@@ -432,6 +433,10 @@ function replaceSourceText(body, sourceText, token) {
 }
 
 function UploadTemplateForm({ onCreated, onCancel }) {
+  // The data-source catalogue the field inspectors bind against. Loaded here
+  // rather than inside each workspace so the PDF and the Word intake surfaces
+  // share one request and one answer.
+  const catalogue = useBindingCatalogue()
   const [file, setFile] = useState(null)
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('other')
@@ -976,7 +981,7 @@ function UploadTemplateForm({ onCreated, onCancel }) {
         </button>
       </div>
 
-      {isWordUpload && <WordImportWorkspace key={fileKey} file={file} analysis={analysisReady ? analysis : null} fields={fields} reviewConfirmed={reviewConfirmed} onFieldsChange={handleWorkspaceFieldsChange} onAddField={addWordSelection} />}
+      {isWordUpload && <WordImportWorkspace key={fileKey} file={file} analysis={analysisReady ? analysis : null} fields={fields} reviewConfirmed={reviewConfirmed} onFieldsChange={handleWorkspaceFieldsChange} onAddField={addWordSelection} catalogue={catalogue} />}
 
       {analysis && (
         <div className="space-y-4 pt-2">
@@ -1057,7 +1062,7 @@ function UploadTemplateForm({ onCreated, onCancel }) {
             </label>
           )}
           {isPdfAnalysis ? (
-            <PrepareFormWorkspace file={file} analysis={analysis} fields={fields} previewUrl={sourcePreviewUrl} reviewConfirmed={reviewConfirmed} onReviewConfirmed={setReviewConfirmed} onSourceReviewReadyChange={setSourceReviewReady} onFieldsChange={handleWorkspaceFieldsChange} />
+            <PrepareFormWorkspace file={file} analysis={analysis} fields={fields} previewUrl={sourcePreviewUrl} reviewConfirmed={reviewConfirmed} onReviewConfirmed={setReviewConfirmed} onSourceReviewReadyChange={setSourceReviewReady} onFieldsChange={handleWorkspaceFieldsChange} catalogue={catalogue} />
           ) : isWordUpload ? null : (
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
           <div className="border border-brand-line rounded bg-brand-bg p-4">

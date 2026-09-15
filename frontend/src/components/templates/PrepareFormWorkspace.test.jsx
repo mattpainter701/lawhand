@@ -125,6 +125,90 @@ describe('PrepareFormWorkspace', () => {
     expect(screen.getByRole('textbox', { name: 'Label' })).toHaveValue('Second field')
   })
 
+  // The upload flow is where a firm first sees its own form with every
+  // discovered field highlighted. Until these controls existed it was also the
+  // one screen that could not say where a field's value comes from, so every
+  // template a firm without premium AI uploaded arrived with nothing bound.
+  describe('fill source', () => {
+    const catalogue = {
+      cards: [{ key: 'client', label: 'Client', kind: 'person', group: 'Client', max_instances: 1, instance_count: null, fields: [{ key: 'full_name', label: 'Full name', path: 'client.full_name', value_kind: 'text' }] }],
+      bindings: [{ path: 'client.name', label: 'Client name', group: 'Client' }],
+      smartFillNames: ['client_name'],
+      catalogueLoaded: true,
+    }
+    const analysis = { suggested_variable_schema: { pages: [{ page: 1, width: 612, height: 792 }] } }
+    const fieldAt = (name, extra = {}) => ({
+      name,
+      label: name,
+      pdf_source_key: `overlay:${name}`,
+      confidence: 1,
+      pdf_overlays: [{ page: 1, rect: [72, 600, 220, 624], source_kind: 'acroform' }],
+      ...extra,
+    })
+
+    const renderWorkspace = (fields, props = {}) => {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:source')
+      return render(
+        <PrepareFormWorkspace
+          file={new File(['image'], 'form.png', { type: 'image/png' })}
+          analysis={analysis}
+          fields={fields}
+          onFieldsChange={vi.fn()}
+          catalogue={catalogue}
+          {...props}
+        />,
+      )
+    }
+
+    it('binds the selected field to a data source', () => {
+      const onFieldsChange = vi.fn()
+      renderWorkspace([fieldAt('signer')], { onFieldsChange })
+
+      fireEvent.click(screen.getByRole('button', { name: /Matched by field name/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Client' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Full name' }))
+
+      expect(onFieldsChange.mock.calls.at(-1)[0][0].binding).toBe('client.full_name')
+    })
+
+    it('counts how much of the form fills itself', () => {
+      // One bound, one filling by name alone, one nobody can fill.
+      renderWorkspace([
+        fieldAt('signer', { binding: 'client.full_name' }),
+        fieldAt('client_name'),
+        fieldAt('injury_description'),
+      ])
+
+      expect(screen.getByRole('status')).toHaveTextContent('2 of 3 fill from the record')
+    })
+
+    it('says a name match will break on a rename, because nothing else does', () => {
+      renderWorkspace([fieldAt('client_name')])
+
+      expect(screen.getByText(/Rename it and the fill stops/)).toBeInTheDocument()
+    })
+
+    it('recolours the page by fill source only when asked', () => {
+      renderWorkspace([fieldAt('client_name')])
+      // Review status and fill source are different questions; the review
+      // highlight is a compliance step and must not be overwritten by default.
+      expect(screen.getByRole('button', { name: 'Select client_name' })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Fill source' }))
+
+      expect(screen.getByRole('button', { name: 'Select client_name — Fills by field name' })).toBeInTheDocument()
+      expect(screen.getByText('Fills by field name 1')).toBeInTheDocument()
+    })
+
+    it('withholds the fill highlight until the catalogue has loaded', () => {
+      // Every bound field would read as broken against an empty catalogue.
+      renderWorkspace([fieldAt('client_name')], { catalogue: {} })
+
+      expect(screen.getByRole('button', { name: 'Fill source' })).toBeDisabled()
+      expect(screen.getByRole('status')).not.toHaveTextContent('fill from the record')
+    })
+  })
+
   it('requires opening the original when the PDF page preview fails', async () => {
     const onReviewConfirmed = vi.fn()
     const onSourceReviewReadyChange = vi.fn()

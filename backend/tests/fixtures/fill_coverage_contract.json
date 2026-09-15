@@ -1,0 +1,79 @@
+{
+  "_comment": [
+    "One template exercising every fill state, shared by the Python and",
+    "JavaScript implementations of the same classification:",
+    "  backend/tests/test_template_fill_coverage.py",
+    "  frontend/src/components/templates/fillCoverage.test.js",
+    "Both pin the same expected split. Two implementations of one rule can",
+    "only be trusted while a single input proves they still agree, so change",
+    "this file and both suites move together or one of them fails."
+  ],
+  "catalogue": {
+    "_comment": [
+      "The slice of the server catalogue the JavaScript side classifies",
+      "against. The Python side classifies against the real thing and asserts",
+      "each entry here still matches it, so this subset cannot quietly stop",
+      "describing the server it stands in for."
+    ],
+    "binding_paths": ["matter.case_number", "client.name", "client.email", "firm.name"],
+    "card_paths": ["client.full_name", "defendant.2.full_name", "defendant.*.full_name"],
+    "cards": [
+      { "key": "client", "label": "Client", "fields": [{ "key": "full_name", "label": "Full name" }] },
+      { "key": "defendant", "label": "Defendant", "fields": [{ "key": "full_name", "label": "Full name" }] }
+    ],
+    "absent_binding_paths": ["matter.retired_field"],
+    "smart_fill_names": ["case_number", "client_name", "client_email"],
+    "absent_smart_fill_names": [
+      "docket_no",
+      "client_ssn",
+      "signature_block",
+      "signed_on",
+      "filed_on",
+      "legacy_path",
+      "narrative",
+      "custom_answer",
+      "each_child_name",
+      "firm_letterhead"
+    ]
+  },
+  "expected": {
+    "total": 11,
+    "fills": 5,
+    "bound": 4,
+    "name_matched": 1,
+    "manual": 1,
+    "signature": 2,
+    "unresolved": 1,
+    "unbound": 2
+  },
+  "expected_states": {
+    "case_number": "name_matched",
+    "docket_no": "bound",
+    "client_ssn": "manual",
+    "signature_block": "signature",
+    "signed_on": "signature",
+    "filed_on": "unbound",
+    "legacy_path": "unresolved",
+    "narrative": "unbound",
+    "custom_answer": "bound",
+    "each_child_name": "bound",
+    "firm_letterhead": "bound"
+  },
+  "variable_schema": {
+    "fields": [
+      { "name": "case_number", "field_type": "text" },
+      { "name": "docket_no", "field_type": "text", "binding": "matter.case_number" },
+      { "name": "client_ssn", "field_type": "text", "binding": "manual" },
+      { "name": "signature_block", "field_type": "signature", "binding": "client.name" },
+      { "name": "signed_on", "field_type": "date", "signer_role": "client" },
+      { "name": "filed_on", "field_type": "date" },
+      { "name": "legacy_path", "field_type": "text", "binding": "matter.retired_field" },
+      { "name": "narrative", "field_type": "text", "multiline": true },
+      { "name": "hidden_field", "field_type": "text", "included": false, "binding": "client.email" },
+      { "name": "narrative_copy", "field_type": "text", "value_from": "narrative" },
+      { "name": "custom_answer", "field_type": "text", "binding": "custom.matter.11111111-2222-3333-4444-555555555555" },
+      { "name": "each_child_name", "field_type": "text", "binding": "item.party_name" },
+      { "name": "firm_letterhead", "field_type": "text", "binding": "firm.name" }
+    ]
+  }
+}

@@ -95,3 +95,35 @@ it('preserves choice-field types and respects source review confirmation', () =>
   expect(screen.getByLabelText('Imported field label')).toHaveValue('')
   expect(screen.getByText('Reviewed against source')).toBeVisible()
 })
+
+// The Word intake surface had the same gap the PDF one did: a firm could name
+// a field here but not say what fills it until they reopened the saved
+// template in a different editor.
+it('binds an imported field and reports how much of the document fills itself', () => {
+  const change = vi.fn()
+  const catalogue = {
+    cards: [{ key: 'client', label: 'Client', kind: 'person', group: 'Client', max_instances: 1, instance_count: null, fields: [{ key: 'full_name', label: 'Full name', path: 'client.full_name', value_kind: 'text' }] }],
+    bindings: [{ path: 'client.name', label: 'Client name', group: 'Client' }],
+    smartFillNames: ['client_name'],
+    catalogueLoaded: true,
+  }
+  const fields = [
+    { name: 'signer', label: 'Signer', source_text: 'Ada Lovelace' },
+    { name: 'client_name', label: 'Client name', source_text: 'Ada' },
+  ]
+  render(<WordImportWorkspace file={file} fields={fields} analysis={{}} onFieldsChange={change} catalogue={catalogue} />)
+
+  expect(screen.getByRole('status')).toHaveTextContent('1 of 2 fill from the record')
+
+  fireEvent.click(screen.getByRole('button', { name: /Matched by field name/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Client' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Full name' }))
+
+  expect(change.mock.calls.at(-1)[0][0].binding).toBe('client.full_name')
+})
+
+it('says nothing about fill coverage until the catalogue has loaded', () => {
+  render(<WordImportWorkspace file={file} fields={[{ name: 'signer', label: 'Signer' }]} analysis={{}} onFieldsChange={vi.fn()} />)
+
+  expect(screen.getByRole('status')).not.toHaveTextContent('fill from the record')
+})

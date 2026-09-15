@@ -5,6 +5,18 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.05 — Say what fills a form field, and see how much of it fills
+
+Released September 15, 2026.
+
+The upload flow can now say where each field's value comes from, and both editors report how many of a form's fields fill themselves from the matter instead of being retyped.
+
+- **Choose a data source while you review an uploaded form.** The Fills from control is now on the screen where a form's fields are first reviewed, for PDF and Word uploads alike, rather than only in Template Studio later.
+- **See how much of a form fills itself.** Every editor reports how many fields arrive filled from the matter, broken down into bound, filled by field name, typed by hand, signed and no source.
+- **Colour the page by where each value comes from.** A Fill source highlight recolours the fields on the document so a wired part of a form is distinguishable at a glance from a wall of retyping.
+- **A warning before a rename quietly breaks a fill.** A field filling only because its name matches a known record now says so, and says that renaming it stops the fill, which nothing previously told anyone.
+- **Publishing a card-bound template is no longer refused.** A required field bound with the card picker was refused at publish for having no data source, although it filled correctly. Approval now resolves it the same way the fill does.
+
 ## 2026.09.15.04 — Assistant settings stick, and document access says who can see what
 
 Released September 15, 2026.
