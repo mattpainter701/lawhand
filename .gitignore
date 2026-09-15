@@ -24,6 +24,13 @@ package-lock.json
 !office-addin/.env.example
 !.env.hypervisor     # tracked template — no real secrets, safe to commit
 
+# Provider OAuth credential downloads. Google Cloud Console names these
+# client_secret_<client-id>.apps.googleusercontent.com.json; they carry a live
+# client secret and must never reach the repo. Keep them in the password
+# manager / secret store and load the two values as GOOGLE_CLIENT_ID and
+# GOOGLE_CLIENT_SECRET instead.
+client_secret*.json
+
 # Claude Code session memory (local only)
 memory/
 # Exclude .claude contents rather than the directory itself: git will not descend

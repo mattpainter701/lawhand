@@ -2515,3 +2515,97 @@ def test_private_origin_tls_contract_is_loopback_pinned() -> None:
         encoding="utf-8"
     )
     assert "init-letsencrypt.sh" in runbook
+
+
+MICROSOFT_TEST_CLIENT_ID = "11111111-2222-3333-4444-555555555555"
+MICROSOFT_TEST_SECRET_VALUE = "Q8x8Q~ops0123456789abcdefghijklmnopqrstu"
+
+
+def test_production_preflight_accepts_microsoft_client_with_organizations(
+    tmp_path: Path,
+) -> None:
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            MICROSOFT_CLIENT_ID=MICROSOFT_TEST_CLIENT_ID,
+            MICROSOFT_CLIENT_SECRET=MICROSOFT_TEST_SECRET_VALUE,
+            MICROSOFT_TENANT_ID="organizations",
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 0, output
+    assert "Production preflight passed" in output
+    assert MICROSOFT_TEST_SECRET_VALUE not in output
+
+
+def test_production_preflight_rejects_entra_secret_id_as_client_secret(
+    tmp_path: Path,
+) -> None:
+    """A pasted Secret ID passes every shape check and then fails as AADSTS7000215."""
+
+    secret_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            MICROSOFT_CLIENT_ID=MICROSOFT_TEST_CLIENT_ID,
+            MICROSOFT_CLIENT_SECRET=secret_id,
+            MICROSOFT_TENANT_ID="organizations",
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "has the shape of an Entra Secret ID" in output
+    assert secret_id not in output
+
+
+def test_production_preflight_rejects_whitespace_in_oauth_client_secret(
+    tmp_path: Path,
+) -> None:
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            MICROSOFT_CLIENT_ID=MICROSOFT_TEST_CLIENT_ID,
+            MICROSOFT_CLIENT_SECRET=MICROSOFT_TEST_SECRET_VALUE + " ",
+            MICROSOFT_TENANT_ID="organizations",
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "MICROSOFT_CLIENT_SECRET must not contain whitespace" in output
+    assert MICROSOFT_TEST_SECRET_VALUE not in output
+
+
+def test_production_preflight_rejects_half_configured_oauth_client(
+    tmp_path: Path,
+) -> None:
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            MICROSOFT_CLIENT_ID=MICROSOFT_TEST_CLIENT_ID,
+            MICROSOFT_TENANT_ID="organizations",
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "MICROSOFT_CLIENT_SECRET must be set when MICROSOFT_CLIENT_ID is" in output
+
+
+def test_production_preflight_warns_on_common_microsoft_tenant(
+    tmp_path: Path,
+) -> None:
+    result = _run_preflight(
+        tmp_path,
+        _production_env(
+            MICROSOFT_CLIENT_ID=MICROSOFT_TEST_CLIENT_ID,
+            MICROSOFT_CLIENT_SECRET=MICROSOFT_TEST_SECRET_VALUE,
+            MICROSOFT_TENANT_ID="common",
+        ),
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 0, output
+    assert "MICROSOFT_TENANT_ID=common admits personal Microsoft accounts" in output
