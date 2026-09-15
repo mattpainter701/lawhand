@@ -2,10 +2,10 @@
   "recent_release_days": 30,
   "releases": [
     {
-      "id": "2026.09.14.1",
-      "version": "2026.09.14.1",
+      "id": "2026.09.15.02",
+      "version": "2026.09.15.02",
       "title": "Existing engagements, open dates, and bulk matter creation",
-      "published_at": "2026-09-14",
+      "published_at": "2026-09-15",
       "summary": "Open a matter that is already engaged without sending paperwork, set the date it was really opened, and create many matters and clients at once from a CSV template.",
       "highlights": [
         {
@@ -23,6 +23,52 @@
         {
           "title": "Bulk create from CSV",
           "description": "Download a template, fill one row per matter, review how each client and attorney resolves, and create the matters and any new clients together."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.15.01",
+      "version": "2026.09.15.01",
+      "title": "Clearer matter actions, real deadline times, stronger evidence",
+      "published_at": "2026-09-15",
+      "summary": "\"Active\" means one thing on My Matters, the View link opens the matter, task due times reach Outlook and Google at the hour you set, an unfilable signed copy raises a task, and certificates record the signer's address.",
+      "highlights": [
+        {
+          "title": "\"Active\" has one meaning",
+          "description": "The My Matters row control is now \"Work on this\" / \"Working on this\". It marks you as working the matter and never changes the matter's status."
+        },
+        {
+          "title": "The View link opens the matter",
+          "description": "The View arrow on a matter row is a real link and reachable by keyboard. It previously looked clickable and did nothing."
+        },
+        {
+          "title": "Deadlines keep their time on your calendar",
+          "description": "A task with a due time reaches Outlook and Google as a timed event instead of an all-day entry, and the synced copy no longer appears beside the task."
+        },
+        {
+          "title": "An unfilable signed copy raises a task",
+          "description": "When filing a signed document keeps failing, an assigned follow-up task is raised on the matter. Filing keeps retrying and the task closes when it succeeds."
+        },
+        {
+          "title": "Certificates record the signer's address",
+          "description": "A signing evidence certificate records the signer's own address rather than an internal one of ours, and says so plainly when none can be attributed."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.14.01",
+      "version": "2026.09.14.01",
+      "title": "Drag a task on the calendar",
+      "published_at": "2026-09-14",
+      "summary": "Drag an open task deadline to a new day or hour and choose what the drop means: move the due date, or block working time for it.",
+      "highlights": [
+        {
+          "title": "Move a due date by dragging it",
+          "description": "Drop a task deadline on another day, or on an hour in Day and Week view to set its time. Its reminder is re-armed for the new date and its Outlook or Google copy follows."
+        },
+        {
+          "title": "Block time to work on something",
+          "description": "Choose Block time instead and the calendar gets a work block linked to the task, while the due date and its reminders stay exactly where they were."
         }
       ]
     },

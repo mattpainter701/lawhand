@@ -67,6 +67,36 @@ const STATUS_COLORS = {
   dismissed: 'bg-gray-100 text-gray-500 border-gray-200',
 }
 
+// The personal "working on this" flag is not the matter's lifecycle status and
+// must not look like it. Green is the lifecycle palette (STATUS_COLORS.active
+// above), so the flag uses the accent palette and a person icon: whatever the
+// reader sees in green on this screen is the matter's status, nothing else.
+export const WORKING_ON_LABEL = 'Working on this'
+export const NOT_WORKING_LABEL = 'Work on this'
+const WORKING_HINT =
+  'Marks you as currently working this matter, so the rest of the firm can see it. It does not change the matter status.'
+
+export function WorkingToggle({ m, onToggleActive, isToggling, className = '' }) {
+  const working = Boolean(m.is_active_working)
+  return (
+    <button
+      type="button"
+      aria-pressed={working}
+      title={WORKING_HINT}
+      onClick={() => onToggleActive(m.my_assignment_id, m.id, !working)}
+      disabled={isToggling}
+      className={`flex min-h-[44px] min-w-[44px] items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-all ${
+        working
+          ? 'border-brand-accent/40 bg-brand-accent/10 text-brand-accent hover:bg-brand-accent/20'
+          : 'border-brand-line bg-brand-bg-soft text-brand-muted hover:border-brand-line-2 hover:text-brand-ink'
+      } ${isToggling ? 'cursor-wait opacity-50' : ''} ${className}`}
+    >
+      <Icon d={Icons.user} size={12} />
+      {working ? WORKING_ON_LABEL : NOT_WORKING_LABEL}
+    </button>
+  )
+}
+
 function StatusBadge({ status }) {
   const cls = STATUS_COLORS[status?.toLowerCase()] || 'bg-gray-100 text-gray-500 border-gray-200'
   return (
@@ -258,19 +288,12 @@ export function MatterCard({ m, onToggleActive, togglingId, showAlert, dragHandl
 
       {m.my_assignment_id && (
         <div className="mt-3 pt-3 border-t border-brand-line">
-          <button
-            type="button"
-            onClick={() => onToggleActive(m.my_assignment_id, m.id, !m.is_active_working)}
-            disabled={isToggling}
-            className={`w-full min-h-[44px] min-w-[44px] flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-all ${
-              m.is_active_working
-                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                : 'bg-brand-bg-soft text-brand-muted border-brand-line hover:text-brand-ink hover:border-brand-line-2'
-            } ${isToggling ? 'opacity-50 cursor-wait' : ''}`}
-          >
-            <Icon d={Icons.activity} size={12} />
-            {m.is_active_working ? 'Active' : 'Set Active'}
-          </button>
+          <WorkingToggle
+            m={m}
+            onToggleActive={onToggleActive}
+            isToggling={isToggling}
+            className="w-full justify-center"
+          />
         </div>
       )}
     </div>
@@ -376,22 +399,19 @@ export function MyMatterRow({
       >
         <div className="flex items-center justify-end gap-2">
           {m.my_assignment_id && (
-            <button
-              type="button"
-              onClick={() => onToggleActive(m.my_assignment_id, m.id, !m.is_active_working)}
-              disabled={isToggling}
-              className={`flex min-h-[44px] min-w-[44px] items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-all ${
-                m.is_active_working
-                  ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
-                  : 'border-brand-line bg-brand-bg-soft text-brand-muted hover:border-brand-line-2 hover:text-brand-ink'
-              } ${isToggling ? 'cursor-wait opacity-50' : ''}`}
-            >
-              {m.is_active_working
-                ? <><Icon d={Icons.activity} size={12} className="text-green-600" /> Active</>
-                : <><Icon d={Icons.activity} size={12} /> Set Active</>}
-            </button>
+            <WorkingToggle m={m} onToggleActive={onToggleActive} isToggling={isToggling} />
           )}
-          <span className="font-sans text-sm font-semibold text-brand-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">View →</span>
+          {/* The hover affordance promises navigation, so it has to be a real
+              link. It stays revealed on keyboard focus as well as hover —
+              otherwise it is invisible to exactly the readers who cannot use
+              the matter-name link's hover target. */}
+          <Link
+            to={`/matters/${m.id}`}
+            aria-label={m.matter_name ? `View ${m.matter_name}` : 'View matter'}
+            className="flex min-h-[44px] min-w-[44px] items-center justify-end rounded-sm font-sans text-sm font-semibold text-brand-accent opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent group-hover:opacity-100 group-focus-within:opacity-100"
+          >
+            View →
+          </Link>
         </div>
       </td>
     </tr>

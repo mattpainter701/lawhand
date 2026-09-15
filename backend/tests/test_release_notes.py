@@ -6,8 +6,8 @@ from app.release_notes import RECENT_RELEASE_DAYS, build_release_catalog
 from app.main import app_version
 
 
-LATEST_RELEASE_ID = "2026.09.14.1"
-LATEST_RELEASE_DATE = date(2026, 9, 14)
+LATEST_RELEASE_ID = "2026.09.15.02"
+LATEST_RELEASE_DATE = date(2026, 9, 15)
 
 
 def test_release_catalog_returns_latest_release_and_history():

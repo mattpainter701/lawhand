@@ -53,7 +53,20 @@ def _mask_phone(value: str) -> str:
 
 
 def _raise_sms_error(exc: PlatformSmsError) -> None:
-    raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    """Surface a structured, actionable error rather than a bare status.
+
+    The UI reads ``detail.message``; ``code`` identifies the failure for us and
+    ``provider_code`` is Twilio's own error number, which is what an operator
+    looks up when the prose is not enough.
+    """
+    detail: dict[str, object] = {"message": str(exc)}
+    if exc.code:
+        detail["code"] = exc.code
+    if exc.provider_status is not None:
+        detail["provider_status"] = exc.provider_status
+    if exc.provider_code is not None:
+        detail["provider_code"] = exc.provider_code
+    raise HTTPException(status_code=exc.status_code, detail=detail)
 
 
 @router.get("/provider")

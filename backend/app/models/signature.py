@@ -122,6 +122,20 @@ class SignatureRequest(Base):
     completion_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Retry exhaustion. A signed document that never reaches storage is silent
+    # data loss, so the consecutive failure count and the window it spans decide
+    # when retrying stops being enough and a human has to be told;
+    # completion_escalated_at keeps that to one task per request, not one per
+    # retry. All three reset the moment a filing finally succeeds.
+    completion_failure_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    completion_first_failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completion_escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     declined_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

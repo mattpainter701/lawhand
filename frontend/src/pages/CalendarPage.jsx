@@ -12,6 +12,8 @@ import {
   updateScheduledEvent,
   deleteScheduledEvent,
   getMattersV2,
+  updateTask,
+  browserTimezone,
 } from '../api'
 import {
   ChevronLeft,
@@ -28,6 +30,8 @@ import {
   Clock3,
   GripVertical,
   Trash2,
+  CalendarClock,
+  Timer,
 } from 'lucide-react'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -112,25 +116,67 @@ function eventDuration(event) {
   return Number.isFinite(duration) && duration > 0 ? duration : 30 * 60 * 1000
 }
 
+// A task deadline can be dragged while it is still open; a firm-created event
+// or work block always can. Everything else (synced, key dates, renewals) is
+// owned elsewhere and stays where its source system put it.
+export function eventIsMovable(event) {
+  if (event.event_type === 'scheduled_event') return true
+  return event.event_type === 'task_due' && Boolean(event.task_id) && !event.is_completed
+}
+
+function dragProps(event) {
+  if (!eventIsMovable(event)) return {}
+  return {
+    draggable: true,
+    onDragStart: (drag) => drag.dataTransfer.setData('text/calendar-event-id', event.id),
+  }
+}
+
+function hourTimeInput(hour) {
+  return `${String(hour).padStart(2, '0')}:00`
+}
+
+export function addMinutesToTimeInput(timeValue, minutes) {
+  const [hour, minute] = timeValue.split(':').map(Number)
+  const total = Math.min(hour * 60 + minute + minutes, 23 * 60 + 59)
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+export function formatTimeInput(timeValue) {
+  if (!timeValue) return null
+  const [hour, minute] = timeValue.split(':').map(Number)
+  return new Date(2000, 0, 1, hour, minute).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function apiError(error, fallback) {
+  const detail = error?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail?.message) return detail.message
+  return fallback
+}
+
 function movedEventTimes(event, day, hour = null) {
   const original = new Date(event.start)
   const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour ?? original.getHours(), hour == null ? original.getMinutes() : 0)
   return { start, end: new Date(start.getTime() + eventDuration(event)) }
 }
 
-function mapProviderEvents(provider, rows) {
+export function mapProviderEvents(provider, rows) {
   return (rows || []).map((event) => {
     const date = providerEventDate(event)
     if (!date) return null
     return {
       id: `${provider}-${event.id}`,
       providerEventId: event.id,
+      // Present when this is the synced copy of a LawHand task. It both
+      // collapses the duplicate and gives the surviving entry somewhere to go.
+      task_id: event.task_id || null,
       title: event.subject || '(No title)',
       date,
       start: event.start,
       end: event.end,
       event_type: 'external_calendar',
-      url: null,
+      url: event.task_id ? `/tasks/${event.task_id}` : null,
       provider,
       location: event.location || '',
     }
@@ -204,6 +250,17 @@ const TYPE_LABELS = {
   scheduled_event: 'Event',
 }
 
+// A scheduled event that carries a task is working time blocked out for that
+// task, not a meeting — say so, so the chip is not mistaken for the deadline.
+function isWorkBlock(event) {
+  return event.event_type === 'scheduled_event' && Boolean(event.task_id)
+}
+
+function eventTypeLabel(event) {
+  if (isWorkBlock(event)) return 'Work Block'
+  return TYPE_LABELS[event.event_type] || event.event_type
+}
+
 function providerLabel(provider) {
   return provider === 'google' ? 'Google Calendar' : 'Microsoft Calendar'
 }
@@ -220,9 +277,24 @@ export function providerEventDate(evt) {
   return Number.isNaN(parsed.getTime()) ? String(raw).slice(0, 10) : localIsoDate(parsed)
 }
 
-function mergeCalendarEvents(internalEvents, providerEvents) {
+// A task we pushed to Outlook or Google comes back on the provider read as an
+// event of its own, carrying the clarity_task_id marker we stamped on it. It is
+// the same deadline, so showing both leaves the reader to guess which entry is
+// authoritative. The LawHand task wins: it is the one that can be completed,
+// reassigned and reopened.
+export function mergeCalendarEvents(internalEvents, providerEvents) {
   const seen = new Set()
+  // UUID equality is case-insensitive, and an id makes a round trip through a
+  // provider before it comes back, so compare on a normalized form.
+  const taskKey = (value) => String(value).toLowerCase()
+  const internalTaskIds = new Set(
+    internalEvents.map((event) => event.task_id).filter(Boolean).map(taskKey),
+  )
   return [...internalEvents, ...providerEvents].filter((event) => {
+    if (event.event_type === 'external_calendar' && event.task_id
+        && internalTaskIds.has(taskKey(event.task_id))) {
+      return false
+    }
     const key = event.id || `${event.event_type}-${event.date}-${event.title}`
     if (seen.has(key)) return false
     seen.add(key)
@@ -232,7 +304,7 @@ function mergeCalendarEvents(internalEvents, providerEvents) {
 
 function EventChip({ event, onClick, onDragStart }) {
   const styles = TYPE_STYLES[event.event_type] || TYPE_STYLES.task_due
-  const Icon = styles.icon
+  const Icon = isWorkBlock(event) ? Timer : styles.icon
   const timeLabel = formatEventTime(event.start)
   const meetingLabel = event.meeting_provider === 'teams'
     ? 'Teams'
@@ -254,7 +326,7 @@ function EventChip({ event, onClick, onDragStart }) {
             {event.title}
           </span>
           <span className={`shrink-0 text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded ${styles.label}`}>
-            {TYPE_LABELS[event.event_type] || event.event_type}
+            {eventTypeLabel(event)}
           </span>
         </div>
         {event.matter_name && event.event_type !== 'matter_key_date' && (
@@ -291,8 +363,8 @@ function MonthView({ pivotDate, grouped, onEventClick, onSelectDay, onMoveEvent 
             <div className="space-y-1">
               {dayEvents.slice(0, 3).map((event) => {
                 const styles = TYPE_STYLES[event.event_type] || TYPE_STYLES.task_due
-                const movable = event.event_type === 'scheduled_event'
-                return <button key={event.id} draggable={movable} onDragStart={movable ? (drag) => drag.dataTransfer.setData('text/calendar-event-id', event.id) : undefined} onClick={() => onEventClick(event)} className={`w-full truncate rounded-md border-l-[3px] px-1.5 py-1 text-left text-[11px] font-medium text-brand-ink shadow-sm ${styles.bg} ${movable ? 'cursor-grab active:cursor-grabbing' : ''}`}>{formatEventTime(event.start) && <span className="mr-1 font-normal text-brand-muted">{formatEventTime(event.start)}</span>}{event.title}</button>
+                const movable = eventIsMovable(event)
+                return <button key={event.id} {...dragProps(event)} title={movable ? `Drag to reschedule or block time for “${event.title}”` : event.title} onClick={() => onEventClick(event)} className={`w-full truncate rounded-md border-l-[3px] px-1.5 py-1 text-left text-[11px] font-medium text-brand-ink shadow-sm ${styles.bg} ${movable ? 'cursor-grab active:cursor-grabbing' : ''}`}>{formatEventTime(event.start) && <span className="mr-1 font-normal text-brand-muted">{formatEventTime(event.start)}</span>}{event.title}</button>
               })}
               {dayEvents.length > 3 && <button onClick={() => onSelectDay(day)} className="px-1 text-[10px] font-semibold text-brand-accent hover:underline">+{dayEvents.length - 3} more</button>}
             </div>
@@ -334,11 +406,11 @@ function TimeGridView({ view, pivotDate, grouped, onEventClick, onMoveEvent }) {
           return <div key={toIso(day)} className={`relative border-r border-brand-line ${sameDay(day, new Date()) ? 'bg-brand-accent/[0.035]' : ''}`}>
             {sameDay(day, new Date()) && <CurrentTimeLine />}
             {hours.map((hour) => <div key={hour} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onMoveEvent(event, day, hour)} className="h-16 border-b border-brand-line/80 transition-colors hover:bg-brand-accent/5" />)}
-            {allDay.length > 0 && <div className="absolute top-1 inset-x-1 z-10 space-y-1">{allDay.slice(0, 2).map((event) => <EventChip key={event.id} event={event} onClick={() => onEventClick(event)} />)}</div>}
+            {allDay.length > 0 && <div className="absolute top-1 inset-x-1 z-10 space-y-1">{allDay.slice(0, 2).map((event) => <EventChip key={event.id} event={event} onClick={() => onEventClick(event)} onDragStart={dragProps(event).onDragStart} />)}</div>}
             {dayEvents.filter((event) => eventHour(event) != null).map((event) => {
               const styles = TYPE_STYLES[event.event_type] || TYPE_STYLES.task_due
-              const movable = event.event_type === 'scheduled_event'
-              return <button key={event.id} draggable={movable} onDragStart={movable ? (drag) => drag.dataTransfer.setData('text/calendar-event-id', event.id) : undefined} onClick={() => onEventClick(event)} className={`absolute z-10 left-1 right-1 min-h-12 rounded-lg border-l-4 px-2 py-1.5 text-left shadow-sm overflow-hidden ${styles.bg} ${movable ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ top: `${eventHour(event) * 64 + 2}px` }}><span className="block truncate text-xs font-semibold text-brand-ink">{event.title}</span><span className="text-[10px] text-brand-muted">{formatEventTime(event.start)}</span></button>
+              const movable = eventIsMovable(event)
+              return <button key={event.id} {...dragProps(event)} title={movable ? `Drag to reschedule or block time for “${event.title}”` : event.title} onClick={() => onEventClick(event)} className={`absolute z-10 left-1 right-1 min-h-12 rounded-lg border-l-4 px-2 py-1.5 text-left shadow-sm overflow-hidden ${styles.bg} ${movable ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ top: `${eventHour(event) * 64 + 2}px` }}><span className="block truncate text-xs font-semibold text-brand-ink">{event.title}</span><span className="text-[10px] text-brand-muted">{[formatEventTime(event.start), isWorkBlock(event) ? 'Work block' : null].filter(Boolean).join(' · ')}</span></button>
             })}
           </div>
         })}
@@ -377,6 +449,8 @@ export default function CalendarPage() {
   const [eventSaving, setEventSaving] = useState(false)
   const [selectedScheduledEvent, setSelectedScheduledEvent] = useState(null)
   const [eventDeleting, setEventDeleting] = useState(false)
+  const [taskDrop, setTaskDrop] = useState(null) // { event, day, hour } awaiting an intent
+  const [taskDropSaving, setTaskDropSaving] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -484,7 +558,21 @@ export default function CalendarPage() {
     dragEvent.preventDefault()
     const eventId = dragEvent.dataTransfer.getData('text/calendar-event-id')
     const event = events.find((candidate) => candidate.id === eventId)
-    if (!event || event.event_type !== 'scheduled_event') return
+    if (!event) return
+    if (event.event_type === 'task_due') {
+      // A dropped deadline is ambiguous on purpose: the same gesture can mean
+      // "this is due then" or "that is when I will work on it". Ask instead of
+      // guessing, since moving a due date moves its alerts too.
+      if (!eventIsMovable(event)) return
+      const droppedOnSameSlot =
+        toIso(day) === event.date &&
+        (hour == null || (eventHour(event) != null && Math.floor(eventHour(event)) === hour))
+      if (droppedOnSameSlot) return
+      setSyncMessage(null)
+      setTaskDrop({ event, day, hour })
+      return
+    }
+    if (event.event_type !== 'scheduled_event') return
     const { start, end } = movedEventTimes(event, day, hour)
     const previousEvents = events
     setEvents((current) => current.map((candidate) => candidate.id === eventId ? { ...candidate, date: toIso(start), start: start.toISOString(), end: end.toISOString() } : candidate))
@@ -495,6 +583,57 @@ export default function CalendarPage() {
     } catch (err) {
       setEvents(previousEvents)
       setSyncMessage({ type: 'error', text: err?.response?.data?.detail || 'The event could not be moved.' })
+    }
+  }
+
+  const handleTaskDropSubmit = async (mode, form) => {
+    if (!taskDrop) return
+    const { event } = taskDrop
+    setTaskDropSaving(true)
+    setSyncMessage(null)
+    try {
+      if (mode === 'deadline') {
+        await updateTask(event.task_id, {
+          due_date: form.due_date,
+          due_time: form.due_time || null,
+          ...(event.task_version != null ? { expected_version: event.task_version } : {}),
+        })
+        const timeLabel = formatTimeInput(form.due_time)
+        setSyncMessage({
+          type: 'success',
+          text: `“${event.title}” is now due ${formatDisplayDate(form.due_date)}${timeLabel ? ` at ${timeLabel}` : ''}. Its reminder and connected-calendar copy follow the new date.`,
+        })
+      } else {
+        await createScheduledEvent({
+          title: `Work block: ${event.title}`,
+          description: `Time blocked in LawHand to work on “${event.title}”.`,
+          start_at: localDateTimeToIso(form.block_date, form.start_time),
+          end_at: localDateTimeToIso(form.block_date, form.end_time),
+          timezone: browserTimezone() || 'UTC',
+          task_id: event.task_id,
+          matter_id: event.matter_id || null,
+          calendar_provider: form.calendar_provider || null,
+          meeting_provider: 'none',
+        })
+        setSyncMessage({
+          type: 'success',
+          text: `Blocked ${formatTimeInput(form.start_time)}–${formatTimeInput(form.end_time)} on ${formatDisplayDate(form.block_date)} to work on “${event.title}”. Its due date is unchanged.`,
+        })
+      }
+      setTaskDrop(null)
+      await fetchEvents(pivotDate, view)
+    } catch (err) {
+      setSyncMessage({
+        type: 'error',
+        text: apiError(
+          err,
+          mode === 'deadline'
+            ? 'The due date could not be moved.'
+            : 'The work block could not be created.',
+        ),
+      })
+    } finally {
+      setTaskDropSaving(false)
     }
   }
 
@@ -763,6 +902,18 @@ export default function CalendarPage() {
           onConnectZoom={() => connectZoomIntegration('user')}
         />
       )}
+      {taskDrop && (
+        <TaskDropModal
+          event={taskDrop.event}
+          day={taskDrop.day}
+          hour={taskDrop.hour}
+          saving={taskDropSaving}
+          providerStatus={providerStatus}
+          defaultCalendarProvider={calendarProvider}
+          onClose={() => setTaskDrop(null)}
+          onSubmit={handleTaskDropSubmit}
+        />
+      )}
       {selectedScheduledEvent && (
         <ScheduledEventDetailsModal
           event={selectedScheduledEvent}
@@ -771,6 +922,196 @@ export default function CalendarPage() {
           onDelete={handleDeleteScheduledEvent}
         />
       )}
+    </div>
+  )
+}
+
+function TaskDropModal({ event, day, hour, saving, providerStatus, defaultCalendarProvider, onClose, onSubmit }) {
+  const droppedDate = toIso(day)
+  const existingDueTime = event.start && String(event.start).includes('T')
+    ? toTimeInput(new Date(event.start))
+    : ''
+  // A drop into an hour column names a time; a drop onto a month cell does not,
+  // so the deadline keeps whatever time it already had.
+  const droppedTime = hour == null ? existingDueTime : hourTimeInput(hour)
+  const blockStart = droppedTime || '09:00'
+  const [mode, setMode] = useState('deadline')
+  const [form, setForm] = useState({
+    due_date: droppedDate,
+    due_time: droppedTime,
+    block_date: droppedDate,
+    start_time: blockStart,
+    end_time: addMinutesToTimeInput(blockStart, 60),
+    calendar_provider: defaultCalendarProvider || '',
+  })
+  const microsoftConnected = Boolean(providerStatus?.microsoft?.connected)
+  const googleConnected = Boolean(providerStatus?.google?.connected)
+  const setField = (name, value) => setForm((current) => ({ ...current, [name]: value }))
+
+  // A drop that lands the wrong way should be dismissible without a mouse.
+  useEffect(() => {
+    const onKeyDown = (keyEvent) => {
+      if (keyEvent.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  const blockRangeIsValid = form.end_time > form.start_time
+  const canSubmit = mode === 'deadline' ? Boolean(form.due_date) : Boolean(form.block_date) && blockRangeIsValid
+
+  const handleSubmit = (submitEvent) => {
+    submitEvent.preventDefault()
+    if (!canSubmit) return
+    onSubmit(mode, form)
+  }
+
+  const modes = [
+    ['deadline', 'Move the due date', CalendarClock, 'Reschedules the deadline. Reminders and any connected-calendar copy follow it.'],
+    ['block', 'Block time to work on it', Timer, 'Adds working time to the calendar. The due date stays where it is.'],
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center px-4">
+      <form
+        onSubmit={handleSubmit}
+        aria-labelledby="task-drop-title"
+        className="w-full max-w-lg bg-brand-surface border border-brand-line rounded-xl shadow-xl overflow-hidden"
+      >
+        <div className="h-14 px-5 border-b border-brand-line flex items-center gap-3">
+          <ClipboardList className="w-4 h-4 text-brand-accent" />
+          <h2 id="task-drop-title" className="font-serif font-semibold text-base text-brand-ink truncate">{event.title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto p-1.5 rounded hover:bg-brand-line text-brand-muted hover:text-brand-ink"
+            aria-label="Cancel"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-brand-muted">
+            Dropped on {formatDisplayDate(droppedDate)}{hour == null ? '' : ` at ${formatTimeInput(hourTimeInput(hour))}`}.
+            Currently due {formatDisplayDate(event.date)}{existingDueTime ? ` at ${formatTimeInput(existingDueTime)}` : ''}.
+          </p>
+
+          <div role="radiogroup" aria-label="What should this drop do?" className="grid gap-2">
+            {modes.map(([key, label, Icon, hint]) => (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={mode === key}
+                onClick={() => setMode(key)}
+                className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${mode === key ? 'border-brand-accent bg-brand-accent/5' : 'border-brand-line hover:bg-brand-bg'}`}
+              >
+                <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${mode === key ? 'text-brand-accent' : 'text-brand-muted'}`} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-brand-ink">{label}</span>
+                  <span className="block text-xs text-brand-muted mt-0.5">{hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {mode === 'deadline' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs font-medium text-brand-muted">
+                Due date
+                <input
+                  type="date"
+                  value={form.due_date}
+                  onChange={(e) => setField('due_date', e.target.value)}
+                  required
+                  className="mt-1 w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-sm text-brand-ink"
+                />
+              </label>
+              <label className="text-xs font-medium text-brand-muted">
+                Due time (optional)
+                <input
+                  type="time"
+                  value={form.due_time}
+                  onChange={(e) => setField('due_time', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-sm text-brand-ink"
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="text-xs font-medium text-brand-muted">
+                  Date
+                  <input
+                    type="date"
+                    value={form.block_date}
+                    onChange={(e) => setField('block_date', e.target.value)}
+                    required
+                    className="mt-1 w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-sm text-brand-ink"
+                  />
+                </label>
+                <label className="text-xs font-medium text-brand-muted">
+                  From
+                  <input
+                    type="time"
+                    value={form.start_time}
+                    onChange={(e) => setField('start_time', e.target.value)}
+                    required
+                    className="mt-1 w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-sm text-brand-ink"
+                  />
+                </label>
+                <label className="text-xs font-medium text-brand-muted">
+                  To
+                  <input
+                    type="time"
+                    value={form.end_time}
+                    onChange={(e) => setField('end_time', e.target.value)}
+                    required
+                    className="mt-1 w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-sm text-brand-ink"
+                  />
+                </label>
+              </div>
+              {!blockRangeIsValid && (
+                <p className="text-xs text-brand-rose">The end time must be after the start time.</p>
+              )}
+              <label className="block text-xs font-medium text-brand-muted">
+                Calendar
+                <select
+                  value={form.calendar_provider}
+                  onChange={(e) => setField('calendar_provider', e.target.value)}
+                  className="mt-1 w-full px-3 py-2 bg-brand-bg border border-brand-line rounded-lg text-sm text-brand-ink"
+                >
+                  <option value="">App calendar only</option>
+                  {microsoftConnected && <option value="microsoft">Microsoft Calendar</option>}
+                  {googleConnected && <option value="google">Google Calendar</option>}
+                </select>
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-brand-line flex justify-end gap-2 bg-brand-bg">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-brand-line text-brand-ink text-xs font-medium rounded-lg hover:bg-brand-line/40"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !canSubmit}
+            className="px-4 py-2 bg-brand-ink text-white text-xs font-medium rounded-lg hover:bg-brand-ink/90 disabled:opacity-50"
+          >
+            {saving
+              ? 'Saving...'
+              : mode === 'deadline'
+                ? 'Move due date'
+                : 'Block the time'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

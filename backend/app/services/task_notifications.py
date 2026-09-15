@@ -17,6 +17,7 @@ from app.models.tenant import Tenant
 from app.models.user import User
 from app.services import google_calendar, microsoft_calendar
 from app.services.email import EmailDeliveryResult, email_service
+from app.services.matter_followups import matter_timezone
 from app.services.task_visibility import task_contains_sms
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,24 @@ async def _load_task_context(
     return creator, contact, matter
 
 
+async def _task_timezone(db: AsyncSession, task: Task) -> str:
+    """The timezone a task's ``due_time`` wall clock is meant in.
+
+    ``due_time`` is stored naive, so it needs one. The matter's intake timezone
+    is the only per-matter value we hold and is already what follow-up due
+    times are written in, which keeps a deadline meaning the same thing on the
+    calendar as it does in LawHand. A task with no matter falls back to UTC
+    rather than guessing an office location.
+    """
+    if not task.matter_id:
+        return "UTC"
+    try:
+        return await matter_timezone(db, task.tenant_id, task.matter_id)
+    except Exception:  # noqa: BLE001 - a calendar push must not fail a task
+        logger.exception("Resolving the timezone for task %s failed", task.id)
+        return "UTC"
+
+
 def push_task_to_calendars(
     task: Task,
     tenant_id: str,
@@ -142,8 +161,16 @@ def push_task_to_calendars(
     creator_name: str | None = None,
     customer_name: str | None = None,
     task_url: str | None = None,
+    timezone_name: str = "UTC",
 ) -> None:
-    """Fire-and-forget upsert of a task's event to Google and Microsoft."""
+    """Fire-and-forget upsert of a task's event to Google and Microsoft.
+
+    A task with a saved ``due_time`` propagates as a timed event in
+    ``timezone_name``; one without stays all-day, which is what a date-only
+    deadline actually is. Dropping the time — as this did for every task —
+    puts a lawyer's 9am filing deadline on their calendar as a day with no
+    hour in it.
+    """
     if not task.due_date:
         return
     task_id = str(task.id)
@@ -154,6 +181,8 @@ def push_task_to_calendars(
         task_id=task_id,
         title=task.title or task.task_type or "",
         due_date=task.due_date.isoformat(),
+        due_time=task.due_time.isoformat() if task.due_time else None,
+        timezone_name=timezone_name,
         description=_calendar_description(
             task,
             creator_name=creator_name,
@@ -330,6 +359,7 @@ async def notify_task_created(
         creator_name=_user_label(creator),
         customer_name=contact.display_name if contact else None,
         task_url=_task_url(task),
+        timezone_name=await _task_timezone(db, task),
     )
     if task.assigned_to_user_id:
         return await send_task_assignment_alert(db, task, assignment_note)
@@ -365,7 +395,9 @@ async def notify_task_updated(
                 str(task.id), tenant_id, task_calendar_user_id(task)
             )
         else:
-            push_task_to_calendars(task, tenant_id)
+            push_task_to_calendars(
+                task, tenant_id, timezone_name=await _task_timezone(db, task)
+            )
     if assignment_changed and task.assigned_to_user_id:
         return await send_task_assignment_alert(db, task, assignment_note)
     return EmailDeliveryResult.NOT_REQUIRED

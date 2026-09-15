@@ -14,16 +14,16 @@ migration safety gate keeps "add and backfill" and "make required" in
 separate releases so a deploy can never reject existing customer rows, and
 every reader falls back to ``created_at`` when it is null.
 
-Revision ID: 187_matter_engagement
-Revises: 186_billing_parity
+Revision ID: 189_matter_engagement
+Revises: 188_completion_escalation
 """
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "187_matter_engagement"
-down_revision = "186_billing_parity"
+revision = "189_matter_engagement"
+down_revision = "188_completion_escalation"
 branch_labels = None
 depends_on = None
 

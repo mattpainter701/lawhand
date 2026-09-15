@@ -12,17 +12,17 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["187_matter_engagement"]
+    assert heads == ["189_matter_engagement"]
 
 
 def test_matter_engagement_migration_adds_open_date_and_engagement_columns():
     backend_dir = Path(__file__).resolve().parents[1]
     source = (
-        backend_dir / "migrations" / "versions" / "187_matter_engagement.py"
+        backend_dir / "migrations" / "versions" / "189_matter_engagement.py"
     ).read_text(encoding="utf-8")
 
-    assert 'revision = "187_matter_engagement"' in source
-    assert 'down_revision = "186_billing_parity"' in source
+    assert 'revision = "189_matter_engagement"' in source
+    assert 'down_revision = "188_completion_escalation"' in source
     # Existing rows keep their creation date as the open date and new rows
     # default to today. The column stays nullable in this release: the
     # migration safety gate separates "add and backfill" from "make required".
