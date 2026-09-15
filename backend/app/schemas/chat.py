@@ -6,11 +6,17 @@ from pydantic import BaseModel, Field, field_validator
 class ConversationCreate(BaseModel):
     title: Optional[str] = None
     matter_id: Optional[str] = None
+    # The tier and public-case-law choice this conversation opens with. Both
+    # are stored so reopening the conversation restores what the user picked.
+    use_premium_llm: Optional[bool] = None
+    include_public: Optional[bool] = None
 
 
 class ConversationUpdate(BaseModel):
     title: Optional[str] = None
     matter_id: Optional[str] = None
+    use_premium_llm: Optional[bool] = None
+    include_public: Optional[bool] = None
 
 
 class ConversationResponse(BaseModel):
@@ -21,6 +27,13 @@ class ConversationResponse(BaseModel):
     updated_at: datetime
     message_count: Optional[int] = None
     attachment_count: int = 0
+    # What the user chose, not what the next turn will resolve to: firm policy
+    # and route resolution narrow both on every request.
+    use_premium_llm: bool = False
+    include_public: bool = True
+    # True when the firm forbids public case law, so the stored preference is
+    # narrowed. The UI shows the restriction instead of a toggle that lies.
+    public_case_law_restricted: bool = False
 
     model_config = {"from_attributes": True}
 

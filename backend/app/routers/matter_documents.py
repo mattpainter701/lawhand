@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services.upload_guard import reject_oversized_request
+from app.services.portal_document_access import matter_signing_grant_document_ids
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
 from app.models.matter_document import MatterDocument
@@ -208,9 +209,23 @@ async def serialize_documents(
         db, tenant_id=tenant_id, document_ids=[doc.id for doc in documents]
     )
 
+    # Access a signing packet grants is per-recipient and cannot be read off
+    # ``portal_visible``; without this the tab calls a document the client is
+    # signing "Private".
+    signing_grants = await matter_signing_grant_document_ids(
+        db,
+        tenant_id=tenant_id,
+        matter_ids={doc.matter_id for doc in documents},
+    )
+
     responses = []
     for doc in documents:
         response = MatterDocumentResponse.model_validate(doc)
+        response.signing_access = (
+            not doc.portal_visible
+            and doc.uploaded_by_user_id is not None
+            and doc.id in signing_grants
+        )
         response.folder_path = (
             folder_paths.get(doc.folder_id) if doc.folder_id else None
         )

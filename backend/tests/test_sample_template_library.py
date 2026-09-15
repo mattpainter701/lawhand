@@ -254,3 +254,65 @@ def test_authored_questionnaire_uses_the_shared_intake_question_keys():
         "related_proceedings",
         "contact_preferences",
     }
+
+
+# ── Provenance and duplicate titles (#504) ──────────────────────────────────
+
+
+_PROVENANCE_FIELDS = {
+    "source_name",
+    "source_url",
+    "edition",
+    "retrieved_at",
+    "source_files",
+}
+
+
+def test_manifest_provenance_uses_only_documented_fields():
+    # Provenance is what tells a user which of several same-titled forms they
+    # are about to file, so the schema is pinned rather than free-form. See
+    # backend/seed/sample_templates/README.md.
+    for form in _manifest()["forms"]:
+        provenance = form.get("provenance")
+        if provenance is None:
+            continue
+        assert isinstance(provenance, dict), form["slug"]
+        assert set(provenance) <= _PROVENANCE_FIELDS, form["slug"]
+
+
+def test_the_seeder_rejects_an_unknown_provenance_field():
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "scripts"))
+    from seed_sample_templates import _provenance
+
+    assert _provenance({"slug": "x"}) is None
+    assert _provenance({"slug": "x", "provenance": {}}) is None
+    assert _provenance(
+        {"slug": "x", "provenance": {"source_name": "Example Courts"}}
+    ) == {"source_name": "Example Courts"}
+    with pytest.raises(SystemExit):
+        _provenance({"slug": "x", "provenance": {"guessed_edition": "2024"}})
+    with pytest.raises(SystemExit):
+        _provenance({"slug": "x", "provenance": "Example Courts"})
+
+
+def test_duplicate_titles_are_distinct_files_not_byte_duplicates():
+    """#504: the repeated titles cannot be mechanically de-duplicated.
+
+    If this ever fails because two same-titled forms share a digest, the right
+    fix is to drop one from the manifest — not to label them apart.
+    """
+
+    by_title: dict[str, list[dict]] = {}
+    for form in _manifest()["forms"]:
+        by_title.setdefault(form["title"].strip().lower(), []).append(form)
+
+    duplicates = {
+        title: forms for title, forms in by_title.items() if len(forms) > 1
+    }
+    assert duplicates, "expected the known duplicate-titled variants"
+    for title, forms in duplicates.items():
+        digests = {form["sha256"] for form in forms}
+        assert len(digests) == len(forms), f"{title} has byte-identical variants"

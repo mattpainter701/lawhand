@@ -459,6 +459,19 @@ export default function ChatPage() {
     setNotice((current) => current?.kind === 'background-generation' ? null : current)
   }, [generationCount])
 
+  // The response settings a conversation created from this page starts with,
+  // read through a ref so a stale closure cannot create a conversation with
+  // settings the user already changed.
+  const preferencesRef = useRef({ usePremium: false, includePublic: true })
+  useEffect(() => {
+    preferencesRef.current = { usePremium, includePublic }
+  }, [usePremium, includePublic])
+
+  const newConversationPreferences = useCallback(() => ({
+    use_premium_llm: preferencesRef.current.usePremium,
+    include_public: preferencesRef.current.includePublic,
+  }), [])
+
   const showErrorNotice = useCallback((title, fallback, err) => {
     setNotice({
       type: 'error',
@@ -521,7 +534,7 @@ export default function ChatPage() {
 
     if (!convId) {
       try {
-        const conv = await createConversation()
+        const conv = await createConversation(newConversationPreferences())
         setConversations((prev) => [conv, ...prev])
         activeConvIdRef.current = conv.id
         loadedConversationIdRef.current = conv.id
@@ -588,6 +601,11 @@ export default function ChatPage() {
       )
       setActiveConvTitle(data.conversation?.title || 'Untitled')
       if (data.conversation) {
+        // The conversation, not this component, owns the tier and source
+        // choice: reopening it must restore what the user picked rather than
+        // silently dropping back to Standard with public case law on.
+        setUsePremium(Boolean(data.conversation.use_premium_llm))
+        setIncludePublic(data.conversation.include_public !== false)
         setConversations((prev) =>
           prev.some((conv) => conv.id === data.conversation.id)
             ? prev.map((conv) => (conv.id === data.conversation.id ? { ...conv, ...data.conversation } : conv))
@@ -681,7 +699,7 @@ export default function ChatPage() {
     try {
       detachActiveStream()
       conversationLoadRequestRef.current += 1
-      const conv = await createConversation()
+      const conv = await createConversation(newConversationPreferences())
       setConversations((prev) => [conv, ...prev])
       activeConvIdRef.current = conv.id
       loadedConversationIdRef.current = conv.id
@@ -872,7 +890,10 @@ export default function ChatPage() {
     try {
       if (!convId) {
         try {
-          const conv = await createConversation(content.slice(0, 60))
+          const conv = await createConversation({
+            ...newConversationPreferences(),
+            title: content.slice(0, 60),
+          })
           setConversations((prev) => [conv, ...prev])
           activeConvIdRef.current = conv.id
           loadedConversationIdRef.current = conv.id
@@ -1242,6 +1263,45 @@ export default function ChatPage() {
     return updated
   }, [activeConvId, setConversations])
 
+  // A response setting belongs to the conversation, so it is saved the moment
+  // it changes. A failure is surfaced rather than swallowed: the setting still
+  // applies to the next message, but it would not survive a reopen.
+  const persistPreference = useCallback(async (patch) => {
+    const convId = activeConvIdRef.current
+    if (!convId) return
+    try {
+      const updated = await updateConversation(convId, patch)
+      setConversations((prev) =>
+        prev.map((conv) => (conv.id === updated.id ? { ...conv, ...updated } : conv))
+      )
+    } catch (err) {
+      reportError('Failed to save response settings', err)
+      showErrorNotice(
+        'Response setting could not be saved',
+        'It applies to your next message but may not survive reopening this conversation.',
+        err,
+      )
+    }
+  }, [setConversations, showErrorNotice])
+
+  const changeUsePremium = useCallback((value) => {
+    const current = preferencesRef.current.usePremium
+    const next = typeof value === 'function' ? value(current) : Boolean(value)
+    if (next === current) return
+    preferencesRef.current = { ...preferencesRef.current, usePremium: next }
+    setUsePremium(next)
+    persistPreference({ use_premium_llm: next })
+  }, [persistPreference])
+
+  const changeIncludePublic = useCallback((value) => {
+    const current = preferencesRef.current.includePublic
+    const next = typeof value === 'function' ? value(current) : Boolean(value)
+    if (next === current) return
+    preferencesRef.current = { ...preferencesRef.current, includePublic: next }
+    setIncludePublic(next)
+    persistPreference({ include_public: next })
+  }, [persistPreference])
+
   const activeConversation = conversations.find((conv) => conv.id === activeConvId) || null
   const hasBackgroundGeneration = generationCount > 0 && !isSending
   const conversationContextLocked = messages.length > 0
@@ -1351,11 +1411,12 @@ export default function ChatPage() {
             activeRef={activeRef}
             activeConvTitle={activeConvTitle}
             usePremium={usePremium}
-            setUsePremium={setUsePremium}
+            setUsePremium={changeUsePremium}
             demoMode={Boolean(user?.demo)}
             standardMatterContextAllowed={Boolean(user?.standard_matter_context_allowed)}
             includePublic={includePublic}
-            setIncludePublic={setIncludePublic}
+            setIncludePublic={changeIncludePublic}
+            publicCaseLawAllowed={user?.public_case_law_allowed !== false}
             privacyMode={Boolean(user?.privacy_mode)}
             privacySaving={privacySaving}
             onTogglePrivacy={togglePrivacyMode}

@@ -6,7 +6,7 @@ from app.release_notes import RECENT_RELEASE_DAYS, build_release_catalog
 from app.main import app_version
 
 
-LATEST_RELEASE_ID = "2026.09.15.03"
+LATEST_RELEASE_ID = "2026.09.15.04"
 LATEST_RELEASE_DATE = date(2026, 9, 15)
 
 
@@ -20,7 +20,7 @@ def test_release_catalog_returns_latest_release_and_history():
     assert len(latest["highlights"]) == 5
     assert (
         latest["highlights"][0]["title"]
-        == "The starter forms produce documents again"
+        == "Your assistant settings survive a reopen"
     )
     history_ids = [release["id"] for release in catalog["release_notes"]]
     assert all(f"2026.09.07.{n}" in history_ids for n in (7, 8, 9))

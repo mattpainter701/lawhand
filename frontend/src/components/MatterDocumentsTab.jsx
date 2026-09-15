@@ -16,7 +16,7 @@ import api, {
   createDocumentTag,
   setMatterDocumentTags,
 } from '../api'
-import { FileText, Upload, Trash2, Download, X, Check, Cloud, ExternalLink, RefreshCw, Eye, EyeOff, Sparkles, Pencil, ShieldCheck, Folder, Search, Tag as TagIcon } from 'lucide-react'
+import { FileText, Upload, Trash2, Download, X, Check, Cloud, ExternalLink, RefreshCw, Eye, EyeOff, PenLine, Sparkles, Pencil, ShieldCheck, Folder, Search, Tag as TagIcon } from 'lucide-react'
 import { useConfirm } from './dialog/ConfirmProvider'
 import { useToast } from './toast/useToast'
 import useMatterDocumentExplorer, {
@@ -1027,8 +1027,8 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                     title={releaseLocked ? 'Assistant revisions require a separate destination approval workflow.' : undefined}
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-brand-line px-3 text-xs font-bold text-brand-ink disabled:cursor-not-allowed disabled:bg-brand-bg-soft disabled:text-brand-muted"
                   >
-                    {releaseLocked ? <ShieldCheck size={15} aria-hidden="true" /> : doc.portal_visible ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
-                    {releaseLocked ? 'Release locked' : doc.portal_visible ? 'Shared' : 'Private'}
+                    {releaseLocked ? <ShieldCheck size={15} aria-hidden="true" /> : doc.portal_visible ? <Eye size={15} aria-hidden="true" /> : doc.signing_access ? <PenLine size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
+                    {releaseLocked ? 'Release locked' : doc.portal_visible ? 'Shared' : doc.signing_access ? 'Signing access' : 'Private'}
                   </button>
                   <a
                     href={doc.cloud_url || getMatterDocumentDownloadUrl(matterId, doc.id)}
@@ -1128,6 +1128,10 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                         {doc.portal_visible ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-green/10 text-brand-green border border-brand-green/30">
                             <Eye size={11} /> Shared
+                          </span>
+                        ) : doc.signing_access ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-accent/10 text-brand-accent-2 border border-brand-accent/30">
+                            <PenLine size={11} /> Signing access
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-bg-soft text-brand-muted border border-brand-line">
@@ -1248,8 +1252,8 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                         <button
                           onClick={() => handleTogglePortalVisible(doc)}
                           disabled={isAssistantRevisionDocument(doc)}
-                          aria-label={isAssistantRevisionDocument(doc) ? `${doc.filename} requires a separate release workflow` : doc.portal_visible ? 'Make private' : 'Share with client'}
-                          title={isAssistantRevisionDocument(doc) ? 'Assistant revisions require a separate destination approval workflow.' : doc.portal_visible ? 'Make private' : 'Share with client'}
+                          aria-label={isAssistantRevisionDocument(doc) ? `${doc.filename} requires a separate release workflow` : doc.portal_visible ? 'Make private' : doc.signing_access ? 'Share with client — the signing recipient can already open this' : 'Share with client'}
+                          title={isAssistantRevisionDocument(doc) ? 'Assistant revisions require a separate destination approval workflow.' : doc.portal_visible ? 'Make private' : doc.signing_access ? 'Not shared with the matter’s client, but the recipient signing this packet can open it. Share to make it visible to the client portal.' : 'Share with client'}
                           className="flex items-center gap-1.5 group disabled:cursor-not-allowed"
                         >
                           {isAssistantRevisionDocument(doc) ? (
@@ -1259,6 +1263,10 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                           ) : doc.portal_visible ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-green/10 text-brand-green border border-brand-green/30 group-hover:bg-brand-green/20 transition-colors">
                               <Eye size={11} /> Shared with client
+                            </span>
+                          ) : doc.signing_access ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-accent/10 text-brand-accent-2 border border-brand-accent/30 group-hover:bg-brand-accent/20 transition-colors">
+                              <PenLine size={11} /> Available to signing client
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-bg-soft text-brand-muted border border-brand-line group-hover:border-brand-accent group-hover:text-brand-accent transition-colors">

@@ -90,6 +90,10 @@ class UserInfo(BaseModel):
     license_active: bool = True
     premium_ai_enabled: bool = False
     standard_matter_context_allowed: bool = False
+    # Firm policy on public case law. The chat toggle reads this so a user
+    # is told their firm restricts public sources rather than being shown a
+    # switch that retrieval quietly ignores.
+    public_case_law_allowed: bool = True
     created_at: datetime
     billing_tier: str
     # Payment health, so the browser can tell a firm its subscription is in

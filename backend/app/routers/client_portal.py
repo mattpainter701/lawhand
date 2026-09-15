@@ -53,6 +53,13 @@ from app.services.portal_document_transfer import (
 )
 from app.services.matter_document_organization import DocumentOrganizationError
 from app.services.matter_access import can_access_matter
+from app.services.portal_document_access import (
+    ACCESS_CLIENT_UPLOAD,
+    ACCESS_FIRM_SHARED,
+    ACCESS_SIGNING_PACKET,
+    document_access_source,
+    packet_requirement_document_ids,
+)
 from app.services.matter_import_manifest import parse_eml
 
 from app.config import get_settings
@@ -448,11 +455,7 @@ async def get_client_portal_context(
                 if item.get("signature_id")
             ],
         ]
-        document_ids = [
-            item["document_id"]
-            for item in packet.requirements.values()
-            if item.get("document_id")
-        ]
+        document_ids = packet_requirement_document_ids(packet)
         fee_document = (
             await db.scalar(
                 select(SignatureRequest.document_id).where(
@@ -1420,16 +1423,12 @@ async def portal_matter(
         (k for k in key_date_list if k.iso_date and not k.is_past), None
     )
 
-    document_count = int(
-        await db.scalar(
-            select(func.count(MatterDocument.id)).where(
-                MatterDocument.matter_id == ctx.matter_id,
-                MatterDocument.tenant_id == ctx.tenant_id,
-                MatterDocument.portal_visible.is_(True),
-            )
-        )
-        or 0
-    )
+    # One definition drives every surface: the overview counts exactly the rows
+    # the documents tab lists — everything this recipient can open — and breaks
+    # that total down by why they can open it, so "what can the client see?"
+    # has one answer rather than three.
+    document_counts = await _document_access_counts(db, ctx)
+    document_count = document_counts["total"]
     last_activity_at = await db.scalar(
         select(func.max(CommunicationLog.occurred_at)).where(
             CommunicationLog.matter_id == ctx.matter_id,
@@ -1457,6 +1456,9 @@ async def portal_matter(
         attorneys=attorneys,
         unread_message_count=await _unread_message_count(db, ctx),
         document_count=document_count,
+        firm_shared_document_count=document_counts[ACCESS_FIRM_SHARED],
+        signing_document_count=document_counts[ACCESS_SIGNING_PACKET],
+        client_upload_count=document_counts[ACCESS_CLIENT_UPLOAD],
         pending_signature_count=await _pending_signature_count(db, ctx),
         open_invoice_count=sum(1 for inv in open_invoices if inv.balance_due > 0),
         outstanding_balance=outstanding,
@@ -1946,6 +1948,55 @@ def _packet_document_uuids(ctx):
     return grants
 
 
+def _document_access_source(document, grants: set) -> str | None:
+    return document_access_source(
+        uploaded_by_user_id=document.uploaded_by_user_id,
+        portal_visible=bool(document.portal_visible),
+        signing_granted=document.id in grants,
+    )
+
+
+async def _document_access_counts(db, ctx) -> dict[str, int]:
+    """Count what this recipient can open, split by why they can open it.
+
+    Derived from the same predicate the documents tab lists and the downloads
+    serve, so the overview total and the tab can never disagree.
+    """
+
+    grants = set(_packet_document_uuids(ctx))
+    rows = (
+        await db.execute(
+            select(
+                MatterDocument.id,
+                MatterDocument.uploaded_by_user_id,
+                MatterDocument.portal_visible,
+            ).where(
+                MatterDocument.matter_id == ctx.matter_id,
+                MatterDocument.tenant_id == ctx.tenant_id,
+                _readable_documents(ctx),
+            )
+        )
+    ).all()
+
+    counts = {
+        ACCESS_FIRM_SHARED: 0,
+        ACCESS_SIGNING_PACKET: 0,
+        ACCESS_CLIENT_UPLOAD: 0,
+        "total": 0,
+    }
+    for document_id, uploaded_by_user_id, portal_visible in rows:
+        source = document_access_source(
+            uploaded_by_user_id=uploaded_by_user_id,
+            portal_visible=bool(portal_visible),
+            signing_granted=document_id in grants,
+        )
+        if source is None:
+            continue
+        counts[source] += 1
+        counts["total"] += 1
+    return counts
+
+
 @router.get("/documents/upload-policy", response_model=PortalUploadPolicy)
 async def portal_upload_policy(
     _resolved: tuple[ClientPortalContext, Matter] = Depends(portal_matter_dep),
@@ -1969,6 +2020,7 @@ async def portal_list_documents(
         )
         .order_by(MatterDocument.created_at.desc())
     )
+    grants = set(_packet_document_uuids(ctx))
     return [
         PortalDocumentResponse(
             id=str(d.id),
@@ -1977,6 +2029,9 @@ async def portal_list_documents(
             file_size=d.file_size,
             description=d.description,
             uploaded_by_client=d.uploaded_by_user_id is None,
+            # Paperwork reachable only through this recipient's signing packet
+            # is labelled as such rather than presented as a firm share.
+            access_source=_document_access_source(d, grants),
             created_at=d.created_at,
         )
         for d in result.scalars().all()
