@@ -2,6 +2,35 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.15.04",
+      "version": "2026.09.15.04",
+      "title": "Assistant settings stick, and document access says who can see what",
+      "published_at": "2026-09-15",
+      "summary": "Reopening an assistant conversation keeps the response settings you chose, the client portal explains what the client can actually open, and the sample form library tells same-titled forms apart.",
+      "highlights": [
+        {
+          "title": "Your assistant settings survive a reopen",
+          "description": "The response model and the public case law choice are saved on the conversation, so closing and reopening it no longer resets them to the defaults."
+        },
+        {
+          "title": "Firm case law policy is respected and explained",
+          "description": "Turning off public case law in Settings now applies to the assistant. The chat switch shows it off and says the firm restricts it, rather than looking available."
+        },
+        {
+          "title": "One answer to what the client can see",
+          "description": "The portal's document count matches its Documents tab, and shows what makes up the total: shared by your firm, available for signing, and sent by the client."
+        },
+        {
+          "title": "Signing paperwork is no longer labelled Private",
+          "description": "A document a client can open because they are signing it now reads Available to signing client on the matter documents tab, with the share toggle unchanged."
+        },
+        {
+          "title": "Sample forms that share a title are told apart",
+          "description": "Where several library forms carry the same title, each is numbered with its field count and, where the source recorded one, its edition, with a note to preview first."
+        }
+      ]
+    },
+    {
       "id": "2026.09.15.03",
       "version": "2026.09.15.03",
       "title": "Starter forms generate again, and fill from more of the client record",

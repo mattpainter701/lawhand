@@ -308,6 +308,9 @@ class TestAuthMe:
         async def capabilities(_db, _user_id):
             return set()
 
+        async def public_case_law_allowed(_db, _tenant_id):
+            return True
+
         monkeypatch.setattr(auth, "get_current_user", current_user)
         monkeypatch.setattr(auth, "set_tenant_context", tenant_context)
         monkeypatch.setattr(auth, "resolve_enabled_modules", enabled_modules)
@@ -316,6 +319,11 @@ class TestAuthMe:
         monkeypatch.setattr(auth, "active_plugin_names", addons)
         monkeypatch.setattr(auth, "hidden_matter_panels", addons)
         monkeypatch.setattr(auth, "get_user_capabilities", capabilities)
+        # Building the response reads the firm case-law policy; this test
+        # drives a hand-rolled session that models only what it pins.
+        monkeypatch.setattr(
+            auth, "tenant_public_case_law_allowed", public_case_law_allowed
+        )
 
         response = await auth.update_me(
             UserProfileUpdate(professional_role="Attorney"),
@@ -412,6 +420,9 @@ class TestAuthMe:
         async def capabilities(_db, _user_id):
             return set()
 
+        async def public_case_law_allowed(_db, _tenant_id):
+            return True
+
         audit = AsyncMock()
         cleanup = AsyncMock(side_effect=RuntimeError("Redis unavailable"))
         monkeypatch.setattr(auth, "get_current_user", current_user)
@@ -422,6 +433,11 @@ class TestAuthMe:
         monkeypatch.setattr(auth, "active_plugin_names", addons)
         monkeypatch.setattr(auth, "hidden_matter_panels", addons)
         monkeypatch.setattr(auth, "get_user_capabilities", capabilities)
+        # Building the response reads the firm case-law policy; this test
+        # drives a hand-rolled session that models only what it pins.
+        monkeypatch.setattr(
+            auth, "tenant_public_case_law_allowed", public_case_law_allowed
+        )
         monkeypatch.setattr(workspace_mcp_oauth, "append_workspace_mcp_audit", audit)
         monkeypatch.setattr(
             workspace_mcp_oauth, "revoke_workspace_grant_runtime", cleanup

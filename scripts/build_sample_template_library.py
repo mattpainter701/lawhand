@@ -155,6 +155,61 @@ def _clean_title(name: str) -> str:
     return re.sub(r"\s+", " ", base).strip(" -")
 
 
+# ---------------------------------------------------------------------------
+# Provenance
+# ---------------------------------------------------------------------------
+#
+# Four titles repeat across the catalog ("ND Divorce" three times, and so on).
+# The files behind them are genuinely distinct — different hashes, sizes, and
+# field counts — so they cannot be de-duplicated, and until this ran, nothing in
+# the manifest said which court form or edition each one was. A label invented
+# after the fact would read as authoritative on a page where a paralegal picks
+# the form they are about to file, so the manifest carries what the source
+# actually said instead, and nothing when the source said nothing.
+#
+# The keys below are aliases seen in ``catalog.json``; unknown shapes yield no
+# provenance rather than a guess.
+_PROVENANCE_ALIASES = {
+    "source_name": ("source_name", "source", "publisher", "site"),
+    "source_url": ("source_url", "url", "link", "href"),
+    "edition": ("edition", "revision", "revised", "version", "form_number"),
+    "retrieved_at": ("retrieved_at", "downloaded_at", "scraped_at", "fetched_at"),
+}
+
+
+def _provenance(metas: list[dict]) -> dict | None:
+    """Carry the source catalog's own provenance into the manifest entry.
+
+    ``metas`` are every catalog row whose cleaned bytes hashed to one form, so
+    a value recorded on any of them describes the file that ships.
+    """
+
+    provenance: dict[str, object] = {}
+    for field, aliases in _PROVENANCE_ALIASES.items():
+        values = []
+        for meta in metas:
+            for alias in aliases:
+                value = str(meta.get(alias) or "").strip()
+                if value and value not in values:
+                    values.append(value)
+        if len(values) == 1:
+            provenance[field] = values[0]
+        elif values:
+            provenance[field] = values
+    # The source's own file names are the only distinguisher that is always
+    # present, and they are what a human needs to trace a variant back.
+    source_files = sorted(
+        {
+            str(meta.get("filename") or meta.get("form_name") or "").strip()
+            for meta in metas
+        }
+        - {""}
+    )
+    if source_files:
+        provenance["source_files"] = source_files
+    return provenance or None
+
+
 def _slugify(title: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return slug or "form"
@@ -611,7 +666,13 @@ def _usable_field_count(content: bytes) -> int | None:
 def build(source: Path) -> tuple[dict, dict[str, bytes]]:
     catalog = _load_catalog(source)
     groups: dict[str, dict] = defaultdict(
-        lambda: {"titles": [], "states": set(), "categories": [], "content": b""}
+        lambda: {
+            "titles": [],
+            "states": set(),
+            "categories": [],
+            "content": b"",
+            "metas": [],
+        }
     )
     for path in sorted(source.glob("*.pdf")):
         meta = catalog.get(path.name, {})
@@ -638,6 +699,7 @@ def build(source: Path) -> tuple[dict, dict[str, bytes]]:
         digest = hashlib.sha256(cleaned).hexdigest()
         entry = groups[digest]
         entry["titles"].append(_clean_title(meta.get("form_name") or path.name))
+        entry["metas"].append({**meta, "filename": meta.get("filename") or path.name})
         jurisdiction = _jurisdiction(meta.get("state"))
         if jurisdiction:
             entry["states"].add(jurisdiction)
@@ -694,6 +756,7 @@ def build(source: Path) -> tuple[dict, dict[str, bytes]]:
                 "sha256": digest,
                 "size_bytes": len(entry["content"]),
                 "field_count": entry["fields"],
+                "provenance": _provenance(entry["metas"]),
             }
         )
         cleaned_by_digest[digest] = entry["content"]
