@@ -167,34 +167,50 @@ async def has_unaccepted_invitation(
     return bool(rows) and all(accepted_at is None for accepted_at in rows)
 
 
-async def open_invitation_statuses(
+async def invitation_statuses(
     db: AsyncSession,
     *,
     tenant_id: uuid.UUID,
     user_ids: list[uuid.UUID],
     now: datetime | None = None,
-) -> dict[uuid.UUID, tuple[str, datetime]]:
-    """Map each user with an open invitation to ``(pending|expired, expires_at)``."""
+) -> dict[uuid.UUID, tuple[str, datetime | None]]:
+    """Map each invited-but-never-accepted user to ``(status, expires_at)``.
+
+    ``pending`` and ``expired`` describe the open invitation. ``revoked`` means
+    every invitation was revoked: the person is still only reachable through a
+    new invitation, so the admin list must offer to resend rather than show a
+    plain inactive account whose reactivation would be refused.
+    """
     if not user_ids:
         return {}
     now = now or _utcnow()
     rows = (
         await db.execute(
-            select(UserInvitation.user_id, UserInvitation.expires_at).where(
+            select(
+                UserInvitation.user_id,
+                UserInvitation.expires_at,
+                UserInvitation.accepted_at,
+                UserInvitation.revoked_at,
+            ).where(
                 UserInvitation.tenant_id == tenant_id,
                 UserInvitation.user_id.in_(user_ids),
-                UserInvitation.accepted_at.is_(None),
-                UserInvitation.revoked_at.is_(None),
             )
         )
     ).all()
-    return {
-        user_id: (
-            "expired" if _as_utc(expires_at) <= now else "pending",
-            expires_at,
-        )
-        for user_id, expires_at in rows
-    }
+
+    accepted: set[uuid.UUID] = set()
+    statuses: dict[uuid.UUID, tuple[str, datetime | None]] = {}
+    for user_id, expires_at, accepted_at, revoked_at in rows:
+        if accepted_at is not None:
+            accepted.add(user_id)
+        elif revoked_at is None:
+            status = "expired" if _as_utc(expires_at) <= now else "pending"
+            statuses[user_id] = (status, expires_at)
+        else:
+            statuses.setdefault(user_id, ("revoked", None))
+    for user_id in accepted:
+        statuses.pop(user_id, None)
+    return statuses
 
 
 async def resolve_invitation(

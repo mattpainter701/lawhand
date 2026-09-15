@@ -205,7 +205,7 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     """List all users in the current tenant."""
-    from app.services.user_invitations import open_invitation_statuses
+    from app.services.user_invitations import invitation_statuses
 
     admin = await _require_admin(request, db)
     await set_tenant_context(db, str(admin.tenant_id))
@@ -221,7 +221,7 @@ async def list_users(
     workspace_mcp_counts = await _workspace_mcp_active_grant_counts(
         db, admin.tenant_id, user_ids
     )
-    invitations = await open_invitation_statuses(
+    invitations = await invitation_statuses(
         db, tenant_id=admin.tenant_id, user_ids=user_ids
     )
 

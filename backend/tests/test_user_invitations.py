@@ -482,24 +482,43 @@ async def test_reactivate_still_restores_deactivated_colleague(
 
 
 @pytest.mark.asyncio
-async def test_user_list_reports_pending_and_expired_invitations(
-    client, db_session, test_tenant
-):
+async def test_user_list_reports_each_invitation_state(client, db_session, test_tenant):
     pending, _ = await _invite(db_session, test_tenant, "pending@testfirm.com")
     expired, _ = await _invite(db_session, test_tenant, "expired@testfirm.com")
+    revoked, _ = await _invite(db_session, test_tenant, "revoked@testfirm.com")
+    accepted, accepted_token = await _invite(
+        db_session, test_tenant, "accepted@testfirm.com"
+    )
     await db_session.execute(
         update(UserInvitation)
         .where(UserInvitation.user_id == expired.id)
         .values(expires_at=datetime.now(timezone.utc) - timedelta(hours=1))
     )
+    await db_session.execute(
+        update(UserInvitation)
+        .where(UserInvitation.user_id == revoked.id)
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
     await db_session.commit()
+    joined = await client.post(
+        "/api/auth/invite/accept",
+        json={"token": accepted_token, "password": STRONG_PASSWORD},
+    )
+    assert joined.status_code == 200, joined.text
+    client.cookies.clear()
 
     response = await client.get("/api/admin/users")
 
     assert response.status_code == 200, response.text
     by_email = {row["email"]: row for row in response.json()["users"]}
     assert by_email["pending@testfirm.com"]["invitation_status"] == "pending"
+    assert by_email["pending@testfirm.com"]["invitation_expires_at"] is not None
     assert by_email["expired@testfirm.com"]["invitation_status"] == "expired"
+    # Revoked but never accepted: still only reachable through a new invitation,
+    # so the list must say so rather than show a plain inactive account.
+    assert by_email["revoked@testfirm.com"]["invitation_status"] == "revoked"
+    assert by_email["revoked@testfirm.com"]["invitation_expires_at"] is None
+    assert by_email["accepted@testfirm.com"]["invitation_status"] is None
     assert by_email["attorney@testfirm.com"]["invitation_status"] is None
 
 
