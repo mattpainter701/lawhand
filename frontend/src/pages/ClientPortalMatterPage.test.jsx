@@ -552,3 +552,69 @@ describe('SignaturesTab', () => {
     expect(screen.getByText('Wrong fee schedule')).toBeInTheDocument()
   })
 })
+
+describe('shared-document counts and labels (#489)', () => {
+  const accessView = {
+    ...matterView,
+    document_count: 4,
+    firm_shared_document_count: 1,
+    signing_document_count: 2,
+    client_upload_count: 1,
+  }
+
+  const portalDocuments = [
+    { id: 'd-shared', filename: 'Shared brief.pdf', uploaded_by_client: false, access_source: 'firm_shared', created_at: '2026-09-01T00:00:00Z' },
+    { id: 'd-fee', filename: 'Fee agreement.pdf', uploaded_by_client: false, access_source: 'signing_packet', created_at: '2026-09-01T00:00:00Z' },
+    { id: 'd-questionnaire', filename: 'Intake questionnaire.pdf', uploaded_by_client: false, access_source: 'signing_packet', created_at: '2026-09-01T00:00:00Z' },
+    { id: 'd-mine', filename: 'Client photo.pdf', uploaded_by_client: true, access_source: 'client_upload', created_at: '2026-09-01T00:00:00Z' },
+  ]
+
+  it('counts what the client can open and says what makes up the total', async () => {
+    getClientPortalMatter.mockResolvedValue(accessView)
+    render(<ClientPortalMatterPage />)
+
+    const tile = (await screen.findByText('Documents available to you')).closest('button')
+    expect(within(tile).getByText('4')).toBeInTheDocument()
+    expect(
+      within(tile).getByText('1 shared by your firm · 2 for signing · 1 sent by you'),
+    ).toBeInTheDocument()
+  })
+
+  it('groups paperwork reached through a signing packet apart from firm shares', async () => {
+    getClientPortalMatter.mockResolvedValue(accessView)
+    listClientPortalDocuments.mockResolvedValue(portalDocuments)
+    const user = userEvent.setup()
+    render(<ClientPortalMatterPage />)
+
+    await user.click(await screen.findByRole('button', { name: /Documents/ }))
+
+    const signing = (await screen.findByText('Available to you for signing')).closest('div')
+    expect(within(signing).getByText('Fee agreement.pdf')).toBeInTheDocument()
+    expect(within(signing).getByText('Intake questionnaire.pdf')).toBeInTheDocument()
+
+    const shared = screen.getByText('Shared by your legal team').closest('div')
+    expect(within(shared).getByText('Shared brief.pdf')).toBeInTheDocument()
+    expect(within(shared).queryByText('Fee agreement.pdf')).not.toBeInTheDocument()
+
+    const mine = screen.getByText('Sent by you').closest('div')
+    expect(within(mine).getByText('Client photo.pdf')).toBeInTheDocument()
+  })
+
+  it('still groups a response from an older backend without access sources', async () => {
+    getClientPortalMatter.mockResolvedValue(matterView)
+    listClientPortalDocuments.mockResolvedValue([
+      { id: 'd-old-firm', filename: 'Legacy brief.pdf', uploaded_by_client: false, created_at: '2026-09-01T00:00:00Z' },
+      { id: 'd-old-mine', filename: 'Legacy upload.pdf', uploaded_by_client: true, created_at: '2026-09-01T00:00:00Z' },
+    ])
+    const user = userEvent.setup()
+    render(<ClientPortalMatterPage />)
+
+    await user.click(await screen.findByRole('button', { name: /Documents/ }))
+
+    const shared = (await screen.findByText('Shared by your legal team')).closest('div')
+    expect(within(shared).getByText('Legacy brief.pdf')).toBeInTheDocument()
+    const mine = screen.getByText('Sent by you').closest('div')
+    expect(within(mine).getByText('Legacy upload.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('Available to you for signing')).not.toBeInTheDocument()
+  })
+})

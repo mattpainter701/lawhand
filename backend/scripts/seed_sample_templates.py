@@ -35,6 +35,38 @@ from app.services.template_bindings import is_valid_binding  # noqa: E402
 SEED_DIR = Path(__file__).resolve().parents[1] / "seed" / "sample_templates"
 
 
+_PROVENANCE_FIELDS = {
+    "source_name",
+    "source_url",
+    "edition",
+    "retrieved_at",
+    "source_files",
+}
+
+
+def _provenance(form: dict) -> dict | None:
+    """Validate the manifest's provenance block before it reaches the catalog.
+
+    Provenance is what tells a user which of several same-titled forms they are
+    about to file, so an unrecognised key is a build error rather than
+    something to pass through unchecked. Absent provenance stays absent: the UI
+    says the source was not recorded instead of implying one.
+    """
+
+    provenance = form.get("provenance")
+    if provenance in (None, {}):
+        return None
+    if not isinstance(provenance, dict):
+        raise SystemExit(f"Provenance must be an object: {form['slug']}")
+    unknown = sorted(set(provenance) - _PROVENANCE_FIELDS)
+    if unknown:
+        raise SystemExit(
+            f"Unknown provenance field in manifest for {form['slug']}: "
+            f"{', '.join(unknown)}"
+        )
+    return provenance
+
+
 def _variable_schema(content: bytes, bindings: dict | None = None) -> dict:
     """Derive the field schema from the PDF, carrying the manifest's bindings.
 
@@ -104,6 +136,7 @@ async def seed(prune: bool = False) -> None:
                 "source_file_size": len(content),
                 "field_count": len(schema["fields"]),
                 "variable_schema": schema,
+                "provenance": _provenance(form),
                 "is_active": True,
             }
             slug = form["slug"]

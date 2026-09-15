@@ -64,6 +64,10 @@ from app.services.llm_routing import (
 )
 from app.services.billing import calculate_cost
 from app.services.demo_access import reject_demo_premium
+from app.services.public_case_law_policy import (
+    resolve_include_public,
+    tenant_public_case_law_allowed,
+)
 from app.services.memory_service import MemoryService
 from app.services.user_context import build_global_user_context
 from app.services.matter_context import MatterContextService
@@ -1028,6 +1032,7 @@ def _conversation_to_response(
     conv: Conversation,
     message_count: int = None,
     attachment_count: int = 0,
+    public_case_law_allowed: bool = True,
 ) -> ConversationResponse:
     return ConversationResponse(
         id=str(conv.id),
@@ -1037,6 +1042,11 @@ def _conversation_to_response(
         updated_at=conv.updated_at,
         message_count=message_count,
         attachment_count=max(0, int(attachment_count or 0)),
+        use_premium_llm=bool(getattr(conv, "use_premium_llm", False)),
+        include_public=bool(getattr(conv, "include_public", True)),
+        # Reported per conversation because that is where the toggle lives;
+        # the value itself is the firm's, identical for every conversation.
+        public_case_law_restricted=not public_case_law_allowed,
     )
 
 
@@ -1796,11 +1806,13 @@ async def list_conversations(
             for row in attachment_count_result.fetchall()
         }
 
+    public_allowed = await tenant_public_case_law_allowed(db, user.tenant_id)
     return [
         _conversation_to_response(
             conversation,
             message_count_map.get(str(conversation.id), 0),
             attachment_count_map.get(str(conversation.id), 0),
+            public_allowed,
         )
         for conversation in conversations
     ]
@@ -1815,6 +1827,11 @@ async def create_conversation(
     """Create a new conversation."""
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
+
+    # A stored premium preference is still a request, and a demo workspace may
+    # not hold one at all: reject it here as the send path does.
+    if body.use_premium_llm:
+        reject_demo_premium(user, True)
 
     matter_uuid = None
     matter_name = None
@@ -1832,12 +1849,22 @@ async def create_conversation(
         user_id=user.id,
         title=title,
         matter_id=matter_uuid,
+        use_premium_llm=bool(body.use_premium_llm),
+        include_public=True
+        if body.include_public is None
+        else bool(body.include_public),
     )
     db.add(conv)
     await db.flush()
     await db.commit()
 
-    return _conversation_to_response(conv, 0)
+    return _conversation_to_response(
+        conv,
+        0,
+        public_case_law_allowed=await tenant_public_case_law_allowed(
+            db, user.tenant_id
+        ),
+    )
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
@@ -1898,6 +1925,7 @@ async def get_conversation(
             conv,
             len(messages),
             attachment_count or 0,
+            await tenant_public_case_law_allowed(db, user.tenant_id),
         ),
         messages=[
             _message_to_response(m, artifact_map.get(str(m.id), [])) for m in messages
@@ -1954,8 +1982,16 @@ async def update_conversation(
             matter = await _matter_for_tenant_or_400(db, user, matter_id)
             target_matter_id = matter.id
 
-    if body.title is None and body.matter_id is None:
+    preference_update = (
+        body.use_premium_llm is not None or body.include_public is not None
+    )
+    if body.title is None and body.matter_id is None and not preference_update:
         raise HTTPException(status_code=400, detail="No conversation updates provided")
+
+    # A stored premium preference is still a request, and a demo workspace may
+    # not even hold one: reject it here as the send path does.
+    if body.use_premium_llm:
+        reject_demo_premium(user, True)
 
     semantic_matter_change = (
         body.matter_id is not None and target_matter_id != conv.matter_id
@@ -2011,6 +2047,10 @@ async def update_conversation(
             conv.title = title
         if body.matter_id is not None:
             conv.matter_id = target_matter_id
+        if body.use_premium_llm is not None:
+            conv.use_premium_llm = bool(body.use_premium_llm)
+        if body.include_public is not None:
+            conv.include_public = bool(body.include_public)
 
         count_result = await mutation_db.execute(
             select(func.count(Message.id)).where(Message.conversation_id == conv.id)
@@ -2022,8 +2062,11 @@ async def update_conversation(
                 Document.tenant_id == tenant_id,
             )
         )
+        public_allowed = await tenant_public_case_law_allowed(mutation_db, tenant_id)
         await mutation_db.commit()
-        return _conversation_to_response(conv, message_count, attachment_count or 0)
+        return _conversation_to_response(
+            conv, message_count, attachment_count or 0, public_allowed
+        )
     finally:
         if lease is not None:
             await lease.release()
@@ -2303,6 +2346,28 @@ async def send_message(
         await lease.release()
 
 
+async def _apply_conversation_preferences(
+    db: AsyncSession,
+    user,
+    conv: Conversation,
+    body: MessageCreate,
+) -> None:
+    """Record this turn's tier and source choice, then narrow it by firm policy.
+
+    What the user asked for is what gets stored, so reopening the conversation
+    restores their choice even if the firm forbids public case law today and
+    permits it tomorrow. What this turn actually runs with is the narrowed
+    value: ``include_public`` is rewritten in place so every downstream reader
+    of the request body sees one answer.
+    """
+
+    conv.use_premium_llm = bool(body.use_premium_llm)
+    conv.include_public = bool(body.include_public)
+    body.include_public = await resolve_include_public(
+        db, user.tenant_id, bool(body.include_public)
+    )
+
+
 async def _send_message_under_generation_lock(
     conversation_id: str,
     body: MessageCreate,
@@ -2344,6 +2409,7 @@ async def _send_message_under_generation_lock(
         raise HTTPException(status_code=403, detail="Access denied")
 
     reject_demo_premium(user, body.use_premium_llm)
+    await _apply_conversation_preferences(db, user, conv, body)
     use_premium = _premium_for_user(user, body.content, body.use_premium_llm)
     route = await resolve_llm_route(
         db,
@@ -3106,6 +3172,7 @@ async def _stream_message_under_generation_lock(
 
     try:
         reject_demo_premium(user, body.use_premium_llm)
+        await _apply_conversation_preferences(db, user, conv, body)
         use_premium = _premium_for_user(user, body.content, body.use_premium_llm)
         route = await resolve_llm_route(
             db,

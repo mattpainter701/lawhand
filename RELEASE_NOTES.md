@@ -5,6 +5,18 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.04 — Assistant settings stick, and document access says who can see what
+
+Released September 15, 2026.
+
+Reopening an assistant conversation keeps the response settings you chose, the client portal explains what the client can actually open, and the sample form library tells same-titled forms apart.
+
+- **Your assistant settings survive a reopen.** The response model and the public case law choice are saved on the conversation, so closing and reopening it no longer resets them to the defaults.
+- **Firm case law policy is respected and explained.** Turning off public case law in Settings now applies to the assistant. The chat switch shows it off and says the firm restricts it, rather than looking available.
+- **One answer to what the client can see.** The portal's document count matches its Documents tab, and shows what makes up the total: shared by your firm, available for signing, and sent by the client.
+- **Signing paperwork is no longer labelled Private.** A document a client can open because they are signing it now reads Available to signing client on the matter documents tab, with the share toggle unchanged.
+- **Sample forms that share a title are told apart.** Where several library forms carry the same title, each is numbered with its field count and, where the source recorded one, its edition, with a note to preview first.
+
 ## 2026.09.15.03 — Starter forms generate again, and fill from more of the client record
 
 Released September 15, 2026.

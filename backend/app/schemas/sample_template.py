@@ -16,6 +16,7 @@ class SampleTemplateResponse(BaseModel):
     format: str
     field_count: Optional[int] = None
     variable_schema: Optional[dict[str, Any]] = None
+    provenance: Optional[dict[str, Any]] = None
     source_filename: Optional[str] = None
     source_sha256: Optional[str] = None
     source_file_size: Optional[int] = None

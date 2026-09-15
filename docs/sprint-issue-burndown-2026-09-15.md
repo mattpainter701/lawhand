@@ -16,6 +16,30 @@
 > **#504 (stretch) was not taken**, and its blocker is unchanged: the manifest
 > still has no provenance field, so nothing in the repository says which court
 > form each duplicate-titled variant is.
+>
+> **Update — the three remaining issues are delivered.** #487, #489 and the
+> open part of #504 shipped together on `claude/quirky-noether-j65hl0`, each on
+> the recommended default recorded in the decision table below, so the "next
+> sprint" section is closed out:
+>
+> - **#487** — per-conversation columns (migration `190`), hydrate on open,
+>   `PATCH` on toggle; tenant `include_public_case_law` narrows only, with the
+>   restriction shown in the chat switch. Precedence is written down in
+>   `docs/assistant-conversation-settings.md`.
+> - **#489** — one access definition
+>   (`app/services/portal_document_access.py`) drives the overview count, its
+>   breakdown, the portal tab's grouping and the staff badge, with a
+>   count-parity test. The open question is answered: a signing grant *does*
+>   widen visibility beyond the shared set, by design; the defect was the
+>   "Private" label. See `docs/client-document-visibility.md`.
+> - **#504** — provenance is now a documented manifest field carried by the
+>   build script and stored on the catalog (migration `191`). It is **not
+>   backfilled**: the import library's `catalog.json` is not in this
+>   repository, so the values arrive on the next rebuild against that source.
+>   Until then the library numbers same-titled forms by field count and says
+>   the source was not recorded, rather than inventing an edition. The data
+>   decision — label the variants as editions, or curate the catalog down —
+>   stays open for a human, which is what D-3 said it should be.
 
 Planning artifact for the nine issues open on `mattpainter701/lawhand` as of
 2026-09-14 (`main` at `667f97c`, release `2026.09.13.15`). Each item below was
@@ -241,9 +265,14 @@ nothing in the tree says which court form each one is.
 
 The useful sprint deliverable is therefore **not** a label — it is provenance:
 
-- [ ] Add a source/edition field to the manifest schema and backfill it from the
-      import source, so a human can then decide per variant.
-- [ ] Only after that: distinguishing labels, or a curated catalog.
+- [x] Add a source/edition field to the manifest schema and backfill it from the
+      import source, so a human can then decide per variant. *Schema, build
+      script, catalog column and API shipped; the backfill needs the import
+      library, which is not in this repository, so the values land on the next
+      rebuild against it.*
+- [ ] Only after that: distinguishing labels, or a curated catalog. *Still a
+      human's data decision. Meanwhile the library shows the differences it
+      actually has and says the source was not recorded.*
 
 Take this only if A, B and C are done. Otherwise it moves to next sprint with the
 provenance question answered out-of-band.
@@ -283,11 +312,12 @@ Beyond each issue's own "Done when":
 
 ---
 
-## Next sprint
+## Next sprint — *delivered, see the status note above*
 
-Both are decision-gated today; both need a migration or a data-model definition, and
-both are consistency problems rather than incorrect-artifact problems, which is why
-they sit behind Workstream A.
+Both were decision-gated when this was written; both needed a migration or a
+data-model definition, and both are consistency problems rather than
+incorrect-artifact problems, which is why they sat behind Workstream A. Both
+shipped on their recommended defaults.
 
 - **#489** — shared-document counts disagree across overview, documents tab and
   signing grants. A per-recipient signing grant cannot be represented by the single

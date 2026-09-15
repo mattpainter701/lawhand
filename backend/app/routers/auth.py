@@ -29,6 +29,7 @@ from app.services.plugin_entitlements import active_plugin_names
 from app.services.rbac_service import get_user_capabilities
 from app.services import session_policy, workspace_mcp_revocation
 from app.services.llm_routing import resolve_llm_route, route_matter_context_allowed
+from app.services.public_case_law_policy import tenant_public_case_law_allowed
 from app.services.office_access import (
     require_office_globally_enabled,
     require_office_pilot_tenant,
@@ -2113,6 +2114,7 @@ async def get_me(
     plan_id, upsell_target = await resolve_plan_meta(db, user.tenant_id)
     demo_session = await _active_demo_session(db, user.tenant_id)
     standard_context_allowed = await _standard_matter_context_policy(db, user.tenant_id)
+    public_case_law_allowed = await tenant_public_case_law_allowed(db, user.tenant_id)
     reconnect = await workspace_mcp_revocation.pending_reconnect_clients(db, user)
     return UserInfo(
         id=str(user.id),
@@ -2124,6 +2126,7 @@ async def get_me(
         license_active=user.license_active,
         premium_ai_enabled=user.premium_ai_enabled,
         standard_matter_context_allowed=standard_context_allowed,
+        public_case_law_allowed=public_case_law_allowed,
         created_at=user.created_at,
         billing_tier=user.tenant.billing_tier if user.tenant else "payg",
         subscription_status=(
@@ -2224,6 +2227,7 @@ async def update_me(
     capabilities = sorted(await get_user_capabilities(db, user.id))
     plan_id, upsell_target = await resolve_plan_meta(db, user.tenant_id)
     standard_context_allowed = await _standard_matter_context_policy(db, user.tenant_id)
+    public_case_law_allowed = await tenant_public_case_law_allowed(db, user.tenant_id)
     return UserInfo(
         id=str(user.id),
         tenant_id=str(user.tenant_id),
@@ -2234,6 +2238,7 @@ async def update_me(
         license_active=user.license_active,
         premium_ai_enabled=user.premium_ai_enabled,
         standard_matter_context_allowed=standard_context_allowed,
+        public_case_law_allowed=public_case_law_allowed,
         created_at=user.created_at,
         billing_tier=user.tenant.billing_tier if user.tenant else "payg",
         subscription_status=(

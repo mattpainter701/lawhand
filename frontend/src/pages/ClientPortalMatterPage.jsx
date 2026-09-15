@@ -694,6 +694,19 @@ function usePortalResource(loader, onSessionError, fallbackMessage) {
 
 // ── Overview ────────────────────────────────────────────────────────────────
 
+// Say which set the tile counts. A document reachable only because the client
+// is signing it is named as such rather than counted silently as a share.
+function documentAccessNote(matter) {
+  const parts = []
+  const shared = Number(matter.firm_shared_document_count || 0)
+  const signing = Number(matter.signing_document_count || 0)
+  const mine = Number(matter.client_upload_count || 0)
+  if (shared) parts.push(`${shared} shared by your firm`)
+  if (signing) parts.push(`${signing} for signing`)
+  if (mine) parts.push(`${mine} sent by you`)
+  return parts.join(' · ')
+}
+
 function OverviewTab({ matter, onNavigate }) {
   const tiles = [
     {
@@ -712,9 +725,13 @@ function OverviewTab({ matter, onNavigate }) {
     },
     {
       key: 'documents',
-      label: 'Shared documents',
+      // Counts exactly the rows the Documents tab lists — what this login can
+      // open — rather than only what the firm marked shared, which used to
+      // disagree with the tab whenever a signing packet granted access.
+      label: 'Documents available to you',
       value: matter.document_count || 0,
       icon: FileText,
+      note: documentAccessNote(matter),
     },
     {
       key: 'invoices',
@@ -728,7 +745,7 @@ function OverviewTab({ matter, onNavigate }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {tiles.map(({ key, label, value, icon: Icon, highlight }) => (
+        {tiles.map(({ key, label, value, icon: Icon, highlight, note }) => (
           <button
             key={key}
             onClick={() => onNavigate(key)}
@@ -739,6 +756,7 @@ function OverviewTab({ matter, onNavigate }) {
             <Icon size={16} className={highlight ? 'text-brand-accent' : 'text-brand-ink-2'} />
             <p className="text-xl font-serif font-bold text-brand-ink mt-2 leading-tight">{value}</p>
             <p className="text-xs text-brand-ink-2 font-sans mt-0.5">{label}</p>
+            {note && <p className="text-[11px] text-brand-ink-2 font-sans mt-1 leading-snug">{note}</p>}
           </button>
         ))}
       </div>
@@ -1051,10 +1069,13 @@ function DocumentsTab({ matter, onSessionError, onChanged }) {
 
   useEffect(() => { load() }, [load])
 
-  const { fromFirm, fromClient } = useMemo(
+  // Grouped by why the document is readable, matching the overview's
+  // breakdown: paperwork reached through a signing packet is not a firm share.
+  const { fromFirm, forSigning, fromClient } = useMemo(
     () => ({
-      fromFirm: docs.filter((d) => !d.uploaded_by_client),
-      fromClient: docs.filter((d) => d.uploaded_by_client),
+      fromFirm: docs.filter((d) => d.access_source === 'firm_shared' || (!d.access_source && !d.uploaded_by_client)),
+      forSigning: docs.filter((d) => d.access_source === 'signing_packet'),
+      fromClient: docs.filter((d) => d.access_source === 'client_upload' || (!d.access_source && d.uploaded_by_client)),
     }),
     [docs],
   )
@@ -1089,6 +1110,11 @@ function DocumentsTab({ matter, onSessionError, onChanged }) {
       ) : (
         <>
           <DocumentGroup title="Shared by your legal team" docs={fromFirm} />
+          <DocumentGroup
+            title="Available to you for signing"
+            docs={forSigning}
+            description="Part of the paperwork you were asked to sign. These are not shared with the matter's other contacts."
+          />
           <DocumentGroup title="Sent by you" docs={fromClient} />
         </>
       )}
@@ -1096,11 +1122,12 @@ function DocumentsTab({ matter, onSessionError, onChanged }) {
   )
 }
 
-function DocumentGroup({ title, docs }) {
+function DocumentGroup({ title, docs, description }) {
   if (docs.length === 0) return null
   return (
     <Card>
       <CardHeading>{title}</CardHeading>
+      {description && <p className="text-xs text-brand-ink-2 mb-2">{description}</p>}
       <ul className="divide-y divide-brand-line">
         {docs.map((d) => (
           <li key={d.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">

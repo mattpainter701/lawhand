@@ -42,6 +42,16 @@ class Conversation(Base):
     title: Mapped[str] = mapped_column(
         String(500), default="New Conversation", server_default="New Conversation"
     )
+    # What the user chose for this conversation, so reopening it does not
+    # silently revert the assistant to a different cost and a different set of
+    # permitted sources. Both stay requests: tenant policy and route resolution
+    # still narrow them on every turn.
+    use_premium_llm: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    include_public: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

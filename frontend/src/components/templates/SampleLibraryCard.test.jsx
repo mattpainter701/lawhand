@@ -199,3 +199,104 @@ describe('SampleLibraryCard', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded')
   })
 })
+
+describe('SampleLibraryCard duplicate-titled variants', () => {
+  // #504: four titles repeat across the catalog and the files behind them are
+  // genuinely different. The list has to make that visible without inventing a
+  // label for forms whose source was never recorded.
+  const variants = [
+    {
+      id: 'nd-divorce',
+      title: 'ND Divorce',
+      category: 'court_form',
+      jurisdictions: ['North Dakota'],
+      field_count: 9,
+      variable_schema: { version: 1, fields: [] },
+    },
+    {
+      id: 'nd-divorce-2',
+      title: 'ND Divorce',
+      category: 'court_form',
+      jurisdictions: ['North Dakota'],
+      field_count: 91,
+      variable_schema: { version: 1, fields: [] },
+    },
+    {
+      id: 'nd-general',
+      title: 'ND General',
+      category: 'court_form',
+      jurisdictions: ['North Dakota'],
+      field_count: 10,
+      variable_schema: { version: 1, fields: [] },
+      provenance: { source_name: 'ND Supreme Court', edition: 'Rev. 03/2024' },
+    },
+    {
+      id: 'nd-general-2',
+      title: 'ND General',
+      category: 'court_form',
+      jurisdictions: ['North Dakota'],
+      field_count: 74,
+      variable_schema: { version: 1, fields: [] },
+      provenance: { source_name: 'ND Supreme Court', edition: 'Rev. 11/2019' },
+    },
+    {
+      id: 'unique-1',
+      title: 'Arizona Living Will',
+      category: 'advance_directive',
+      jurisdictions: ['Arizona'],
+      field_count: 30,
+      variable_schema: { version: 1, fields: [] },
+    },
+  ]
+
+  beforeEach(() => {
+    getSampleTemplates.mockResolvedValue({ items: variants, total: variants.length })
+  })
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+  })
+
+  it('numbers same-titled forms and leaves unique titles alone', async () => {
+    render(<SampleLibraryCard />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand all' }))
+
+    const rows = screen.getAllByText('ND Divorce').map((node) => node.closest('li'))
+    expect(rows).toHaveLength(2)
+    // Ordered by field count, so the numbering reads as a series.
+    expect(within(rows[0]).getByText('Version 1 of 2')).toBeInTheDocument()
+    expect(within(rows[0]).getByText(/9 fields/)).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Version 2 of 2')).toBeInTheDocument()
+
+    const unique = screen.getByText('Arizona Living Will').closest('li')
+    expect(within(unique).queryByText(/Version \d of/)).not.toBeInTheDocument()
+  })
+
+  it('warns that the source was not recorded, and stops warning once it is', async () => {
+    render(<SampleLibraryCard />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand all' }))
+
+    const unrecorded = screen.getAllByText('ND Divorce')[0].closest('li')
+    expect(
+      within(unrecorded).getByText(/The source of each was not recorded/i),
+    ).toBeInTheDocument()
+
+    const recorded = screen.getAllByText('ND General')[0].closest('li')
+    expect(
+      within(recorded).queryByText(/was not recorded/i),
+    ).not.toBeInTheDocument()
+    expect(
+      within(recorded).getByText(/ND Supreme Court · Rev\. 03\/2024/),
+    ).toBeInTheDocument()
+  })
+
+  it('searches provenance so an edition finds its form', async () => {
+    render(<SampleLibraryCard />)
+    await screen.findByRole('button', { name: 'Expand all' })
+
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'Rev. 11/2019' } })
+
+    expect(screen.getByText('ND General')).toBeInTheDocument()
+    expect(screen.queryByText('ND Divorce')).not.toBeInTheDocument()
+  })
+})
