@@ -436,11 +436,11 @@ class MatterDocumentRevisionService:
         )
 
         await check_token_budget(db, user)
-        from app.services.tenant_access import user_may_use_premium_ai
+        from app.services.tenant_access import resolve_user_premium_ai
 
         use_premium = request.model_tier == "premium"
         if use_premium and not (
-            user_may_use_premium_ai(user)
+            await resolve_user_premium_ai(db, user)
             and bool(getattr(user, "license_active", False))
         ):
             raise DocumentRevisionServiceError(

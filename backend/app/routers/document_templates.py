@@ -3117,9 +3117,9 @@ async def propose_template_fields_with_ai(
     db: AsyncSession = Depends(get_db),
 ):
     """Return a review-only premium-AI field proposal for one upload."""
-    from app.services.tenant_access import user_may_use_premium_ai
+    from app.services.tenant_access import resolve_user_premium_ai
 
-    if not user_may_use_premium_ai(current_user):
+    if not await resolve_user_premium_ai(db, current_user):
         raise HTTPException(
             status_code=403,
             detail="Premium AI is not enabled for this user.",

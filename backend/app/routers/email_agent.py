@@ -15,7 +15,7 @@ from app.schemas.email_agent import (
 from app.services.email_agent import email_agent
 from app.services.llm import LLMService
 from app.services.llm_routing import resolve_llm_route
-from app.services.tenant_access import user_may_use_premium_ai
+from app.services.tenant_access import resolve_user_premium_ai
 from app.routers.calendar import run_calendar_sync
 
 settings = get_settings()
@@ -43,7 +43,7 @@ async def scan_emails(
     standard_route = await resolve_llm_route(db, tenant_id, use_premium=False)
     # Drafts used the premium model for everyone, including trial firms and
     # users whose premium flag is off. They now follow the same rule as chat.
-    premium_allowed = user_may_use_premium_ai(user)
+    premium_allowed = await resolve_user_premium_ai(db, user)
     draft_route = (
         await resolve_llm_route(db, tenant_id, use_premium=True)
         if premium_allowed
@@ -98,7 +98,7 @@ async def draft_email_response(
     llm = LLMService()
     tenant_name_obj = getattr(user, "tenant", None)
     tenant_name = tenant_name_obj.name if tenant_name_obj else "LawHand"
-    premium_allowed = user_may_use_premium_ai(user)
+    premium_allowed = await resolve_user_premium_ai(db, user)
     draft_route = await resolve_llm_route(db, tenant_id, use_premium=premium_allowed)
 
     draft = await email_agent.draft_response(

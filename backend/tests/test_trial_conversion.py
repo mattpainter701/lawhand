@@ -351,7 +351,6 @@ def test_premium_ai_needs_a_paid_firm_even_when_the_user_flag_is_on(tenant, allo
     user = SimpleNamespace(premium_ai_enabled=True, tenant=tenant)
 
     assert tenant_access.user_may_use_premium_ai(user) is allowed
-    assert _premium_for_user(user, "draft a motion", True) is allowed
 
 
 def test_premium_ai_still_needs_the_user_flag():
@@ -361,6 +360,78 @@ def test_premium_ai_still_needs_the_user_flag():
     )
 
     assert tenant_access.user_may_use_premium_ai(user) is False
+
+
+class _TenantLookup:
+    """Session double that resolves one firm, like db.scalar(select(Tenant))."""
+
+    def __init__(self, tenant):
+        self._tenant = tenant
+        self.calls = 0
+
+    async def scalar(self, _statement):
+        self.calls += 1
+        return self._tenant
+
+
+@pytest.mark.asyncio
+async def test_premium_resolves_the_firm_by_id_when_it_is_not_loaded():
+    """The chat handler's user comes from the verified token and has no firm.
+
+    Refusing on the missing relationship turned premium off mid-stream for a
+    paid firm, which sent the request down an unmocked path and hung
+    test_cancelled_stream_persists_a_retryable_assistant_turn.
+    """
+    db = _TenantLookup(SimpleNamespace(billing_tier="flat", expires_at=None))
+    user = SimpleNamespace(premium_ai_enabled=True, tenant=None, tenant_id=uuid.uuid4())
+
+    assert await tenant_access.resolve_user_premium_ai(db, user) is True
+    assert await _premium_for_user(db, user, "draft a motion", True) is True
+    assert db.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_premium_refused_for_a_trial_firm_resolved_by_id():
+    db = _TenantLookup(
+        SimpleNamespace(
+            billing_tier="payg",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=5),
+        )
+    )
+    user = SimpleNamespace(premium_ai_enabled=True, tenant=None, tenant_id=uuid.uuid4())
+
+    assert await tenant_access.resolve_user_premium_ai(db, user) is False
+    assert await _premium_for_user(db, user, "draft a motion", True) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user", "expected_queries"),
+    [
+        (
+            SimpleNamespace(
+                premium_ai_enabled=False, tenant=None, tenant_id=uuid.uuid4()
+            ),
+            0,
+        ),
+        (SimpleNamespace(premium_ai_enabled=True, tenant=None, tenant_id=None), 0),
+    ],
+    ids=["flag-off-never-queries", "no-firm-at-all"],
+)
+async def test_premium_is_refused_without_querying_the_firm(user, expected_queries):
+    db = _TenantLookup(SimpleNamespace(billing_tier="flat", expires_at=None))
+
+    assert await tenant_access.resolve_user_premium_ai(db, user) is False
+    assert db.calls == expected_queries
+
+
+@pytest.mark.asyncio
+async def test_a_standard_question_never_looks_up_the_firm():
+    db = _TenantLookup(SimpleNamespace(billing_tier="flat", expires_at=None))
+    user = SimpleNamespace(premium_ai_enabled=True, tenant=None, tenant_id=uuid.uuid4())
+
+    assert await _premium_for_user(db, user, "what time is the hearing", False) is False
+    assert db.calls == 0
 
 
 def test_expired_trial_allowance_is_limited_to_account_and_billing_routes():

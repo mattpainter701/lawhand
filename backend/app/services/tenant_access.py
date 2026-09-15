@@ -14,7 +14,9 @@ but are synthetic tenants and follow none of the trial rules below.
 
 from datetime import datetime, timezone
 
-from app.models.tenant import SYNTHETIC_BILLING_TIERS
+from sqlalchemy import select
+
+from app.models.tenant import SYNTHETIC_BILLING_TIERS, Tenant
 from app.services.tenant_state import require_active_tenant
 
 # Deliberately narrow: seeing account state and paying. Nothing that reads or
@@ -84,6 +86,36 @@ def tenant_allows_premium_ai(tenant) -> bool:
 
 
 def user_may_use_premium_ai(user) -> bool:
+    """Premium-AI decision for a caller that already holds the firm.
+
+    Only for a user whose ``tenant`` relationship is loaded (``/auth/me``).
+    Handlers with a session must use :func:`resolve_user_premium_ai`.
+    """
     return bool(getattr(user, "premium_ai_enabled", False)) and (
         tenant_allows_premium_ai(getattr(user, "tenant", None))
     )
+
+
+async def tenant_allows_premium_ai_by_id(db, tenant_id) -> bool:
+    if tenant_id is None:
+        return False
+    return tenant_allows_premium_ai(
+        await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    )
+
+
+async def resolve_user_premium_ai(db, user) -> bool:
+    """Premium-AI decision for a handler that holds a session.
+
+    The firm is resolved from ``user.tenant_id`` when the ``tenant``
+    relationship is not loaded. A handler's user object may legitimately carry
+    only the id — chat builds one from the verified token — so refusing on the
+    missing relationship would turn premium off for a paid firm rather than
+    answer the question that was asked.
+    """
+    if not bool(getattr(user, "premium_ai_enabled", False)):
+        return False
+    tenant = getattr(user, "tenant", None)
+    if tenant is not None:
+        return tenant_allows_premium_ai(tenant)
+    return await tenant_allows_premium_ai_by_id(db, getattr(user, "tenant_id", None))
