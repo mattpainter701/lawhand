@@ -150,3 +150,64 @@ override them.
 Any subset may be sent. A fee agreement is optional: when one is included,
 signing it opens the portal and starts the 24-hour follow-up clock; when none is
 included, the portal opens on the first message and the follow-up still runs.
+
+## The same paperwork in the global sample library
+
+The starter pack above installs into one firm's library. The global sample
+library — the platform-owned catalog every tenant reads from, in
+`backend/seed/sample_templates` — carries the same three pieces as authored,
+fillable AcroForm PDFs any firm can open without installing anything:
+
+| Slug | Category | What it is |
+|---|---|---|
+| `general-legal-services-fee-agreement` | `engagement_letter` | One agreement for every practice area. Fee arrangement — hourly, flat, contingency, hybrid, recurring — is chosen by checkbox, as are the practice area and the stage of representation, so a firm does not keep a template per matter type. |
+| `prospective-client-intake-form` | `intake` | First contact, before the firm has agreed to anything. Identity, safe-contact preferences, the kind of help sought, other parties for a conflict check, any filed case, deadlines, prior counsel, referral source, and a firm-use disposition block. |
+| `client-questionnaire` | `intake` | Case development after the matter opens: parties, narrative, chronology, existing proceedings and orders, communications, evidence, witnesses, finances, objectives, and a preservation notice. |
+
+They are authored in `backend/scripts/build_library_intake_forms.py` — that
+module is the source and the committed PDF is its artifact — rather than scraped
+like the rest of the library:
+
+    python backend/scripts/build_library_intake_forms.py
+
+The script renders each form, strips the PDF's authoring metadata, writes it
+into the seed tree, and merges its manifest entry. Entries are marked
+`"origin": "authored"`, which `scripts/build_sample_template_library.py`
+preserves when it rebuilds the scraped catalog around them.
+
+### Fields are the platform's variables
+
+Every field is named after the variable the platform already fills from
+(`client_name`, `matter_name`, `hourly_rate`, `retainer_amount`, `case_number`,
+`venue`), and the manifest declares the binding behind each one. The seeder
+attaches those declarations to the catalog row's `variable_schema`, so Smart
+Fill resolves them without a firm re-declaring anything, and an answer a client
+gives on one of these forms is reused rather than retyped. A binding path the
+catalogue does not recognise fails the build rather than seeding a field that
+quietly fills from nothing.
+
+Fields with nothing behind them — a witness's phone number, an event date — are
+left unbound rather than declared `manual`, so ordinary name matching still has
+a chance at them.
+
+The questionnaire's narrative answers use the shared intake question keys
+(`matter_summary`, `desired_outcome`, `other_parties`, `key_dates`,
+`related_proceedings`, `contact_preferences`), which is what lets a returned
+form be read back into the matter's intake record.
+
+### What the forms deliberately do not decide
+
+The same rule as the starter pack applies: a field carries a default only where
+a convention settles it — the billing increment, the minimum time charge, the
+days a statement is due, a notice period. Rates, retainers, flat fees,
+contingency percentages, late charges, and venue never carry one, and the
+regulated wording (`trust_account_terms`, `dispute_resolution_terms`,
+`jurisdiction_required_terms`) is left for the firm's attorney to write for its
+jurisdiction. Each form states on its face that attorney review is required, and
+the intake form states that completing it creates no attorney-client
+relationship.
+
+`backend/tests/unit/test_library_intake_forms.py` fails if the committed PDFs
+and the authoring module drift apart, if a binding is unknown, if a form crosses
+the studio's 200-widget limit, or if a fee field acquires a suggested amount.
+`backend/tests/test_sample_template_library.py` holds the catalog side.

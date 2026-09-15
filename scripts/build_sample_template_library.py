@@ -20,7 +20,10 @@ This script:
   source's state claims as ``jurisdictions``;
 * normalizes a human title and stable slug from the catalog's form names;
 * copies each cleaned PDF into ``backend/seed/sample_templates/<category>/``
-  and writes ``backend/seed/sample_templates/manifest.json``.
+  and writes ``backend/seed/sample_templates/manifest.json``, keeping any entry
+  marked ``"origin": "authored"`` — the firm-paperwork forms written by
+  ``backend/scripts/build_library_intake_forms.py`` share this tree and have no
+  scraped source to rebuild from.
 
 The manifest is metadata only. Field schemas are derived at seed time by
 ``scripts/seed_sample_templates.py`` (via ``discover_pdf_fields``) so the single
@@ -39,7 +42,6 @@ import json
 import os
 import re
 import secrets
-import shutil
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -700,6 +702,16 @@ def build(source: Path) -> tuple[dict, dict[str, bytes]]:
     return {"forms": manifest_forms}, cleaned_by_digest
 
 
+def _authored_forms(out: Path) -> list[dict]:
+    """Return the manifest entries this script does not own."""
+
+    manifest = out / "manifest.json"
+    if not manifest.is_file():
+        return []
+    forms = json.loads(manifest.read_text(encoding="utf-8")).get("forms") or []
+    return [form for form in forms if form.get("origin") == "authored"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
@@ -712,11 +724,23 @@ def main() -> int:
 
     manifest, cleaned_by_digest = build(source)
     out = args.out
+    # The firm-paperwork samples are authored, not scraped
+    # (backend/scripts/build_library_intake_forms.py), and they live in the same
+    # tree. Rebuilding the scraped catalog keeps them and their files rather
+    # than deleting content this script cannot regenerate.
+    authored = _authored_forms(out)
+    manifest["forms"].extend(authored)
+    manifest["forms"].sort(key=lambda form: (form["category"], form["title"].lower()))
+    kept = {form["filename"] for form in authored}
     if out.exists():
-        shutil.rmtree(out)
+        for path in sorted(out.rglob("*")):
+            if path.is_file() and str(path.relative_to(out)) not in kept:
+                path.unlink()
     out.mkdir(parents=True, exist_ok=True)
 
     for form in manifest["forms"]:
+        if form.get("origin") == "authored":
+            continue
         dest = out / form["filename"]
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(cleaned_by_digest[form["sha256"]])
