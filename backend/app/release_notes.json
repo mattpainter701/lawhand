@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.15.07",
+      "version": "2026.09.15.07",
+      "title": "One place to lay out a form, not two",
+      "published_at": "2026-09-15",
+      "summary": "Uploading a form now scans it and hands you straight to the template editor, instead of asking you to lay the fields out twice in two screens that had quietly drifted apart.",
+      "highlights": [
+        {
+          "title": "Upload, then edit — in one editor",
+          "description": "The upload step scans your document and shows what it found; laying out and naming the fields happens in the template editor, where you can also test, version and publish."
+        },
+        {
+          "title": "A scan that found nothing is no longer a dead end",
+          "description": "A flat PDF with no detectable fields can be saved as a draft, so you can open it in the editor and place the fields yourself."
+        },
+        {
+          "title": "The editor shows what needs checking",
+          "description": "Fields are coloured by whether they were read confidently, taken from the document's own form controls, or placed by hand — with an AI proposal marked as one."
+        },
+        {
+          "title": "A page that will not display no longer hides it",
+          "description": "Where the document cannot be shown, the editor offers the original file and stops you placing a field whose position it cannot work out."
+        }
+      ]
+    },
+    {
       "id": "2026.09.15.06",
       "version": "2026.09.15.06",
       "title": "A scanned form cannot be published unchecked",

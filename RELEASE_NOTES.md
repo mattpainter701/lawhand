@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.07 — One place to lay out a form, not two
+
+Released September 15, 2026.
+
+Uploading a form now scans it and hands you straight to the template editor, instead of asking you to lay the fields out twice in two screens that had quietly drifted apart.
+
+- **Upload, then edit — in one editor.** The upload step scans your document and shows what it found; laying out and naming the fields happens in the template editor, where you can also test, version and publish.
+- **A scan that found nothing is no longer a dead end.** A flat PDF with no detectable fields can be saved as a draft, so you can open it in the editor and place the fields yourself.
+- **The editor shows what needs checking.** Fields are coloured by whether they were read confidently, taken from the document's own form controls, or placed by hand — with an AI proposal marked as one.
+- **A page that will not display no longer hides it.** Where the document cannot be shown, the editor offers the original file and stops you placing a field whose position it cannot work out.
+
 ## 2026.09.15.06 — A scanned form cannot be published unchecked
 
 Released September 15, 2026.

@@ -3,8 +3,11 @@
 **Date:** 2026-09-15
 **Status:** the diff `docs/template-studio-consolidation-plan.md` §4 named as
 "the first task under step 3", now done. Steps 1 and 2 of that plan are
-implemented; this is the evidence for the step 3 decision, which is a product
-decision and is **not** taken here.
+implemented. **The step 3 decision has since been taken: direction (a).** The
+upload wizard no longer carries a field editor, `PrepareFormWorkspace.jsx` is
+retired, and `TemplateStudioEditor` is the one visual editor. This document is
+kept as the measurement the decision rested on, and as the record of what was
+ported across rather than lost.
 
 ---
 
@@ -80,7 +83,38 @@ conditional logic (37), `value_from` linking (6), signer roles (13), the
 save/dirty lifecycle (~62), click-to-place tooling (~18), the derive-draft
 action (19), field search (~5), and the module-level schema API (28).
 
-## Verdict: a merge, with one prerequisite
+## What was done
+
+Direction (a). The wizard's job is now getting the file in and scanned; the
+editor's job is making it right. `handleUploadedTemplate` already redirected to
+`/templates/{id}/studio` after create, so the handoff needed no building — only
+the duplicate editor needed removing.
+
+Three things were ported into `TemplateStudioEditor` first, so nothing was
+lost with the file: the failed-preview path (offer the original, refuse to
+place a field whose position cannot be measured), review-state colouring, and
+the AI-proposal panel. The keyboard, `source_required` and re-include ports had
+already landed with the divergence fixes.
+
+Two things had to change to make the handoff honest, and both turned out to be
+improvements rather than costs:
+
+* **The source-review attestation moved to publish** (`pdf_source_review`). It
+  had gated *creating a draft*, which a draft does not warrant — it generates
+  nothing — and it asked for the check on the one screen where a field that
+  looks wrong could not be corrected. It was also never enforced: the checkbox
+  disabled a button in the browser and was never sent anywhere.
+* **"Include at least one field" was dropped from create.** It was right while
+  the wizard was the only place to place a field. Kept, it would have refused
+  the draft that is now the only route to the editor where fields are placed —
+  leaving a firm holding a flat PDF with nowhere to go.
+
+One regression was caught by the wizard's own tests and fixed: the document
+preview panel was suppressed for PDF because the editor carried its own, so
+removing the editor left a firm looking at a list of field names with no sight
+of the document they came off. Every format shows the preview now.
+
+## Verdict as measured: a merge, with one prerequisite
 
 Consolidating is **a merge, not a rewrite**, on the evidence above: the
 coordinate math, field identity, placement handling and persisted shape are
@@ -98,7 +132,7 @@ analysis screen, not to a geometry editor. It becomes a rewrite only if Studio
 is embedded **inside** the wizard as a controlled component, which means
 inverting its entire state model.
 
-Rough movement for direction (a):
+Rough movement for direction (a), as estimated before it was done:
 
 | | Lines |
 |---|---|

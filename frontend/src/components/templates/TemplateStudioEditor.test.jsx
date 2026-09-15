@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TemplateStudioEditor, { mergedVariableSchema, schemaFields } from './TemplateStudioEditor'
 
@@ -8,19 +8,24 @@ vi.mock('./WordDocumentPreview', () => ({ default: ({ children, onCreateField, o
 // pdf.js cannot rasterize in jsdom, so the shared canvas module is stubbed with
 // deterministic page geometry. Everything under test here is placement state,
 // not rasterization.
+// pdf.js either loads the retained source or it does not, and the editor has
+// to behave differently in each case, so the stub is switchable.
+const LOADED_PDF = {
+  document: { numPages: 2 },
+  pages: [
+    { page: 1, width: 612, height: 792, rotation: 0 },
+    { page: 2, width: 612, height: 792, rotation: 0 },
+  ],
+  error: '',
+}
+const pdfLoad = vi.hoisted(() => ({ result: null }))
+
 vi.mock('./PdfDocumentCanvas', () => ({
   PdfPageCanvas: ({ pageNumber }) => <canvas aria-label={`PDF page ${pageNumber}`} />,
   PdfThumbnail: ({ pageNumber, onSelect }) => (
     <button type="button" onClick={onSelect}>{`Show page ${pageNumber}`}</button>
   ),
-  useTemplatePdfDocument: () => ({
-    document: { numPages: 2 },
-    pages: [
-      { page: 1, width: 612, height: 792, rotation: 0 },
-      { page: 2, width: 612, height: 792, rotation: 0 },
-    ],
-    error: '',
-  }),
+  useTemplatePdfDocument: () => pdfLoad.result,
 }))
 
 // The binding catalogue is static server-owned vocabulary; the editor only
@@ -96,6 +101,10 @@ const templateWith = (fields, extra = {}) => ({
   variable_schema: { version: 2, pages: [{ page: 1, width: 612, height: 792 }], fields, ...extra },
 })
 
+beforeEach(() => {
+  pdfLoad.result = LOADED_PDF
+})
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -147,6 +156,34 @@ describe('TemplateStudioEditor', () => {
     render(<TemplateStudioEditor template={templateWith([{ name: 'client_name', label: 'Name' }])} source={pdfSource()} onSave={vi.fn()} />)
 
     expect(await screen.findByText(/Rename it and the fill stops/)).toBeInTheDocument()
+  })
+
+  // Carried over from the intake editor, which used to guard this and has been
+  // retired into this one. A page that will not render is exactly the page an
+  // author must not place blind geometry on.
+  describe('when the page cannot be rendered', () => {
+    const broken = { ...templateWith([{ name: 'a', label: 'A' }]), variable_schema: { version: 2, fields: [{ name: 'a', label: 'A' }] } }
+
+    it('offers the original and refuses to place a field it cannot position', () => {
+      // No `pages` on the schema, so nothing says how big the page is; a
+      // rectangle placed here would be measured against a guessed 612x792 and
+      // stored as though it had been measured.
+      pdfLoad.result = { document: null, pages: [], error: 'The PDF could not be read.' }
+      render(<TemplateStudioEditor template={broken} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByRole('link', { name: 'Open the original in a new tab' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Text' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Draw field' })).toBeDisabled()
+    })
+
+    it('still places a field where the template records the page size', () => {
+      // A page that failed to *render* is still a page whose size we know,
+      // from the geometry the server signed at upload.
+      pdfLoad.result = { document: null, pages: [], error: 'The PDF could not be read.' }
+      render(<TemplateStudioEditor template={templateWith([])} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByRole('button', { name: 'Text' })).toBeEnabled()
+    })
   })
 
   // The scan's uncertain fields must be compared against the original before

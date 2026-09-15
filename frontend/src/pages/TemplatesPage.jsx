@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useLocation, useNavigate } from 'react-router-dom'
-import PrepareFormWorkspace from '../components/templates/PrepareFormWorkspace'
 import TemplateStudioHome from '../components/templates/TemplateStudioHome'
 import TemplateStudioWorkspace from '../components/templates/TemplateStudioWorkspace'
 import WordImportWorkspace from '../components/templates/WordImportWorkspace'
@@ -451,7 +450,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
   const [analysisFileKey, setAnalysisFileKey] = useState('')
   const [rejection, setRejection] = useState('')
   const [reviewConfirmed, setReviewConfirmed] = useState(false)
-  const [sourceReviewReady, setSourceReviewReady] = useState(false)
   const [aiConsent, setAiConsent] = useState(false)
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   const [aiRequirements, setAiRequirements] = useState('')
@@ -501,7 +499,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
     const shouldUseSuggestedTitle = selectedFile !== file || !title.trim()
     setAnalyzing(true)
     setError(null)
-    setSourceReviewReady(false)
     setAiConsent(false)
     try {
       const form = buildFormData({ sourceFile: selectedFile })
@@ -518,7 +515,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
           : '',
       )
       setSourcePreviewKind(isImageSample(selectedFile) ? 'image' : selectedFile.type === 'application/pdf' || String(result.format || '').toLowerCase() === 'pdf' ? 'pdf' : '')
-      if (isImageSample(selectedFile)) setSourceReviewReady(true)
       if (shouldUseSuggestedTitle) setTitle(result.title || '')
     } catch (err) {
       if (analysisRequestRef.current !== requestId) return
@@ -526,7 +522,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
       setSourcePreviewKind('')
       setAnalysisFileKey('')
       setReviewConfirmed(false)
-      setSourceReviewReady(false)
       setError(getErrorMessage(err, 'Could not analyze that sample.'))
     } finally {
       if (analysisRequestRef.current === requestId) setAnalyzing(false)
@@ -580,7 +575,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
       setDraftBody(nextBody)
       setMappedFields([...mappedFields, ...proposals.map(field => ({ ...field, review_required: true, _bodyName: field.name }))])
       setReviewConfirmed(false)
-      setSourceReviewReady(false)
       if (!proposals.some((field) => field?.ai_suggested)) {
         setError('Premium AI found no additional source-backed fields to propose.')
       }
@@ -602,7 +596,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
     setMappedFields([])
     setSourcePreviewUrl('')
     setSourcePreviewKind('')
-    setSourceReviewReady(false)
     setAnalyzing(false)
     setAiAnalyzing(false)
     setAiConsent(false)
@@ -653,18 +646,17 @@ function UploadTemplateForm({ onCreated, onCancel }) {
     }
     const isPdfUpload = String(analysis.format || '').toLowerCase() === 'pdf'
     const requiresHumanReview = fieldsRequireHumanReview(mappedFields, analysis)
-    if (isPdfUpload && !sourceReviewReady) {
-      setError('Wait for the source preview to load, or open the original document from the review workspace before saving.')
-      return
-    }
-    if (requiresHumanReview && !reviewConfirmed) {
+    // A scanned upload's source review is asked for in the editor and enforced
+    // at publish, where a field that looks wrong can be corrected rather than
+    // only attested to. A draft generates nothing, so it is not what needs the
+    // gate. Formats with no scan behind them keep their create-time check.
+    if (requiresHumanReview && !isPdfUpload && !reviewConfirmed) {
       setError('Compare the detected values with the source document and confirm the review before creating the template.')
       return
     }
-    if (isPdfUpload && !mappedFields.some((field) => field?.included !== false && (field?.pdf_field_name || field?.pdf_overlay || field?.pdf_overlays?.length))) {
-      setError('Include at least one reusable field. Add a field on the page, or re-include a detected field before saving.')
-      return
-    }
+    // No "include at least one field" check any more. It was right while the
+    // wizard was the only place to place a field; now it would refuse the
+    // draft that is the only way to reach the editor where fields are placed.
     if (!title.trim() || (!isPdfUpload && !draftBody.trim())) {
       setError(isPdfUpload ? 'Template title is required.' : 'Template title and extracted body are required.')
       return
@@ -715,7 +707,6 @@ function UploadTemplateForm({ onCreated, onCancel }) {
       ? 'private local OCR'
       : ''
   const isPdfAnalysis = String(analysis?.format || '').toLowerCase() === 'pdf'
-  const hasPdfMappings = fields.some((field) => field?.included !== false && (field?.pdf_field_name || field?.pdf_overlay || field?.pdf_overlays?.length))
   const requiresHumanReview = fieldsRequireHumanReview(fields, analysis)
   const lowConfidenceFieldCount = reviewConfirmed ? 0 : fields.filter((field) => (
     field?.included !== false && (field?.review_required || Number(field?.confidence ?? 1) < 0.75 || field?.ai_suggested)
@@ -745,9 +736,7 @@ function UploadTemplateForm({ onCreated, onCancel }) {
     setMappedFields(nextFields)
   }
   const analysisReady = analysisFileKey === fileKey && Boolean(analysis)
-  const reviewComplete = analysisReady
-    && (!isPdfAnalysis || sourceReviewReady)
-    && (!requiresHumanReview || reviewConfirmed)
+  const reviewComplete = analysisReady && (!requiresHumanReview || isPdfAnalysis || reviewConfirmed)
 
   const renameField = (index, rawName) => {
     const nextName = normalizeVariableName(rawName)
@@ -958,19 +947,17 @@ function UploadTemplateForm({ onCreated, onCancel }) {
         <button
           type="button"
           onClick={handleCreate}
-          disabled={saving || !file || !analysis || (isPdfAnalysis && (!hasPdfMappings || !sourceReviewReady)) || (requiresHumanReview && !reviewConfirmed)}
+          disabled={saving || !file || !analysis || (requiresHumanReview && !isPdfAnalysis && !reviewConfirmed)}
           className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-white bg-brand-ink hover:bg-brand-ink-2 rounded disabled:opacity-50"
         >
           <Upload size={16} />
           {saving
             ? 'Creating...'
-            : isPdfAnalysis && !sourceReviewReady
-              ? 'Waiting for source preview'
-              : requiresHumanReview && !reviewConfirmed
-                ? 'Confirm review below to save'
-                : analysis
-                  ? 'Save reusable template'
-                  : 'Reading document first'}
+            : requiresHumanReview && !isPdfAnalysis && !reviewConfirmed
+              ? 'Confirm review below to save'
+              : analysis
+                ? 'Save draft and open the editor'
+                : 'Reading document first'}
         </button>
         <button
           type="button"
@@ -1023,10 +1010,10 @@ function UploadTemplateForm({ onCreated, onCancel }) {
               <p className="mt-1 text-brand-muted">The source page remains the visual design. Existing controls, ordinary page text, and scanned pages become reusable through reviewed field placements.</p>
             </div>
           )}
-          {isPdfAnalysis && !hasPdfMappings && (
+          {isPdfAnalysis && !fields.some((field) => field?.included !== false) && (
             <div role="alert" className="border border-brand-amber/40 rounded bg-brand-amber/10 p-4 text-sm text-brand-ink">
               <p className="font-semibold">No reusable details located confidently</p>
-              <p className="mt-1 text-brand-muted">Try a clearer copy or add visible labels next to the details that change. Image-only scans are read automatically.</p>
+              <p className="mt-1 text-brand-muted">Try a clearer copy or add visible labels next to the details that change. You can also save this as a draft and place the fields yourself in the editor.</p>
             </div>
           )}
           {String(analysis.format || '').toLowerCase() === 'docx' && (
@@ -1035,7 +1022,12 @@ function UploadTemplateForm({ onCreated, onCancel }) {
               <p className="mt-1 text-brand-muted">The generated file remains a DOCX with the source layout, tables, headers, and footers. Review the detected replacement values below.</p>
             </div>
           )}
-          {!isPdfAnalysis && sourcePreviewUrl && (
+          {/* Every format shows the uploaded document here. This used to be
+              suppressed for PDF because the wizard rendered a second field
+              editor that carried its own preview; without it a firm would
+              scan a form and see only a list of field names, with no sight of
+              the document those names came off. */}
+          {sourcePreviewUrl && (
             <div className="border border-brand-line rounded bg-brand-bg p-4">
               <div className="mb-3">
                 <p className="text-sm font-semibold text-brand-ink">Original document preview</p>
@@ -1061,9 +1053,7 @@ function UploadTemplateForm({ onCreated, onCancel }) {
               <span>I compared the detected values with the original source and corrected anything uncertain.</span>
             </label>
           )}
-          {isPdfAnalysis ? (
-            <PrepareFormWorkspace file={file} analysis={analysis} fields={fields} previewUrl={sourcePreviewUrl} reviewConfirmed={reviewConfirmed} onReviewConfirmed={setReviewConfirmed} onSourceReviewReadyChange={setSourceReviewReady} onFieldsChange={handleWorkspaceFieldsChange} catalogue={catalogue} />
-          ) : isWordUpload ? null : (
+          {isWordUpload ? null : (
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
           <div className="border border-brand-line rounded bg-brand-bg p-4">
             <div className="flex items-center justify-between gap-3 mb-3">

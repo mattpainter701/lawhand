@@ -25,7 +25,7 @@ import {
 import DocxDocumentView from './DocxDocumentView'
 import TemplateBindingPicker from './TemplateBindingPicker'
 import useBindingCatalogue from './useBindingCatalogue'
-import { fieldsNeedingReview } from './pdfSourceReview'
+import { fieldNeedsReview, fieldsNeedingReview } from './pdfSourceReview'
 import {
   FILL_STATES,
   FILL_STATE_COLORS,
@@ -174,6 +174,15 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     () => Boolean(template.variable_schema?.pdf_source_review?.confirmed_digest),
   )
   const scrollerRef = useRef(null)
+  // The retained source itself, for the case where we cannot render it. A
+  // template whose page will not display is exactly the one an author needs to
+  // open elsewhere before trusting anything on this screen.
+  const sourceUrl = useMemo(
+    () => (source instanceof Blob ? URL.createObjectURL(source) : ''),
+    [source],
+  )
+  useEffect(() => () => { if (sourceUrl) URL.revokeObjectURL(sourceUrl) }, [sourceUrl])
+
   const onPageRenderError = useCallback(error => setRenderError(`Page ${pageNumber} could not be rendered. (${error?.message || 'Preview unavailable'})`), [pageNumber])
   useEffect(() => { onDirtyChange?.(dirty || Boolean(wordingSelection)) }, [dirty, wordingSelection, onDirtyChange])
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
@@ -492,6 +501,19 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   ))
 
   const previewProblem = sourceError || pdfError || renderError
+  // Placing a field needs a page to place it on. Where the preview failed, the
+  // stored page geometry is the only thing that makes a rectangle mean
+  // anything; without it a placement is drawn against a guessed 612x792 and
+  // written to the template as though it were measured. The intake editor has
+  // always guarded this; this editor armed every tool over a blank div and
+  // printed the error above it.
+  const pageHasAuthoritativeGeometry = effectivePages.some((item) => (
+    Number(item?.page) === pageNumber && Number(item?.width) > 0 && Number(item?.height) > 0
+  ))
+  const canPlaceFields = !previewProblem || pageHasAuthoritativeGeometry
+  const placementBlockedReason = canPlaceFields
+    ? ''
+    : 'The page could not be rendered and this template records no page size, so a field placed here could not be positioned. Open the original to check it.'
   const deriveSchema = {
     ...mergedVariableSchema(template, fields, regions),
     ...(isDocx && template.variable_schema?.source_review_version === 1 ? { source_review: sourceReview } : {}),
@@ -512,13 +534,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                 key={tool.kind}
                 icon={tool.icon}
                 label={tool.label}
+                disabled={!canPlaceFields}
                 active={placingTool === tool.kind}
                 onClick={() => setPlacingTool(current => current === tool.kind ? null : tool.kind)}
               />
             ))}
-            <ToolbarButton icon={Type} label="Draw field" onClick={() => { setPlacingTool(null); setDrawMode('field') }} />
-            <ToolbarButton icon={Eraser} label="Whiteout" onClick={() => { setPlacingTool(null); setDrawMode('whiteout') }} />
-            <ToolbarButton icon={Eraser} label="Cover" onClick={addCoverRegion} />
+            <ToolbarButton icon={Type} label="Draw field" disabled={!canPlaceFields} onClick={() => { setPlacingTool(null); setDrawMode('field') }} />
+            <ToolbarButton icon={Eraser} label="Whiteout" disabled={!canPlaceFields} onClick={() => { setPlacingTool(null); setDrawMode('whiteout') }} />
+            <ToolbarButton icon={Eraser} label="Cover" disabled={!canPlaceFields} onClick={addCoverRegion} />
             <span className="mx-1 hidden h-5 w-px bg-brand-line sm:block" aria-hidden="true" />
             <ToolbarButton icon={Undo2} label="Undo" onClick={undo} disabled={!undoStack.current.length} />
             <ToolbarButton icon={Redo2} label="Redo" onClick={redo} disabled={!redoStack.current.length} />
@@ -592,8 +615,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
             Highlight fill source
           </button>
         )}
-        {showFills && FILL_STATES.filter(state => coverage.counts[state] > 0).map(state => (
+        {pdfSource && (showFills ? FILL_STATES.filter(state => coverage.counts[state] > 0).map(state => (
           <span key={state}><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[state] }} />{FILL_STATE_LABELS[state]} {coverage.counts[state]}</span>
+        )) : (
+          <>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-blue-600" />Manual</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-600" />Needs review</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-green-600" />Verified / source field</span>
+          </>
         ))}
       </div>
       {/* A publish blocker, so it is loud while outstanding and quiet once
@@ -727,9 +756,15 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
 
         <div ref={scrollerRef} className="studio-document-scroll overflow-auto bg-brand-bg p-4">
           {previewProblem && (
-            <p role="alert" className="mb-3 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-brand-ink">
-              {previewProblem}
-            </p>
+            <div role="alert" className="mb-3 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-brand-ink">
+              <p>{previewProblem}</p>
+              {placementBlockedReason && <p className="mt-1 text-xs text-brand-muted">{placementBlockedReason}</p>}
+              {sourceUrl && (
+                <a href={sourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-brand-accent-2 underline">
+                  Open the original in a new tab
+                </a>
+              )}
+            </div>
           )}
           <div
             aria-label="Editable PDF page"
@@ -766,9 +801,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
               )
               const active = entry.identity === selectedIdentity
               const locked = Boolean(entry.field.pdf_field_name)
+              const reviewColor = sourceKind(entry.field) === 'manual'
+                ? '#2563eb'
+                : fieldNeedsReview(entry.field) && !sourceReviewed
+                  ? '#d97706'
+                  : '#16a34a'
               const fillColor = showFills
                 ? FILL_STATE_COLORS[coverage.states.get(entry.field.name)] || '#64748b'
-                : ''
+                : reviewColor
               return (
                 <Rnd
                   key={`${entry.identity}:${index}`}
@@ -875,6 +915,12 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                 />
               </PropertyRow>
               {selected.context && <p className="text-xs text-brand-muted">Source context: {selected.context}</p>}
+              {selected.ai_suggested && (
+                <div className="rounded border border-brand-accent/30 bg-brand-accent/5 px-2 py-1.5 text-[11px] text-brand-muted">
+                  <p className="font-semibold text-brand-ink">AI proposal · verify against the source</p>
+                  {selected.ai_reason && <p className="mt-1">{selected.ai_reason}</p>}
+                </div>
+              )}
               {/* "Paragraph" is `{ field_type: 'text', multiline: true }` — the
                   shape `createManualField` writes, the intake editor writes and
                   the renderer reads (`pdf_templates.py` keys wrapping off the
