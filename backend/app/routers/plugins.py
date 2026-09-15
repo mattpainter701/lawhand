@@ -78,6 +78,7 @@ from app.schemas.plugin import (
 )
 from app.services.billing import calculate_cost
 from app.services.demo_access import reject_demo_premium
+from app.services.tenant_access import user_may_use_premium_ai
 from app.services.cache import ExpertiseCacheManager
 from app.services.conflict_check import run_conflict_check
 from app.services.cloud_search import CloudSearchService
@@ -1579,7 +1580,7 @@ async def cold_start_interview(
     context["tenant_name"] = user.tenant.name if user.tenant else "Legal"
 
     reject_demo_premium(user, body.use_premium)
-    use_premium = bool(body.use_premium and user.premium_ai_enabled)
+    use_premium = bool(body.use_premium and user_may_use_premium_ai(user))
     result_data = await plugin_executor.execute(
         db=db,
         plugin=plugin,
@@ -1748,7 +1749,7 @@ async def execute_skill(
         )
 
     reject_demo_premium(user, body.use_premium)
-    use_premium = bool(body.use_premium and user.premium_ai_enabled)
+    use_premium = bool(body.use_premium and user_may_use_premium_ai(user))
     result_data = await plugin_executor.execute(
         db=db,
         plugin=plugin,

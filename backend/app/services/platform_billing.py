@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 from functools import wraps
 from datetime import datetime, timedelta, timezone
@@ -20,10 +21,11 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import set_tenant_context
 from app.models.platform_subscription import PlatformSubscription
-from app.models.tenant import SYNTHETIC_BILLING_TIERS, Tenant
+from app.models.tenant import SYNTHETIC_BILLING_TIERS, Tenant, TenantSettings
 from app.services.token_vault import decrypt_token, encrypt_token
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def rollback_on_error(function):
@@ -111,6 +113,17 @@ async def subscription_offer(tenant):
             raise ValueError()
     except (ValueError, ArithmeticError, TypeError, KeyError):
         raise HTTPException(503, "The configured subscription price needs review")
+    try:
+        helcim_trial_days = int(plan.get("freeTrialPeriod") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(503, "The configured subscription plan needs review")
+    if helcim_trial_days:
+        # LawHand runs the trial itself from signup. A Helcim trial on top would
+        # start a second free period on the day the firm subscribes.
+        raise HTTPException(
+            503,
+            "The LawHand subscription plan must not include a Helcim free trial",
+        )
     offer = {
         "plan_id": int(plan["id"]),
         "name": plan.get("name", "LawHand subscription"),
@@ -128,7 +141,7 @@ async def subscription_offer(tenant):
         "billing_period": plan.get("billingPeriod"),
         "billing_period_increments": plan.get("billingPeriodIncrements", 1),
         "billing_day": plan.get("dateBilling"),
-        "trial_days": plan.get("freeTrialPeriod", 0),
+        "trial_days": 0,
         "proration": plan.get("isProrated", "no"),
         "tax_type": plan.get("taxType"),
         "tax_calculation": plan.get("taxCalculation"),
@@ -322,6 +335,45 @@ def apply_subscription(tenant, row, subscription):
         tenant.mcp_billing_status = "pending"
 
 
+async def end_trial_when_paid(db, tenant) -> bool:
+    """Clear a trial once Helcim confirms a paid, healthy subscription.
+
+    ``apply_subscription`` sets the tier and seats but never touched the trial,
+    so a firm that paid on day ten was still locked out on day thirty and still
+    refused premium AI. Only the confirmed-paid state ends it; a pending,
+    failed, or cancelled subscription leaves the trial exactly as it was.
+    Returns whether a trial was ended.
+    """
+    from app.services.trials import (
+        TRIAL_ENDS_KEY,
+        TRIAL_MARKER,
+        TRIAL_STARTED_KEY,
+        config_marks_trial,
+    )
+
+    if tenant.billing_tier != "flat" or tenant.mcp_billing_status != "active":
+        return False
+    settings_row = await db.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant.id)
+    )
+    config = dict((settings_row.custom_config if settings_row else None) or {})
+    if tenant.expires_at is None and not (
+        config_marks_trial(config) or TRIAL_ENDS_KEY in config
+    ):
+        return False
+
+    now = datetime.now(timezone.utc)
+    tenant.expires_at = None
+    if settings_row is not None:
+        config[TRIAL_MARKER] = False
+        config.pop(TRIAL_ENDS_KEY, None)
+        config.pop(TRIAL_STARTED_KEY, None)
+        config["trial_converted_at"] = now.isoformat()
+        settings_row.custom_config = config
+    logger.info("Trial converted to paid subscription tenant_id=%s", tenant.id)
+    return True
+
+
 @rollback_on_error
 async def refresh_subscription(db, tenant_id):
     tenant, row = await locked_subscription(db, tenant_id)
@@ -366,6 +418,7 @@ async def refresh_subscription(db, tenant_id):
                 )
             ),
         )
+    await end_trial_when_paid(db, tenant)
     await db.commit()
     return subscription_response(row)
 
@@ -426,7 +479,7 @@ async def finish_checkout(db, tenant_id, checkout_token, data, signature):
                 "recurringAmount": float(Decimal(offer["recurring_amount"])),
                 "useCustomSetupAmount": True,
                 "setupAmount": float(Decimal(offer["setup_amount"])),
-                "withFreeTrialPeriod": bool(offer["trial_days"]),
+                "withFreeTrialPeriod": False,
             }
         ]
     }
@@ -437,6 +490,7 @@ async def finish_checkout(db, tenant_id, checkout_token, data, signature):
         # may already have cancelled it while the original POST was in flight.
         return await refresh_subscription(db, tenant_id)
     apply_subscription(tenant, row, single(result))
+    await end_trial_when_paid(db, tenant)
     await db.commit()
     return subscription_response(row)
 

@@ -15,6 +15,7 @@ from app.schemas.email_agent import (
 from app.services.email_agent import email_agent
 from app.services.llm import LLMService
 from app.services.llm_routing import resolve_llm_route
+from app.services.tenant_access import user_may_use_premium_ai
 from app.routers.calendar import run_calendar_sync
 
 settings = get_settings()
@@ -40,7 +41,14 @@ async def scan_emails(
     tenant_name = getattr(user, "tenant", None)
     tenant_name = tenant_name.name if tenant_name else "LawHand"
     standard_route = await resolve_llm_route(db, tenant_id, use_premium=False)
-    premium_route = await resolve_llm_route(db, tenant_id, use_premium=True)
+    # Drafts used the premium model for everyone, including trial firms and
+    # users whose premium flag is off. They now follow the same rule as chat.
+    premium_allowed = user_may_use_premium_ai(user)
+    draft_route = (
+        await resolve_llm_route(db, tenant_id, use_premium=True)
+        if premium_allowed
+        else standard_route
+    )
 
     results = await email_agent.process_emails(
         db=db,
@@ -51,8 +59,9 @@ async def scan_emails(
         tenant_name=tenant_name,
         max_emails=body.max_emails,
         standard_model=standard_route.model,
-        premium_model=premium_route.model,
+        premium_model=draft_route.model,
         privacy_mode=getattr(user, "privacy_mode", False),
+        premium_drafts=premium_allowed,
     )
 
     processed = [
@@ -89,7 +98,8 @@ async def draft_email_response(
     llm = LLMService()
     tenant_name_obj = getattr(user, "tenant", None)
     tenant_name = tenant_name_obj.name if tenant_name_obj else "LawHand"
-    premium_route = await resolve_llm_route(db, tenant_id, use_premium=True)
+    premium_allowed = user_may_use_premium_ai(user)
+    draft_route = await resolve_llm_route(db, tenant_id, use_premium=premium_allowed)
 
     draft = await email_agent.draft_response(
         email=body.get("email", {}),
@@ -97,8 +107,9 @@ async def draft_email_response(
         llm_service=llm,
         tenant_name=tenant_name,
         practice_context=body.get("practice_context", "General legal practice"),
-        model=premium_route.model,
+        model=draft_route.model,
         privacy_mode=getattr(user, "privacy_mode", False),
+        use_premium=premium_allowed,
     )
 
     return {"draft_response": draft}

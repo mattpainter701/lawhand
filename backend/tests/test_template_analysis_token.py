@@ -199,6 +199,8 @@ async def test_ai_proposal_handoff_reuses_signed_analysis_without_running_ocr_ag
         premium_ai_enabled=True,
         tenant_id=tenant_id,
         id=user_id,
+        # Premium AI also needs a paid (non-trial, non-demo) firm.
+        tenant=SimpleNamespace(billing_tier="flat", expires_at=None),
     )
     response = await document_templates.propose_template_fields_with_ai(
         file=UploadFile(

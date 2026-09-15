@@ -69,6 +69,11 @@ from app.utils.oauth_security import (
     verify_microsoft_id_token,
     verify_microsoft_access_token,
 )
+from app.services.tenant_access import (
+    access_state,
+    require_sign_in_tenant,
+    tenant_allows_premium_ai,
+)
 from app.services.tenant_state import require_active_tenant
 from app.services.user_invitations import (
     InvitationRefusal,
@@ -451,8 +456,13 @@ def _create_access_token(
 
 
 async def _issue_access_token(db: AsyncSession, user: User, tenant: Tenant) -> str:
-    """Resolve the tenant's plan + user capabilities and mint an access token."""
-    require_active_tenant(tenant)
+    """Resolve the tenant's plan + user capabilities and mint an access token.
+
+    A firm whose trial has ended still gets a token: without one it could never
+    reach the billing page to pay. Every data route re-checks the firm through
+    ``get_current_user`` and keeps refusing it.
+    """
+    require_sign_in_tenant(tenant)
     from app.services.module_visibility import resolve_plan_meta
     from app.services.rbac_service import get_user_capabilities
 
@@ -995,7 +1005,7 @@ async def _resolve_oauth_tenant_and_user(
                 detail="Account tenant is unavailable",
             )
 
-        require_active_tenant(tenant)
+        require_sign_in_tenant(tenant)
 
         if not existing_user.is_active:
             # Deactivation must apply equally to provider-subject, primary
@@ -1817,7 +1827,7 @@ async def exchange_oauth_callback(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    require_active_tenant(user.tenant)
+    require_sign_in_tenant(user.tenant)
 
     # Set hardened httpOnly access + refresh cookies.
     refresh_token = await _create_refresh_token(request, user)
@@ -2530,7 +2540,9 @@ async def refresh(
 
     tenant = user.tenant
     try:
-        require_active_tenant(tenant)
+        # An elapsed trial keeps its session so the firm can still pay; an
+        # inactive firm loses the whole refresh chain as before.
+        require_sign_in_tenant(tenant)
     except HTTPException:
         if family:
             await _revoke_refresh_family(request, family)
@@ -2593,6 +2605,11 @@ async def get_me(
             else None
         ),
         billing_status=user.tenant.mcp_billing_status if user.tenant else None,
+        access_state=access_state(user.tenant),
+        trial_ends_at=(
+            user.tenant.expires_at if access_state(user.tenant) != "active" else None
+        ),
+        premium_ai_available=tenant_allows_premium_ai(user.tenant),
         enabled_modules=enabled_modules,
         active_addons=active_addons,
         capabilities=capabilities,
@@ -2705,6 +2722,11 @@ async def update_me(
             else None
         ),
         billing_status=user.tenant.mcp_billing_status if user.tenant else None,
+        access_state=access_state(user.tenant),
+        trial_ends_at=(
+            user.tenant.expires_at if access_state(user.tenant) != "active" else None
+        ),
+        premium_ai_available=tenant_allows_premium_ai(user.tenant),
         enabled_modules=enabled_modules,
         active_addons=active_addons,
         capabilities=capabilities,

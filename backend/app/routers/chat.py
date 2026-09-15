@@ -687,10 +687,15 @@ def _auto_tier(query: str, user_requested_premium: bool) -> bool:
 
 
 def _premium_for_user(user, query: str, user_requested_premium: bool) -> bool:
-    """Apply per-user premium assignment after route classification."""
+    """Apply per-user premium assignment after route classification.
+
+    The per-user flag alone is not enough: a firm on a trial or a demo
+    workspace never gets premium AI, even for a user whose flag was set.
+    """
+    from app.services.tenant_access import user_may_use_premium_ai
+
     return bool(
-        getattr(user, "premium_ai_enabled", False)
-        and _auto_tier(query, user_requested_premium)
+        user_may_use_premium_ai(user) and _auto_tier(query, user_requested_premium)
     )
 
 
