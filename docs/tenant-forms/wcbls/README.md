@@ -9,7 +9,7 @@ and its fee terms are theirs, so it is deliberately not registered there.
 
 | File | What it is |
 |---|---|
-| `wcbls-client-questionnaire-fee-agreement.pdf` | The template to upload. 2 pages, 41 fields. |
+| `wcbls-client-questionnaire-fee-agreement.pdf` | The template to upload. One page, 41 fields. |
 | `wcbls-client-questionnaire-fee-agreement.variable_schema.json` | The field schema with bindings already declared, as reference while reviewing the import. |
 
 Rebuild with:
@@ -45,8 +45,24 @@ Three things changed, all of them form mechanics rather than content:
    and the builder now calls the engine's own classifier as a guard rather than
    a copy of its patterns.
 
-The fee agreement starts on page 2 so the terms and the signature block stay
-together on one page.
+## One page, like the Word original
+
+The Word source sets 0.45in top/bottom and 0.55in side margins — a
+532.8 x 727.2pt text block — and fits the whole form in it. The AcroForm
+matches that footprint, and the builder is budgeted against it: the content
+measures roughly 670pt, leaving the signature block room at the foot.
+
+The move that made it fit is the row layout. The Word table puts a label and
+its writing space in the *same* cell, on rows of 389-418 twips (19.5-20.9pt).
+An earlier revision of this form stacked the caption above its box, which cost
+~29pt a row and pushed the agreement onto a second page. `Sheet.row()` now
+places the caption beside its box on a single 18.2pt line, which is what the
+original does. Body text is 7.6pt and the fee terms are 7.6pt bold, against
+the source's 7.5pt and 7pt.
+
+If a question is ever added, the budget is the thing to check: the builder
+does not force a page break anywhere, so extra content simply spills to a
+second page.
 
 ## Signature
 
@@ -54,8 +70,8 @@ together on one page.
 paired "Date" rule, and `app/services/esign/plan.py` finds them on upload:
 
 ```
-kind=signature  role=client  page=2  source=detected  rect=(48.0, 208.0, 298.0, 236.0)
-kind=date       role=client  page=2  source=detected  rect=(328.0, 208.0, 458.0, 232.0)
+kind=signature  role=client  page=1  source=detected  rect=(39.6, 67.8, 289.6, 95.8)
+kind=date       role=client  page=1  source=detected  rect=(319.6, 67.8, 449.6, 91.8)
 ```
 
 This is the same shape the shipped library forms use, and it means a hand-signed
@@ -63,9 +79,13 @@ copy and an e-signed copy land on the same line.
 
 ## Fields and bindings
 
-7 fields fill themselves from the matter and client record. 5 are pinned `manual` so
-a coincidental name match can never auto-fill sensitive data. The rest are answered
+11 fields fill themselves from the client record. 5 are pinned `manual` so a
+coincidental name match can never auto-fill sensitive data. The rest are answered
 by whoever fills the form.
+
+Ten of the eleven resolve by field *name* alone even with nothing declared,
+because the names match LawHand's own Smart Fill aliases. The declarations in
+the sidecar make that explicit and cover the four that name-matching misses.
 
 | Field | Label | Type | Binding |
 |---|---|---|---|
@@ -81,12 +101,12 @@ by whoever fills the form.
 | `mailing_state` | State | text | — |
 | `mailing_zip` | Zip | text | — |
 | `client_phone` | Phone Number | text | `client.phone` |
-| `client_cell_phone` | Cell Phone Number | text | — |
+| `client_cell_phone` | Cell Phone Number | text | `client.secondary_phone` |
 | `client_fax` | Fax Number | text | — |
 | `client_email` | E-mail Address | text | `client.email` |
 | `spouse_name` | Spouse's Full Name | text | — |
-| `best_contact_method` | Best method to reach you | text | — |
-| `best_contact_time` | Best time to reach you | text | — |
+| `best_contact_method` | Best method to reach you | text | `client.preferred_contact_method` |
+| `best_contact_time` | Best time to reach you | text | `client.preferred_contact_window` |
 | `employer_name` | Employer's Name | text | — |
 | `employer_street` | Employer's Address | text | — |
 | `employer_city` | City | text | — |
@@ -104,7 +124,7 @@ by whoever fills the form.
 | `emergency_contact_messages` | May we leave confidential messages…? | radio `yes` / `no` | — |
 | `prior_representation` | 1. Has our firm assisted you before? | radio `yes` / `no` | — |
 | `prior_attorney` | If yes, please specify attorney | text | — |
-| `referral_source` | How did you find out about our firm? | text | — |
+| `referral_source` | How did you find out about our firm? | text | `client.referral_source` |
 | `card_on_file` | May we bill all payments due to your credit card? | radio `yes` / `no` | — |
 | `card_brand` | Credit Card | radio `visa` / `mastercard` / `discover` | — |
 | `credit_card_number` | Credit Card Number | text | manual |
