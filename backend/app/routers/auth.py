@@ -2090,8 +2090,15 @@ async def forgot_password(
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    # Always return success to avoid email enumeration
-    if not user or not user.password_hash:
+    # Always return success to avoid email enumeration. Invitees get in through
+    # their invitation, and a deactivated account stays shut, so neither is
+    # sent a reset link that would set a password on an account nobody can use.
+    if (
+        not user
+        or not user.password_hash
+        or user.password_hash.startswith("invite:")
+        or not user.is_active
+    ):
         return {
             "message": "If that email exists, a reset link has been sent.",
             "reset_token": None,
@@ -2191,6 +2198,10 @@ async def reset_password(
     user = result.scalar_one_or_none()
 
     if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    if not user.is_active or (user.password_hash or "").startswith("invite:"):
+        # A reset never activates anyone. A link issued before an account was
+        # deactivated, or to a pending invitee, is refused before any change.
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
     user.password_hash = _hash_password(body.password)
