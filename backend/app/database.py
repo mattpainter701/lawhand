@@ -243,6 +243,23 @@ async def set_smb_agent_bootstrap_lookup(
     )
 
 
+async def set_invitation_token_lookup(
+    session: AsyncSession, token_hash: str | None
+) -> None:
+    """Allow exactly one pre-tenant invitation lookup for this transaction.
+
+    Accepting an invitation discovers the tenant from the token itself. The
+    migration-192 SELECT policy permits only the ``user_invitations`` row whose
+    hash equals this transaction-local value; it grants nothing on any other
+    table and never permits writes. Callers must bind the row's tenant
+    immediately and clear the value by passing ``None``.
+    """
+    await session.execute(
+        text("SELECT set_config('app.invite_token_hash', :token_hash, true)"),
+        {"token_hash": token_hash or ""},
+    )
+
+
 async def clear_smb_agent_bootstrap_lookup(session: AsyncSession) -> None:
     """Remove the transaction-local SMB bootstrap selectors."""
     await session.execute(
