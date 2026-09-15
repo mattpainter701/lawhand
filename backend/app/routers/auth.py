@@ -14,7 +14,7 @@ from typing import Optional
 import bcrypt
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from jose import jwt
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,10 @@ from app.models.workspace_mcp_grant import WorkspaceMCPGrant
 from app.routers.billing import ensure_stripe_customer
 from app.schemas.auth import (
     ForgotPasswordRequest,
+    InviteAcceptRequest,
+    InviteLookupRequest,
+    InviteLookupResponse,
+    InviteProviders,
     LoginRequest,
     OAuthCallbackExchangeRequest,
     OAuthCallbackExchangeResponse,
@@ -64,6 +68,12 @@ from app.utils.oauth_security import (
     verify_microsoft_access_token,
 )
 from app.services.tenant_state import require_active_tenant
+from app.services.user_invitations import (
+    InvitationRefusal,
+    claim_invitation,
+    mask_email,
+    resolve_invitation,
+)
 from app.services.workspace_mcp_access import lock_tenant_workspace_mcp_policy
 
 settings = get_settings()
@@ -1955,6 +1965,94 @@ async def reset_password(
 
 
 _fallback_reset_tokens: dict[str, tuple[str, float]] = {}
+
+
+# ── Staff invitations ──────────────────────────────────────────────────────────
+
+
+def _invitation_refusal_response(exc: InvitationRefusal) -> JSONResponse:
+    """Return the refusal with its stable code so the page can pick its wording."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "code": exc.code},
+    )
+
+
+@router.post("/invite/lookup", response_model=InviteLookupResponse)
+async def lookup_invitation(
+    body: InviteLookupRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Describe a pending invitation so the accept page can show who it is for.
+
+    Read-only: nothing is written, so an unused link stays usable.
+    """
+    try:
+        ctx = await resolve_invitation(db, body.token)
+    except InvitationRefusal as exc:
+        return _invitation_refusal_response(exc)
+    return InviteLookupResponse(
+        email_masked=mask_email(ctx.user.email),
+        full_name=ctx.user.full_name,
+        firm_name=ctx.tenant.name,
+        expires_at=ctx.invitation.expires_at,
+        providers=InviteProviders(
+            password=True,
+            google=_oauth_configured(
+                settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET
+            ),
+            microsoft=_oauth_configured(
+                settings.MICROSOFT_CLIENT_ID, settings.MICROSOFT_CLIENT_SECRET
+            ),
+        ),
+    )
+
+
+@router.post("/invite/accept", response_model=TokenResponse)
+async def accept_invitation(
+    body: InviteAcceptRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept an invitation by choosing a password, then sign the person in."""
+    try:
+        ctx = await resolve_invitation(db, body.token)
+        existing_hash = ctx.user.password_hash or ""
+        if existing_hash and not existing_hash.startswith("invite:"):
+            # An invitee never holds a real credential; if one exists the row
+            # is not what this invitation was issued for.
+            raise InvitationRefusal("invite_invalid")
+        new_hash = _hash_password(body.password)
+        await claim_invitation(db, ctx.invitation.id, "password")
+    except InvitationRefusal as exc:
+        await db.rollback()
+        return _invitation_refusal_response(exc)
+
+    user_id, tenant_id = ctx.user.id, ctx.tenant.id
+    ctx.user.password_hash = new_hash
+    ctx.user.is_active = True
+    await db.commit()
+
+    # Commit ends the transaction-local tenant binding; rebind before reading
+    # the rows back for token issuance.
+    await set_tenant_context(db, str(tenant_id))
+    user = await db.scalar(
+        select(User).where(User.id == user_id, User.tenant_id == tenant_id)
+    )
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    jwt_token = await _issue_access_token(db, user, tenant)
+    refresh_token = await _create_refresh_token(request, user)
+    _set_auth_cookies(response, jwt_token, refresh_token)
+    logger.info("Invitation accepted user_id=%s method=password", user_id)
+
+    return TokenResponse(
+        user_id=str(user.id),
+        tenant_id=str(tenant.id),
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+    )
 
 
 # ── Logout / Me ────────────────────────────────────────────────────────────────
