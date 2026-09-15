@@ -2,10 +2,19 @@ param(
   [string]$MicrosoftClientId = $env:MICROSOFT_CLIENT_ID,
   [string]$TeamsAppId = "b7aef9aa-6b66-4cde-8cf8-4a251e2f8f22",
   [string]$PublicHost = "getlawhand.com",
-  # The Entra Application ID URI is an identity value, not a website URL.
-  # It must match the app registration byte for byte, so it stays on the
-  # old host until that registration is migrated.
-  [string]$MicrosoftResourceHost = "legalapp.perevagagroup.com"
+  # The Entra Application ID URI is an identity value, not a website URL. It is
+  # compared, never fetched, and must match the app registration byte for byte.
+  #
+  # It deliberately does NOT match $PublicHost. Entra only accepts a custom
+  # domain here once that domain is verified in the tenant owning the app, and
+  # getlawhand.com is verified in a different tenant because it serves mail
+  # there. The tenant's own onmicrosoft.com domain needs no verification and
+  # cannot be taken away, so it is the stable choice.
+  #
+  # Do not "correct" this to getlawhand.com: Entra will reject the URI and
+  # Teams SSO will fail. validDomains below is the setting that governs which
+  # hosts serve content, and that one is $PublicHost.
+  [string]$MicrosoftResourceHost = "lawhand.onmicrosoft.com"
 )
 
 $ErrorActionPreference = "Stop"
