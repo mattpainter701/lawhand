@@ -65,14 +65,24 @@ from app.services.template_bindings import is_valid_binding  # noqa: E402
 from app.services.esign.plan import _is_initials_field as is_initials_field  # noqa: E402
 
 PAGE_WIDTH, PAGE_HEIGHT = letter
-MARGIN = 48.0
-BODY = ("Helvetica", 8.6)
-BODY_BOLD = ("Helvetica-Bold", 8.6)
-LEADING = 11.0
-LABEL_SIZE = 6.8
-BOX_HEIGHT = 13.0
-BOX_LINE = 11.5
-CHECK_SIZE = 9.0
+#: The Word source sets 0.45in top/bottom and 0.55in side margins, giving a
+#: 532.8 x 727.2pt text block, and fills it in one page. These values track it
+#: so the AcroForm keeps the same footprint.
+MARGIN = 39.6
+MARGIN_X = 39.6
+MARGIN_TOP = 32.4
+MARGIN_BOTTOM = 32.4
+BODY = ("Helvetica", 7.6)
+BODY_BOLD = ("Helvetica-Bold", 7.6)
+LEADING = 8.5
+LABEL_SIZE = 6.4
+BOX_HEIGHT = 11.0
+BOX_LINE = 10.0
+CHECK_SIZE = 7.6
+#: One captioned row. The Word original's table rows are 389-418 twips
+#: (19.5-20.9pt) with the label and the writing space sharing a cell, so the
+#: caption sits beside its box here rather than above it.
+ROW_HEIGHT = 18.2
 FIELD_BORDER = Color(0.45, 0.50, 0.58)
 FIELD_FILL = Color(0.95, 0.96, 0.98)
 LABEL_INK = Color(0.36, 0.40, 0.46)
@@ -182,7 +192,7 @@ class Sheet:
         self.canvas = canvas.Canvas(self.buffer, pagesize=letter)
         self.canvas.setTitle(title)
         self.title = title
-        self.y = PAGE_HEIGHT - MARGIN
+        self.y = PAGE_HEIGHT - MARGIN_TOP
         self.page = 1
         self.placed: list[str] = []
         self._footer()
@@ -192,24 +202,26 @@ class Sheet:
         return PAGE_WIDTH - 2 * MARGIN
 
     def _footer(self) -> None:
-        self.canvas.setStrokeColor(RULE)
-        self.canvas.setLineWidth(0.6)
-        self.canvas.line(MARGIN, MARGIN - 14, PAGE_WIDTH - MARGIN, MARGIN - 14)
-        self.canvas.setFont("Helvetica", 7.0)
+        """The firm's contact line, as the Word source's footer.
+
+        Drawn inside the bottom margin rather than above it, so it costs the
+        body no height — the page budget is tight enough to notice.
+        """
+
+        self.canvas.setFont("Helvetica", 6.2)
         self.canvas.setFillColor(LABEL_INK)
         self.canvas.drawString(
-            MARGIN, MARGIN - 24, f"{FIRM_NAME}  ·  {FIRM_EMAIL}  ·  {FIRM_PHONE}"
-        )
-        self.canvas.drawRightString(
-            PAGE_WIDTH - MARGIN, MARGIN - 24, f"Page {self.page}"
+            MARGIN,
+            MARGIN_BOTTOM - 20,
+            f"{FIRM_NAME}  ·  {FIRM_EMAIL}  ·  {FIRM_PHONE}",
         )
         self.canvas.setFillColor(black)
 
     def space(self, needed: float) -> None:
-        if self.y - needed < MARGIN + 6:
+        if self.y - needed < MARGIN_BOTTOM:
             self.canvas.showPage()
             self.page += 1
-            self.y = PAGE_HEIGHT - MARGIN
+            self.y = PAGE_HEIGHT - MARGIN_TOP
             self._footer()
 
     def masthead(self) -> None:
@@ -218,22 +230,22 @@ class Sheet:
         top = self.y
         # Stacked "WCB / LS" mark. The source sets it in Georgia, which is not
         # a PDF base-14 face; Times-Bold is the nearest serif that embeds free.
-        self.canvas.setFont("Times-Bold", 16.0)
-        self.canvas.drawString(MARGIN, top - 13, "WCB")
-        self.canvas.drawString(MARGIN, top - 28, "LS")
-        self.canvas.setFont("Helvetica-Bold", 8.0)
-        self.canvas.drawString(MARGIN + 34, top - 28, FIRM_NAME.upper())
+        self.canvas.setFont("Times-Bold", 13.0)
+        self.canvas.drawString(MARGIN, top - 9, "WCB")
+        self.canvas.drawString(MARGIN, top - 19, "LS")
+        self.canvas.setFont("Helvetica-Bold", 7.4)
+        self.canvas.drawString(MARGIN + 28, top - 19, FIRM_NAME.upper())
 
-        self.canvas.setFont("Helvetica-Bold", 15.0)
+        self.canvas.setFont("Helvetica-Bold", 13.0)
         right = PAGE_WIDTH - MARGIN
-        self.canvas.drawRightString(right, top - 13, "Client Questionnaire")
-        self.canvas.drawRightString(right, top - 30, "and Fee Agreement")
+        self.canvas.drawRightString(right, top - 9, "Client Questionnaire")
+        self.canvas.drawRightString(right, top - 21, "and Fee Agreement")
 
-        self.y = top - 40
+        self.y = top - 27
         self.canvas.setStrokeColor(Color(0.20, 0.24, 0.30))
-        self.canvas.setLineWidth(1.1)
+        self.canvas.setLineWidth(1.0)
         self.canvas.line(MARGIN, self.y, PAGE_WIDTH - MARGIN, self.y)
-        self.y -= 4
+        self.y -= 2
 
     def rule(self, gap: float = 8.0) -> None:
         self.space(gap + 6)
@@ -244,31 +256,31 @@ class Sheet:
         self.y -= gap
 
     def title_block(self, text: str) -> None:
-        self.space(34)
-        self.y -= 20
-        self.canvas.setFont("Helvetica-Bold", 13.0)
-        self.canvas.drawCentredString(PAGE_WIDTH / 2, self.y, text.upper())
-        self.y -= 7
-
-    def heading(self, text: str) -> None:
-        self.space(30)
-        self.y -= 17
-        self.canvas.setFont("Helvetica-Bold", 9.4)
-        self.canvas.setFillColor(Color(0.20, 0.24, 0.30))
-        self.canvas.drawString(MARGIN, self.y, text.upper())
-        width = self.canvas.stringWidth(text.upper(), "Helvetica-Bold", 9.4)
-        self.canvas.setStrokeColor(Color(0.20, 0.24, 0.30))
-        self.canvas.setLineWidth(0.7)
-        self.canvas.line(MARGIN, self.y - 3.5, MARGIN + width, self.y - 3.5)
-        self.canvas.setFillColor(black)
-        self.y -= 6
-
-    def centered(self, text: str) -> None:
         self.space(24)
         self.y -= 15
-        self.canvas.setFont("Helvetica-BoldOblique", 9.0)
+        self.canvas.setFont("Helvetica-Bold", 10.5)
+        self.canvas.drawCentredString(PAGE_WIDTH / 2, self.y, text.upper())
+        self.y -= 5
+
+    def heading(self, text: str) -> None:
+        self.space(18)
+        self.y -= 10
+        self.canvas.setFont("Helvetica-Bold", 8.0)
+        self.canvas.setFillColor(Color(0.20, 0.24, 0.30))
+        self.canvas.drawString(MARGIN, self.y, text.upper())
+        width = self.canvas.stringWidth(text.upper(), "Helvetica-Bold", 8.0)
+        self.canvas.setStrokeColor(Color(0.20, 0.24, 0.30))
+        self.canvas.setLineWidth(0.6)
+        self.canvas.line(MARGIN, self.y - 2.5, MARGIN + width, self.y - 2.5)
+        self.canvas.setFillColor(black)
+        self.y -= 2
+
+    def centered(self, text: str) -> None:
+        self.space(16)
+        self.y -= 10
+        self.canvas.setFont("Helvetica-BoldOblique", 8.0)
         self.canvas.drawCentredString(PAGE_WIDTH / 2, self.y, text)
-        self.y -= 3
+        self.y -= 1
 
     def paragraph(
         self,
@@ -282,8 +294,8 @@ class Sheet:
     ) -> None:
         """Wrap one paragraph, honouring ``**bold**`` runs."""
 
-        font = ("Helvetica", 7.6) if small else BODY
-        bold_font = ("Helvetica-Bold", 7.6) if small else BODY_BOLD
+        font = ("Helvetica", 6.6) if small else BODY
+        bold_font = ("Helvetica-Bold", 6.6) if small else BODY_BOLD
         if bold:
             font, bold_font = bold_font, font
         leading = 9.8 if small else LEADING
@@ -348,30 +360,41 @@ class Sheet:
         self.canvas.setFillColor(black)
 
     def row(self, fields: tuple[Field, ...]) -> None:
-        """One row of captioned boxes, sized by each field's weight."""
+        """One row of captioned boxes, sized by each field's weight.
+
+        The caption sits *beside* its box, not above it, which is how the Word
+        original's table packs a label and its writing space into one cell. It
+        halves the height of a row, and the whole form is budgeted to land on
+        a single page.
+        """
 
         total = sum(entry.weight for entry in fields)
-        gutter = 8.0
+        gutter = 7.0
         available = self.width - gutter * (len(fields) - 1)
-        self.space(BOX_HEIGHT + 20)
-        self.y -= BOX_HEIGHT + 12
+        self.space(ROW_HEIGHT)
+        self.y -= ROW_HEIGHT
         x = MARGIN
         for entry in fields:
             width = available * (entry.weight / total)
-            self._caption(entry.label, x, self.y + BOX_HEIGHT + 3)
-            self._textfield(entry, x, self.y, width, BOX_HEIGHT)
+            caption = f"{entry.label}:"
+            caption_width = (
+                self.canvas.stringWidth(caption, "Helvetica", LABEL_SIZE) + 3.0
+            )
+            self._caption(caption, x, self.y + 3.0)
+            self._textfield(
+                entry, x + caption_width, self.y, width - caption_width, BOX_HEIGHT
+            )
             x += width + gutter
-        self.y -= 4
 
     def block(self, entry: Field) -> None:
         """A paragraph-sized answer box under its own caption."""
 
-        height = max(2, entry.lines or 3) * BOX_LINE + 4
-        self.space(height + 22)
-        self.y -= height + 12
-        self._caption(entry.label, MARGIN, self.y + height + 3)
+        height = max(2, entry.lines or 2) * BOX_LINE + 2
+        self.space(height + 13)
+        self.y -= height + 10
+        self._caption(entry.label, MARGIN, self.y + height + 2.5)
         self._textfield(entry, MARGIN, self.y, self.width, height, multiline=True)
-        self.y -= 4
+        self.y -= 2
 
     def radio_group(
         self,
@@ -388,30 +411,30 @@ class Sheet:
         reports a single field carrying ``options``.
         """
 
-        option_width = 14.0 + CHECK_SIZE
+        option_width = 11.0 + CHECK_SIZE
         options_width = sum(
-            option_width + self.canvas.stringWidth(c.label, "Helvetica", 8.4)
+            option_width + self.canvas.stringWidth(c.label, "Helvetica", 7.4)
             for c in choices
         )
         prompt_width = self.canvas.stringWidth(prompt, *BODY)
         trailing = 0.0
         if inline_field is not None:
             trailing = (
-                150.0
+                110.0
                 + 6
                 + self.canvas.stringWidth(inline_field.label, "Helvetica", LABEL_SIZE)
             )
         one_line = prompt_width + 12 + options_width + trailing <= self.width
 
-        self.space(CHECK_SIZE + 24 if one_line else CHECK_SIZE + 24 + LEADING)
+        self.space(ROW_HEIGHT if one_line else ROW_HEIGHT + LEADING)
         if one_line:
-            self.y -= CHECK_SIZE + 8
+            self.y -= CHECK_SIZE + 6
             self.canvas.setFont(*BODY)
             self.canvas.drawString(MARGIN, self.y + 1.5, prompt)
             x = MARGIN + prompt_width + 12
         else:
-            self.paragraph(prompt, gap=1.0)
-            self.y -= CHECK_SIZE + 5
+            self.paragraph(prompt, gap=0.0)
+            self.y -= CHECK_SIZE + 3
             x = MARGIN
 
         self.placed.append(name)
@@ -432,16 +455,25 @@ class Sheet:
                 textColor=black,
                 fieldFlags=RADIO_FLAGS,
             )
-            self.canvas.setFont("Helvetica", 8.4)
-            self.canvas.drawString(x + CHECK_SIZE + 4, self.y + 1.5, choice.label)
-            x += option_width + self.canvas.stringWidth(choice.label, "Helvetica", 8.4)
+            self.canvas.setFont("Helvetica", 7.4)
+            self.canvas.drawString(x + CHECK_SIZE + 3, self.y + 1.0, choice.label)
+            x += option_width + self.canvas.stringWidth(choice.label, "Helvetica", 7.4)
 
         if inline_field is not None:
-            x += 10
-            box_width = min(180.0, PAGE_WIDTH - MARGIN - x)
-            self._caption(inline_field.label, x, self.y + CHECK_SIZE + 3.5)
-            self._textfield(inline_field, x, self.y - 1.5, box_width, BOX_HEIGHT)
-        self.y -= 6
+            x += 8
+            caption = f"{inline_field.label}:"
+            caption_width = (
+                self.canvas.stringWidth(caption, "Helvetica", LABEL_SIZE) + 3.0
+            )
+            self._caption(caption, x, self.y + 1.0)
+            self._textfield(
+                inline_field,
+                x + caption_width,
+                self.y - 2.0,
+                PAGE_WIDTH - MARGIN - x - caption_width,
+                BOX_HEIGHT,
+            )
+        self.y -= 4
 
     def question(self, prompt: str, entry: Field) -> None:
         """A numbered question in body type with a full-width answer box.
@@ -450,14 +482,12 @@ class Sheet:
         makes question 2 look subordinate to question 1 next to it.
         """
 
-        height = max(1, entry.lines or 1) * BOX_LINE + 4
-        self.space(height + 22)
-        self.paragraph(prompt, gap=2.0)
-        self.y -= height
-        self._textfield(
-            entry, MARGIN, self.y, self.width, height, multiline=entry.lines > 1
-        )
-        self.y -= 4
+        self.space(ROW_HEIGHT)
+        self.y -= ROW_HEIGHT
+        self.canvas.setFont(*BODY)
+        self.canvas.drawString(MARGIN, self.y + 3.0, prompt)
+        offset = self.canvas.stringWidth(prompt, *BODY) + 6.0
+        self._textfield(entry, MARGIN + offset, self.y, self.width - offset, BOX_HEIGHT)
 
     def signature(self, label: str) -> None:
         """A ruled line to sign on.
@@ -468,16 +498,16 @@ class Sheet:
         line a hand-signed copy does.
         """
 
-        self.space(58)
-        self.y -= 28
+        self.space(34)
+        self.y -= 20
         self.canvas.setStrokeColor(black)
         self.canvas.setLineWidth(0.8)
         self.canvas.line(MARGIN, self.y, MARGIN + 250, self.y)
         self.canvas.line(MARGIN + 280, self.y, MARGIN + 410, self.y)
-        self.canvas.setFont("Helvetica", 7.5)
-        self.canvas.drawString(MARGIN, self.y - 9, label)
-        self.canvas.drawString(MARGIN + 280, self.y - 9, "Date")
-        self.y -= 16
+        self.canvas.setFont("Helvetica", 7.0)
+        self.canvas.drawString(MARGIN, self.y - 8, label)
+        self.canvas.drawString(MARGIN + 280, self.y - 8, "Date")
+        self.y -= 10
 
     def save(self) -> bytes:
         # Values printed as defaults have no appearance stream of their own;
@@ -578,9 +608,8 @@ BLOCKS = (
     ),
     QUESTION(
         "2.  How did you find out about our firm?",
-        Field("referral_source", "How did you find out about our firm?", "", lines=2),
+        Field("referral_source", "How did you find out about our firm?", ""),
     ),
-    KEEP(230.0),
     H1("Fee Agreement"),
     BULLET(
         "A refundable retainer (advance deposit) or payment of a flat fee will be "
@@ -650,7 +679,6 @@ BLOCKS = (
         "any dispute arising hereunder may only be brought before the courts of the "
         "State of North Dakota."
     ),
-    KEEP(190.0),
     H2("Payment authorization"),
     RADIO(
         "May we bill all payments due to your credit card?",
@@ -671,7 +699,7 @@ BLOCKS = (
         Field("credit_card_expiration", "Expiration Date", "manual", 1.0),
         Field("credit_card_security_code", "Three Digit Security Code", "manual", 1.0),
     ),
-    GAP(6.0),
+    GAP(3.0),
     P(
         "**I hereby acknowledge that I have read, understand, approve of, and agree to "
         "the foregoing:**"
@@ -743,7 +771,7 @@ def render() -> bytes:
         elif kind == "p":
             sheet.paragraph(block[1])
         elif kind == "bullet":
-            sheet.paragraph(block[1], indent=12.0, bold=True, gap=3.0, bullet="•")
+            sheet.paragraph(block[1], indent=9.0, bold=True, gap=1.6, bullet="\u2022")
         elif kind == "note":
             sheet.paragraph(block[1], small=True)
         elif kind == "rule":
