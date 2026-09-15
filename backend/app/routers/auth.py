@@ -790,6 +790,8 @@ async def _resolve_existing_oauth_user(
     provider: str,
     subject: str,
     allow_verified_email_match: bool,
+    entra_tenant_id: str | None = None,
+    entra_object_id: str | None = None,
 ) -> User | None:
     """Resolve an already-provisioned OAuth identity without guessing a tenant.
 
@@ -799,6 +801,12 @@ async def _resolve_existing_oauth_user(
     Microsoft email/UPN claims are not an authorization boundary, so Microsoft
     callers always set ``allow_verified_email_match=False``. Ambiguous mappings
     fail closed instead of selecting an arbitrary tenant.
+
+    Microsoft's id_token ``sub`` is pairwise per app registration, so it
+    changes whenever the Entra app is re-registered. The verified (tid, oid)
+    pair is immutable across registrations and is matched first; ``oid`` is
+    also accepted as a legacy subject because directory sync stores it there.
+    Both are the same mappings the Office token exchange already accepts.
     """
 
     async def _unique_match(statement, mapping: str) -> User | None:
@@ -819,11 +827,25 @@ async def _resolve_existing_oauth_user(
             )
         return matches[0] if matches else None
 
-    if subject:
+    if provider == "microsoft" and entra_tenant_id and entra_object_id:
+        entra_match = await _unique_match(
+            select(User).where(
+                User.entra_tenant_id == entra_tenant_id,
+                User.entra_object_id == entra_object_id,
+            ),
+            "entra-identity",
+        )
+        if entra_match is not None:
+            return entra_match
+
+    subjects = {subject} if subject else set()
+    if provider == "microsoft" and entra_object_id:
+        subjects.add(entra_object_id)
+    if subjects:
         subject_match = await _unique_match(
             select(User).where(
                 User.oauth_provider == provider,
-                User.oauth_subject == subject,
+                User.oauth_subject.in_(subjects),
             ),
             "provider-subject",
         )
@@ -851,6 +873,33 @@ async def _resolve_existing_oauth_user(
     )
 
 
+def _link_microsoft_identity(
+    user: User,
+    *,
+    subject: str,
+    entra_tenant_id: str | None,
+    entra_object_id: str | None,
+) -> None:
+    """Refresh a resolved Microsoft user's links without moving an established one.
+
+    The user was already matched by an immutable identity, so re-looking it up
+    by tenant and email would wrongly refuse someone whose address changed.
+    """
+
+    if entra_tenant_id and user.entra_tenant_id and user.entra_tenant_id != entra_tenant_id:
+        raise HTTPException(status_code=409, detail="Microsoft tenant link mismatch")
+    if entra_object_id and user.entra_object_id and user.entra_object_id != entra_object_id:
+        raise HTTPException(status_code=409, detail="Microsoft object link mismatch")
+    if entra_tenant_id and entra_object_id and not (
+        user.entra_tenant_id and user.entra_object_id
+    ):
+        user.entra_tenant_id = entra_tenant_id
+        user.entra_object_id = entra_object_id
+    user.oauth_provider = "microsoft"
+    if subject:
+        user.oauth_subject = subject
+
+
 async def _resolve_oauth_tenant_and_user(
     db: AsyncSession,
     *,
@@ -864,6 +913,8 @@ async def _resolve_oauth_tenant_and_user(
     address: str | None = None,
     phone: str | None = None,
     staff_size: int | None = None,
+    entra_tenant_id: str | None = None,
+    entra_object_id: str | None = None,
 ) -> tuple[Tenant, User, bool]:
     """Map a verified OAuth identity, provisioning only when explicitly enabled.
 
@@ -879,6 +930,8 @@ async def _resolve_oauth_tenant_and_user(
         provider=provider,
         subject=subject,
         allow_verified_email_match=provider == "google",
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
     )
     if existing_user is not None:
         tenant_result = await db.execute(
@@ -900,6 +953,17 @@ async def _resolve_oauth_tenant_and_user(
             # email, and verified-alias matches.  Never mint a fresh token for
             # an inactive account merely because its OAuth identity is known.
             raise HTTPException(status_code=403, detail="This user account is inactive")
+
+        if provider == "microsoft":
+            _link_microsoft_identity(
+                existing_user,
+                subject=subject,
+                entra_tenant_id=entra_tenant_id,
+                entra_object_id=entra_object_id,
+            )
+            if full_name and not existing_user.full_name:
+                existing_user.full_name = full_name
+            return tenant, existing_user, True
 
         user = await _get_or_create_user(
             db,
@@ -1097,12 +1161,8 @@ async def microsoft_callback(
             expected_nonce=expected_nonce,
         )
 
-        logger.info(
-            "Microsoft id_token claims: sub=%s email=%s name=%s",
-            claims.get("sub"),
-            claims.get("email"),
-            claims.get("name"),
-        )
+        # Email and display name are customer content; never log them.
+        logger.info("Microsoft id_token verified: tid=%s", claims.get("tid"))
 
     email = (
         (claims.get("email") or claims.get("preferred_username") or "").lower().strip()
@@ -1142,6 +1202,8 @@ async def microsoft_callback(
             full_name=full_name,
             provider="microsoft",
             subject=ms_sub,
+            entra_tenant_id=claims.get("tid"),
+            entra_object_id=claims.get("oid"),
             domain=domain,
             tenant_name=tenant_name,
             company_name=company_name,

@@ -331,3 +331,178 @@ async def test_oauth_callback_cannot_provision_in_launch_mode(
     assert (
         await db_session.execute(select(func.count()).select_from(User))
     ).scalar_one() == 0
+
+
+ENTRA_TENANT_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+ENTRA_OBJECT_ID = "16fd2706-8baf-433b-82eb-8c7fada847da"
+
+
+def _entra_firm_and_user(**user_fields):
+    tenant = Tenant(
+        id=uuid.uuid4(),
+        name="Entra Linked Firm",
+        domain=f"operator-provisioned-{uuid.uuid4().hex[:8]}",
+        billing_tier="intake_trial",
+        is_active=True,
+    )
+    user = User(
+        id=uuid.uuid4(),
+        tenant_id=tenant.id,
+        email="owner@external.example",
+        full_name="Existing Owner",
+        role="admin",
+        is_active=True,
+        **user_fields,
+    )
+    return tenant, user
+
+
+async def _microsoft_callback(db_session, monkeypatch, claims: dict):
+    _mock_oauth_callback(monkeypatch, "microsoft", claims)
+    async with await _oauth_client(db_session) as client:
+        response = await client.get(
+            "/api/auth/microsoft/callback",
+            params={"code": "provider-code", "state": "valid-state"},
+        )
+    app.dependency_overrides.clear()
+    return response
+
+
+@pytest.mark.asyncio
+async def test_microsoft_login_survives_app_reregistration_via_entra_identity(
+    db_session,
+    monkeypatch,
+):
+    """A new app registration issues a different pairwise sub; (tid, oid) still matches."""
+
+    tenant, user = _entra_firm_and_user(
+        oauth_provider="microsoft",
+        oauth_subject="sub-from-previous-registration",
+        entra_tenant_id=ENTRA_TENANT_ID,
+        entra_object_id=ENTRA_OBJECT_ID,
+    )
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+
+    response = await _microsoft_callback(
+        db_session,
+        monkeypatch,
+        {
+            "sub": "sub-from-new-registration",
+            "tid": ENTRA_TENANT_ID,
+            "oid": ENTRA_OBJECT_ID,
+            "name": "Existing Owner",
+            "email": "renamed@external.example",
+            "preferred_username": "renamed@external.example",
+        },
+    )
+
+    assert response.status_code == 307, response.text
+    await db_session.refresh(user)
+    assert user.oauth_subject == "sub-from-new-registration"
+    assert user.entra_tenant_id == ENTRA_TENANT_ID
+    assert user.entra_object_id == ENTRA_OBJECT_ID
+    assert (
+        await db_session.execute(select(func.count()).select_from(Tenant))
+    ).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_microsoft_login_links_directory_synced_user_by_object_id(
+    db_session,
+    monkeypatch,
+):
+    """Directory sync stores the Graph user id (the oid) as the subject."""
+
+    tenant, user = _entra_firm_and_user(
+        oauth_provider="microsoft",
+        oauth_subject=ENTRA_OBJECT_ID,
+    )
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+
+    response = await _microsoft_callback(
+        db_session,
+        monkeypatch,
+        {
+            "sub": "pairwise-web-subject",
+            "tid": ENTRA_TENANT_ID,
+            "oid": ENTRA_OBJECT_ID,
+            "name": "Existing Owner",
+            "email": user.email,
+            "preferred_username": user.email,
+        },
+    )
+
+    assert response.status_code == 307, response.text
+    await db_session.refresh(user)
+    assert user.oauth_subject == "pairwise-web-subject"
+    assert user.entra_tenant_id == ENTRA_TENANT_ID
+    assert user.entra_object_id == ENTRA_OBJECT_ID
+
+
+@pytest.mark.asyncio
+async def test_microsoft_login_refuses_to_move_an_established_tenant_link(
+    db_session,
+    monkeypatch,
+):
+    other_tenant_id = "0b1f3c6a-2d4e-4f8a-9b7c-5e6d7f8a9b0c"
+    tenant, user = _entra_firm_and_user(
+        oauth_provider="microsoft",
+        oauth_subject=ENTRA_OBJECT_ID,
+        entra_tenant_id=other_tenant_id,
+        entra_object_id=ENTRA_OBJECT_ID,
+    )
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+
+    response = await _microsoft_callback(
+        db_session,
+        monkeypatch,
+        {
+            "sub": "pairwise-web-subject",
+            "tid": ENTRA_TENANT_ID,
+            "oid": ENTRA_OBJECT_ID,
+            "name": "Existing Owner",
+            "email": user.email,
+            "preferred_username": user.email,
+        },
+    )
+
+    assert response.status_code == 409
+    assert "tenant link mismatch" in response.json()["detail"].lower()
+    await db_session.refresh(user)
+    assert user.entra_tenant_id == other_tenant_id
+    assert user.oauth_subject == ENTRA_OBJECT_ID
+
+
+@pytest.mark.asyncio
+async def test_microsoft_entra_claims_still_cannot_claim_account_by_email(
+    db_session,
+    monkeypatch,
+):
+    """Carrying tid/oid must not reopen the email path for an unlinked account."""
+
+    tenant, user = _entra_firm_and_user()
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+
+    response = await _microsoft_callback(
+        db_session,
+        monkeypatch,
+        {
+            "sub": "unlinked-microsoft-subject",
+            "tid": ENTRA_TENANT_ID,
+            "oid": ENTRA_OBJECT_ID,
+            "name": "Existing Owner",
+            "email": user.email,
+            "preferred_username": user.email,
+        },
+    )
+
+    assert response.status_code == 403
+    assert "not linked" in response.json()["detail"].lower()
+    await db_session.refresh(user)
+    assert user.oauth_subject is None
+    assert user.entra_object_id is None
+
