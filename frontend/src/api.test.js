@@ -29,6 +29,15 @@ describe('OAuth return paths', () => {
       '/api/auth/google/login',
     )
   })
+
+  it('carries an invitation token so the callback can link the invited person', () => {
+    expect(buildOAuthLoginUrl('microsoft', null, { invite: 'abc+/=' })).toBe(
+      '/api/auth/microsoft/login?invite=abc%2B%2F%3D',
+    )
+    expect(buildOAuthLoginUrl('google', '/matters', { invite: 'tok' })).toBe(
+      '/api/auth/google/login?return_to=%2Fmatters&invite=tok',
+    )
+  })
 })
 
 
