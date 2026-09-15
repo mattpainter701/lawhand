@@ -73,7 +73,21 @@ _LABEL_LINE_MAX_CHARS = 48
 _ACROFORM_DATE = re.compile(
     r"(?i)(date[_ -]?(of[_ -]?)?sign|sign(ature|ed)?[_ -]?date|date[_ -]?signed)"
 )
-_ACROFORM_INITIALS = re.compile(r"(?i)\binitials?\b|_initials?(_|$)")
+#: A field *name* following the initials convention: "initials",
+#: "client_initials", "initials_2".
+_ACROFORM_INITIALS_NAME = re.compile(r"(?i)(^|_)initials?(_|\d*$)")
+#: A field *label* that reads as an initials blank in its own right, rather
+#: than a longer caption that happens to contain the word.
+_ACROFORM_INITIALS_LABEL = re.compile(
+    r"(?i)^[A-Za-z0-9'’()/&.,\- ]{0,24}?\binitials?\b\s*:?\s*$"
+)
+#: Words that make "initial" part of a person's name rather than a place to
+#: sign. "Last Name, First Name, Middle Initial" is a name box on a large share
+#: of intake forms, and promoting it to a signing widget both corrupts the field
+#: and asks the client to initial inside their own name. Missing a real initials
+#: blank only costs a widget — ``build_plan`` still falls back to a signature
+#: block and printed-line detection still runs — so the bias here is deliberate.
+_NAME_CONTEXT = re.compile(r"(?i)\b(middle|first|last|given|maiden|name)\b")
 
 #: Words in a printed label that identify the party who signs there. Roles a
 #: firm uses vary ("firm", "attorney", "lawyer"), so each canonical role also
@@ -244,13 +258,31 @@ def _widget_kind(widget: PdfWidget, label: str) -> str | None:
     if widget.field_type == "/Ch":
         return "choice"
     if widget.field_type == "/Tx":
-        haystack = f"{widget.pdf_field_name} {label}"
-        if _ACROFORM_INITIALS.search(haystack):
+        name = widget.pdf_field_name
+        haystack = f"{name} {label}"
+        if _is_initials_field(name, label):
             return "initials"
         if _ACROFORM_DATE.search(haystack):
             return "date"
         return "text"
     return "text"
+
+
+def _is_initials_field(name: str, label: str) -> bool:
+    """Whether a text field is a place to initial rather than ordinary data.
+
+    Name and label are tested separately and against different patterns: a
+    field *name* carries a convention (``client_initials``), while a *label* is
+    prose that only counts when the whole of it reads as the blank. Either can
+    be vetoed by name-part wording, which is what keeps "Last Name, First Name,
+    Middle Initial" an ordinary text field.
+    """
+
+    if _NAME_CONTEXT.search(f"{name} {label}"):
+        return False
+    return bool(
+        _ACROFORM_INITIALS_NAME.search(name) or _ACROFORM_INITIALS_LABEL.search(label)
+    )
 
 
 def acroform_fields(reader: PdfReader) -> list[PlanField]:

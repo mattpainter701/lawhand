@@ -107,6 +107,71 @@ _CATALOGUE: tuple[TemplateBinding, ...] = (
     TemplateBinding(
         "client.address.country", "client_country", "Client country", "Client"
     ),
+    # Columns the contact record already carries. A firm's own intake form asks
+    # for these, and before they were listed here the only way to fill one was
+    # to retype an answer the client had already given.
+    TemplateBinding(
+        "client.date_of_birth",
+        "client_date_of_birth",
+        "Client date of birth",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.secondary_phone",
+        "client_secondary_phone",
+        "Client secondary phone",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.preferred_contact_method",
+        "client_preferred_contact_method",
+        "Preferred contact method",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.preferred_contact_window",
+        "client_preferred_contact_window",
+        "Best time to reach the client",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.preferred_language",
+        "client_preferred_language",
+        "Preferred language",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.referral_source",
+        "client_referral_source",
+        "How the client found the firm",
+        "Client",
+    ),
+    # The emergency contact is one JSON column on the contact; its keys are the
+    # EmergencyContact schema in app/schemas/client.py.
+    TemplateBinding(
+        "client.emergency_contact.name",
+        "emergency_contact_name",
+        "Emergency contact name",
+        "Emergency contact",
+    ),
+    TemplateBinding(
+        "client.emergency_contact.relationship",
+        "emergency_contact_relationship",
+        "Emergency contact relationship",
+        "Emergency contact",
+    ),
+    TemplateBinding(
+        "client.emergency_contact.phone",
+        "emergency_contact_phone",
+        "Emergency contact phone",
+        "Emergency contact",
+    ),
+    TemplateBinding(
+        "client.emergency_contact.email",
+        "emergency_contact_email",
+        "Emergency contact email",
+        "Emergency contact",
+    ),
     # Caption parties
     TemplateBinding(
         "party.plaintiff.name", "plaintiff_name", "Plaintiff (first listed)", "Parties"

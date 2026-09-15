@@ -221,3 +221,49 @@ class TestSemanticMetadata:
     @pytest.mark.parametrize("schema", [None, "text", {}, {"fields": "no"}])
     def test_schemas_without_fields_are_accepted(self, schema):
         validate_semantic_metadata(schema)
+
+
+class TestContactColumnBindings:
+    """Columns the contact record already carries must be reachable.
+
+    Before these entries existed, a firm's own intake form could only ask for
+    a date of birth or a referral source by hand, even though the client had
+    already given the answer and the platform had already stored it.
+    """
+
+    CONTACT_PATHS = (
+        "client.date_of_birth",
+        "client.secondary_phone",
+        "client.preferred_contact_method",
+        "client.preferred_contact_window",
+        "client.preferred_language",
+        "client.referral_source",
+        "client.emergency_contact.name",
+        "client.emergency_contact.relationship",
+        "client.emergency_contact.phone",
+        "client.emergency_contact.email",
+    )
+
+    @pytest.mark.parametrize("path", CONTACT_PATHS)
+    def test_path_is_in_the_catalogue(self, path):
+        assert is_valid_binding(path)
+        assert alias_for_binding(path)
+        assert binding_label(path)
+
+    def test_catalogue_aliases_are_unique(self):
+        aliases = [entry.alias for entry in catalogue() if entry.alias]
+        assert len(aliases) == len(set(aliases))
+
+    def test_emergency_contact_keys_match_the_stored_schema(self):
+        """The bindings read one JSON column, so their keys must be the ones
+        ``EmergencyContact`` actually writes."""
+
+        from app.schemas.client import EmergencyContact
+
+        stored = set(EmergencyContact.model_fields)
+        bound = {
+            path.rsplit(".", 1)[1]
+            for path in self.CONTACT_PATHS
+            if path.startswith("client.emergency_contact.")
+        }
+        assert bound <= stored

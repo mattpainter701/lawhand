@@ -358,8 +358,8 @@
       "filename": "engagement_letter/general-legal-services-fee-agreement.pdf",
       "jurisdictions": [],
       "origin": "authored",
-      "sha256": "e6f96fa30a379a42c2c1a56e6fabf16b3ded1552ba49787136b7057127f3cf2c",
-      "size_bytes": 97427,
+      "sha256": "77d9257ae97bc1af41bc4556fcbcc85d2091d4148c395eab2a4e14708ef4f48b",
+      "size_bytes": 97393,
       "slug": "general-legal-services-fee-agreement",
       "title": "Fee Agreement \u2014 Legal Services (All Matter Types)"
     },
@@ -383,8 +383,8 @@
       "filename": "intake/client-questionnaire.pdf",
       "jurisdictions": [],
       "origin": "authored",
-      "sha256": "4667ff8773963ddc7e1bf94d1eda763d98d737fce099723530fda886330303fd",
-      "size_bytes": 92096,
+      "sha256": "3bdee85a548a67c9334fffb4e611d71ed9a5026e7ab01fa0eeb3bd95c489554e",
+      "size_bytes": 92050,
       "slug": "client-questionnaire",
       "title": "Client Questionnaire \u2014 All Matter Types"
     },
@@ -410,7 +410,7 @@
       "filename": "intake/prospective-client-intake-form.pdf",
       "jurisdictions": [],
       "origin": "authored",
-      "sha256": "08a120811b6e51937e236a3464039dc1a3d2b2db1289e138ee84a02a5e345000",
+      "sha256": "1b42cb6c3694fc44aa49f8a8ffca8252b74d8cdea5097ffc04c7c93e58a13bb9",
       "size_bytes": 56667,
       "slug": "prospective-client-intake-form",
       "title": "Prospective Client Intake Form"

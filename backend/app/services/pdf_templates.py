@@ -73,6 +73,11 @@ def render_pdf_page_preview(
         import pypdfium2 as pdfium
 
         document = pdfium.PdfDocument(content)
+        # pdfium draws AcroForm widget appearances only through a form-fill
+        # environment. Without this the page renders its printed text and blank
+        # space where every input should be, so a form template looks fieldless
+        # in review.
+        document.init_forms()
         page = document[page_number - 1]
         width, height = (float(value) for value in page.get_size())
         scale = min(
@@ -448,6 +453,10 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
                 "pdf_field_name": pdf_name,
                 "field_type": type_name,
                 "required": bool(flags & 2),
+                # What the source PDF itself asserts, kept separate from
+                # "required" because review may change that one. The editor
+                # uses it to show which requirements it cannot lift.
+                "source_required": bool(flags & 2),
                 "multiline": field_type == "/Tx" and bool(flags & 4096),
                 "options": _normalized_options(field, type_name),
                 "page": (first_widget.page_index + 1) if first_widget else None,
@@ -1792,12 +1801,21 @@ def fill_pdf_template(
         ):
             known_variables.add(variable)
             variable_fields[variable] = actual_field
-            if not is_signing_template_field(actual_field) and (
-                actual_field.get("required") or field.get("required")
-            ):
-                required_variables[variable] = str(
-                    actual_field.get("field_type") or "text"
-                )
+            field_type = str(actual_field.get("field_type") or "text")
+            # A source-required field cannot normally be weakened by review.
+            # Checkboxes are the exception: "required" on a checkbox means it
+            # must be *checked*, and most carry the flag only because the tool
+            # that authored the PDF set it by default — reportlab marks every
+            # checkbox required unless told otherwise. Honouring review for
+            # them is what lets a form with mutually exclusive options, or an
+            # answer that is legitimately "no", generate at all.
+            required = (
+                bool(field.get("required"))
+                if field_type == "checkbox"
+                else bool(actual_field.get("required") or field.get("required"))
+            )
+            if not is_signing_template_field(actual_field) and required:
+                required_variables[variable] = field_type
     if schema_pdf_names != actual_pdf_names:
         raise TemplatePdfError(
             "The stored PDF field mapping does not cover every source form field."

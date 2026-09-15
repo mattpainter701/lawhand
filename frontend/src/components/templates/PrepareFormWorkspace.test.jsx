@@ -70,6 +70,38 @@ describe('PrepareFormWorkspace', () => {
     expect(onFieldsChange.mock.calls.at(-1)[0][0].included).toBe(false)
   })
 
+  it('locks Required when the source PDF asserts it, except on a checkbox', () => {
+    // The server ORs a source-required field with the submitted value, so
+    // unticking this for a text field silently reverted. Checkboxes are the
+    // exception the server honours, so theirs stays editable.
+    // The workspace selects the first field on mount, so each case leads.
+    const base = { page: 1, included: true, pdf_field_name: 'f', confidence: 1 }
+    const requiredText = { ...base, name: 'must_type', label: 'Must type', field_type: 'text', required: true, source_required: true }
+    const requiredCheckbox = { ...base, name: 'opt_in', label: 'Opt in', field_type: 'checkbox', required: true, source_required: true }
+    const plainText = { ...base, name: 'free_text', label: 'Free text', field_type: 'text', required: false, source_required: false }
+    const props = {
+      file: new File(['image'], 'form.png', { type: 'image/png' }),
+      analysis: { suggested_variable_schema: { pages: [{ page: 1, width: 612, height: 792 }] } },
+    }
+
+    const onFieldsChange = vi.fn()
+    const { unmount } = render(<PrepareFormWorkspace {...props} fields={[requiredText]} onFieldsChange={onFieldsChange} />)
+    expect(screen.getByRole('checkbox', { name: /Required/ })).toBeDisabled()
+    expect(screen.getByText(/cannot be made optional here/)).toBeInTheDocument()
+    unmount()
+
+    render(<PrepareFormWorkspace {...props} fields={[requiredCheckbox]} onFieldsChange={onFieldsChange} />)
+    const checkboxRequired = screen.getByRole('checkbox', { name: /Required/ })
+    expect(checkboxRequired).not.toBeDisabled()
+    fireEvent.click(checkboxRequired)
+    expect(onFieldsChange.mock.calls.at(-1)[0][0].required).toBe(false)
+    cleanup()
+
+    render(<PrepareFormWorkspace {...props} fields={[plainText]} onFieldsChange={onFieldsChange} />)
+    expect(screen.getByRole('checkbox', { name: /Required/ })).not.toBeDisabled()
+    expect(screen.queryByText(/cannot be made optional here/)).not.toBeInTheDocument()
+  })
+
   it('keeps the same field selected while its automation key is renamed', async () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:source')
     const onFieldsChange = vi.fn()

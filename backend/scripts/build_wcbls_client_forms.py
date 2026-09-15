@@ -34,7 +34,6 @@ import base64
 import io
 import json
 import os
-import re
 import secrets
 import sys
 from dataclasses import dataclass
@@ -63,6 +62,7 @@ os.environ.setdefault(
 
 from app.services.pdf_templates import discover_pdf_fields  # noqa: E402
 from app.services.template_bindings import is_valid_binding  # noqa: E402
+from app.services.esign.plan import _is_initials_field as is_initials_field  # noqa: E402
 
 PAGE_WIDTH, PAGE_HEIGHT = letter
 MARGIN = 48.0
@@ -502,11 +502,9 @@ BLOCKS = (
     CENTER("Please complete this form in its entirety."),
     H2("Client information"),
     ROW(
-        # "M.I." not "Middle Initial": the portal's signing planner classifies
-        # any text field whose name or tooltip matches /\binitials?\b/ as an
-        # initials block to be signed, which would turn the client's name box
-        # into a signing widget. See check_signing_classifier() below.
-        Field("client_name", "Last Name, First Name, M.I.", "client.name", 2.7),
+        Field(
+            "client_name", "Last Name, First Name, Middle Initial", "client.name", 2.7
+        ),
         Field("client_date_of_birth", "Date of Birth", "manual", 1.0),
         Field("client_ssn", "Social Security Number", "manual", 1.3),
     ),
@@ -713,29 +711,20 @@ def declared_bindings() -> dict[str, str]:
     return bindings
 
 
-#: The portal's signing planner (``app/services/esign/plan.py``) reads an
-#: AcroForm text field's name and tooltip and promotes it to a signing widget
-#: when either matches. A questionnaire label like "Middle Initial" or a
-#: "Signature Date" column trips these by accident, so the form is checked
-#: against the same patterns it will be read with.
-_SIGNING_INITIALS = re.compile(r"(?i)\binitials?\b|_initials?(_|$)")
-_SIGNING_DATE = re.compile(
-    r"(?i)(date[_ -]?(of[_ -]?)?sign|sign(ature|ed)?[_ -]?date|date[_ -]?signed)"
-)
-
-
+#: The portal's signing planner reads an AcroForm text field's name and tooltip
+#: and can promote it to a signing widget. The check below calls that same
+#: classifier rather than restating its patterns, so this form cannot drift
+#: from the engine that will read it.
 def check_signing_classifier() -> list[str]:
     """Return every field the portal would mistake for a signing widget."""
 
     problems = []
     for entry in form_fields():
-        haystack = f"{entry.name} {entry.label}"
-        for kind, pattern in (("initials", _SIGNING_INITIALS), ("date", _SIGNING_DATE)):
-            if pattern.search(haystack):
-                problems.append(
-                    f"{entry.name}: label {entry.label!r} reads as a signing "
-                    f"{kind} field to app/services/esign/plan.py"
-                )
+        if is_initials_field(entry.name, entry.label):
+            problems.append(
+                f"{entry.name}: label {entry.label!r} reads as a signing "
+                f"initials field to app/services/esign/plan.py"
+            )
     return problems
 
 
