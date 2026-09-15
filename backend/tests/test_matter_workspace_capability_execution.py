@@ -68,6 +68,9 @@ def _matter(*, tenant_id, matter_id=None, **overrides):
         "legal_hold_issued": False,
         "key_dates": {"hearing": date(2026, 9, 3)},
         "initial_posture": "Complaint filed",
+        "opened_on": date(2026, 7, 1),
+        "engagement_status": "signed_no_copy",
+        "engagement_signed_on": date(2026, 6, 20),
         "decision": None,
         "is_closed": False,
         "outcome": None,
@@ -156,6 +159,9 @@ async def test_get_matter_context_executes_every_consentable_section():
     payload = await workspace.get_matter_context(_context(db, tenant_id), args)
 
     assert payload["matter"]["matter_id"] == str(matter.id)
+    assert payload["matter"]["opened_on"] == "2026-07-01"
+    assert payload["matter"]["engagement_status"] == "signed_no_copy"
+    assert payload["matter"]["engagement_signed_on"] == "2026-06-20"
     assert payload["team"][0]["name"] == "Pat Paralegal"
     assert payload["open_tasks"][0]["assigned_to_user_id"] == str(team_user.id)
     assert payload["events"][0]["event_type"] == "filing"
