@@ -35,6 +35,19 @@ from app.services.task_visibility import sms_task_visibility_predicate
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
 
+def _task_due_window(task: Task) -> tuple[str | None, str | None]:
+    """Wall-clock start/end for a task deadline, or (None, None) when all-day.
+
+    A task without a due time stays an all-day deadline chip. One with a due
+    time is emitted without an offset so the browser reads it as the firm's own
+    local clock, the same wall time the task form captured.
+    """
+    if not task.due_date or not task.due_time:
+        return None, None
+    start = datetime.combine(task.due_date, task.due_time)
+    return start.isoformat(), (start + timedelta(minutes=30)).isoformat()
+
+
 def _date_range_bounds(start: date, end: date) -> tuple[datetime, datetime]:
     return (
         datetime.combine(start, time.min),
@@ -143,6 +156,9 @@ async def get_calendar_events(
 
     for task in tasks:
         is_done = task.status in ("completed", "done")
+        # Named apart from the `start`/`end` query range, which the later
+        # renewal, estate, and scheduled-event queries still need.
+        due_start, due_end = _task_due_window(task)
         events.append(
             CalendarEvent(
                 id=f"task-{task.id}",
@@ -151,8 +167,11 @@ async def get_calendar_events(
                 event_type="task_due",
                 matter_id=task.matter_id,
                 task_id=task.id,
+                task_version=task.version,
                 url=f"/tasks/{task.id}",
                 is_completed=is_done,
+                start=due_start,
+                end=due_end,
             )
         )
 
@@ -271,6 +290,7 @@ async def get_calendar_events(
                 event_type="scheduled_event",
                 matter_id=row.matter_id,
                 matter_name=matter_names.get(row.matter_id) if row.matter_id else None,
+                task_id=row.task_id,
                 url=row.external_calendar_url,
                 start=row.start_at.isoformat(),
                 end=row.end_at.isoformat(),
@@ -309,6 +329,39 @@ async def _require_matter(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Matter not found")
     return matter_id
+
+
+async def _require_visible_task(
+    db: AsyncSession,
+    tenant_id: str,
+    task_id: uuid.UUID | None,
+    current_user,
+):
+    """Resolve a task the caller may block time for, or raise 404.
+
+    Reuses the same visibility predicate the events feed applies, so a work
+    block can never be created against a task the caller cannot see.
+    """
+    if not task_id:
+        return None
+    capabilities = await get_user_capabilities(db, current_user.id)
+    tid = uuid.UUID(tenant_id)
+    result = await db.execute(
+        select(Task).where(
+            Task.tenant_id == tid,
+            Task.id == task_id,
+            sms_task_visibility_predicate(
+                tenant_id=tid,
+                user_id=current_user.id,
+                is_admin=current_user.role == "admin",
+                has_manage_matters="manage_matters" in capabilities,
+            ),
+        )
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 def _validate_scheduled_payload(
@@ -362,10 +415,12 @@ async def create_scheduled_event(
         raise HTTPException(status_code=422, detail="end_at must be after start_at")
     _validate_scheduled_payload(body.calendar_provider, body.meeting_provider)
     await _require_matter(db, tenant_id, body.matter_id)
+    await _require_visible_task(db, tenant_id, body.task_id, current_user)
 
     row = ScheduledEvent(
         tenant_id=uuid.UUID(tenant_id),
         matter_id=body.matter_id,
+        task_id=body.task_id,
         created_by_user_id=current_user.id,
         title=body.title,
         description=body.description,
@@ -421,6 +476,8 @@ async def update_scheduled_event(
         raise HTTPException(status_code=422, detail="end_at must be after start_at")
     if "matter_id" in updates:
         await _require_matter(db, tenant_id, updates["matter_id"])
+    if "task_id" in updates:
+        await _require_visible_task(db, tenant_id, updates["task_id"], current_user)
 
     await delete_external_event(
         db, row, tenant_id=tenant_id, user_id=str(current_user.id)

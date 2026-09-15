@@ -27,6 +27,17 @@ When you finish work, complete the task promptly. If the work cannot be complete
 
 Use [Calendar](/calendar) for events and deadlines. Confirm the date, time zone, matter, and attendees before saving. A calendar event can remind people when to act, but the underlying task should still explain the required work and owner.
 
+### Dragging a task on the calendar
+
+Drag an open task deadline to a different day in Month view, or to an hour column in Day or Week view. Because the same gesture can mean two different things, LawHand asks which one you meant:
+
+- **Move the due date.** The deadline moves to where you dropped it. Dropping into an hour column also sets the due time; you can adjust either before confirming. The task's due-date reminder is re-armed for the new date, and its Outlook or Google copy follows.
+- **Block time to work on it.** A **Work Block** event is added for that slot and linked to the task. The due date, its reminders, and its calendar copy are all left as they are. Choose a connected calendar in the prompt if you want the block to appear in Outlook or Google too.
+
+Only open task deadlines and firm-created events can be dragged. Completed tasks, matter key dates, renewals, and events synced in from Outlook or Google are owned elsewhere and stay where their source put them. You can also edit a due date directly in [Tasks](/tasks) — the drag gesture is a shortcut, not the only route.
+
+Verify a rescheduled court or statutory deadline against the controlling rule before relying on it. Moving a chip on a calendar does not move the underlying obligation.
+
 For court or statutory deadlines, follow your firm's verification procedure. Do not rely on a generated date or a single notification without checking the controlling rule and source.
 
 ## Communications

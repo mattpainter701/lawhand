@@ -11,15 +11,15 @@ rather than one per retry.
 Additive and nullable: an existing request has failed zero times, which is what
 the server default records for rows already in the table.
 
-Revision ID: 187_completion_escalation
-Revises: 186_billing_parity
+Revision ID: 188_completion_escalation
+Revises: 187_scheduled_event_task_link
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "187_completion_escalation"
-down_revision = "186_billing_parity"
+revision = "188_completion_escalation"
+down_revision = "187_scheduled_event_task_link"
 branch_labels = None
 depends_on = None
 

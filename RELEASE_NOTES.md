@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.15.1 — Clearer matter actions, real deadline times, stronger evidence
+## 2026.09.15.01 — Clearer matter actions, real deadline times, stronger evidence
 
 Released September 15, 2026.
 
@@ -16,6 +16,15 @@ Released September 15, 2026.
 - **Deadlines keep their time on your calendar.** A task with a due time reaches Outlook and Google as a timed event instead of an all-day entry, and the synced copy no longer appears beside the task.
 - **An unfilable signed copy raises a task.** When filing a signed document keeps failing, an assigned follow-up task is raised on the matter. Filing keeps retrying and the task closes when it succeeds.
 - **Certificates record the signer's address.** A signing evidence certificate records the signer's own address rather than an internal one of ours, and says so plainly when none can be attributed.
+
+## 2026.09.14.01 — Drag a task on the calendar
+
+Released September 14, 2026.
+
+Drag an open task deadline to a new day or hour and choose what the drop means: move the due date, or block working time for it.
+
+- **Move a due date by dragging it.** Drop a task deadline on another day, or on an hour in Day and Week view to set its time. Its reminder is re-armed for the new date and its Outlook or Google copy follows.
+- **Block time to work on something.** Choose Block time instead and the calendar gets a work block linked to the task, while the due date and its reminders stay exactly where they were.
 
 ## 2026.09.13.15 — Cleaner signing fields and matter details
 

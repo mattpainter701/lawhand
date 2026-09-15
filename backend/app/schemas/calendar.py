@@ -24,6 +24,9 @@ class CalendarEvent(BaseModel):
     matter_id: Optional[uuid.UUID] = None
     matter_name: Optional[str] = None
     task_id: Optional[uuid.UUID] = None
+    # Optimistic-lock token so a calendar drag can reschedule the exact task
+    # revision it was rendered from instead of overwriting a newer edit.
+    task_version: Optional[int] = None
     url: Optional[str] = None  # frontend nav target
     is_completed: bool = False  # task is done → show with checkmark/strikethrough
     start: Optional[str] = None
@@ -76,6 +79,8 @@ class ScheduledEventCreate(BaseModel):
     timezone: str = "UTC"
     attendees: list[str] = []
     matter_id: uuid.UUID | None = None
+    # Set to block working time for a task without touching its due date.
+    task_id: uuid.UUID | None = None
     calendar_provider: str | None = None
     meeting_provider: str = "none"
 
@@ -110,6 +115,7 @@ class ScheduledEventUpdate(BaseModel):
     timezone: str | None = None
     attendees: list[str] | None = None
     matter_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
     calendar_provider: str | None = None
     meeting_provider: str | None = None
 
@@ -146,6 +152,7 @@ class ScheduledEventResponse(BaseModel):
     timezone: str
     attendees: list[str] = []
     matter_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
     created_by_user_id: uuid.UUID | None = None
     calendar_provider: str | None = None
     meeting_provider: str

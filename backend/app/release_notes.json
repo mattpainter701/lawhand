@@ -2,8 +2,8 @@
   "recent_release_days": 30,
   "releases": [
     {
-      "id": "2026.09.15.1",
-      "version": "2026.09.15.1",
+      "id": "2026.09.15.01",
+      "version": "2026.09.15.01",
       "title": "Clearer matter actions, real deadline times, stronger evidence",
       "published_at": "2026-09-15",
       "summary": "\"Active\" means one thing on My Matters, the View link opens the matter, task due times reach Outlook and Google at the hour you set, an unfilable signed copy raises a task, and certificates record the signer's address.",
@@ -27,6 +27,23 @@
         {
           "title": "Certificates record the signer's address",
           "description": "A signing evidence certificate records the signer's own address rather than an internal one of ours, and says so plainly when none can be attributed."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.14.01",
+      "version": "2026.09.14.01",
+      "title": "Drag a task on the calendar",
+      "published_at": "2026-09-14",
+      "summary": "Drag an open task deadline to a new day or hour and choose what the drop means: move the due date, or block working time for it.",
+      "highlights": [
+        {
+          "title": "Move a due date by dragging it",
+          "description": "Drop a task deadline on another day, or on an hour in Day and Week view to set its time. Its reminder is re-armed for the new date and its Outlook or Google copy follows."
+        },
+        {
+          "title": "Block time to work on something",
+          "description": "Choose Block time instead and the calendar gets a work block linked to the task, while the due date and its reminders stay exactly where they were."
         }
       ]
     },
