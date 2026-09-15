@@ -79,9 +79,13 @@ copy and an e-signed copy land on the same line.
 
 ## Fields and bindings
 
-7 fields fill themselves from the matter and client record. 5 are pinned `manual` so
-a coincidental name match can never auto-fill sensitive data. The rest are answered
+11 fields fill themselves from the client record. 5 are pinned `manual` so a
+coincidental name match can never auto-fill sensitive data. The rest are answered
 by whoever fills the form.
+
+Ten of the eleven resolve by field *name* alone even with nothing declared,
+because the names match LawHand's own Smart Fill aliases. The declarations in
+the sidecar make that explicit and cover the four that name-matching misses.
 
 | Field | Label | Type | Binding |
 |---|---|---|---|
@@ -97,12 +101,12 @@ by whoever fills the form.
 | `mailing_state` | State | text | — |
 | `mailing_zip` | Zip | text | — |
 | `client_phone` | Phone Number | text | `client.phone` |
-| `client_cell_phone` | Cell Phone Number | text | — |
+| `client_cell_phone` | Cell Phone Number | text | `client.secondary_phone` |
 | `client_fax` | Fax Number | text | — |
 | `client_email` | E-mail Address | text | `client.email` |
 | `spouse_name` | Spouse's Full Name | text | — |
-| `best_contact_method` | Best method to reach you | text | — |
-| `best_contact_time` | Best time to reach you | text | — |
+| `best_contact_method` | Best method to reach you | text | `client.preferred_contact_method` |
+| `best_contact_time` | Best time to reach you | text | `client.preferred_contact_window` |
 | `employer_name` | Employer's Name | text | — |
 | `employer_street` | Employer's Address | text | — |
 | `employer_city` | City | text | — |
@@ -120,7 +124,7 @@ by whoever fills the form.
 | `emergency_contact_messages` | May we leave confidential messages…? | radio `yes` / `no` | — |
 | `prior_representation` | 1. Has our firm assisted you before? | radio `yes` / `no` | — |
 | `prior_attorney` | If yes, please specify attorney | text | — |
-| `referral_source` | How did you find out about our firm? | text | — |
+| `referral_source` | How did you find out about our firm? | text | `client.referral_source` |
 | `card_on_file` | May we bill all payments due to your credit card? | radio `yes` / `no` | — |
 | `card_brand` | Credit Card | radio `visa` / `mastercard` / `discover` | — |
 | `credit_card_number` | Credit Card Number | text | manual |

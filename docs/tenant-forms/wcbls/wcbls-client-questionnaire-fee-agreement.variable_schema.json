@@ -237,6 +237,7 @@
       "source_required": false
     },
     {
+      "binding": "client.secondary_phone",
       "confidence": 1.0,
       "field_type": "text",
       "label": "Cell Phone Number",
@@ -314,6 +315,7 @@
       "source_required": false
     },
     {
+      "binding": "client.preferred_contact_method",
       "confidence": 1.0,
       "field_type": "text",
       "label": "Best method to reach you",
@@ -333,6 +335,7 @@
       "source_required": false
     },
     {
+      "binding": "client.preferred_contact_window",
       "confidence": 1.0,
       "field_type": "text",
       "label": "Best time to reach you",
@@ -681,6 +684,7 @@
       "source_required": false
     },
     {
+      "binding": "client.referral_source",
       "confidence": 1.0,
       "field_type": "text",
       "label": "How did you find out about our firm?",

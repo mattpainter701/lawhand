@@ -521,6 +521,11 @@ class Sheet:
 
 YES_NO = (Choice("yes", "Yes"), Choice("no", "No"))
 
+# Four fields carry a binding to a contact column the firm already holds
+# (secondary phone, preferred contact method and window, referral source).
+# They are still the client's to confirm on a questionnaire, but pre-filling
+# them from the record saves retyping when the copy is prepared for the
+# attorney; clear the binding in the editor to leave any of them blank.
 # ── The form ────────────────────────────────────────────────────────────────
 # Every label and every sentence below is the firm's own wording, carried over
 # from the Word source. The questionnaire's combined "City, State, Zip" cells
@@ -557,7 +562,7 @@ BLOCKS = (
     ),
     ROW(
         Field("client_phone", "Phone Number", "client.phone", 1.0),
-        Field("client_cell_phone", "Cell Phone Number", "", 1.0),
+        Field("client_cell_phone", "Cell Phone Number", "client.secondary_phone", 1.0),
         Field("client_fax", "Fax Number", "", 1.0),
     ),
     ROW(
@@ -565,8 +570,18 @@ BLOCKS = (
         Field("spouse_name", "Spouse's Full Name", "", 1.3),
     ),
     ROW(
-        Field("best_contact_method", "Best method to reach you", "", 1.0),
-        Field("best_contact_time", "Best time to reach you", "", 1.0),
+        Field(
+            "best_contact_method",
+            "Best method to reach you",
+            "client.preferred_contact_method",
+            1.0,
+        ),
+        Field(
+            "best_contact_time",
+            "Best time to reach you",
+            "client.preferred_contact_window",
+            1.0,
+        ),
     ),
     H2("Employment"),
     ROW(
@@ -608,7 +623,11 @@ BLOCKS = (
     ),
     QUESTION(
         "2.  How did you find out about our firm?",
-        Field("referral_source", "How did you find out about our firm?", ""),
+        Field(
+            "referral_source",
+            "How did you find out about our firm?",
+            "client.referral_source",
+        ),
     ),
     H1("Fee Agreement"),
     BULLET(
