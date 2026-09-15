@@ -598,7 +598,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
         {/* Not a live region: the save status below already owns that role,
             and two of them read out over each other. */}
         <span className="font-semibold">
-          <span>{fields.filter(field => field.included !== false).length} fields</span> · {fields.filter(field => field.included !== false && (field.review_required || field.ai_suggested || Number(field.confidence ?? 1) < 0.75)).length} need review
+          <span>{fields.filter(field => field.included !== false).length} fields</span> · {fields.filter(field => field.included !== false && !sourceReviewed && (field.review_required || field.ai_suggested || Number(field.confidence ?? 1) < 0.75)).length} need review
         </span>
         {catalogueLoaded && coverage.total > 0 && (
           <span className="font-semibold text-brand-ink">{coverage.fills} of {coverage.total} fill from the record</span>
@@ -644,8 +644,8 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
               I compared every highlighted field with the original document and corrected anything uncertain.
               <span className="mt-0.5 block text-[11px] text-brand-muted">
                 {sourceReviewed
-                  ? `Confirmed for the ${unreviewedFields.length} field${unreviewedFields.length === 1 ? '' : 's'} the scan was unsure of. Adding, removing or moving a field asks again.`
-                  : `${unreviewedFields.length} field${unreviewedFields.length === 1 ? '' : 's'} the scan was unsure of. This template cannot be published until you confirm.`}
+                  ? `Confirmed for all ${unreviewedFields.length} of them. Adding, removing or moving a field asks again.`
+                  : `${unreviewedFields.length} field${unreviewedFields.length === 1 ? '' : 's'} ${unreviewedFields.length === 1 ? 'has' : 'have'} not been checked against the original yet. This template cannot be published until you confirm.`}
               </span>
             </span>
           </label>
@@ -872,8 +872,18 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
         </>
         )}
 
-        <aside aria-label="Field properties" tabIndex={-1} className="studio-field-inspector overflow-y-auto border-t border-brand-line p-3 lg:border-l lg:border-t-0">
-          <fieldset disabled={saving || Boolean(wordingSelection)}>
+        {/* min-w-0: a grid item defaults to min-width:auto, so the field list's
+            longest label set the panel's content width and everything in it —
+            the label input, the fill-source explanation — was clipped past the
+            288px track with no scrollbar to reach it. */}
+        <aside aria-label="Field properties" tabIndex={-1} className="studio-field-inspector min-w-0 overflow-y-auto border-t border-brand-line p-3 lg:border-l lg:border-t-0">
+          {/* min-w-0: a fieldset's UA default is min-inline-size: min-content,
+              so it refuses to shrink below its widest child. The field list's
+              longest label was therefore setting the panel's content width,
+              and everything in it — the label input, the fill-source
+              explanation — ran past the 288px track with no way to scroll to
+              it. */}
+          <fieldset className="min-w-0" disabled={saving || Boolean(wordingSelection)}>
           <h2 className="text-sm font-semibold text-brand-ink">
             Fields <span className="font-normal text-brand-muted">({fields.filter((field) => field.included !== false).length})</span>
           </h2>

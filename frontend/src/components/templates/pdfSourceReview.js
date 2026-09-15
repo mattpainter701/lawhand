@@ -22,7 +22,14 @@ const overlaysOf = (field) => {
   return field?.pdf_overlay ? [field.pdf_overlay] : []
 }
 
-/** Whether a person has to check this one field against the original. */
+/**
+ * Whether a person has to check this one field against the original.
+ *
+ * Every field a PDF scan produces is born `review_required`, including an
+ * AcroForm field read with full confidence — the flag means "nobody has looked
+ * at this yet", not "the scan struggled". So on a freshly uploaded form this is
+ * true of everything, which is the correct answer: nobody has.
+ */
 export const fieldNeedsReview = (field) => {
   if (field?.review_required === true) return true
   if (field?.confidence != null) {
