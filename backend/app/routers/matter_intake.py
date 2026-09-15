@@ -284,7 +284,9 @@ async def receipt(
                 db,
                 matter,
                 user_id=user.id,
-                actor=getattr(user, "full_name", None) or getattr(user, "email", None) or str(user.id),
+                actor=getattr(user, "full_name", None)
+                or getattr(user, "email", None)
+                or str(user.id),
                 extra="Verified as an intake document receipt.",
             )
     await service.reconcile(db, packet)

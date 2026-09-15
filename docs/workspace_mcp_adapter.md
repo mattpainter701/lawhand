@@ -66,7 +66,12 @@ persisted or logged. This tool is not Research MCP and cannot use a Research
 product key; it also does not provide licensed secondary-source content.
 
 `get_matter_context` can select client, team, parties, tasks, documents,
-events, notes, and communications. `get_task` returns its LawHand review URL
+events, notes, and communications. The matter summary it always returns
+carries the firm's open date (`opened_on`) and, when staff recorded how the
+matter was engaged outside the intake packet, `engagement_status` and
+`engagement_signed_on` (see [Existing engagement](matter-intake.md#existing-engagement-no-paperwork-sent));
+recording an engagement and bulk CSV creation remain REST-only, like the
+folder importer. `get_task` returns its LawHand review URL
 and bounded history. Document results include authenticated LawHand open and
 download routes as well as IDs that can be passed to
 `get_matter_document_text` for local reasoning.

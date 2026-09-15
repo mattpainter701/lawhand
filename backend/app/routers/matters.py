@@ -869,9 +869,7 @@ async def create_matter(
 
     # Create initial event. A backdated open date is worth saying out loud.
     opened_note = (
-        f" Opened on {opened_on.isoformat()}."
-        if opened_on != date_type.today()
-        else ""
+        f" Opened on {opened_on.isoformat()}." if opened_on != date_type.today() else ""
     )
     event = MatterEvent(
         tenant_id=tenant_id,

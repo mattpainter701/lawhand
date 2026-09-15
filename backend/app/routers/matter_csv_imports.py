@@ -177,10 +177,14 @@ def parse_row(row: dict[str, str]) -> tuple[dict, list[str]]:
     if agreement is not None and agreement not in AGREEMENTS:
         errors.append("agreement: use pending_copy, signed_no_copy or no_agreement")
         agreement = None
-    signed_on = _parse_date(values["agreement_signed_on"], "agreement_signed_on", errors)
+    signed_on = _parse_date(
+        values["agreement_signed_on"], "agreement_signed_on", errors
+    )
     if engagement == "existing" and agreement is None:
         agreement = "pending_copy"
-    if engagement != "existing" and (agreement or signed_on or values["agreement_note"]):
+    if engagement != "existing" and (
+        agreement or signed_on or values["agreement_note"]
+    ):
         errors.append("agreement: only an existing engagement records an agreement")
     if agreement in ("signed_no_copy", "no_agreement") and not values["agreement_note"]:
         errors.append(
@@ -189,7 +193,9 @@ def parse_row(row: dict[str, str]) -> tuple[dict, list[str]]:
             else "agreement_note: say why there is no fee agreement"
         )
     if agreement == "no_agreement" and signed_on:
-        errors.append("agreement_signed_on: a matter with no fee agreement has no signing date")
+        errors.append(
+            "agreement_signed_on: a matter with no fee agreement has no signing date"
+        )
     values["agreement"] = agreement if engagement == "existing" else None
     values["agreement_signed_on"] = _iso(signed_on)
     opened = _parse_date(values["opened_on"], "opened_on", errors)
@@ -245,9 +251,16 @@ def contact_key(values: dict) -> str | None:
 
 def display_name(values: dict) -> str:
     person = " ".join(
-        part for part in (values["client_first_name"], values["client_last_name"]) if part
+        part
+        for part in (values["client_first_name"], values["client_last_name"])
+        if part
     )
-    return values["client_organization"] or person or values["client_email"] or values["client_number"]
+    return (
+        values["client_organization"]
+        or person
+        or values["client_email"]
+        or values["client_number"]
+    )
 
 
 async def resolve_contacts(db, tenant_id, parsed: list[tuple[dict, list[str]]]):
@@ -261,7 +274,9 @@ async def resolve_contacts(db, tenant_id, parsed: list[tuple[dict, list[str]]]):
     if ids:
         for contact in (
             await db.scalars(
-                select(Contact).where(Contact.tenant_id == tenant_id, Contact.id.in_(ids))
+                select(Contact).where(
+                    Contact.tenant_id == tenant_id, Contact.id.in_(ids)
+                )
             )
         ).all():
             by_id[contact.id] = contact
@@ -288,13 +303,23 @@ async def resolve_contacts(db, tenant_id, parsed: list[tuple[dict, list[str]]]):
 
     resolutions = []
     for values, errors in parsed:
-        resolution: dict = {"action": "create", "contact_id": None, "display_name": display_name(values), "key": None}
+        resolution: dict = {
+            "action": "create",
+            "contact_id": None,
+            "display_name": display_name(values),
+            "key": None,
+        }
         if values["client_id"]:
             contact = by_id.get(uuid.UUID(values["client_id"]))
             if contact is None:
                 errors.append("client_id: no such contact in this firm")
             else:
-                resolution = {"action": "match", "contact_id": str(contact.id), "display_name": contact.display_name, "key": None}
+                resolution = {
+                    "action": "match",
+                    "contact_id": str(contact.id),
+                    "display_name": contact.display_name,
+                    "key": None,
+                }
         else:
             matches = {
                 contact.id: contact
@@ -302,14 +327,23 @@ async def resolve_contacts(db, tenant_id, parsed: list[tuple[dict, list[str]]]):
                 + by_email.get(values["client_email"], [])
             }
             if len(matches) > 1:
-                errors.append("client: the client number and email name different contacts; review required")
+                errors.append(
+                    "client: the client number and email name different contacts; review required"
+                )
             elif matches:
                 contact = next(iter(matches.values()))
-                resolution = {"action": "match", "contact_id": str(contact.id), "display_name": contact.display_name, "key": None}
+                resolution = {
+                    "action": "match",
+                    "contact_id": str(contact.id),
+                    "display_name": contact.display_name,
+                    "key": None,
+                }
             else:
                 key = contact_key(values)
                 if key is None:
-                    errors.append("client: give a client number, email, name or organization")
+                    errors.append(
+                        "client: give a client number, email, name or organization"
+                    )
                 else:
                     resolution["key"] = key
         resolutions.append(resolution)
@@ -338,7 +372,10 @@ async def resolve_users(db, tenant_id, parsed: list[tuple[dict, list[str]]]):
     resolved = []
     for values, errors in parsed:
         entry = {}
-        for field, key in (("attorney_email", "attorney"), ("partner_attorney_email", "partner")):
+        for field, key in (
+            ("attorney_email", "attorney"),
+            ("partner_attorney_email", "partner"),
+        ):
             if not values[field]:
                 entry[key] = None
                 continue
@@ -347,14 +384,21 @@ async def resolve_users(db, tenant_id, parsed: list[tuple[dict, list[str]]]):
                 errors.append(f"{field}: no active staff member with this email")
                 entry[key] = None
             else:
-                entry[key] = {"user_id": str(user.id), "name": user.full_name or user.email}
+                entry[key] = {
+                    "user_id": str(user.id),
+                    "name": user.full_name or user.email,
+                }
         resolved.append(entry)
     return resolved
 
 
 def response(run: ExternalImportRun) -> dict:
     manifest = run.manifest or {}
-    data = {"id": str(run.id), "status": run.status, "filename": manifest.get("filename")}
+    data = {
+        "id": str(run.id),
+        "status": run.status,
+        "filename": manifest.get("filename"),
+    }
     if run.status == "complete":
         data["results"] = manifest.get("results", [])
         data["summary"] = manifest.get("summary", {})
@@ -385,7 +429,9 @@ async def template(user=Depends(require_capability("manage_matters"))):
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=list(TEMPLATE_COLUMNS))
     writer.writeheader()
-    writer.writerow({column: csv_safe(EXAMPLE_ROW[column]) for column in TEMPLATE_COLUMNS})
+    writer.writerow(
+        {column: csv_safe(EXAMPLE_ROW[column]) for column in TEMPLATE_COLUMNS}
+    )
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv; charset=utf-8",
@@ -446,7 +492,9 @@ async def preview(
         "total": len(numbered),
         "valid": sum(1 for entry in numbered if not entry["errors"]),
         "invalid": sum(1 for entry in numbered if entry["errors"]),
-        "contacts_matched": sum(1 for entry in numbered if entry["contact"]["action"] == "match"),
+        "contacts_matched": sum(
+            1 for entry in numbered if entry["contact"]["action"] == "match"
+        ),
         "contacts_to_create": len(seen_keys),
     }
     manifest = {
@@ -474,7 +522,10 @@ async def preview(
         ):
             raise HTTPException(409, "Import identifier unavailable")
         if existing.manifest.get("sha256") != manifest["sha256"]:
-            raise HTTPException(409, "A different file was previewed under this import. Start a new import.")
+            raise HTTPException(
+                409,
+                "A different file was previewed under this import. Start a new import.",
+            )
         return response(existing)
     connection = ExternalSystemConnection(
         id=run_id,
@@ -608,7 +659,9 @@ async def confirm(
                 contact = Contact(
                     id=uuid.uuid5(run.id, f"contact:{key}"),
                     tenant_id=tenant_id,
-                    entity_type="organization" if values["client_organization"] else "person",
+                    entity_type="organization"
+                    if values["client_organization"]
+                    else "person",
                     contact_type="client",
                     client_status="active",
                     first_name=values["client_first_name"] or None,
@@ -638,10 +691,16 @@ async def confirm(
             contact_id = contact.id
 
         opened_on = (
-            date.fromisoformat(values["opened_on"]) if values["opened_on"] else now.date()
+            date.fromisoformat(values["opened_on"])
+            if values["opened_on"]
+            else now.date()
         )
-        attorney_id = uuid.UUID(entry["attorney"]["user_id"]) if entry.get("attorney") else None
-        partner_id = uuid.UUID(entry["partner"]["user_id"]) if entry.get("partner") else None
+        attorney_id = (
+            uuid.UUID(entry["attorney"]["user_id"]) if entry.get("attorney") else None
+        )
+        partner_id = (
+            uuid.UUID(entry["partner"]["user_id"]) if entry.get("partner") else None
+        )
         matter_id = uuid.uuid5(run.id, f"row:{entry['row']}")
         matter = Matter(
             id=matter_id,
@@ -665,7 +724,9 @@ async def confirm(
             opened_on=opened_on,
             retention_until=opened_on + timedelta(days=365 * 7),
             billing_method=values["billing_method"] or "hourly",
-            hourly_rate=Decimal(values["hourly_rate"]) if values["hourly_rate"] else None,
+            hourly_rate=Decimal(values["hourly_rate"])
+            if values["hourly_rate"]
+            else None,
             client_contact_id=contact_id,
             attorney_of_record_id=attorney_id,
             partner_attorney_id=partner_id,
@@ -722,7 +783,9 @@ async def confirm(
                 db,
                 matter,
                 user_id=user.id,
-                actor=getattr(user, "full_name", None) or getattr(user, "email", None) or str(user.id),
+                actor=getattr(user, "full_name", None)
+                or getattr(user, "email", None)
+                or str(user.id),
                 extra=f"From CSV import row {entry['row']}.",
             )
         db.add(

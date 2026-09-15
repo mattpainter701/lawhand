@@ -67,13 +67,17 @@ def engagement_payload(matter: Matter) -> dict | None:
         "status": matter.engagement_status,
         "signed_on": matter.engagement_signed_on,
         "document_id": (
-            str(matter.engagement_document_id) if matter.engagement_document_id else None
+            str(matter.engagement_document_id)
+            if matter.engagement_document_id
+            else None
         ),
         "document_name": document.filename if document else None,
         "note": matter.engagement_note,
         "recorded_at": matter.engagement_recorded_at,
         "recorded_by": (
-            str(matter.engagement_recorded_by) if matter.engagement_recorded_by else None
+            str(matter.engagement_recorded_by)
+            if matter.engagement_recorded_by
+            else None
         ),
         "recorded_by_name": (
             (recorder.full_name or recorder.email) if recorder else None
@@ -91,7 +95,8 @@ def validate_engagement(
         raise HTTPException(422, "The signing date cannot be in the future")
     if status == "signed_on_file" and not has_document:
         raise HTTPException(
-            422, "Upload the signed fee agreement or choose it from the matter documents"
+            422,
+            "Upload the signed fee agreement or choose it from the matter documents",
         )
     if status != "signed_on_file" and has_document:
         raise HTTPException(
@@ -233,16 +238,13 @@ async def record_engagement(
 
     # The same submission again is a no-op, whichever way the copy was named.
     note = (body.note or "").strip() or None
-    same_document = (
-        matter.engagement_document_id is not None
-        and (
-            matter.engagement_document_id == document_id
-            or (
-                content
-                and matter.engagement_document is not None
-                and matter.engagement_document.document_sha256
-                == hashlib.sha256(content).hexdigest()
-            )
+    same_document = matter.engagement_document_id is not None and (
+        matter.engagement_document_id == document_id
+        or (
+            content
+            and matter.engagement_document is not None
+            and matter.engagement_document.document_sha256
+            == hashlib.sha256(content).hexdigest()
         )
     )
     if (
@@ -287,9 +289,7 @@ async def record_engagement(
             raise HTTPException(
                 503, "Agreement storage is unavailable. Reconnect storage and retry."
             )
-        signed = (
-            f"; signed {body.signed_on.isoformat()}" if body.signed_on else ""
-        )
+        signed = f"; signed {body.signed_on.isoformat()}" if body.signed_on else ""
         document = MatterDocument(
             id=uuid.uuid4(),
             tenant_id=user.tenant_id,
@@ -329,7 +329,9 @@ async def record_engagement(
         db,
         matter,
         user_id=user.id,
-        actor=getattr(user, "full_name", None) or getattr(user, "email", None) or str(user.id),
+        actor=getattr(user, "full_name", None)
+        or getattr(user, "email", None)
+        or str(user.id),
         extra=(
             f"Replaces the earlier record ({STATUS_LABELS.get(previous, previous)})."
             if previous and previous != body.status
