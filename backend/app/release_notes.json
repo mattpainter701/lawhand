@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.15.02",
+      "version": "2026.09.15.02",
+      "title": "Existing engagements, open dates, and bulk matter creation",
+      "published_at": "2026-09-15",
+      "summary": "Open a matter that is already engaged without sending paperwork, set the date it was really opened, and create many matters and clients at once from a CSV template.",
+      "highlights": [
+        {
+          "title": "Record an existing engagement",
+          "description": "Open a matter as already engaged: file the signed fee agreement, note it was signed with no copy on hand, or record that there is no agreement and why. Nothing is sent."
+        },
+        {
+          "title": "Add the signed copy later",
+          "description": "A matter recorded without its signed agreement offers Add signed copy on its paperwork card; the matters list badges and filters these engagements."
+        },
+        {
+          "title": "Open date",
+          "description": "New matters take the date the firm actually opened them. Lists and the matter page show it, and it can be corrected from the matter details."
+        },
+        {
+          "title": "Bulk create from CSV",
+          "description": "Download a template, fill one row per matter, review how each client and attorney resolves, and create the matters and any new clients together."
+        }
+      ]
+    },
+    {
       "id": "2026.09.15.01",
       "version": "2026.09.15.01",
       "title": "Clearer matter actions, real deadline times, stronger evidence",

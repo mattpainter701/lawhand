@@ -12,7 +12,34 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["188_completion_escalation"]
+    assert heads == ["189_matter_engagement"]
+
+
+def test_matter_engagement_migration_adds_open_date_and_engagement_columns():
+    backend_dir = Path(__file__).resolve().parents[1]
+    source = (
+        backend_dir / "migrations" / "versions" / "189_matter_engagement.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "189_matter_engagement"' in source
+    assert 'down_revision = "188_completion_escalation"' in source
+    # Existing rows keep their creation date as the open date and new rows
+    # default to today. The column stays nullable in this release: the
+    # migration safety gate separates "add and backfill" from "make required".
+    assert "opened_on = (created_at AT TIME ZONE 'UTC')::date" in source
+    assert "nullable=False" not in source
+    assert "CURRENT_DATE" in source
+    for column in (
+        "engagement_status",
+        "engagement_signed_on",
+        "engagement_document_id",
+        "engagement_note",
+        "engagement_recorded_at",
+        "engagement_recorded_by",
+    ):
+        assert column in source
+    assert "ck_matters_engagement_status" in source
+    assert "op.drop_column" in source
 
 
 def test_intake_optional_agreement_migration_widens_and_restores_the_column():

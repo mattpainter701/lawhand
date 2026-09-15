@@ -1,6 +1,6 @@
 import io
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -343,6 +343,8 @@ async def test_create_update_archive_and_linked_matters():
         matter_type="estate",
         status="active",
         jurisdiction="ND",
+        opened_on=date(2024, 2, 10),
+        engagement_status="no_agreement",
         created_at=datetime.now(timezone.utc),
     )
     matter_db = fake_db(FakeResult(rows=[matter]))
@@ -357,6 +359,8 @@ async def test_create_update_archive_and_linked_matters():
         linked = await client_matters(client_id, current_user=admin, db=matter_db)
         await archive_client(client_id, admin=admin, db=matter_db)
     assert linked[0]["matter_name"] == "Estate plan"
+    assert linked[0]["opened_on"] == "2024-02-10"
+    assert linked[0]["engagement_status"] == "no_agreement"
     assert contact.is_active is False
     assert contact.client_status == "inactive"
 

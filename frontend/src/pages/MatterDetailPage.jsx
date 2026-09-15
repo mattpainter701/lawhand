@@ -1061,7 +1061,7 @@ function MatterWorkspace() {
         {/* ── Dashboard Tab ─────────────────────────────────────────────────────── */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            <CaseSetupCard matterId={id} matter={matter} onPacketChange={handlePacketChange} />
+            <CaseSetupCard matterId={id} matter={matter} onPacketChange={handlePacketChange} onEngagementRecorded={loadMatter} />
             <ClientConversation matterId={id} onUnreadChange={setClientUnread} />
             <SignatureRequestsPanel matterId={id} refreshKey={signatureRefreshKey} />
             {/* Stats bar */}
@@ -1311,6 +1311,7 @@ function MatterWorkspace() {
                     <Field label="Practice Area">{dm.practice_area}</Field>
                     <Field label="Matter Type">{dm.matter_type}</Field>
                     <Field label="Case Number">{dm.case_number}</Field>
+                    <Field label="Opened">{dm.opened_on ? (() => { try { return format(parseISO(dm.opened_on), 'MMM d, yyyy') } catch { return dm.opened_on } })() : null}</Field>
                     <Field label="Stage">{dm.stage}</Field>
                     <Field label="Jurisdiction">{dm.jurisdiction}</Field>
                     <Field label="Court">{dm.court}</Field>
@@ -1983,6 +1984,10 @@ function MatterWorkspace() {
                     </select>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label htmlFor="matterdetailpage-opened-on" className={labelCls}>Open Date</label>
+                      <input id="matterdetailpage-opened-on" type="date" value={editData.opened_on || ''} max={new Date().toISOString().slice(0, 10)} onChange={e => setEditData(p => ({ ...p, opened_on: e.target.value || null }))} className={inputCls} />
+                    </div>
                     <div>
                       <label htmlFor="matterdetailpage-case-number" className={labelCls}>Case Number</label>
                       <input id="matterdetailpage-case-number" type="text" value={editData.case_number || ''} onChange={e => setEditData(p => ({ ...p, case_number: e.target.value }))} className={inputCls} />

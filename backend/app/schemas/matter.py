@@ -1,12 +1,29 @@
 """Pydantic schemas for the matter/case management system."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ── Matter CRUD ───────────────────────────────────────────────────────────────
+
+EARLIEST_OPENED_ON = date(1900, 1, 1)
+
+
+def validate_opened_on(value: date | None) -> date | None:
+    """An open date is a real past or present date, not a typo in the far future.
+
+    A day of slack absorbs a client entering "today" from a timezone ahead of
+    the server's clock.
+    """
+    if value is None:
+        return None
+    if value > date.today() + timedelta(days=1):
+        raise ValueError("The open date cannot be in the future")
+    if value < EARLIEST_OPENED_ON:
+        raise ValueError("Enter an open date on or after 1900-01-01")
+    return value
 
 
 class MatterCreate(BaseModel):
@@ -14,6 +31,11 @@ class MatterCreate(BaseModel):
 
     matter_name: str = Field(..., max_length=500)
     description: str | None = None
+    # The date the firm opened the matter. Omitted means today; a matter brought
+    # in from another firm keeps its real open date.
+    opened_on: date | None = None
+
+    _opened_on = field_validator("opened_on")(validate_opened_on)
 
     # Practice area / type
     matter_type: str | None = Field(None, max_length=100)
@@ -65,6 +87,7 @@ class MatterUpdate(BaseModel):
 
     matter_name: str | None = Field(None, max_length=500)
     description: str | None = None
+    opened_on: date | None = None
     matter_type: str | None = Field(None, max_length=100)
     role: str | None = Field(None, max_length=100)
     counterparty: str | None = Field(None, max_length=500)
@@ -108,6 +131,27 @@ class MatterUpdate(BaseModel):
     cloud_folder: dict | None = None
     primary_plugin: str | None = Field(None, max_length=100)
     plugin_workflow_state: dict | None = None
+
+    _opened_on = field_validator("opened_on")(validate_opened_on)
+
+
+class MatterEngagement(BaseModel):
+    """How a matter came to be engaged when no intake packet did it.
+
+    ``status`` is one of ``signed_on_file`` (the signed fee agreement is a
+    matter document), ``signed_no_copy`` (signed, but the firm holds no copy),
+    ``no_agreement`` (deliberately no fee agreement; ``note`` carries the
+    reason) or ``pending_copy`` (engaged, signed copy still to be uploaded).
+    """
+
+    status: str
+    signed_on: date | None = None
+    document_id: str | None = None
+    document_name: str | None = None
+    note: str | None = None
+    recorded_at: datetime | None = None
+    recorded_by: str | None = None
+    recorded_by_name: str | None = None
 
 
 class MatterAssignmentResponse(BaseModel):
@@ -183,6 +227,12 @@ class MatterResponse(BaseModel):
     court: str | None
     judge: str | None
     case_number: str | None
+
+    # The date the firm opened the matter (not the row's creation time).
+    opened_on: date | None = None
+    # Present only when staff recorded how the matter was engaged outside the
+    # intake packet; see MatterEngagement.
+    engagement: MatterEngagement | None = None
 
     # Client
     client_contact_id: str | None
@@ -260,6 +310,8 @@ class MatterSummary(BaseModel):
     is_overdue: bool
     next_deadline: datetime | None
     cloud_folder: dict | None = None
+    opened_on: date | None = None
+    engagement_status: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

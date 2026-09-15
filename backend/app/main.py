@@ -77,6 +77,7 @@ from app.routers.sms import router as sms_router
 from app.routers.engagement_packets import router as engagement_packets_router
 from app.routers.matter_parties import router as matter_parties_router
 from app.routers.matter_documents import router as matter_documents_router
+from app.routers.matter_csv_imports import router as matter_csv_imports_router
 from app.routers.matter_imports import router as matter_imports_router
 from app.routers.matter_intake import (
     router as matter_intake_router,
@@ -516,6 +517,9 @@ app.include_router(intake_assistant_router)
 app.include_router(engagement_packets_router)
 app.include_router(matter_parties_router)
 app.include_router(matter_documents_router)
+# The CSV routes are registered before the folder importer so its
+# ``/{run_id}`` route never captures ``/csv/...``.
+app.include_router(matter_csv_imports_router)
 app.include_router(matter_imports_router)
 app.include_router(matter_intake_router)
 app.include_router(client_intake_router)

@@ -125,7 +125,9 @@ async def get_packet(db, tenant_id, matter_id, *, lock=False):
     )
 
 
-async def store_file(tenant_id, matter, filename, content, content_type):
+async def store_file(
+    tenant_id, matter, filename, content, content_type, *, category="intake"
+):
     # OAuth refresh may commit. Keep it out of the locked intake transaction.
     async with async_session_maker() as storage_db:
         await set_tenant_context(storage_db, str(tenant_id))
@@ -133,7 +135,7 @@ async def store_file(tenant_id, matter, filename, content, content_type):
             db=storage_db,
             tenant_id=str(tenant_id),
             matter_slug=matter.slug,
-            category="intake",
+            category=category,
             filename=filename,
             content=content,
             content_type=content_type,

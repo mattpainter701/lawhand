@@ -13,7 +13,19 @@ matter and client; an existing contact can be reused for multiple matters. No
 contact is merged based on a guessed name. Groups may be excluded explicitly.
 New matters can be marked existing engagement, transfer review required, or
 fresh intake required. These stage labels do not send any communication; start
-the intake packet separately after reviewing the transferred matter.
+the intake packet separately after reviewing the transferred matter. Each new
+matter also takes its real open date (today when blank). An existing
+engagement can record how the fee agreement stands — signed with the copy to
+be uploaded from the matter later, signed with no copy on hand, or no fee
+agreement — with the signing date and a note where one is required; the
+importer cannot carry the signed file itself, so **Add signed copy** on the
+matter's paperwork card files it afterwards. See
+[Existing engagement](matter-intake.md#existing-engagement-no-paperwork-sent).
+
+To create many matters from a spreadsheet instead of from folders, use **New
+Matter → Bulk create from CSV** ([matter CSV import](matter-csv-import.md));
+this importer can then file each matter's documents by choosing those matters
+as destinations.
 
 The confirmed manifest binds every source path to a size, SHA-256 digest and
 destination. Confirmation creates matters in one transaction. File results are
