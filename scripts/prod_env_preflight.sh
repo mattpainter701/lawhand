@@ -365,6 +365,90 @@ if [[ -z "$zoom_required_tenant_id" ]]; then
 elif [[ ! "$zoom_required_tenant_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]]; then
   errors+=("ZOOM_REQUIRED_TENANT_ID must be a tenant UUID when configured")
 fi
+
+# ── Provider OAuth client credentials ────────────────────────────────────────
+# Google and Microsoft sign-in plus their integrations are optional, so a wholly
+# unset pair is a warning. A half-set, whitespace-bearing, or malformed pair is
+# an error, because neither failure mode is visible at deploy time:
+#
+#   * is_oauth_client_configured() (backend/app/utils/oauth_security.py) strips
+#     and reports such a client as simply "not configured", so the provider's
+#     connect routes return a configuration error and the integration silently
+#     disappears rather than failing the deploy.
+#   * The raw, unstripped value is what reaches the provider — auth.py builds the
+#     authorize URL by interpolation and token_vault.py posts it in the refresh
+#     body — so a pasted leading/trailing space passes the configured check and
+#     then fails against Google or Microsoft as an opaque invalid_client.
+#
+# Values are compared and shape-checked only; none is ever printed.
+check_oauth_client_pair() {
+  local id_key="$1" secret_key="$2" id_pattern="$3" label="$4"
+  local id secret entry key value
+  id="$(get_env "$id_key")"
+  secret="$(get_env "$secret_key")"
+
+  if [[ -z "$id" && -z "$secret" ]]; then
+    warnings+=("$id_key and $secret_key are unset; $label sign-in and integrations are disabled for this deployment")
+    return
+  fi
+
+  [[ -n "$id" ]] || errors+=("$id_key must be set when $secret_key is; a half-configured client disables $label with no runtime error")
+  [[ -n "$secret" ]] || errors+=("$secret_key must be set when $id_key is; a half-configured client disables $label with no runtime error")
+
+  for entry in "$id_key=$id" "$secret_key=$secret"; do
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    [[ -n "$value" ]] || continue
+    if [[ "$value" =~ [[:space:]] ]]; then
+      errors+=("$key must not contain whitespace; the raw value is sent to the provider and a pasted space fails as invalid_client")
+    fi
+  done
+
+  if [[ -n "$id" && -n "$id_pattern" && ! "$id" =~ $id_pattern ]]; then
+    errors+=("$id_key does not have the shape of a $label OAuth client id")
+  fi
+}
+
+google_client_id_pattern='^[0-9]+-[0-9a-z]+\.apps\.googleusercontent\.com$'
+entra_guid_pattern='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+check_oauth_client_pair GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET "$google_client_id_pattern" Google
+check_oauth_client_pair MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET "$entra_guid_pattern" Microsoft
+
+# Entra's Certificates & secrets blade lists a Secret ID (a GUID) beside the
+# secret Value, and the Value is only shown once. A pasted Secret ID looks
+# plausible everywhere until the first token exchange, which Entra rejects as
+# AADSTS7000215 and the callback reports only as a generic exchange failure.
+if [[ "$(get_env MICROSOFT_CLIENT_SECRET)" =~ $entra_guid_pattern ]]; then
+  errors+=("MICROSOFT_CLIENT_SECRET has the shape of an Entra Secret ID (a GUID), not the secret Value; Entra rejects it as AADSTS7000215")
+fi
+
+# "common" also admits personal Microsoft accounts, which cannot hold the
+# org-only Graph scopes the integrations request (User.Read.All, Sites.Read.All),
+# so a consumer sign-in fails confusingly rather than being refused up front.
+microsoft_tenant_id="$(get_env MICROSOFT_TENANT_ID)"
+if [[ -z "$microsoft_tenant_id" ]]; then
+  [[ -z "$(get_env MICROSOFT_CLIENT_ID)" ]] \
+    || errors+=("MICROSOFT_TENANT_ID must be set when a Microsoft client is configured")
+elif [[ ! "$microsoft_tenant_id" =~ ^(organizations|consumers|common)$ && ! "$microsoft_tenant_id" =~ $entra_guid_pattern ]]; then
+  errors+=("MICROSOFT_TENANT_ID must be organizations, consumers, common, or a directory GUID")
+elif [[ "$microsoft_tenant_id" == "common" ]]; then
+  warnings+=("MICROSOFT_TENANT_ID=common admits personal Microsoft accounts, which cannot consent to the org-only Graph scopes; prefer organizations")
+fi
+
+# The Office task pane exchanges a token whose audience must name its own SPA
+# registration. A mismatch authenticates nobody and is invisible until sideload.
+office_entra_client_id="$(get_env OFFICE_ENTRA_CLIENT_ID)"
+office_entra_audience="$(get_env OFFICE_ENTRA_API_AUDIENCE)"
+if [[ -n "$office_entra_client_id" ]]; then
+  if [[ ! "$office_entra_client_id" =~ $entra_guid_pattern ]]; then
+    errors+=("OFFICE_ENTRA_CLIENT_ID must be a directory GUID")
+  fi
+  [[ "$office_entra_audience" == "api://$office_entra_client_id" ]] \
+    || errors+=("OFFICE_ENTRA_API_AUDIENCE must be api://<OFFICE_ENTRA_CLIENT_ID>")
+elif [[ "$(get_env OFFICE_ASSISTANT_ENABLED)" == "true" ]]; then
+  errors+=("OFFICE_ENTRA_CLIENT_ID is required when OFFICE_ASSISTANT_ENABLED=true")
+fi
 if [[ "$email_enabled" == "false" ]]; then
   warnings+=("EMAIL_ENABLED=false by design; outbound application email is disabled and GitHub production-health issues are the primary operator alert channel")
 fi
