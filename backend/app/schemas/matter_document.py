@@ -34,6 +34,11 @@ class MatterDocumentResponse(BaseModel):
     description: str | None
     document_category: str | None
     portal_visible: bool = False
+    # True when a client's intake/signing packet lets them open this
+    # document even though it was never shared with the matter's client.
+    # Staff need it to answer "what can the client see?" honestly: the row
+    # is not "Private" to the recipient who is signing it.
+    signing_access: bool = False
     storage_backend: str = "local"
     storage_provider: str | None = None
     provider_object_id: str | None = None

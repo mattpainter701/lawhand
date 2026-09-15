@@ -47,6 +47,45 @@ const jurisdictionLabel = (sample) => {
   return list.length ? list.join(', ') : 'General'
 }
 
+const asText = (value) => (Array.isArray(value) ? value.join(', ') : value || '')
+
+// What the import source said about this form. Nothing is inferred: a form
+// whose source recorded no edition shows no edition.
+const provenanceLabel = (sample) => {
+  const provenance = sample.provenance || {}
+  return [asText(provenance.source_name), asText(provenance.edition)]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+// Four titles repeat across the catalog and the files behind them are
+// genuinely different, so a title alone does not identify a form. Show the
+// differences that exist rather than inventing a label that would read as
+// authoritative on the page where a form is picked for filing.
+const buildVariantIndex = (samples) => {
+  const byTitle = new Map()
+  samples.forEach((sample) => {
+    const key = String(sample.title || '').trim().toLowerCase()
+    if (!key) return
+    if (!byTitle.has(key)) byTitle.set(key, [])
+    byTitle.get(key).push(sample)
+  })
+  const index = new Map()
+  byTitle.forEach((group) => {
+    if (group.length < 2) return
+    // Ordered by field count so "9 fields" and "91 fields" read as a series
+    // rather than an arbitrary pair.
+    const ordered = [...group].sort(
+      (a, b) => (a.field_count || 0) - (b.field_count || 0)
+        || String(a.slug || '').localeCompare(String(b.slug || '')),
+    )
+    ordered.forEach((sample, position) => {
+      index.set(sample.id, { position: position + 1, total: ordered.length })
+    })
+  })
+  return index
+}
+
 // Shared, platform-owned sample forms available to every tenant. The catalog is
 // read-only: users can preview the source PDF or fill it ad hoc, but samples
 // never become tenant templates and never appear in the firm library queues.
@@ -96,11 +135,13 @@ export default function SampleLibraryCard() {
     if (category !== 'all' && sample.category !== category) return false
     if (jurisdiction !== 'all' && !(sample.jurisdictions || []).includes(jurisdiction)) return false
     if (normalizedQuery) {
-      const haystack = `${sample.title || ''} ${jurisdictionLabel(sample)}`.toLowerCase()
+      const haystack = `${sample.title || ''} ${jurisdictionLabel(sample)} ${provenanceLabel(sample)}`.toLowerCase()
       if (!haystack.includes(normalizedQuery)) return false
     }
     return true
   }), [samples, category, jurisdiction, normalizedQuery])
+
+  const variantIndex = useMemo(() => buildVariantIndex(samples), [samples])
 
   const groups = useMemo(() => {
     const byCategory = new Map()
@@ -229,35 +270,52 @@ export default function SampleLibraryCard() {
                   <span className="text-[11px] font-semibold text-brand-muted" aria-label={`${group.items.length} forms`}>{group.items.length}</span>
                 </div>
                 <ul id={panelId} hidden={!open} className="divide-y divide-brand-line border-t border-brand-line">
-                  {group.items.map((sample) => (
-                    <li key={sample.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                      <div className="min-w-0">
-                        <p title={sample.title} className="truncate text-sm font-semibold text-brand-ink">{sample.title}</p>
-                        <p className="truncate text-xs text-brand-muted">
-                          {jurisdictionLabel(sample)}
-                          {sample.field_count ? ` · ${sample.field_count} fields` : ''}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => preview(sample)}
-                          disabled={previewing === sample.id}
-                          className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50"
-                        >
-                          {previewing === sample.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
-                          Preview
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFilling(sample)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-brand-ink px-2.5 py-1.5 text-xs font-semibold text-white"
-                        >
-                          <Download size={13} aria-hidden="true" /> Fill
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+                  {group.items.map((sample) => {
+                    const variant = variantIndex.get(sample.id)
+                    const provenance = provenanceLabel(sample)
+                    return (
+                      <li key={sample.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <div className="min-w-0">
+                          <p title={sample.title} className="truncate text-sm font-semibold text-brand-ink">
+                            {sample.title}
+                            {variant && (
+                              <span className="ml-1.5 rounded bg-brand-bg px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-brand-muted">
+                                Version {variant.position} of {variant.total}
+                              </span>
+                            )}
+                          </p>
+                          <p className="truncate text-xs text-brand-muted">
+                            {jurisdictionLabel(sample)}
+                            {sample.field_count ? ` · ${sample.field_count} fields` : ''}
+                            {provenance ? ` · ${provenance}` : ''}
+                          </p>
+                          {variant && !provenance && (
+                            <p className="text-[11px] leading-snug text-brand-muted">
+                              {variant.total} forms share this title and their contents differ. The source of each was not recorded — preview before filing.
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => preview(sample)}
+                            disabled={previewing === sample.id}
+                            className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50"
+                          >
+                            {previewing === sample.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFilling(sample)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-brand-ink px-2.5 py-1.5 text-xs font-semibold text-white"
+                          >
+                            <Download size={13} aria-hidden="true" /> Fill
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               </section>
             )

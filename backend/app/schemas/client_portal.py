@@ -132,7 +132,14 @@ class PortalMatterView(BaseModel):
     # At-a-glance counters so the client's landing tab answers "is anything
     # waiting on me?" without visiting every tab.
     unread_message_count: int = 0
+    # Everything this recipient can open, which is exactly what the documents
+    # tab lists, broken down by why they can open it. ``document_count`` is the
+    # sum of the three; the breakdown is what keeps a signing grant from being
+    # counted silently as a share.
     document_count: int = 0
+    firm_shared_document_count: int = 0
+    signing_document_count: int = 0
+    client_upload_count: int = 0
     pending_signature_count: int = 0
     open_invoice_count: int = 0
     outstanding_balance: Decimal = Decimal("0")
@@ -281,6 +288,9 @@ class PortalDocumentResponse(BaseModel):
     file_size: int | None = None
     description: str | None = None
     uploaded_by_client: bool = False
+    # "firm_shared", "signing_packet", or "client_upload" — see
+    # ``app.services.portal_document_access``.
+    access_source: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

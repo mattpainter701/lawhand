@@ -42,6 +42,7 @@ export default function ChatHeader({
   standardMatterContextAllowed = false,
   includePublic,
   setIncludePublic,
+  publicCaseLawAllowed = true,
   privacyMode,
   privacySaving,
   onTogglePrivacy,
@@ -59,6 +60,10 @@ export default function ChatHeader({
   const menuRef = useRef(null)
   const settingsRef = useRef(null)
   const standardPublicOnly = !usePremium && !standardMatterContextAllowed
+  // Firm policy can only narrow the stored choice. When it forbids public case
+  // law the switch reads off and says why, instead of showing a preference
+  // retrieval ignores.
+  const publicCaseLawOn = includePublic && publicCaseLawAllowed
   const privacyProtectionOn = standardPublicOnly || demoMode || privacyMode
   const privacyControlDisabled = standardPublicOnly || demoMode || privacySaving
 
@@ -251,25 +256,28 @@ export default function ChatHeader({
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={includePublic}
+                  aria-checked={publicCaseLawOn}
+                  disabled={!publicCaseLawAllowed}
                   onClick={() => setIncludePublic((value) => !value)}
-                  className="flex w-full items-center justify-between gap-4 rounded-xl text-left"
+                  className="flex w-full items-center justify-between gap-4 rounded-xl text-left disabled:cursor-not-allowed disabled:opacity-80"
                 >
                   <span>
                     <span className="block text-sm font-semibold text-brand-ink">Public case law</span>
                     <span className="mt-0.5 block text-[11px] leading-snug text-brand-muted">
-                      Include available public authorities alongside firm and matter sources.
+                      {publicCaseLawAllowed
+                        ? 'Include available public authorities alongside firm and matter sources.'
+                        : 'Your firm has turned off public case law, so the assistant answers from firm and matter sources only.'}
                     </span>
                   </span>
                   <span
                     aria-hidden="true"
                     className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                      includePublic ? 'bg-brand-accent' : 'bg-brand-line-2'
+                      publicCaseLawOn ? 'bg-brand-accent' : 'bg-brand-line-2'
                     }`}
                   >
                     <span
                       className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-                        includePublic ? 'translate-x-6' : 'translate-x-1'
+                        publicCaseLawOn ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </span>

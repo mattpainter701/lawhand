@@ -421,3 +421,72 @@ describe('MatterDocumentsTab document explorer', () => {
     )
   })
 })
+
+describe('MatterDocumentsTab signing-grant labelling', () => {
+  // #489: a document reachable through a client's signing packet is not
+  // "Private" to the recipient who is signing it, and staff answer "what can
+  // the client see?" from this tab.
+  const signingDocuments = [
+    {
+      id: 'fee-1',
+      filename: 'Fee agreement.pdf',
+      content_type: 'application/pdf',
+      document_category: 'agreement',
+      file_size: 1024,
+      portal_visible: false,
+      signing_access: true,
+      storage_backend: 'local',
+      created_at: '2026-08-04T12:00:00Z',
+    },
+    {
+      id: 'private-1',
+      filename: 'Internal strategy.pdf',
+      content_type: 'application/pdf',
+      document_category: 'note',
+      file_size: 1024,
+      portal_visible: false,
+      signing_access: false,
+      storage_backend: 'local',
+      created_at: '2026-08-04T12:00:00Z',
+    },
+    {
+      id: 'shared-1',
+      filename: 'Shared brief.pdf',
+      content_type: 'application/pdf',
+      document_category: 'pleading',
+      file_size: 1024,
+      portal_visible: true,
+      signing_access: false,
+      storage_backend: 'local',
+      created_at: '2026-08-04T12:00:00Z',
+    },
+  ]
+
+  beforeEach(() => {
+    localStorage.clear()
+    apiMocks.getMatterDocuments.mockResolvedValue({
+      items: signingDocuments,
+      total: signingDocuments.length,
+    })
+    apiMocks.getMatterCloudFiles.mockResolvedValue({ files: [] })
+    apiMocks.getMatterCloudFolder.mockResolvedValue(null)
+    apiMocks.getMatterDocumentFolders.mockResolvedValue({ items: [], total: 0, root_document_count: 3 })
+    apiMocks.getDocumentTags.mockResolvedValue({ items: [], total: 0 })
+    apiMocks.getMatterDocumentDownloadUrl.mockImplementation((matterId, documentId) => `/api/matters/${matterId}/documents/${documentId}/download`)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+  })
+
+  it('marks a grant-readable document instead of calling it private', async () => {
+    renderDocuments()
+    await screen.findAllByText('Fee agreement.pdf')
+
+    expect(screen.getAllByText('Available to signing client').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Shared with client').length).toBeGreaterThan(0)
+    // The genuinely private document keeps the private label.
+    expect(screen.getAllByText('Private').length).toBeGreaterThan(0)
+  })
+})

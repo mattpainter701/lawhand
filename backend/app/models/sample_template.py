@@ -41,6 +41,11 @@ class SampleTemplate(Base):
     source_file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     field_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     variable_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Where this form came from, as recorded by the import source:
+    # ``source_name``, ``source_url``, ``edition``, ``retrieved_at``,
+    # ``source_files``. Null where the source recorded nothing, which is
+    # the honest answer for the scraped catalog as it stands.
+    provenance: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
     )
