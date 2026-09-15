@@ -505,3 +505,42 @@ async def test_microsoft_entra_claims_still_cannot_claim_account_by_email(
     await db_session.refresh(user)
     assert user.oauth_subject is None
     assert user.entra_object_id is None
+
+
+@pytest.mark.asyncio
+async def test_microsoft_subject_link_wins_over_directory_synced_copy(
+    db_session,
+    monkeypatch,
+):
+    """A synced copy holding the oid in another tenant must not capture the sign-in."""
+
+    home_tenant, home_user = _entra_firm_and_user(
+        oauth_provider="microsoft",
+        oauth_subject="current-registration-subject",
+    )
+    synced_tenant, synced_copy = _entra_firm_and_user(
+        oauth_provider="microsoft",
+        oauth_subject=ENTRA_OBJECT_ID,
+    )
+    db_session.add_all([home_tenant, home_user, synced_tenant, synced_copy])
+    await db_session.commit()
+
+    response = await _microsoft_callback(
+        db_session,
+        monkeypatch,
+        {
+            "sub": "current-registration-subject",
+            "tid": ENTRA_TENANT_ID,
+            "oid": ENTRA_OBJECT_ID,
+            "name": "Existing Owner",
+            "email": home_user.email,
+            "preferred_username": home_user.email,
+        },
+    )
+
+    assert response.status_code == 307, response.text
+    await db_session.refresh(home_user)
+    await db_session.refresh(synced_copy)
+    assert home_user.entra_object_id == ENTRA_OBJECT_ID
+    assert synced_copy.entra_object_id is None
+    assert synced_copy.oauth_subject == ENTRA_OBJECT_ID

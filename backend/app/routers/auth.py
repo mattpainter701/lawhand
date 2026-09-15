@@ -838,19 +838,30 @@ async def _resolve_existing_oauth_user(
         if entra_match is not None:
             return entra_match
 
-    subjects = {subject} if subject else set()
-    if provider == "microsoft" and entra_object_id:
-        subjects.add(entra_object_id)
-    if subjects:
+    if subject:
         subject_match = await _unique_match(
             select(User).where(
                 User.oauth_provider == provider,
-                User.oauth_subject.in_(subjects),
+                User.oauth_subject == subject,
             ),
             "provider-subject",
         )
         if subject_match is not None:
             return subject_match
+
+    # Only after the exact subject misses: directory sync can copy one person
+    # into several tenants under their oid, so letting it compete with the
+    # subject would move an established sign-in into a synced copy's tenant.
+    if provider == "microsoft" and entra_object_id and entra_object_id != subject:
+        oid_match = await _unique_match(
+            select(User).where(
+                User.oauth_provider == provider,
+                User.oauth_subject == entra_object_id,
+            ),
+            "provider-object-id",
+        )
+        if oid_match is not None:
+            return oid_match
 
     if not allow_verified_email_match:
         return None
