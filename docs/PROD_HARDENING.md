@@ -54,16 +54,33 @@ The production listeners in `nginx/nginx.conf` enforce:
 ## 3. Trusted-proxy client IP (anti-spoofing)
 
 `X-Forwarded-For` is appended left-to-right by each proxy, so the **leftmost**
-entries are client-controlled and spoofable. `_client_ip` in
-`backend/app/middleware/rate_limit.py` now takes the client IP from the **right**
-of the list — `xff[-TRUSTED_PROXY_HOPS]` — i.e. the entry your own infrastructure
-appended.
+entries are client-controlled and spoofable. `backend/app/utils/client_address.py`
+takes the client IP from the **right** of the list —
+`xff[-TRUSTED_PROXY_HOPS]` — i.e. the entry your own infrastructure appended.
 
 - Set **`TRUSTED_PROXY_HOPS`** (config / env) to the exact number of reverse
   proxies between the public internet and the app. A single nginx hop → `1`.
 - Too small and a spoofed value leaks through; too large and a proxy's own IP is
   used instead of the client's. nginx must forward
   `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (it does).
+
+### Two callers, two failure modes
+
+The same resolver serves rate limiting and signing evidence, but they want
+different answers when the chain is missing or shorter than `TRUSTED_PROXY_HOPS`:
+
+| Caller | Function | On a missing/short chain |
+|---|---|---|
+| Rate limiting (`middleware/rate_limit.py`) | `client_ip` | Falls back to the immediate peer. A shared bucket is cheaper than no bucket. |
+| Signing evidence (`routers/esignature.py`) | `attributable_client_ip` | Returns `None`. Behind a proxy the peer **is** our own infrastructure. |
+
+Signing evidence must never fall back. A certificate that prints a LawHand
+container address as the signer's is weaker evidence than one that says the
+address could not be attributed, so an unresolved address renders as
+**"not attributable"** with a footnote, and the signer audit records
+`ip_source: "unattributable"`. Raising `TRUSTED_PROXY_HOPS` above the real
+number of proxies would put one of our own addresses on a legal artifact — so
+change it only alongside an actual topology change.
 
 ## 4. Cloudflare tunnel — real-IP and rate limiting
 

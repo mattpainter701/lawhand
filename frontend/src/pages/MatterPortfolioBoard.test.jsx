@@ -82,7 +82,7 @@ describe('MyMatterRow', () => {
     expect(screen.getByText('Kara Bedingfield')).toBeInTheDocument()
     expect(screen.getByText('Richard Mayhew')).toBeInTheDocument()
     expect(screen.getByText('Commercial')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Set Active' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Work on this' })).toBeInTheDocument()
   })
 
   it('renders only the requested columns', () => {
@@ -117,7 +117,7 @@ describe('MyMatterRow', () => {
         </table>
       </MemoryRouter>,
     )
-    await user.click(screen.getByRole('button', { name: 'Set Active' }))
+    await user.click(screen.getByRole('button', { name: 'Work on this' }))
     expect(onToggleActive).toHaveBeenCalledWith('assignment-1', 'matter-1', true)
   })
 })

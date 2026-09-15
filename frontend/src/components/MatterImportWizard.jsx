@@ -67,7 +67,7 @@ export default function MatterImportWizard({ matterId, onComplete }) {
       const [c, m] = await Promise.all([getContacts({ limit: 200 }), matterId ? Promise.resolve({ matters: [] }) : getMattersV2({ limit: 200 })])
       setContacts(c.contacts || c.items || (Array.isArray(c) ? c : [])); setMatters(m.matters || m.items || [])
       setRun(next)
-      setMappings(next.approval?.mappings || [...new Set(grouped.map(f => f.group))].map(group => ({ group, matter_id: matterId || null, contact_id: null, matter_name: group.split('/').pop(), first_name: '', last_name: '', organization_name: '', case_number: '', intake: 'review', exclude: false })))
+      setMappings(next.approval?.mappings || [...new Set(grouped.map(f => f.group))].map(group => ({ group, matter_id: matterId || null, contact_id: null, matter_name: group.split('/').pop(), first_name: '', last_name: '', organization_name: '', case_number: '', intake: 'review', opened_on: '', agreement: '', agreement_signed_on: '', agreement_note: '', exclude: false })))
       setFormer(next.approval?.former_addresses?.join(', ') || '')
     } catch (e) { setError(detail(e)) } finally { setBusy(false) }
   }
@@ -86,7 +86,9 @@ export default function MatterImportWizard({ matterId, onComplete }) {
     try {
       let current = run
       if (current.status === 'review') {
-        current = (await api.post(`/matter-imports/${run.id}/approve`, { confirm: true, mappings, former_addresses: former.split(',').map(v => v.trim()).filter(Boolean) })).data
+        // Blank dates and agreement choices are omitted, not sent as ''.
+        const cleaned = mappings.map(m => ({ ...m, opened_on: m.opened_on || null, agreement: m.agreement || null, agreement_signed_on: m.agreement_signed_on || null, agreement_note: m.agreement_note || '' }))
+        current = (await api.post(`/matter-imports/${run.id}/approve`, { confirm: true, mappings: cleaned, former_addresses: former.split(',').map(v => v.trim()).filter(Boolean) })).data
         setRun(current)
       }
       if (archive) {
@@ -140,7 +142,13 @@ export default function MatterImportWizard({ matterId, onComplete }) {
               <label className="block">Client<select className={inputClass} value={mapping.contact_id || ''} onChange={e => edit(index, 'contact_id', e.target.value || null)}><option value="">Create client</option>{contacts.map(c => <option key={c.id} value={c.id}>{c.full_name || c.organization_name || `${c.first_name} ${c.last_name}`}</option>)}</select></label>
               {!mapping.contact_id && <>{[['first_name', 'First name'], ['last_name', 'Last name'], ['organization_name', 'Organization (for an organization client)']].map(([key, label]) => <label className="block" key={key}>{label}<input className={inputClass} value={mapping[key]} onChange={e => edit(index, key, e.target.value)} /></label>)}</>}
               <label className="block">Case number<input className={inputClass} value={mapping.case_number} onChange={e => edit(index, 'case_number', e.target.value)} /></label>
+              <label className="block">Open date<input className={inputClass} type="date" value={mapping.opened_on || ''} max={new Date().toISOString().slice(0, 10)} onChange={e => edit(index, 'opened_on', e.target.value)} /></label>
               <label className="block">Intake<select className={inputClass} value={mapping.intake} onChange={e => edit(index, 'intake', e.target.value)}><option value="review">Review required</option><option value="existing">Existing engagement</option><option value="required">Fresh intake required — prepare after import</option></select></label>
+              {mapping.intake === 'existing' && <>
+                <label className="block">Fee agreement<select className={inputClass} value={mapping.agreement || ''} onChange={e => edit(index, 'agreement', e.target.value)}><option value="">Not recorded yet</option><option value="pending_copy">Signed — upload the copy from the matter later</option><option value="signed_no_copy">Signed — no copy on hand</option><option value="no_agreement">No fee agreement</option></select></label>
+                {mapping.agreement !== 'no_agreement' && <label className="block">Date signed<input className={inputClass} type="date" value={mapping.agreement_signed_on || ''} max={new Date().toISOString().slice(0, 10)} onChange={e => edit(index, 'agreement_signed_on', e.target.value)} /></label>}
+                {(mapping.agreement === 'signed_no_copy' || mapping.agreement === 'no_agreement') && <label className="block">{mapping.agreement === 'no_agreement' ? 'Why there is no fee agreement' : 'Where it was signed'}<input className={inputClass} value={mapping.agreement_note || ''} maxLength={1000} onChange={e => edit(index, 'agreement_note', e.target.value)} /></label>}
+              </>}
             </>}
           </>}
         </fieldset>)}

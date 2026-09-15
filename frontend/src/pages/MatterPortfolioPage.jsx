@@ -17,6 +17,7 @@ import { getMattersV2, getMyMatters, setAssignmentActive, updateMatterV2 } from 
 import { useAuth } from '../App'
 import NewMatterModal from '../components/NewMatterModal'
 import CloseMatterDialog from '../components/casesetup/CloseMatterDialog'
+import { ENGAGEMENT_STATUS_LABELS } from '../components/casesetup/engagement'
 import MatterListColumnsMenu, {
   MATTER_LIST_ACTIONS_WIDTH,
   MATTER_LIST_COLUMN_BY_KEY,
@@ -64,6 +65,36 @@ const STATUS_COLORS = {
   closed: 'bg-gray-100 text-gray-500 border-gray-200',
   settled: 'bg-gray-100 text-gray-500 border-gray-200',
   dismissed: 'bg-gray-100 text-gray-500 border-gray-200',
+}
+
+// The personal "working on this" flag is not the matter's lifecycle status and
+// must not look like it. Green is the lifecycle palette (STATUS_COLORS.active
+// above), so the flag uses the accent palette and a person icon: whatever the
+// reader sees in green on this screen is the matter's status, nothing else.
+export const WORKING_ON_LABEL = 'Working on this'
+export const NOT_WORKING_LABEL = 'Work on this'
+const WORKING_HINT =
+  'Marks you as currently working this matter, so the rest of the firm can see it. It does not change the matter status.'
+
+export function WorkingToggle({ m, onToggleActive, isToggling, className = '' }) {
+  const working = Boolean(m.is_active_working)
+  return (
+    <button
+      type="button"
+      aria-pressed={working}
+      title={WORKING_HINT}
+      onClick={() => onToggleActive(m.my_assignment_id, m.id, !working)}
+      disabled={isToggling}
+      className={`flex min-h-[44px] min-w-[44px] items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-all ${
+        working
+          ? 'border-brand-accent/40 bg-brand-accent/10 text-brand-accent hover:bg-brand-accent/20'
+          : 'border-brand-line bg-brand-bg-soft text-brand-muted hover:border-brand-line-2 hover:text-brand-ink'
+      } ${isToggling ? 'cursor-wait opacity-50' : ''} ${className}`}
+    >
+      <Icon d={Icons.user} size={12} />
+      {working ? WORKING_ON_LABEL : NOT_WORKING_LABEL}
+    </button>
+  )
 }
 
 function StatusBadge({ status }) {
@@ -223,6 +254,7 @@ export function MatterCard({ m, onToggleActive, togglingId, showAlert, dragHandl
             {m.client_name && (
               <span className="truncate text-[12px] text-brand-muted font-sans">{m.client_name}</span>
             )}
+            <EngagementBadge status={m.engagement_status} />
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -256,19 +288,12 @@ export function MatterCard({ m, onToggleActive, togglingId, showAlert, dragHandl
 
       {m.my_assignment_id && (
         <div className="mt-3 pt-3 border-t border-brand-line">
-          <button
-            type="button"
-            onClick={() => onToggleActive(m.my_assignment_id, m.id, !m.is_active_working)}
-            disabled={isToggling}
-            className={`w-full min-h-[44px] min-w-[44px] flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-all ${
-              m.is_active_working
-                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                : 'bg-brand-bg-soft text-brand-muted border-brand-line hover:text-brand-ink hover:border-brand-line-2'
-            } ${isToggling ? 'opacity-50 cursor-wait' : ''}`}
-          >
-            <Icon d={Icons.activity} size={12} />
-            {m.is_active_working ? 'Active' : 'Set Active'}
-          </button>
+          <WorkingToggle
+            m={m}
+            onToggleActive={onToggleActive}
+            isToggling={isToggling}
+            className="w-full justify-center"
+          />
         </div>
       )}
     </div>
@@ -287,6 +312,20 @@ function formatOpenDate(value) {
   } catch {
     return null
   }
+}
+
+// A matter engaged without a signed agreement on file says so in the list, so
+// a legacy arrangement or a missing copy is visible without opening it.
+function EngagementBadge({ status }) {
+  if (!status || status === 'signed_on_file') return null
+  return (
+    <span
+      title={ENGAGEMENT_STATUS_LABELS[status] || status}
+      className="mt-1 inline-block rounded border border-brand-amber/30 bg-brand-amber/10 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-brand-amber"
+    >
+      {ENGAGEMENT_STATUS_LABELS[status] || status}
+    </span>
+  )
 }
 
 // Every cell truncates to its column rather than pushing the table wider: the
@@ -312,13 +351,14 @@ export const MATTER_LIST_CELLS = {
       >
         <span className="truncate">{m.matter_name || '—'}</span>
       </Link>
+      <EngagementBadge status={m.engagement_status} />
     </div>
   ),
   client: m => <TextCell value={m.client_name} />,
   responsible_attorney: m => <TextCell value={m.attorney_of_record_name} />,
   originating_attorney: m => <TextCell value={m.partner_attorney_name} />,
   practice_area: m => <TextCell value={m.practice_area} className="font-medium text-brand-accent" />,
-  open_date: m => <TextCell value={formatOpenDate(m.created_at)} />,
+  open_date: m => <TextCell value={formatOpenDate(m.opened_on || m.created_at)} />,
   status: m => <StatusBadge status={m.status} />,
   risk: m => <RiskBadge level={m.risk_level} />,
   deadline: m => (m.overdue_deadline_label ? <DeadlineBadge label={m.overdue_deadline_label} /> : <Dash />),
@@ -359,22 +399,19 @@ export function MyMatterRow({
       >
         <div className="flex items-center justify-end gap-2">
           {m.my_assignment_id && (
-            <button
-              type="button"
-              onClick={() => onToggleActive(m.my_assignment_id, m.id, !m.is_active_working)}
-              disabled={isToggling}
-              className={`flex min-h-[44px] min-w-[44px] items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-all ${
-                m.is_active_working
-                  ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
-                  : 'border-brand-line bg-brand-bg-soft text-brand-muted hover:border-brand-line-2 hover:text-brand-ink'
-              } ${isToggling ? 'cursor-wait opacity-50' : ''}`}
-            >
-              {m.is_active_working
-                ? <><Icon d={Icons.activity} size={12} className="text-green-600" /> Active</>
-                : <><Icon d={Icons.activity} size={12} /> Set Active</>}
-            </button>
+            <WorkingToggle m={m} onToggleActive={onToggleActive} isToggling={isToggling} />
           )}
-          <span className="font-sans text-sm font-semibold text-brand-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">View →</span>
+          {/* The hover affordance promises navigation, so it has to be a real
+              link. It stays revealed on keyboard focus as well as hover —
+              otherwise it is invisible to exactly the readers who cannot use
+              the matter-name link's hover target. */}
+          <Link
+            to={`/matters/${m.id}`}
+            aria-label={m.matter_name ? `View ${m.matter_name}` : 'View matter'}
+            className="flex min-h-[44px] min-w-[44px] items-center justify-end rounded-sm font-sans text-sm font-semibold text-brand-accent opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent group-hover:opacity-100 group-focus-within:opacity-100"
+          >
+            View →
+          </Link>
         </div>
       </td>
     </tr>
@@ -595,6 +632,7 @@ export function MatterPortfolioRow({ matter: m }) {
         {m.description && (
           <div className="mt-0.5 truncate font-sans text-[12px] text-brand-muted">{m.description}</div>
         )}
+        <EngagementBadge status={m.engagement_status} />
       </td>
       <td className="whitespace-nowrap px-5 py-4 font-mono text-[12px] text-brand-ink-2">
         {m.matter_number || <span className="font-sans text-brand-muted">—</span>}
@@ -617,7 +655,7 @@ export function MatterPortfolioRow({ matter: m }) {
       <td className="px-5 py-4"><RiskBadge level={m.risk_level} /></td>
       <td className="px-5 py-4"><StatusBadge status={m.status} /></td>
       <td className="whitespace-nowrap px-5 py-4 font-sans text-[13px] text-brand-muted">
-        {m.created_at ? (() => { try { return format(parseISO(m.created_at), 'MMM d, yyyy') } catch { return '—' } })() : '—'}
+        {formatOpenDate(m.opened_on || m.created_at) || '—'}
       </td>
       <td className="px-5 py-4 pr-6 text-right">
         <span className="font-sans text-sm font-semibold text-brand-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">View →</span>
@@ -644,6 +682,10 @@ export default function MatterPortfolioPage() {
   }, { replace: true })
   const statusFilter = searchParams.get('status') || 'all'
   const setStatusFilter = value => setParam('status', value, 'all')
+  // How the matter was engaged: keeps legacy and unusual arrangements (no fee
+  // agreement, signed copy missing) findable rather than buried.
+  const engagementFilter = searchParams.get('engagement') || 'all'
+  const setEngagementFilter = value => setParam('engagement', value, 'all')
   const practiceFilter = searchParams.get('practice') || 'all'
   const setPracticeFilter = value => setParam('practice', value, 'all')
   const search = searchParams.get('q') || ''
@@ -779,6 +821,9 @@ export default function MatterPortfolioPage() {
   const filtered = useMemo(() => matters.filter(m => {
     if (statusFilter !== 'all' && m.status?.toLowerCase() !== statusFilter) return false
     if (practiceFilter !== 'all' && m.practice_area !== practiceFilter) return false
+    if (engagementFilter === 'any' && !m.engagement_status) return false
+    if (engagementFilter === 'none' && m.engagement_status) return false
+    if (!['all', 'any', 'none'].includes(engagementFilter) && m.engagement_status !== engagementFilter) return false
     if (search) {
       const q = search.toLowerCase()
       return (
@@ -791,7 +836,7 @@ export default function MatterPortfolioPage() {
       )
     }
     return true
-  }), [matters, statusFilter, practiceFilter, search])
+  }), [matters, statusFilter, practiceFilter, engagementFilter, search])
 
   // Board columns (from myMatters)
   const boardColumns = useMemo(() => {
@@ -1040,6 +1085,23 @@ export default function MatterPortfolioPage() {
                 </select>
               </div>
             )}
+
+            <div className="flex items-center gap-2 bg-brand-bg-soft border border-brand-line rounded-lg pl-3 pr-1 py-1">
+              <Icon d={Icons.filter} size={14} className="text-brand-muted" />
+              <select
+                aria-label="Engagement"
+                value={engagementFilter}
+                onChange={e => setEngagementFilter(e.target.value)}
+                className="bg-transparent text-sm font-sans font-medium text-brand-ink focus:outline-none py-1 pr-6 cursor-pointer appearance-none"
+              >
+                <option value="all">Any Engagement</option>
+                <option value="any">Engagement recorded</option>
+                <option value="none">No engagement recorded</option>
+                {Object.entries(ENGAGEMENT_STATUS_LABELS).map(([value, text]) => (
+                  <option key={value} value={value}>{text}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex-1 min-w-64 relative">

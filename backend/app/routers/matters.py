@@ -22,7 +22,7 @@ from app.models.communication_log import CommunicationLog
 from app.models.contact import Contact
 from app.models.matter_assignment import MatterAssignment
 from app.models.matter_note import MatterNote
-from app.models.plugin import Matter, MatterEvent
+from app.models.plugin import ENGAGEMENT_STATUSES, Matter, MatterEvent
 from app.models.retainer import Retainer, RetainerTransaction
 from app.services.matter_closing import close_readiness
 from app.models.task import Task
@@ -87,6 +87,7 @@ from app.services.matter_budget import (
 from app.services.task_notifications import remove_task_from_calendars_now
 from app.services.task_visibility import task_is_sms_expression
 from app.services.durable_workflow_automations import enqueue_matter_event
+from app.services.matter_engagement import engagement_payload
 from app.services.matter_number import (
     assign_matter_number,
     normalize_matter_number,
@@ -489,6 +490,8 @@ def _matter_to_response(
         court=matter.court,
         judge=matter.judge,
         case_number=matter.case_number,
+        opened_on=matter.opened_on,
+        engagement=engagement_payload(matter),
         client_contact_id=(
             str(matter.client_contact_id) if matter.client_contact_id else None
         ),
@@ -541,6 +544,7 @@ async def list_matters(
     assigned_to: str | None = Query(None),
     client_id: str | None = Query(None),
     search: str | None = Query(None),
+    engagement_status: str | None = Query(None),
     sort_by: str = Query("updated_at"),
     sort_dir: str = Query("desc"),
 ):
@@ -553,6 +557,16 @@ async def list_matters(
 
     if status:
         conditions.append(Matter.status == status)
+    if engagement_status:
+        # "any" is every matter with a recorded engagement; "none" is the rest.
+        if engagement_status == "any":
+            conditions.append(Matter.engagement_status.is_not(None))
+        elif engagement_status == "none":
+            conditions.append(Matter.engagement_status.is_(None))
+        elif engagement_status in ENGAGEMENT_STATUSES:
+            conditions.append(Matter.engagement_status == engagement_status)
+        else:
+            raise HTTPException(status_code=422, detail="Unknown engagement status")
     if matter_type:
         conditions.append(Matter.matter_type == matter_type)
     if practice_area:
@@ -704,6 +718,8 @@ async def list_matters(
                 is_overdue=(m.status or "open") in ("active",) and bool(next_deadline),
                 next_deadline=next_deadline,
                 cloud_folder=m.cloud_folder,
+                opened_on=m.opened_on,
+                engagement_status=m.engagement_status,
                 created_at=m.created_at or datetime.now(timezone.utc),
                 updated_at=m.updated_at,
             )
@@ -791,14 +807,16 @@ async def create_matter(
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="Invalid partner_attorney_id")
 
-    # Default retention: 7 years from today
+    # The open date defaults to today; a matter brought in from another firm
+    # keeps its real one. Default retention runs 7 years from that date.
     from datetime import date as date_type, timedelta
 
+    opened_on = body.opened_on or date_type.today()
     retention_until = (
         _parse_date(body.key_dates.get("retention_until")) if body.key_dates else None
     )
     if not retention_until:
-        retention_until = date_type.today() + timedelta(days=365 * 7)
+        retention_until = opened_on + timedelta(days=365 * 7)
 
     matter = Matter(
         tenant_id=tenant_id,
@@ -806,6 +824,7 @@ async def create_matter(
         slug=slug,
         matter_name=body.matter_name,
         description=body.description,
+        opened_on=opened_on,
         matter_type=_matter_type(body.matter_type),
         role=body.role,
         counterparty=body.counterparty,
@@ -848,13 +867,19 @@ async def create_matter(
     if tenant and tenant.cloud_root_folder:
         matter.cloud_folder = _cloud_folder_status("provisioning")
 
-    # Create initial event
+    # Create initial event. A backdated open date is worth saying out loud.
+    opened_note = (
+        f" Opened on {opened_on.isoformat()}." if opened_on != date_type.today() else ""
+    )
     event = MatterEvent(
         tenant_id=tenant_id,
         matter_id=matter.id,
         event_type="intake",
         title="Matter opened",
-        content=f"Matter '{body.matter_name}' created by {user.full_name or user.email}.",
+        content=(
+            f"Matter '{body.matter_name}' created by "
+            f"{user.full_name or user.email}.{opened_note}"
+        ),
         note_type="system",
         created_by=user.id,
     )
@@ -1124,6 +1149,8 @@ async def get_my_matters(
                 is_overdue=overdue_label is not None and "overdue" in overdue_label,
                 next_deadline=next_deadline,
                 cloud_folder=m.cloud_folder,
+                opened_on=m.opened_on,
+                engagement_status=m.engagement_status,
                 created_at=m.created_at or datetime.now(timezone.utc),
                 updated_at=m.updated_at,
                 my_role=my_role or "associate",

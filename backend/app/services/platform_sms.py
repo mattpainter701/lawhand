@@ -44,10 +44,17 @@ class PlatformSmsError(RuntimeError):
         status_code: int = 503,
         *,
         code: str | None = None,
+        provider_status: int | None = None,
+        provider_code: int | str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
+        # What Twilio said, when Twilio is the one who said no. Kept alongside
+        # our own ``code`` so an operator can look the number up in Twilio's
+        # error reference instead of guessing from prose.
+        self.provider_status = provider_status
+        self.provider_code = provider_code
 
 
 @dataclass(frozen=True)
@@ -157,6 +164,24 @@ async def upsert_platform_sms_provider(
         config.pop("encrypted_auth_token", None)
         config.pop("auth_token_hint", None)
 
+    # Validate shape before completeness: "your Messaging Service SID is
+    # actually a Verify SID" is a far more useful answer than "something is
+    # missing", and it is the mistake that reaches Twilio and comes back as a
+    # 502 nobody can act on.
+    _validate_sid(
+        _clean(config.get("account_sid")),
+        field="account_sid",
+        expected_prefix="AC",
+        label="The Account SID",
+    )
+    _validate_sid(
+        _clean(config.get("messaging_service_sid")),
+        field="messaging_service_sid",
+        expected_prefix="MG",
+        label="The Messaging Service SID",
+    )
+    _validate_sender_number(_clean(config.get("from_number")))
+
     if not (_clean(config.get("account_sid")) and config.get("encrypted_auth_token")):
         raise PlatformSmsError(
             "Account SID and Auth Token are both required.",
@@ -222,6 +247,23 @@ async def resolve_platform_sms_credentials(
             status_code=503,
             code="platform_sms_credentials_unavailable",
         )
+    # A sender stored before these checks existed is still wrong; catching it
+    # here means the operator is told which field to fix instead of watching a
+    # send fail at Twilio.
+    _validate_sid(
+        _clean(config.get("account_sid")),
+        field="account_sid",
+        expected_prefix="AC",
+        label="The stored Account SID",
+    )
+    _validate_sid(
+        _clean(config.get("messaging_service_sid")),
+        field="messaging_service_sid",
+        expected_prefix="MG",
+        label="The stored Messaging Service SID",
+    )
+    _validate_sender_number(_clean(config.get("from_number")))
+
     return PlatformSmsCredentials(
         account_sid=_clean(config.get("account_sid")),
         auth_token=token,
@@ -229,6 +271,56 @@ async def resolve_platform_sms_credentials(
         from_number=_clean(config.get("from_number")) or None,
         status_callback_url=_clean(config.get("status_callback_url")) or None,
     )
+
+
+# Twilio resource SIDs are a two-letter type prefix and 32 hex characters. The
+# prefix is the part operators get wrong: a Verify service (VA) and a Messaging
+# service (MG) are both "service SIDs" in the console, and pasting the wrong one
+# produces a Twilio rejection at send time that reads like an outage. Checking
+# the shape at save time names the mistake where it was made.
+_SID_SHAPE = re.compile(r"^[A-Z]{2}[0-9a-fA-F]{32}$")
+_SID_TYPE_NAMES = {
+    "AC": "an Account SID",
+    "MG": "a Messaging Service SID",
+    "VA": "a Verify Service SID",
+    "SK": "an API Key SID",
+    "PN": "a Phone Number SID",
+    "MM": "a Message SID",
+}
+
+
+def _describe_sid(value: str) -> str:
+    known = _SID_TYPE_NAMES.get(value[:2].upper())
+    return known or f"a SID starting with {value[:2]}"
+
+
+def _validate_sid(value: str, *, field: str, expected_prefix: str, label: str) -> None:
+    """Reject a SID whose type prefix or shape is not what ``field`` needs."""
+    if not value:
+        return
+    if value[:2].upper() != expected_prefix:
+        raise PlatformSmsError(
+            f"{label} must start with {expected_prefix}. You entered "
+            f"{_describe_sid(value)}. Copy the {label} from the Twilio console.",
+            status_code=400,
+            code=f"platform_sms_invalid_{field}",
+        )
+    if not _SID_SHAPE.match(value):
+        raise PlatformSmsError(
+            f"{label} does not look like a Twilio SID: it should be "
+            f"{expected_prefix} followed by 32 hexadecimal characters.",
+            status_code=400,
+            code=f"platform_sms_invalid_{field}",
+        )
+
+
+def _validate_sender_number(value: str) -> None:
+    if value and not _E164.match(value):
+        raise PlatformSmsError(
+            "Enter the From number in E.164 format, for example +15551234567.",
+            status_code=400,
+            code="platform_sms_invalid_from_number",
+        )
 
 
 def _validate_destination(to: str) -> str:
@@ -240,6 +332,71 @@ def _validate_destination(to: str) -> str:
             code="platform_sms_invalid_recipient",
         )
     return normalized
+
+
+def _provider_rejection(response: httpx.Response) -> PlatformSmsError:
+    """Turn a non-2xx Twilio response into an error of the right severity.
+
+    Every non-2xx used to become a 502. That mislabels the common case: bad
+    credentials, a Verify SID pasted where a Messaging Service SID belongs, or
+    an unusable From number are all *our caller's* configuration, not a failure
+    of the origin. Worse, a 502 is exactly what an edge proxy replaces with its
+    own error page, so the message Twilio gave us never reached the operator —
+    which is how "the test send fails and the UI says nothing" happened.
+
+    So: Twilio's 4xx become 4xx here and carry Twilio's own message and error
+    code. Only Twilio being unavailable stays a 5xx.
+    """
+    message = ""
+    provider_code = None
+    try:
+        payload = response.json() or {}
+        message = str(payload.get("message") or "").strip()
+        provider_code = payload.get("code")
+    except Exception:  # noqa: BLE001 - provider body may be non-JSON
+        payload = {}
+
+    logger.warning(
+        "Platform Twilio test send rejected (status=%s, code=%s)",
+        response.status_code,
+        provider_code,
+    )
+
+    if response.status_code == 429:
+        return PlatformSmsError(
+            message or "The SMS provider is rate limiting us. Try again shortly.",
+            status_code=429,
+            code="platform_sms_rate_limited",
+            provider_status=response.status_code,
+            provider_code=provider_code,
+        )
+    if response.status_code in (401, 403):
+        return PlatformSmsError(
+            message
+            or (
+                "Twilio rejected the Account SID and Auth Token. Check the "
+                "credentials and that the token has not been rotated."
+            ),
+            status_code=400,
+            code="platform_sms_provider_auth_failed",
+            provider_status=response.status_code,
+            provider_code=provider_code,
+        )
+    if 400 <= response.status_code < 500:
+        return PlatformSmsError(
+            message or "Twilio rejected the test message.",
+            status_code=400,
+            code="platform_sms_provider_rejected",
+            provider_status=response.status_code,
+            provider_code=provider_code,
+        )
+    return PlatformSmsError(
+        "The SMS provider is unavailable. Try again.",
+        status_code=502,
+        code="platform_sms_provider_unavailable",
+        provider_status=response.status_code,
+        provider_code=provider_code,
+    )
 
 
 async def send_platform_test_sms(
@@ -271,6 +428,12 @@ async def send_platform_test_sms(
                 auth=(credentials.account_sid, credentials.auth_token),
                 data=data,
             )
+    except httpx.TimeoutException as exc:
+        raise PlatformSmsError(
+            "The SMS provider did not respond in time. Try again.",
+            status_code=504,
+            code="platform_sms_timeout",
+        ) from exc
     except httpx.HTTPError as exc:
         raise PlatformSmsError(
             "The SMS provider could not be reached. Try again.",
@@ -279,20 +442,7 @@ async def send_platform_test_sms(
         ) from exc
 
     if response.status_code not in (200, 201):
-        detail = ""
-        try:
-            detail = str((response.json() or {}).get("message") or "")
-        except Exception:  # noqa: BLE001 - provider body may be non-JSON
-            detail = ""
-        logger.warning(
-            "Platform Twilio test send rejected (status=%s)",
-            response.status_code,
-        )
-        raise PlatformSmsError(
-            detail or "The SMS provider rejected the test message.",
-            status_code=502,
-            code="platform_sms_provider_rejected",
-        )
+        raise _provider_rejection(response)
 
     try:
         payload = response.json()

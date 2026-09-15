@@ -105,6 +105,10 @@ async def _require_matter(context: CapabilityContext, matter_id) -> Matter:
     return matter
 
 
+def _iso_date(value) -> str | None:
+    return value.isoformat() if value else None
+
+
 def _matter_summary(matter: Matter) -> dict[str, Any]:
     return {
         "matter_id": str(matter.id),
@@ -135,6 +139,13 @@ def _matter_summary(matter: Matter) -> dict[str, Any]:
             str(matter.attorney_of_record_id) if matter.attorney_of_record_id else None
         ),
         "memory": _clip(matter.memory_content, _MATTER_MEMORY_CHARS),
+        "opened_on": _iso_date(getattr(matter, "opened_on", None)),
+        # How the matter was engaged when no intake packet did it (signed
+        # agreement on file, signed without a copy, no agreement, copy pending).
+        "engagement_status": getattr(matter, "engagement_status", None),
+        "engagement_signed_on": _iso_date(
+            getattr(matter, "engagement_signed_on", None)
+        ),
         "created_at": _iso(matter.created_at),
         "updated_at": _iso(matter.updated_at),
     }

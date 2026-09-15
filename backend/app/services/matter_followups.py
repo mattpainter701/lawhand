@@ -26,6 +26,24 @@ def followup_task_id(namespace: uuid.UUID, kind: str) -> uuid.UUID:
     return uuid.uuid5(namespace, kind)
 
 
+async def matter_timezone(db, tenant_id, matter_id):
+    """The timezone a deadline on this matter is meant in.
+
+    Intake records the client's own timezone, and it is the only per-matter
+    timezone we hold, so everything that has to turn a stored wall-clock
+    deadline into a real instant — follow-up tasks, calendar pushes — reads it
+    from here. Falls back to UTC for a matter that never ran intake.
+    """
+    from app.models.matter_intake import MatterIntake
+
+    config = await db.scalar(
+        select(MatterIntake.config).where(
+            MatterIntake.tenant_id == tenant_id, MatterIntake.matter_id == matter_id
+        )
+    )
+    return (config or {}).get("timezone") or "UTC"
+
+
 def _local(due, timezone_name):
     try:
         return due.astimezone(ZoneInfo(timezone_name or "UTC"))

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Check, Clock, Send } from 'lucide-react'
-import { getAdminUsers, getContacts, getMatterDocuments, getMatterPaperwork, matterPaperworkAction } from '../../api'
+import { AlertTriangle, Check, Clock, FileCheck, Send } from 'lucide-react'
+import { getAdminUsers, getContacts, getMatterDocuments, getMatterPaperwork, matterPaperworkAction, recordMatterEngagement } from '../../api'
 import PaperworkDrawer from './PaperworkDrawer'
+import EngagementFields from './EngagementFields'
+import { emptyEngagement, engagementFormData, engagementProblem, engagementSummary } from './engagement'
 import {
   deliveryRows, dueTone, formatDue, orderedRequirements,
   packetProgress, requirementLabel, requirementState,
@@ -27,7 +29,7 @@ function Shell({ children }) {
   return <section aria-label="Client paperwork" className="rounded-2xl border border-brand-line bg-brand-surface p-5 shadow-sm">{children}</section>
 }
 
-export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
+export default function CaseSetupCard({ matterId, matter, onPacketChange, onEngagementRecorded }) {
   const [documents, setDocuments] = useState([])
   const [users, setUsers] = useState([])
   const [clientEmail, setClientEmail] = useState('')
@@ -36,6 +38,13 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // The engagement recorded outside any packet: a signed agreement on file,
+  // signed with no copy, no agreement, or a copy still pending. Seeded from
+  // the matter and replaced by whatever this card records.
+  const [engagement, setEngagement] = useState(matter?.engagement || null)
+  const [recording, setRecording] = useState(false)
+  const [engagementDraft, setEngagementDraft] = useState(emptyEngagement)
+  useEffect(() => { setEngagement(matter?.engagement || null) }, [matter?.engagement])
   const [retryKey, setRetryKey] = useState('')
   const [receipt, setReceipt] = useState({ requirement: 'fee_agreement', document_id: '', note: '' })
   const [meeting, setMeeting] = useState({ kind: 'conference_call', starts_at: '', details: '' })
@@ -136,6 +145,64 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
     }
   }
 
+  // Recording the engagement needs the matter's PDFs so a scanned copy that
+  // is already filed can be chosen rather than uploaded again.
+  function openRecording(status) {
+    setRecording(true)
+    setError('')
+    setEngagementDraft({ ...emptyEngagement, status: status || emptyEngagement.status, signedOn: engagement?.signed_on || '' })
+    loadDocuments()
+  }
+
+  async function saveEngagement() {
+    setBusy(true)
+    setError('')
+    try {
+      const result = await recordMatterEngagement(matterId, engagementFormData(engagementDraft))
+      setEngagement(result.engagement)
+      setRecording(false)
+      onEngagementRecorded?.(result)
+    } catch (caught) {
+      setError(errorText(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The copy is not on file yet: the record can be completed by adding it.
+  const copyMissing = engagement && engagement.status !== 'signed_on_file'
+  const engagementIssue = engagementProblem(engagementDraft)
+
+  const recordingForm = recording && !closed && (
+    <div className="mt-4 rounded-xl border border-brand-line px-4 py-4 text-[13px]" aria-label="Record engagement">
+      <EngagementFields value={engagementDraft} onChange={setEngagementDraft} documents={documents} idPrefix={`engagement-${matterId}`} disabled={busy} />
+      {engagementIssue && <p className="mt-2 text-[12px] text-brand-muted">{engagementIssue}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={busy || Boolean(engagementIssue)}
+          onClick={saveEngagement}
+          className="min-h-11 rounded-lg bg-brand-ink px-4 text-[13px] font-semibold text-white disabled:opacity-50"
+        >
+          Record engagement
+        </button>
+        <button type="button" disabled={busy} onClick={() => setRecording(false)} className="text-brand-muted">Cancel</button>
+        <span className="text-[12px] text-brand-muted">Nothing is sent to the client.</span>
+      </div>
+    </div>
+  )
+
+  const engagementLine = engagement && (
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-brand-ink-2" data-testid="engagement-summary">
+      <FileCheck size={13} className="text-brand-green" />
+      <span className="font-semibold">{engagementSummary(engagement)}</span>
+      {engagement.document_id && (
+        <a href={`/api/matters/${matterId}/documents/${engagement.document_id}/download`} className="text-brand-accent underline">{engagement.document_name || 'Signed copy'}</a>
+      )}
+      {engagement.note && <span className="text-brand-muted">— {engagement.note}</span>}
+    </p>
+  )
+
   if (loading) return <Shell><p role="status" className="text-[13px] text-brand-muted">Loading client paperwork…</p></Shell>
 
   if (!packet || packet.status === 'cancelled') {
@@ -145,26 +212,50 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <h2 className="font-serif text-lg font-bold text-brand-ink">
-                {closed ? 'Matter closed' : packet ? 'Client paperwork cancelled' : 'Start this case'}
+                {closed ? 'Matter closed' : packet ? 'Client paperwork cancelled' : engagement ? 'Engaged' : 'Start this case'}
               </h2>
+              {engagementLine}
               <p className="mt-0.5 text-[13px] text-brand-muted">
                 {closed
                   ? 'Reopen the matter to send client paperwork.'
                   : packet
                     ? 'Follow-ups were cancelled for this matter. Send a new packet to restart the engagement.'
-                    : 'Send the fee agreement, intake form, questionnaire, and any other forms in one message, then track each signature here.'}
+                    : engagement
+                      ? 'Send any remaining forms or requested records from here; the fee agreement is already handled.'
+                      : 'Send the fee agreement, intake form, questionnaire, and any other forms in one message, then track each signature here. Already engaged? Record it instead and send nothing.'}
               </p>
             </div>
             {!closed && (
-              <button
-                type="button"
-                onClick={openDrawer}
-                className="flex min-h-11 items-center gap-2 rounded-xl bg-brand-ink px-5 text-[13px] font-semibold text-white shadow-sm transition-all hover:-translate-y-[1px] hover:bg-brand-ink-2"
-              >
-                <Send size={15} /> Send client paperwork
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                {!engagement && !recording && (
+                  <button
+                    type="button"
+                    onClick={() => openRecording()}
+                    className="flex min-h-11 items-center gap-2 rounded-xl border border-brand-line px-4 text-[13px] font-semibold text-brand-ink hover:bg-brand-bg-soft"
+                  >
+                    <FileCheck size={15} /> Already engaged — record it
+                  </button>
+                )}
+                {copyMissing && !recording && (
+                  <button
+                    type="button"
+                    onClick={() => openRecording('signed_on_file')}
+                    className="flex min-h-11 items-center gap-2 rounded-xl border border-brand-line px-4 text-[13px] font-semibold text-brand-ink hover:bg-brand-bg-soft"
+                  >
+                    <FileCheck size={15} /> Add signed copy
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={openDrawer}
+                  className="flex min-h-11 items-center gap-2 rounded-xl bg-brand-ink px-5 text-[13px] font-semibold text-white shadow-sm transition-all hover:-translate-y-[1px] hover:bg-brand-ink-2"
+                >
+                  <Send size={15} /> Send client paperwork
+                </button>
+              </div>
             )}
           </div>
+          {recordingForm}
           {error && <p role="alert" className="mt-3 text-[13px] text-brand-rose">{error}</p>}
         </Shell>
         {drawerOpen && !closed && (
@@ -176,6 +267,7 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
             timeZone={timeZone}
             matterType={matter?.matter_type}
             practiceArea={matter?.practice_area}
+            engagementOnFile={Boolean(engagement)}
             onClose={() => setDrawerOpen(false)}
             onSent={setPacket}
           />
@@ -205,6 +297,7 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange }) {
           {packet.status.replaceAll('_', ' ')}
         </span>
       </div>
+      {engagementLine}
 
       <ul className="mt-4 divide-y divide-brand-line/70 border-y border-brand-line/70">
         {rows.map(({ key, requirement }) => {

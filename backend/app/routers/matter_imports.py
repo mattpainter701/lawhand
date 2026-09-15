@@ -5,7 +5,7 @@ from __future__ import annotations
 import mimetypes
 import uuid
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from types import SimpleNamespace
 
@@ -28,6 +28,7 @@ from app.models.matter_document_folder import MatterDocumentFolder
 from app.models.plugin import Matter, MatterEvent
 from app.services.access_control import require_capability
 from app.services.matter_access import can_access_matter
+from app.services.matter_engagement import apply_engagement, engagement_event
 from app.services.matter_document_organization import (
     create_folder,
     storage_routing_for_folder,
@@ -46,6 +47,14 @@ from app.services.matter_number import assign_matter_number
 
 router = APIRouter(prefix="/api/matter-imports", tags=["matter-imports"])
 PROVIDER = "matter_folder_v1"
+
+# The stage an imported matter starts in, by how its engagement was reviewed.
+# Shared with the CSV importer so both read the same way in the matter list.
+INTAKE_STAGES = {
+    "existing": "Active",
+    "review": "Transfer / Review Required",
+    "required": "Intake / Awaiting Documents",
+}
 
 
 class ImportFile(BaseModel):
@@ -78,6 +87,14 @@ class Mapping(BaseModel):
     matter_name: str = Field(default="", max_length=500)
     case_number: str = Field(default="", max_length=100)
     intake: Literal["existing", "review", "required"] = "review"
+    # The date the matter was actually opened; today when omitted.
+    opened_on: date | None = None
+    # For an existing engagement: how the fee agreement stands. The importer
+    # cannot carry the signed file, so "on file" is recorded later from the
+    # matter; a signed date alone means the copy is still pending.
+    agreement: Literal["pending_copy", "signed_no_copy", "no_agreement"] | None = None
+    agreement_signed_on: date | None = None
+    agreement_note: str = Field(default="", max_length=1000)
     exclude: bool = False
 
     @model_validator(mode="after")
@@ -85,6 +102,24 @@ class Mapping(BaseModel):
         if not self.exclude and not self.matter_id:
             if not self.matter_name.strip():
                 raise ValueError("A matter name is required.")
+            for value in (self.opened_on, self.agreement_signed_on):
+                if value is not None and value > date.today():
+                    raise ValueError("Dates cannot be in the future.")
+            if self.agreement is None and self.agreement_signed_on:
+                self.agreement = "pending_copy"
+            if self.agreement and self.intake != "existing":
+                raise ValueError(
+                    "An agreement status belongs to an existing engagement."
+                )
+            if (
+                self.agreement in ("signed_no_copy", "no_agreement")
+                and not self.agreement_note.strip()
+            ):
+                raise ValueError(
+                    "Explain where the agreement was signed or why there is none."
+                )
+            if self.agreement == "no_agreement" and self.agreement_signed_on:
+                raise ValueError("A matter with no fee agreement has no signing date.")
             if (
                 not self.contact_id
                 and not self.organization_name.strip()
@@ -271,18 +306,25 @@ async def approve(
                 matter_name=mapping.matter_name.strip(),
                 matter_type="general",
                 status="open",
-                stage={
-                    "existing": "Active",
-                    "review": "Transfer / Review Required",
-                    "required": "Intake / Awaiting Documents",
-                }[mapping.intake],
+                stage=INTAKE_STAGES[mapping.intake],
                 source="folder_import",
                 client_contact_id=contact.id,
                 case_number=mapping.case_number or None,
+                opened_on=mapping.opened_on or datetime.now(timezone.utc).date(),
                 retention_until=(
-                    datetime.now(timezone.utc) + timedelta(days=365 * 7)
-                ).date(),
+                    (mapping.opened_on or datetime.now(timezone.utc).date())
+                    + timedelta(days=365 * 7)
+                ),
             )
+            if mapping.agreement:
+                apply_engagement(
+                    matter,
+                    status=mapping.agreement,
+                    signed_on=mapping.agreement_signed_on,
+                    note=mapping.agreement_note,
+                    document_id=None,
+                    user_id=user.id,
+                )
             # Human-readable matter number, assigned once at creation.
             await assign_matter_number(db, matter)
             db.add(matter)
@@ -307,6 +349,8 @@ async def approve(
                     created_by=user.id,
                 )
             )
+            if mapping.agreement:
+                engagement_event(db, matter, user_id=user.id, actor=str(user.id))
         destinations[mapping.group] = str(matter.id)
     run.manifest = {
         **run.manifest,

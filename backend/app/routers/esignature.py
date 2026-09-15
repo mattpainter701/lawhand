@@ -102,6 +102,7 @@ from app.services.provider_http import (
     ProviderNotFound,
 )
 from app.services.upload_guard import reject_oversized_request
+from app.utils.client_address import attributable_client_ip
 
 router = APIRouter(prefix="/api/matters", tags=["esignature"])
 portal_router = APIRouter(prefix="/api/portal/client", tags=["esignature-portal"])
@@ -994,7 +995,7 @@ async def portal_sign(
                         "problems": exc.problems,
                     },
                 ) from exc
-        ip = request.client.host if request.client else None
+        ip = attributable_client_ip(request)
         await record_portal_signature(
             signer,
             typed_signature=body.typed_signature.strip(),
@@ -1126,7 +1127,7 @@ async def portal_upload_signed_copy(
         req,
         signer,
         document=document,
-        ip=request.client.host if request.client else None,
+        ip=attributable_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
     from app.services import matter_intake
@@ -1168,7 +1169,7 @@ async def portal_decline(
             status_code=409, detail="An earlier signer must complete first"
         )
 
-    ip = request.client.host if request.client else None
+    ip = attributable_client_ip(request)
     await record_portal_decline(req, signer, reason=body.reason, ip=ip)
     # A decline is terminal, so the firm must see it on the matter and stop
     # chasing the signature. Mirror the completed path: close the follow-up

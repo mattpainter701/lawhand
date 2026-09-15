@@ -178,6 +178,9 @@ function DocumentCard({
 export default function PaperworkDrawer({
   matterId, documents = [], users = [], clientEmail = '',
   timeZone = 'America/Chicago', matterType = '', practiceArea = '',
+  // True when the matter already carries an engagement record, so the fee
+  // agreement card can say the agreement is handled rather than invite one.
+  engagementOnFile = false,
   onClose, onSent,
 }) {
   const [step, setStep] = useState(0)
@@ -481,7 +484,9 @@ export default function PaperworkDrawer({
             <>
               <DocumentCard
                 title="Fee agreement"
-                description="When included, signing it opens the portal and starts the follow-up clock. The client always signs it. Skip it to send only the other forms or requested records."
+                description={engagementOnFile
+                  ? 'This matter already records its engagement, so the fee agreement is normally left out. Include one only if the client must sign a new agreement.'
+                  : 'When included, signing it opens the portal and starts the follow-up clock. The client always signs it. Skip it to send only the other forms or requested records.'}
                 chooseLabel="Choose the fee agreement"
                 noneLabel="Do not include a fee agreement"
                 prepareLabel="Prepare the fee agreement from a firm template"

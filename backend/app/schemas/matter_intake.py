@@ -1,9 +1,27 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
+
+
+class EngagementRecord(BaseModel):
+    """How a matter was engaged outside the intake packet.
+
+    ``signed_on_file`` needs the signed agreement (an uploaded PDF or an
+    existing matter document); ``signed_no_copy`` and ``no_agreement`` need a
+    note saying where it was signed or why there is none. Nothing is sent to
+    the client for any of them. ``replace`` is the explicit consent to
+    overwrite a record that already names a signed agreement on file.
+    """
+
+    status: Literal["signed_on_file", "signed_no_copy", "no_agreement"]
+    signed_on: date | None = None
+    document_id: uuid.UUID | None = None
+    note: str | None = Field(None, max_length=1000)
+    replace: bool = False
+    confirm: Literal[True]
 
 
 class IntakeQuestion(BaseModel):

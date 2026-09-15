@@ -1336,6 +1336,28 @@ export const matterPaperworkAction = (matterId, action, body) =>
 export const previewMatterPaperwork = (matterId, options) =>
   api.post(`/matters/${matterId}/intake/preview`, options).then((r) => r.data)
 
+// Record how a matter was engaged without sending paperwork: the signed fee
+// agreement (uploaded or an existing document), a signed agreement with no
+// copy on hand, or no agreement at all with the reason. Multipart because the
+// signed copy travels with the record.
+export const recordMatterEngagement = (matterId, formData) =>
+  api.post(`/matters/${matterId}/engagement`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then((r) => r.data)
+
+// Bulk matter creation from the CSV template: preview resolves every row's
+// client and attorney and reports errors, confirm creates the matters.
+export const getMatterCsvTemplate = () =>
+  api.get('/matter-imports/csv/template', { responseType: 'blob' }).then((r) => r.data)
+export const previewMatterCsvImport = (formData) =>
+  api.post('/matter-imports/csv', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then((r) => r.data)
+export const confirmMatterCsvImport = (id, body) =>
+  api.post(`/matter-imports/csv/${id}/confirm`, body).then((r) => r.data)
+export const getMatterCsvImport = (id) =>
+  api.get(`/matter-imports/csv/${id}`).then((r) => r.data)
+
 // ── E-signature (firm side) ─────────────────────────────────────────────────
 export const createSignatureRequest = (matterId, data) =>
   api.post(`/matters/${matterId}/signatures`, data).then((r) => r.data)

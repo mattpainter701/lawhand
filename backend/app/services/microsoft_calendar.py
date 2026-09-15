@@ -1,7 +1,7 @@
 """Push-sync tasks and matter key-dates to Microsoft Outlook via Graph."""
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -68,12 +68,50 @@ async def _find_event_ids(
     return [item["id"] for item in resp.json().get("value", []) if item.get("id")]
 
 
+#: How long a deadline occupies on a calendar. A task is a point in time, not
+#: a meeting, but a zero-length event is invisible in most calendar views.
+TASK_EVENT_DURATION = timedelta(minutes=30)
+
+
+def _graph_schedule(due_date: str, due_time: str | None, timezone_name: str) -> dict:
+    """The start/end/isAllDay trio Graph needs, timed or all-day.
+
+    Graph pairs a timezone-less ``dateTime`` with a separate IANA ``timeZone``:
+    the wall-clock value must NOT carry an offset of its own, or the provider
+    can read the instant and the wall clock differently.
+    """
+    if not due_time:
+        # All-day Graph events require an exclusive end date (start + 1 day).
+        start_day = date.fromisoformat(due_date)
+        return {
+            "isAllDay": True,
+            "start": {
+                "dateTime": f"{start_day.isoformat()}T00:00:00",
+                "timeZone": "UTC",
+            },
+            "end": {
+                "dateTime": f"{(start_day + timedelta(days=1)).isoformat()}T00:00:00",
+                "timeZone": "UTC",
+            },
+        }
+
+    start = datetime.fromisoformat(f"{due_date}T{due_time}")
+    end = start + TASK_EVENT_DURATION
+    return {
+        "isAllDay": False,
+        "start": {"dateTime": start.isoformat(), "timeZone": timezone_name or "UTC"},
+        "end": {"dateTime": end.isoformat(), "timeZone": timezone_name or "UTC"},
+    }
+
+
 async def upsert_task_event(
     tenant_id: str,
     task_id: str,
     title: str,
     due_date: str,
     *,
+    due_time: str | None = None,
+    timezone_name: str = "UTC",
     description: str = "",
     matter_name: str = "",
     is_completed: bool = False,
@@ -83,6 +121,11 @@ async def upsert_task_event(
 
     Uses a Graph single-value extended property carrying ``clarity_task_id``
     to find existing events so we don't create duplicates on re-sync.
+
+    A task with a saved ``due_time`` becomes a timed event in
+    ``timezone_name``; without one it stays all-day, which is what a date-only
+    deadline is. Every task used to be forced to all-day, so a deadline set for
+    a specific hour arrived on the lawyer's calendar with the hour missing.
     """
     if not title:
         return None
@@ -107,22 +150,10 @@ async def upsert_task_event(
     else:
         subject = title
 
-    # All-day Graph events require an exclusive end date (start + 1 day)
-    start_day = date.fromisoformat(due_date)
-    end_day = start_day + timedelta(days=1)
-
     event_body = {
         "subject": subject,
         "body": {"contentType": "text", "content": description or title},
-        "isAllDay": True,
-        "start": {
-            "dateTime": f"{start_day.isoformat()}T00:00:00",
-            "timeZone": "UTC",
-        },
-        "end": {
-            "dateTime": f"{end_day.isoformat()}T00:00:00",
-            "timeZone": "UTC",
-        },
+        **_graph_schedule(due_date, due_time, timezone_name),
         "singleValueExtendedProperties": [
             {"id": CLARITY_TASK_PROP_ID, "value": task_id}
         ],

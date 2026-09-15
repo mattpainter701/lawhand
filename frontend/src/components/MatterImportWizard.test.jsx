@@ -129,3 +129,55 @@ describe('matter import', () => {
     expect(screen.getByRole('status')).toHaveTextContent('0 / 1 accounted')
   })
 })
+
+describe('matter import engagement mapping', () => {
+  it('sends the open date and agreement status for an existing engagement', async () => {
+    const files = [{ path: 'Smith/mail.eml', size: 7, sha256: 'a'.repeat(64) }]
+    mocks.post.mockImplementation(async (url, body) => {
+      if (url.endsWith('zip-preview')) return { data: { files } }
+      if (url === '/matter-imports') return { data: { ...body, status: 'review' } }
+      if (url.endsWith('/approve')) return { data: { id: 'run', files, status: 'uploading', approval: body } }
+      return { data: { id: 'run', files, status: 'complete', results: { 'Smith/mail.eml': { status: 'imported' } } } }
+    })
+    render(<MatterImportWizard />)
+    fireEvent.change(screen.getByLabelText('Select ZIP'), { target: { files: [new File(['payload'], 'cases.zip')] } })
+    await waitFor(() => expect(screen.getByRole('button', { name: /Review matter mappings/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Review matter mappings/ }))
+    fireEvent.change(await screen.findByLabelText('First name'), { target: { value: 'Jane' } })
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Smith' } })
+    fireEvent.change(screen.getByLabelText('Open date'), { target: { value: '2024-02-10' } })
+    // The agreement controls only apply to an existing engagement.
+    expect(screen.queryByLabelText('Fee agreement')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Intake'), { target: { value: 'existing' } })
+    fireEvent.change(screen.getByLabelText('Fee agreement'), { target: { value: 'signed_no_copy' } })
+    fireEvent.change(screen.getByLabelText('Date signed'), { target: { value: '2024-02-01' } })
+    fireEvent.change(screen.getByLabelText('Where it was signed'), { target: { value: 'At the former firm' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm mappings & import' }))
+    await screen.findByText(/Import complete/)
+    const approval = mocks.post.mock.calls.find(([url]) => url.endsWith('/approve'))[1]
+    expect(approval.mappings[0]).toMatchObject({
+      intake: 'existing', opened_on: '2024-02-10', agreement: 'signed_no_copy',
+      agreement_signed_on: '2024-02-01', agreement_note: 'At the former firm',
+    })
+  })
+
+  it('omits blank dates and agreement choices from the mapping', async () => {
+    const files = [{ path: 'Smith/mail.eml', size: 7, sha256: 'a'.repeat(64) }]
+    mocks.post.mockImplementation(async (url, body) => {
+      if (url.endsWith('zip-preview')) return { data: { files } }
+      if (url === '/matter-imports') return { data: { ...body, status: 'review' } }
+      if (url.endsWith('/approve')) return { data: { id: 'run', files, status: 'uploading', approval: body } }
+      return { data: { id: 'run', files, status: 'complete', results: { 'Smith/mail.eml': { status: 'imported' } } } }
+    })
+    render(<MatterImportWizard />)
+    fireEvent.change(screen.getByLabelText('Select ZIP'), { target: { files: [new File(['payload'], 'cases.zip')] } })
+    await waitFor(() => expect(screen.getByRole('button', { name: /Review matter mappings/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Review matter mappings/ }))
+    fireEvent.change(await screen.findByLabelText('First name'), { target: { value: 'Jane' } })
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Smith' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm mappings & import' }))
+    await screen.findByText(/Import complete/)
+    const approval = mocks.post.mock.calls.find(([url]) => url.endsWith('/approve'))[1]
+    expect(approval.mappings[0]).toMatchObject({ opened_on: null, agreement: null, agreement_signed_on: null, agreement_note: '' })
+  })
+})

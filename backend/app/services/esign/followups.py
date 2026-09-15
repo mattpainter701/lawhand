@@ -8,31 +8,26 @@ passes cannot duplicate it, and closes that task the moment the request
 reaches a terminal state.
 """
 
-from sqlalchemy import select
+from app.services.matter_followups import (
+    close_followup_task,
+    ensure_followup_task,
+    matter_timezone,
+)
 
-from app.models.matter_intake import MatterIntake
-from app.services.matter_followups import close_followup_task, ensure_followup_task
+__all__ = [
+    "FILING_FAILED_KIND",
+    "FOLLOWUP_KIND",
+    "close_filing_escalation",
+    "close_signature_followup",
+    "ensure_signature_followup",
+    "matter_timezone",
+]
 
 FOLLOWUP_KIND = "signature_due"
 
 # Terminal states: nothing about the request can change after these, so the
 # firm should not still be holding a task to chase it.
 CLOSING_STATUSES = {"completed", "declined", "voided", "expired"}
-
-
-async def matter_timezone(db, tenant_id, matter_id):
-    """The timezone the client was last given a deadline in.
-
-    Intake records the client's own timezone. Re-using it keeps "due Friday"
-    meaning the same thing in month four as it did at intake, and falls back
-    to UTC for a matter that never ran intake.
-    """
-    config = await db.scalar(
-        select(MatterIntake.config).where(
-            MatterIntake.tenant_id == tenant_id, MatterIntake.matter_id == matter_id
-        )
-    )
-    return (config or {}).get("timezone") or "UTC"
 
 
 def _signer_contact_id(req):
@@ -81,5 +76,29 @@ async def close_signature_followup(db, req, reason):
         namespace=req.id,
         kind=FOLLOWUP_KIND,
         reason=reason,
+        actor_user_id=req.created_by_user_id,
+    )
+
+
+# ── Filing-failure escalation ────────────────────────────────────────────────
+# A chase task is keyed to the request and its own kind, so the escalation
+# raised when filing cannot be completed never collides with the task that
+# chases the signer for a signature.
+FILING_FAILED_KIND = "signature_filing_failed"
+
+
+async def close_filing_escalation(db, req):
+    """Cancel the filing escalation once the executed copy is finally filed.
+
+    Unlike the signature chase task this does not depend on ``due_at``: an
+    undated request can still fail to file, and the person told about it is
+    owed the resolution either way.
+    """
+    return await close_followup_task(
+        db,
+        tenant_id=req.tenant_id,
+        namespace=req.id,
+        kind=FILING_FAILED_KIND,
+        reason="Signed copy filed",
         actor_user_id=req.created_by_user_id,
     )

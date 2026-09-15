@@ -270,6 +270,9 @@ async def test_two_completions_create_distinct_immutable_evidence_with_full_meta
             completed_at=None,
             completion_error=None,
             completion_attempted_at=None,
+            completion_failure_count=0,
+            completion_first_failed_at=None,
+            completion_escalated_at=None,
             created_by_user_id=requester_id,
         )
 
