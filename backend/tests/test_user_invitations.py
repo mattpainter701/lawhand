@@ -349,7 +349,10 @@ async def test_invitation_for_service_principal_is_treated_as_invalid(
     client, db_session, test_tenant
 ):
     _, token = await _invite(
-        db_session, test_tenant, "automation@testfirm.com", principal_type="service"
+        db_session,
+        test_tenant,
+        "automation@testfirm.com",
+        principal_type="automation_service",
     )
 
     response = await client.post("/api/auth/invite/lookup", json={"token": token})
