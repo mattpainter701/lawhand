@@ -1,3 +1,10 @@
+## 2026.09.14.01 — Drag a task on the calendar
+
+- Make an open task deadline a drag source in the calendar's Month, Week, and Day views and prompt for the drop's intent, since the gesture is ambiguous: "Move the due date" PATCHes the task (pinned to the `task_version` the chip was rendered from, so a stale calendar cannot overwrite a newer edit), while "Block time to work on it" creates a `scheduled_events` row linked to the task and leaves the deadline untouched. Completed tasks, matter key dates, renewals, and provider-synced events stay undraggable.
+- Clear `tasks.reminder_sent_at` when a PATCH moves `due_date` or `due_time` on a task that is not completed or cancelled. The 23-hour dedup guard in the task-reminder sweep otherwise suppressed the reminder for the new date until after it had passed, whenever a deadline was pulled forward.
+- Add nullable `scheduled_events.task_id` (FK to `tasks`, `ON DELETE SET NULL`, indexed on `(tenant_id, task_id)`) in migration `187_scheduled_event_task_link`, and validate it through the same SMS visibility predicate the events feed applies so a work block cannot be created against an invisible task.
+- Emit `task_version` on `task_due` calendar events, and an offset-free `start`/`end` window for a task that has a `due_time`, so a timed deadline renders in the Day and Week time grid at the firm's own wall clock.
+
 ## 2026.09.13.15 — Signature fields, void balance, and closed-matter paperwork
 
 - Require an explicit "By:", "Signed by", or "Signature" label to detect a signature line; a bare "by" tail no longer makes "Referred by" or "reviewed by" a client signature field. On the intake form those false fields had stolen round-robin role assignment so the real client line could be offered to the attorney. Detection applies to new field detection only; historical executed copies are untouched.

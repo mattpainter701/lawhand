@@ -2232,6 +2232,8 @@ async def update_task(
     previous_calendar_user_id = task_calendar_user_id(task)
     previous_assignee_id = task.assigned_to_user_id
     previous_status = task.status
+    previous_due_date = task.due_date
+    previous_due_time = task.due_time
     updates = _task_update_values(payload)
     reference_fields = {
         "matter_id",
@@ -2391,6 +2393,16 @@ async def update_task(
 
     for field, value in updates.items():
         setattr(task, field, value)
+
+    # A rescheduled deadline needs an alert of its own. The reminder sweep
+    # dedups on reminder_sent_at, so a reminder already sent for the old date
+    # would suppress the new one until that guard ages out — which lands after
+    # the new due date whenever the deadline is pulled forward.
+    due_rescheduled = (
+        task.due_date != previous_due_date or task.due_time != previous_due_time
+    )
+    if due_rescheduled and task.status not in ("completed", "cancelled"):
+        task.reminder_sent_at = None
 
     reassigned = assignment_changed and task.assigned_to_user_id != previous_assignee_id
     if reassigned:
