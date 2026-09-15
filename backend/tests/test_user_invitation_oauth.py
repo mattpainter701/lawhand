@@ -111,6 +111,11 @@ def _microsoft_claims(
     }
 
 
+def _assert_login_redirect(response, code: str) -> None:
+    assert response.status_code == 303, response.text
+    assert response.headers["location"].endswith(f"/login?error={code}")
+
+
 async def _callback(client, provider: str):
     return await client.get(
         f"/api/auth/{provider}/callback",
@@ -175,7 +180,7 @@ async def test_wrong_account_is_refused_and_invitation_stays_usable(
 
     response = await _callback(client, provider)
 
-    assert response.status_code == 403
+    _assert_login_redirect(response, "invite_email_mismatch")
     await db_session.refresh(user)
     assert user.is_active is False
     assert user.oauth_subject is None
@@ -197,7 +202,7 @@ async def test_unverified_google_email_cannot_accept(
 
     response = await _callback(client, "google")
 
-    assert response.status_code == 400
+    _assert_login_redirect(response, "google_email_unverified")
     await db_session.refresh(user)
     assert user.is_active is False
     assert (await _invitation(db_session, user.id)).accepted_at is None
@@ -233,7 +238,7 @@ async def test_microsoft_identity_owned_by_another_user_fails_closed(
 
     response = await _callback(client, "microsoft")
 
-    assert response.status_code == 409
+    _assert_login_redirect(response, "identity_already_linked")
     await db_session.refresh(user)
     await db_session.refresh(owner)
     assert user.is_active is False
@@ -258,7 +263,7 @@ async def test_expired_invitation_is_refused_through_provider(
 
     response = await _callback(client, "google")
 
-    assert response.status_code == 400
+    _assert_login_redirect(response, "invite_expired")
     await db_session.refresh(user)
     assert user.is_active is False
 
@@ -343,8 +348,8 @@ async def test_login_route_refuses_bad_invitation_before_provider_redirect(
         f"/api/auth/{provider}/login", params={"invite": "not-a-real-token"}
     )
 
-    assert response.status_code == 400
-    assert "location" not in response.headers
+    # Refused here, before the person is ever sent to the provider.
+    _assert_login_redirect(response, "invite_invalid")
 
 
 @pytest.mark.asyncio

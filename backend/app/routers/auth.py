@@ -1,5 +1,6 @@
 from app.services.matter_panel_visibility import hidden_matter_panels
 import asyncio
+import functools
 import hashlib
 import json as _json
 import logging
@@ -184,7 +185,8 @@ async def _standard_matter_context_policy(
 
 def _require_public_signup_enabled() -> None:
     if not settings.PUBLIC_SIGNUP_ENABLED:
-        raise HTTPException(
+        raise AuthRefusal(
+            code="signup_disabled",
             status_code=403,
             detail="Public signup is not enabled; request access from the operator",
         )
@@ -760,7 +762,8 @@ async def _get_or_create_user(
 
         if user is None:
             if not allow_create:
-                raise HTTPException(
+                raise AuthRefusal(
+                    code="not_invited",
                     status_code=403,
                     detail="An administrator must invite this account before it can join the tenant",
                 )
@@ -830,7 +833,8 @@ async def _resolve_existing_oauth_user(
                 mapping,
                 provider,
             )
-            raise HTTPException(
+            raise AuthRefusal(
+                code="identity_conflict",
                 status_code=409,
                 detail=(
                     "This sign-in identity matches multiple accounts; "
@@ -914,13 +918,21 @@ def _link_microsoft_identity(
         and user.entra_tenant_id
         and user.entra_tenant_id != entra_tenant_id
     ):
-        raise HTTPException(status_code=409, detail="Microsoft tenant link mismatch")
+        raise AuthRefusal(
+            code="identity_conflict",
+            status_code=409,
+            detail="Microsoft tenant link mismatch",
+        )
     if (
         entra_object_id
         and user.entra_object_id
         and user.entra_object_id != entra_object_id
     ):
-        raise HTTPException(status_code=409, detail="Microsoft object link mismatch")
+        raise AuthRefusal(
+            code="identity_conflict",
+            status_code=409,
+            detail="Microsoft object link mismatch",
+        )
     if (
         entra_tenant_id
         and entra_object_id
@@ -977,7 +989,11 @@ async def _resolve_oauth_tenant_and_user(
                 provider,
                 existing_user.id,
             )
-            raise HTTPException(status_code=403, detail="Account tenant is unavailable")
+            raise AuthRefusal(
+                code="tenant_inactive",
+                status_code=403,
+                detail="Account tenant is unavailable",
+            )
 
         require_active_tenant(tenant)
 
@@ -985,7 +1001,11 @@ async def _resolve_oauth_tenant_and_user(
             # Deactivation must apply equally to provider-subject, primary
             # email, and verified-alias matches.  Never mint a fresh token for
             # an inactive account merely because its OAuth identity is known.
-            raise HTTPException(status_code=403, detail="This user account is inactive")
+            raise AuthRefusal(
+                code="account_inactive",
+                status_code=403,
+                detail="This user account is inactive",
+            )
 
         if provider == "microsoft":
             _link_microsoft_identity(
@@ -1010,7 +1030,8 @@ async def _resolve_oauth_tenant_and_user(
         return tenant, user, True
 
     if provider == "microsoft":
-        raise HTTPException(
+        raise AuthRefusal(
+            code="microsoft_not_linked",
             status_code=403,
             detail=(
                 "This Microsoft account is not linked to an existing user; "
@@ -1050,6 +1071,71 @@ async def _resolve_oauth_tenant_and_user(
         allow_create=not tenant_existed,
     )
     return tenant, user, tenant_existed
+
+
+# ── Browser sign-in refusals ───────────────────────────────────────────────────
+
+# Codes the login page knows how to explain. Anything else becomes the generic
+# code, so a redirect can never carry arbitrary text into the page.
+_LOGIN_ERROR_CODES = frozenset(
+    {
+        "account_active",
+        "account_inactive",
+        "google_email_unverified",
+        "identity_already_linked",
+        "identity_conflict",
+        "invite_accepted",
+        "invite_email_mismatch",
+        "invite_expired",
+        "invite_invalid",
+        "microsoft_not_linked",
+        "not_invited",
+        "oauth_failed",
+        "oauth_state_expired",
+        "provider_unavailable",
+        "signup_disabled",
+        "tenant_inactive",
+    }
+)
+
+
+def _login_error_redirect(code: str) -> RedirectResponse:
+    if code not in _LOGIN_ERROR_CODES:
+        code = "oauth_failed"
+    base = (settings.FRONTEND_URL or "").rstrip("/")
+    response = RedirectResponse(url=f"{base}/login?error={code}", status_code=303)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _redirect_refusals_to_login(provider: str):
+    """Send a person back to the login page instead of a raw JSON error.
+
+    These routes are reached by a full-page browser navigation, so a JSON body
+    is exactly what the person ends up looking at. Expected refusals and other
+    client errors become ``/login?error=<code>``; server errors are re-raised
+    untouched so they still reach error logging and alerting. Only the code is
+    logged: details can contain names and addresses.
+    """
+
+    def decorate(handler):
+        @functools.wraps(handler)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await handler(*args, **kwargs)
+            except HTTPException as exc:
+                if isinstance(exc, AuthRefusal):
+                    code = exc.code
+                elif 400 <= exc.status_code < 500:
+                    code = "oauth_failed"
+                else:
+                    raise
+            logger.info("OAuth sign-in refused provider=%s code=%s", provider, code)
+            return _login_error_redirect(code)
+
+        return wrapper
+
+    return decorate
 
 
 # ── Invitation acceptance through Google / Microsoft ───────────────────────────
@@ -1171,6 +1257,7 @@ _oauth_configured = is_oauth_client_configured
 
 
 @router.get("/microsoft/login")
+@_redirect_refusals_to_login("microsoft")
 async def microsoft_login(
     request: Request,
     signup: str = "",
@@ -1190,7 +1277,11 @@ async def microsoft_login(
     if not _oauth_configured(
         settings.MICROSOFT_CLIENT_ID, settings.MICROSOFT_CLIENT_SECRET
     ):
-        raise HTTPException(status_code=501, detail="Microsoft OAuth not configured")
+        raise AuthRefusal(
+            code="provider_unavailable",
+            status_code=501,
+            detail="Microsoft OAuth not configured",
+        )
     if invite:
         await _precheck_invitation(db, invite)
 
@@ -1238,6 +1329,7 @@ async def microsoft_login(
 
 
 @router.get("/microsoft/callback")
+@_redirect_refusals_to_login("microsoft")
 async def microsoft_callback(
     code: str,
     state: str,
@@ -1249,7 +1341,11 @@ async def microsoft_callback(
         replay = await _wait_for_replayed_frontend_callback(request, state, code)
         if replay:
             return replay
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+        raise AuthRefusal(
+            code="oauth_state_expired",
+            status_code=400,
+            detail="Invalid or expired OAuth state",
+        )
     state_meta = state_meta or {}
     return_to = _validated_return_to(state_meta.get("return_to"))
     signup_data = state_meta.get("signup")
@@ -1397,6 +1493,7 @@ async def microsoft_callback(
 
 
 @router.get("/google/login")
+@_redirect_refusals_to_login("google")
 async def google_login(
     request: Request,
     signup: str = "",
@@ -1414,7 +1511,11 @@ async def google_login(
     if signup == "true":
         _require_public_signup_enabled()
     if not _oauth_configured(settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET):
-        raise HTTPException(status_code=501, detail="Google OAuth not configured")
+        raise AuthRefusal(
+            code="provider_unavailable",
+            status_code=501,
+            detail="Google OAuth not configured",
+        )
     if invite:
         await _precheck_invitation(db, invite)
 
@@ -1462,6 +1563,7 @@ async def google_login(
 
 
 @router.get("/google/callback")
+@_redirect_refusals_to_login("google")
 async def google_callback(
     code: str,
     state: str,
@@ -1473,7 +1575,11 @@ async def google_callback(
         replay = await _wait_for_replayed_frontend_callback(request, state, code)
         if replay:
             return replay
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+        raise AuthRefusal(
+            code="oauth_state_expired",
+            status_code=400,
+            detail="Invalid or expired OAuth state",
+        )
     state_meta = state_meta or {}
     return_to = _validated_return_to(state_meta.get("return_to"))
     signup_data = state_meta.get("signup")
@@ -1522,7 +1628,11 @@ async def google_callback(
         access_token=token_data.get("access_token"),
     )
     if claims.get("email_verified") is not True:
-        raise HTTPException(status_code=400, detail="Google email is not verified")
+        raise AuthRefusal(
+            code="google_email_unverified",
+            status_code=400,
+            detail="Google email is not verified",
+        )
 
     email = claims.get("email", "").lower().strip()
     full_name = claims.get("name")
