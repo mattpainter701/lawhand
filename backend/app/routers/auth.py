@@ -886,12 +886,22 @@ def _link_microsoft_identity(
     by tenant and email would wrongly refuse someone whose address changed.
     """
 
-    if entra_tenant_id and user.entra_tenant_id and user.entra_tenant_id != entra_tenant_id:
+    if (
+        entra_tenant_id
+        and user.entra_tenant_id
+        and user.entra_tenant_id != entra_tenant_id
+    ):
         raise HTTPException(status_code=409, detail="Microsoft tenant link mismatch")
-    if entra_object_id and user.entra_object_id and user.entra_object_id != entra_object_id:
+    if (
+        entra_object_id
+        and user.entra_object_id
+        and user.entra_object_id != entra_object_id
+    ):
         raise HTTPException(status_code=409, detail="Microsoft object link mismatch")
-    if entra_tenant_id and entra_object_id and not (
-        user.entra_tenant_id and user.entra_object_id
+    if (
+        entra_tenant_id
+        and entra_object_id
+        and not (user.entra_tenant_id and user.entra_object_id)
     ):
         user.entra_tenant_id = entra_tenant_id
         user.entra_object_id = entra_object_id

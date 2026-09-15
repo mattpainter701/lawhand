@@ -505,4 +505,3 @@ async def test_microsoft_entra_claims_still_cannot_claim_account_by_email(
     await db_session.refresh(user)
     assert user.oauth_subject is None
     assert user.entra_object_id is None
-
