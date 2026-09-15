@@ -281,8 +281,10 @@ class Matter(Base):
     # The date the firm opened the matter (migration 187). Defaults to the day
     # the row is created, but a matter transferred in from another firm keeps
     # the date it was actually opened, which is what lists and reports show.
-    opened_on: Mapped[date] = mapped_column(
-        Date, nullable=False, default=date.today, server_default=text("CURRENT_DATE")
+    # Nullable for now (expand/contract: backfilled, made required in a later
+    # release); readers fall back to created_at.
+    opened_on: Mapped[date | None] = mapped_column(
+        Date, nullable=True, default=date.today, server_default=text("CURRENT_DATE")
     )
 
     # Existing-engagement record (migration 187). Null means the matter has no

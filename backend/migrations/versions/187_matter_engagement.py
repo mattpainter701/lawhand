@@ -8,8 +8,11 @@ copy of, no fee agreement at all (a legacy or unusual arrangement, with the
 reason), or a signed copy still to be uploaded.
 
 ``opened_on`` is backfilled from ``created_at`` so nothing changes for
-existing rows, then made NOT NULL with a ``CURRENT_DATE`` default for every
-creation path that does not pass it explicitly.
+existing rows and carries a ``CURRENT_DATE`` default for every creation path
+that does not pass it explicitly. It stays nullable in this release: the
+migration safety gate keeps "add and backfill" and "make required" in
+separate releases so a deploy can never reject existing customer rows, and
+every reader falls back to ``created_at`` when it is null.
 
 Revision ID: 187_matter_engagement
 Revises: 186_billing_parity
@@ -39,10 +42,7 @@ def upgrade():
         "WHERE opened_on IS NULL"
     )
     op.alter_column(
-        "matters",
-        "opened_on",
-        nullable=False,
-        server_default=sa.text("CURRENT_DATE"),
+        "matters", "opened_on", server_default=sa.text("CURRENT_DATE")
     )
     op.create_index(
         "ix_matters_tenant_opened_on", "matters", ["tenant_id", "opened_on"]

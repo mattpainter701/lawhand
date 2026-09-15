@@ -23,10 +23,11 @@ def test_matter_engagement_migration_adds_open_date_and_engagement_columns():
 
     assert 'revision = "187_matter_engagement"' in source
     assert 'down_revision = "186_billing_parity"' in source
-    # Existing rows keep their creation date as the open date, then the
-    # column becomes required with a database default for every other path.
+    # Existing rows keep their creation date as the open date and new rows
+    # default to today. The column stays nullable in this release: the
+    # migration safety gate separates "add and backfill" from "make required".
     assert "opened_on = (created_at AT TIME ZONE 'UTC')::date" in source
-    assert "nullable=False" in source
+    assert "nullable=False" not in source
     assert "CURRENT_DATE" in source
     for column in (
         "engagement_status",
