@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.05 — Invitations work, and sign-in explains a refusal
+
+Released September 15, 2026.
+
+Invited colleagues can accept by choosing a password or continuing with Google or Microsoft, and a refused Google or Microsoft sign-in now explains why instead of showing an error code.
+
+- **Accept an invitation your way.** The invitation email opens a page for your firm where you set a password or continue with the Google or Microsoft account the invitation was sent to.
+- **Invitations are single use and expire.** Each link works once and expires after seven days. Administrators can resend or revoke an invitation from the Users list, where invited people now appear.
+- **A clear message when sign-in is refused.** If Google or Microsoft sign-in cannot continue, for example for an account that has not been invited, the sign-in page says why and what to do next.
+- **Earlier invitation links still open.** Invitations sent before this update open the new page and get a fresh seven-day window.
+
 ## 2026.09.15.04 — Assistant settings stick, and document access says who can see what
 
 Released September 15, 2026.
