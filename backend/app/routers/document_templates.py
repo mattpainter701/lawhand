@@ -1484,13 +1484,22 @@ def _reviewed_variable_schema(raw: str | None, discovered: dict) -> dict:
                 "options",
                 "page",
                 "rect",
+                "source_required",
             ):
                 field[key] = authoritative.get(key)
-            # The source controls geometry/type/options and a source-required
-            # field can never be weakened, but review may promote an optional
-            # AcroForm field to required for downstream automation.
-            field["required"] = bool(
-                authoritative.get("required") or submitted_required
+            # The source controls geometry/type/options, and review may always
+            # promote an optional AcroForm field to required for downstream
+            # automation. Weakening is the asymmetric case: a source-required
+            # text field keeps its requirement, but a checkbox does not.
+            # "Required" on a checkbox means it must be *checked*, and most
+            # carry the flag only because the authoring tool set it by default
+            # (reportlab marks every checkbox required unless told otherwise),
+            # which leaves mutually exclusive options impossible to satisfy.
+            # The renderer applies the same rule.
+            field["required"] = (
+                submitted_required
+                if authoritative.get("field_type") == "checkbox"
+                else bool(authoritative.get("required") or submitted_required)
             )
             field["included"] = _review_bool(field, "included", True)
         if has_overlay_mapping:
@@ -1819,10 +1828,12 @@ def _add_candidate(
     )
 
 
-def _address_value(address: dict | None, key: str) -> str | None:
-    if not isinstance(address, dict):
+def _mapping_value(mapping: dict | None, key: str) -> str | None:
+    """Read one key out of a JSON contact column (address, emergency contact)."""
+
+    if not isinstance(mapping, dict):
         return None
-    return _stringify_suggestion(address.get(key))
+    return _stringify_suggestion(mapping.get(key))
 
 
 def _caption_parties(parties: Sequence[MatterParty], role: str) -> list[MatterParty]:
@@ -1923,7 +1934,7 @@ def _collect_caption_party_candidates(
             _add_candidate(
                 candidates,
                 f"{role}_{suffix}",
-                _address_value(primary_contact.address, address_key),
+                _mapping_value(primary_contact.address, address_key),
                 source_type="matter_party",
                 source_field=f"contact.address.{address_key}",
                 record_id=primary_party.id,
@@ -2143,9 +2154,40 @@ def _collect_smart_fill_candidates(
             _add_candidate(
                 candidates,
                 alias,
-                _address_value(address, key),
+                _mapping_value(address, key),
                 source_type="contact",
                 source_field=f"address.{key}",
+                record_id=client.id,
+            )
+        for alias, column in {
+            "client_date_of_birth": "date_of_birth",
+            "client_secondary_phone": "secondary_phone",
+            "client_preferred_contact_method": "preferred_contact_method",
+            "client_preferred_contact_window": "preferred_contact_window",
+            "client_preferred_language": "preferred_language",
+            "client_referral_source": "referral_source",
+        }.items():
+            _add_candidate(
+                candidates,
+                alias,
+                getattr(client, column, None),
+                source_type="contact",
+                source_field=column,
+                record_id=client.id,
+            )
+        emergency = getattr(client, "emergency_contact", None)
+        for alias, key in {
+            "emergency_contact_name": "name",
+            "emergency_contact_relationship": "relationship",
+            "emergency_contact_phone": "phone",
+            "emergency_contact_email": "email",
+        }.items():
+            _add_candidate(
+                candidates,
+                alias,
+                _mapping_value(emergency, key),
+                source_type="contact",
+                source_field=f"emergency_contact.{key}",
                 record_id=client.id,
             )
 
@@ -2215,6 +2257,18 @@ def _smart_fill_alias_vocabulary() -> frozenset[str]:
                 "state": "PR",
                 "zip": "00000",
                 "country": "US",
+            },
+            date_of_birth="1970-01-01",
+            secondary_phone="555-0101",
+            preferred_contact_method="email",
+            preferred_contact_window="Mornings",
+            preferred_language="English",
+            referral_source="Probe referral",
+            emergency_contact={
+                "name": "Probe Contact",
+                "relationship": "Spouse",
+                "phone": "555-0102",
+                "email": "probe.contact@example.com",
             },
         )
 

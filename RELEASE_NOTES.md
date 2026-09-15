@@ -5,6 +5,18 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.03 — Starter forms generate again, and fill from more of the client record
+
+Released September 15, 2026.
+
+The three forms every firm starts with can produce a document again, an optional checkbox stays optional, and templates can pull more of what the client already told you.
+
+- **The starter forms produce documents again.** Every checkbox on the fee agreement, client questionnaire and intake form was marked required, so none could be generated. They work with any combination of answers now.
+- **An optional checkbox stays optional.** Marking a checkbox optional in the field editor now holds when you save. Where a requirement cannot be lifted, the editor says so instead of turning itself back on.
+- **More of the client record fills itself.** A template field can now draw a client's date of birth, second phone, preferred contact method and time, language, referral source, and emergency contact details.
+- **A name box is no longer treated as a place to initial.** A field labelled with Middle Initial was read as a signing box and asked the client to initial inside their own name. It stays an ordinary field.
+- **Uploaded forms show their fields in review.** A page preview of a fillable PDF came back with the printed text and blank space where the boxes should be. The boxes are drawn.
+
 ## 2026.09.15.02 — Existing engagements, open dates, and bulk matter creation
 
 Released September 15, 2026.

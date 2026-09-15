@@ -584,7 +584,26 @@ export default function PrepareFormWorkspace({
                 {selected.field_type === 'radio' && <option value="radio">Radio</option>}
               </select>
             </label>
-            <label className="mt-2 flex items-center gap-2 text-xs text-brand-ink"><input type="checkbox" checked={Boolean(selected.required)} onChange={(event) => updateField(selectedEntry.identity, { required: event.target.checked })} /> Required</label>
+            {/* A source-required field keeps its requirement through save: the
+                server ORs the submitted value with the one the PDF asserts.
+                Checkboxes are the exception — the server honours review for
+                those — so only the locked case is disabled here, rather than
+                offering a control that silently reverts. */}
+            {(() => {
+              const lockedRequired = Boolean(selected.source_required) && selected.field_type !== 'checkbox'
+              return (
+                <label className={`mt-2 flex items-start gap-2 text-xs ${lockedRequired ? 'text-brand-muted' : 'text-brand-ink'}`}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selected.required)}
+                    disabled={lockedRequired}
+                    onChange={(event) => updateField(selectedEntry.identity, { required: event.target.checked })}
+                    className="mt-0.5"
+                  />
+                  <span>Required{lockedRequired && <span className="mt-0.5 block text-[11px] text-brand-muted">The source PDF marks this field required, so it cannot be made optional here.</span>}</span>
+                </label>
+              )
+            })()}
             {placementsFor(selected).length > 0 && <label className="mt-2 flex items-start gap-2 text-xs text-brand-ink"><input type="checkbox" aria-label="Cover what is underneath" checked={Boolean(selected.erase_source ?? placementsFor(selected)[0]?.overlay?.erase_source)} onChange={(event) => setCoverSource(selectedEntry, event.target.checked)} className="mt-0.5" /><span>Cover what is underneath<p className="text-[11px] text-brand-muted">Paints a white rectangle over the source when this PDF is generated.</p></span></label>}
             <label className="mt-2 flex items-start gap-2 text-xs text-brand-ink"><input type="checkbox" checked={selected.included !== false} onChange={(event) => updateField(selectedEntry.identity, { included: event.target.checked })} className="mt-0.5" /><span>Include in template{selected.included === false && <span className="mt-0.5 block text-[11px] text-brand-muted">The original value will still be cleared from generated files.</span>}</span></label>
             <p className="mt-2 rounded bg-brand-surface-2 px-2 py-1.5 text-[11px] text-brand-muted">{sourceKind(selected)} · {selected.pdf_field_name ? 'Original PDF position locked' : `${placementsFor(selected).length} editable placement${placementsFor(selected).length === 1 ? '' : 's'}`}</p>

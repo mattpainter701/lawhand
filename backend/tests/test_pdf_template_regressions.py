@@ -387,3 +387,106 @@ def test_pdf_discovery_rejects_rotated_widget_appearance() -> None:
 
     with pytest.raises(TemplatePdfError, match="rotated widget appearance"):
         discover_pdf_fields(_write(writer))
+
+
+def _yes_no_pdf() -> bytes:
+    """A form authored the way reportlab authors one by default.
+
+    ``AcroForm.checkbox`` defaults ``fieldFlags`` to ``'required'``, so every
+    checkbox a tool like this produces carries ``/Ff`` bit 2 whether or not the
+    form's author asked for it.
+    """
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    pdf.acroForm.checkbox(name="answer_yes", tooltip="Yes", x=54, y=700, size=9)
+    pdf.acroForm.checkbox(name="answer_no", tooltip="No", x=90, y=700, size=9)
+    pdf.acroForm.textfield(
+        name="must_type",
+        tooltip="Must type",
+        x=54,
+        y=650,
+        width=150,
+        height=13,
+        fontSize=8.5,
+        fieldFlags="required",
+    )
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+def test_pdf_discovery_reports_what_the_source_requires_separately() -> None:
+    fields = {field["name"]: field for field in discover_pdf_fields(_yes_no_pdf())}
+
+    assert fields["answer_yes"]["required"] is True
+    assert fields["answer_yes"]["source_required"] is True
+    assert fields["must_type"]["source_required"] is True
+
+
+def test_pdf_required_checkbox_blocks_generation_until_review_clears_it() -> None:
+    """A required checkbox must be checked, which mutually exclusive answers
+    cannot all be. Review is allowed to weaken that, and only that."""
+
+    source = _yes_no_pdf()
+    discovered = discover_pdf_fields(source)
+    answered = {"answer_yes": "true", "answer_no": "false", "must_type": "typed"}
+
+    # As authored, only one of two exclusive boxes can be checked, so the form
+    # cannot generate at all.
+    with pytest.raises(TemplatePdfError, match="empty or unchecked"):
+        fill_pdf_template(
+            source,
+            variable_schema={"version": 1, "fields": discovered},
+            variables=answered,
+            flatten=True,
+            enforce_required=True,
+        )
+
+    reviewed = [{**field, "required": False} for field in discovered]
+    generated = fill_pdf_template(
+        source,
+        variable_schema={"version": 1, "fields": reviewed},
+        variables=answered,
+        flatten=True,
+        enforce_required=True,
+    )
+    assert generated.startswith(b"%PDF")
+
+
+def test_pdf_required_text_field_cannot_be_weakened_by_review() -> None:
+    """The asymmetry: a source-required text field keeps its requirement."""
+
+    source = _yes_no_pdf()
+    reviewed = [
+        {**field, "required": False} for field in discover_pdf_fields(source)
+    ]
+
+    with pytest.raises(TemplatePdfError, match="must_type"):
+        fill_pdf_template(
+            source,
+            variable_schema={"version": 1, "fields": reviewed},
+            variables={"answer_yes": "true", "answer_no": "false", "must_type": ""},
+            flatten=True,
+            enforce_required=True,
+        )
+
+
+def test_pdf_page_preview_draws_form_widgets() -> None:
+    """pdfium renders widget appearances only through a form-fill environment.
+
+    Without ``init_forms()`` the preview came back with the printed text and
+    blank space where every input should be, so a form template looked
+    fieldless in review.
+    """
+
+    png, _ = pdf_template_service.render_pdf_page_preview(_yes_no_pdf(), 1)
+    blank = BytesIO()
+    empty = canvas.Canvas(blank, pagesize=letter)
+    empty.showPage()
+    empty.save()
+    baseline, _ = pdf_template_service.render_pdf_page_preview(blank.getvalue(), 1)
+
+    # The widgets are the only ink on the page, so a form page must render
+    # materially more than an empty one of the same size.
+    assert len(png) > len(baseline)

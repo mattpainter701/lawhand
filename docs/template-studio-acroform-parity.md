@@ -7,6 +7,10 @@ pipeline, with the shipped sample-library `client-questionnaire.pdf` run beside 
 as a control. Each finding below was reproduced against the repository's own
 services, not inferred from reading them.
 
+**Status (2026-09-15):** all seven findings are fixed. The table below records
+what was wrong and how it was verified; each finding now carries the change that
+resolved it. Issues #512-#518.
+
 **Question asked:** can Template Studio take a firm's own fillable PDF from upload
 to a generated, signable document without hand-holding?
 
@@ -44,6 +48,13 @@ included, read back identically from the generated PDF.
 ---
 
 ## Finding 1 — CRITICAL: every authored checkbox is required, and a required checkbox blocks generation
+
+**Fixed** — `build_library_intake_forms.py` now passes `fieldFlags=CHECKBOX_FLAGS`
+(empty) and `RADIO_FLAGS` (`"radio"`), the three seed PDFs are rebuilt with zero
+required fields, and `build_form()` fails the build if any field comes back
+required. `test_authored_forms_generate_with_every_checkbox_false` is the
+regression.
+
 
 `reportlab.pdfbase.acroform.AcroForm` defaults its button field flags to
 *required*:
@@ -106,6 +117,12 @@ with all checkboxes false and `enforce_required=True`.
 
 ## Finding 2 — HIGH: a source-required field can never be made optional
 
+**Fixed** — option (a) and (b) together. The save path and the renderer now honour
+review for checkboxes specifically, while a source-required *text* field keeps its
+requirement; discovery emits `source_required` so the editor can disable the
+control, with an explanation, exactly where it is genuinely locked.
+
+
 The save path ORs the submitted value with the discovered one
 (`backend/app/routers/document_templates.py:1492`):
 
@@ -148,6 +165,12 @@ reverting.
 ---
 
 ## Finding 3 — HIGH: "Middle Initial" turns a name field into a signing initials widget
+
+**Fixed** — `_is_initials_field()` tests the field name and the label against
+different patterns and vetoes both on name-part wording, so a name box stays text.
+The WCBLS form's label is back to the firm's own "Middle Initial", and its build
+guard calls the engine's classifier rather than a copy of its regexes.
+
 
 `backend/app/services/esign/plan.py:80`:
 
@@ -193,6 +216,10 @@ build if any field label would be misread, so the workaround cannot silently reg
 
 ## Finding 4 — MEDIUM (latent): server-side page preview draws no form fields
 
+**Fixed** — `render_pdf_page_preview()` calls `document.init_forms()` before
+rendering. The shipped questionnaire went from 73,982 to 638,354 ink pixels.
+
+
 `pdf_templates.render_pdf_page_preview()` renders with `draw_annots=True` but never
 calls `document.init_forms()`. pdfium draws widget appearance streams only when the
 document has a form-fill environment, so every AcroForm field is omitted from the
@@ -221,6 +248,12 @@ rendering the engine review proposes for visual authoring.
 ---
 
 ## Finding 5 — MEDIUM: the binding catalogue omits contact columns that already exist
+
+**Fixed** — ten `client.*` entries added (date of birth, secondary phone,
+preferred contact method and window, preferred language, referral source, and the
+four emergency-contact keys), with matching Smart Fill candidates and probe
+attributes so the approval vocabulary stays in sync.
+
 
 `template_bindings._CATALOGUE` exposes eight client paths: `client.name`,
 `client.email`, `client.phone` and five address parts. `Contact`
@@ -253,6 +286,12 @@ means re-declaring columns the product already ships.
 
 ## Finding 6 — LOW: the authoring DSL has no radio construct
 
+**Fixed (construct)** — `RADIO(...)` and `Choice(...)` are available and covered by
+`test_radio_block_builds_one_exclusive_field`. Converting the existing library
+forms' yes/no groups is deliberately left out: it renames fields, so it needs its
+own manifest and binding refresh.
+
+
 `build_library_intake_forms.py` offers `CHECKS(...)` only, so every mutually
 exclusive question in the shipped library is modelled as independent checkboxes —
 `existing_case_yes` / `existing_case_no` / `existing_case_unsure` are three boxes a
@@ -267,6 +306,11 @@ is simply unused by the authoring layer.
 ---
 
 ## Finding 7 — LOW: importing a PDF helper pulls in the whole application
+
+**Fixed** — `app/services/__init__.py` resolves its re-exports through PEP 562
+`__getattr__`. Importing `app.services.pdf_templates` no longer loads the
+embeddings stack, openai, Stripe, Redis or pgvector.
+
 
 `app/services/__init__.py` eagerly imports `EmbeddingService`, so
 `from app.services.pdf_templates import discover_pdf_fields` — a module whose only
@@ -304,7 +348,7 @@ classification-side and none of them impugn the core:
 
 ---
 
-## Recommended order of work
+## Order the fixes landed in
 
 1. **Finding 1** — rebuild the three library PDFs with correct field flags, and add
    the generate-with-all-checkboxes-false regression test. Until this lands, the

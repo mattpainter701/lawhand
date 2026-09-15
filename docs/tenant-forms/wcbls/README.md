@@ -37,10 +37,13 @@ Three things changed, all of them form mechanics rather than content:
 2. **`___ Yes ___ No` became radio groups.** The original writes these as blanks,
    which is one answer, not two boxes. A radio group makes the reader enforce the
    exclusivity. Same for `___ VISA ___ MasterCard ___ Discover`.
-3. **"Middle Initial" is abbreviated "M.I."** — a workaround, not a preference. The
-   portal's signing planner reads any field whose label matches `\binitials?\b` as
-   an initials block to be signed, which turned the client's own name box into a
-   signing widget. See finding 3 in `docs/template-studio-acroform-parity.md`.
+3. Nothing else. An earlier revision abbreviated "Middle Initial" to "M.I." to
+   dodge the signing planner, which read any label containing "initial" as a
+   block to be signed and so turned the client's own name box into a signing
+   widget. That was fixed in the engine (finding 3 in
+   `docs/template-studio-acroform-parity.md`), so the firm's own wording stands,
+   and the builder now calls the engine's own classifier as a guard rather than
+   a copy of its patterns.
 
 The fee agreement starts on page 2 so the terms and the signature block stay
 together on one page.
@@ -66,7 +69,7 @@ by whoever fills the form.
 
 | Field | Label | Type | Binding |
 |---|---|---|---|
-| `client_name` | Last Name, First Name, M.I. | text | `client.name` |
+| `client_name` | Last Name, First Name, Middle Initial | text | `client.name` |
 | `client_date_of_birth` | Date of Birth | text | manual |
 | `client_ssn` | Social Security Number | text | manual |
 | `client_street` | Street Address | text | `client.address.street` |
@@ -108,11 +111,14 @@ by whoever fills the form.
 | `credit_card_expiration` | Expiration Date | text | manual |
 | `credit_card_security_code` | Three Digit Security Code | text | manual |
 
-Eight of the unbound fields hold facts LawHand already stores on the contact record
-but exposes no binding path for — date of birth, secondary phone, preferred contact
-method and window, referral source, and the emergency-contact block. Finding 5 in
-`docs/template-studio-acroform-parity.md` lists the mapping; once those catalogue
-rows exist, this template picks them up with no re-authoring.
+Eight of the unbound fields hold facts LawHand already stores on the contact
+record. Those catalogue rows now exist (finding 5 in
+`docs/template-studio-acroform-parity.md`), so date of birth, secondary phone,
+preferred contact method and window, referral source and the emergency-contact
+block can each be bound in the editor at import time. They are left undeclared
+here rather than pre-bound: on a questionnaire the client fills in, an answer
+the firm already holds is usually the one worth confirming rather than
+pre-filling. Bind them if this copy is being prepared for the attorney instead.
 
 ## Before the firm collects card data
 

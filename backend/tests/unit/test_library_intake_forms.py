@@ -155,3 +155,71 @@ def test_no_default_suggests_an_amount_a_firm_must_decide(builder):
             assert (
                 "$" not in entry.default and "%" not in entry.default
             ), f"{form.slug}: {entry.name} suggests an amount"
+
+
+def test_authored_forms_carry_no_required_field(builder) -> None:
+    """reportlab marks every checkbox required unless told otherwise, and a
+    required checkbox that is false refuses to generate. An authored form must
+    therefore assert no requirement of its own."""
+
+    for form in _forms(builder):
+        content = (SEED_DIR / form.filename).read_bytes()
+        required = sorted(
+            field["name"]
+            for field in discover_pdf_fields(content)
+            if field["required"]
+        )
+        assert required == [], f"{form.slug} marks fields required: {required}"
+
+
+def test_authored_forms_generate_with_every_checkbox_false(builder) -> None:
+    """The answer to most checkboxes is "no". A form that cannot be generated
+    while they are false cannot be generated at all: the library's own yes/no
+    groups are mutually exclusive, so no set of answers would satisfy them."""
+
+    from app.services.pdf_templates import fill_pdf_template
+
+    for form in _forms(builder):
+        content = (SEED_DIR / form.filename).read_bytes()
+        fields = discover_pdf_fields(content)
+        variables = {
+            field["name"]: ("false" if field["field_type"] == "checkbox" else "Sample")
+            for field in fields
+        }
+        generated = fill_pdf_template(
+            content,
+            variable_schema={"version": 1, "fields": fields},
+            variables=variables,
+            flatten=True,
+            enforce_required=True,
+        )
+        assert generated.startswith(b"%PDF"), form.slug
+
+
+def test_radio_block_builds_one_exclusive_field(builder) -> None:
+    """``RADIO`` must produce a single field carrying its options, not one
+    independent checkbox per answer."""
+
+    form = builder.LibraryForm(
+        slug="radio-probe",
+        title="Radio probe",
+        category="intake",
+        description="probe",
+        blocks=(
+            builder.H1("Probe"),
+            builder.RADIO(
+                "Has the firm helped you before?",
+                "prior_representation",
+                (builder.Choice("yes", "Yes"), builder.Choice("no", "No")),
+            ),
+        ),
+    )
+    fields = {
+        field["name"]: field for field in discover_pdf_fields(builder.render(form))
+    }
+
+    assert set(fields) == {"prior_representation"}
+    assert fields["prior_representation"]["field_type"] == "radio"
+    assert fields["prior_representation"]["options"] == ["yes", "no"]
+    # Required would make the group impossible to satisfy.
+    assert fields["prior_representation"]["required"] is False

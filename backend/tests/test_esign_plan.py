@@ -383,3 +383,67 @@ def test_plan_request_placements_persists_placements_and_summary():
             signers=duplicate_roles,
             placements=[{"field_id": "x", "field_type": "signature", "role": "client"}],
         )
+
+
+@pytest.mark.parametrize(
+    ("name", "label", "expected"),
+    [
+        # The reported failure: "Middle Initial" is on a large share of intake
+        # forms, and matching it turned the client's own name box into a
+        # signing widget.
+        ("client_name", "Last Name, First Name, Middle Initial", False),
+        ("middle_initial", "Middle Initial", False),
+        ("full_name", "Full legal name", False),
+        ("ack", "Please initial each page to confirm you read it", False),
+        ("client_initials", "Client initials", True),
+        ("initials", "Initials", True),
+        ("initials_2", "Initials", True),
+        ("page_initials", "Initial here", True),
+        ("ack", "Initials:", True),
+    ],
+)
+def test_initials_classification(name: str, label: str, expected: bool) -> None:
+    from app.services.esign.plan import _is_initials_field
+
+    assert _is_initials_field(name, label) is expected
+
+
+def test_name_field_is_not_planned_as_an_initials_widget() -> None:
+    """End to end: a name box labelled the way Word forms label it stays text."""
+
+    from io import BytesIO
+
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    pdf.acroForm.textfield(
+        name="client_name",
+        tooltip="Last Name, First Name, Middle Initial",
+        x=54,
+        y=700,
+        width=300,
+        height=13,
+        fontSize=8.5,
+    )
+    pdf.acroForm.textfield(
+        name="client_initials",
+        tooltip="Client initials",
+        x=54,
+        y=660,
+        width=80,
+        height=13,
+        fontSize=8.5,
+    )
+    pdf.showPage()
+    pdf.save()
+
+    plan = build_plan(
+        buffer.getvalue(),
+        signers=[SignerRef(id="s1", name="Client", role="client")],
+    )
+    initials = {
+        field.pdf_field_name for field in plan.fields if field.kind == "initials"
+    }
+    assert initials == {"client_initials"}

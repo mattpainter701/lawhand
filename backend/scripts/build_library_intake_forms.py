@@ -78,6 +78,16 @@ RULE = Color(0.78, 0.80, 0.84)
 #: to smuggle a document into a form field.
 MAXLEN = 2000
 
+#: reportlab defaults ``checkbox`` to ``fieldFlags='required'`` and ``radio`` to
+#: ``'noToggleToOff required radio'``. A required checkbox that is false blocks
+#: generation outright (``fill_pdf_template`` raises "Required PDF field(s) are
+#: empty or unchecked"), and for a yes/no group the requirement is not even
+#: satisfiable, so both are declared optional here. ``radio`` is kept because it
+#: is what makes a group mutually exclusive; ``noToggleToOff`` is dropped so a
+#: mis-click can be cleared.
+CHECKBOX_FLAGS = ""
+RADIO_FLAGS = "radio"
+
 
 @dataclass(frozen=True)
 class Field:
@@ -96,6 +106,19 @@ class Field:
     weight: float = 1.0
     lines: int = 0
     default: str = ""
+
+
+@dataclass(frozen=True)
+class Choice:
+    """One option inside a radio group.
+
+    ``value`` becomes the widget's on-state, which is what
+    ``discover_pdf_fields`` reports in ``options`` and what a generated
+    document must supply.
+    """
+
+    value: str
+    label: str
 
 
 def H1(text: str) -> tuple:
@@ -132,6 +155,24 @@ def BLOCK(field: Field) -> tuple:
 
 def CHECKS(prompt: str, options: tuple[Field, ...], columns: int = 3) -> tuple:
     return ("checks", prompt, options, columns)
+
+
+def RADIO(
+    prompt: str,
+    name: str,
+    choices: tuple[Choice, ...],
+    binding: str = "",
+    label: str = "",
+) -> tuple:
+    """One mutually exclusive question.
+
+    ``CHECKS`` models a yes/no question as two independent boxes, which a
+    client can tick both of. A radio group is the AcroForm shape that says one
+    answer: the reader enforces the exclusivity and the engine reports a single
+    field carrying ``options``.
+    """
+
+    return ("radio", prompt, name, choices, binding, label or prompt)
 
 
 def SIGN(label: str) -> tuple:
@@ -172,7 +213,18 @@ class LibraryForm:
         return found
 
     def bindings(self) -> dict[str, str]:
-        return {entry.name: entry.binding for entry in self.fields() if entry.binding}
+        declared = {
+            entry.name: entry.binding for entry in self.fields() if entry.binding
+        }
+        for block in self.blocks:
+            if block[0] == "radio" and block[4]:
+                declared[block[2]] = block[4]
+        return declared
+
+    def radio_names(self) -> list[str]:
+        """Field names contributed by radio groups rather than ``Field`` rows."""
+
+        return [block[2] for block in self.blocks if block[0] == "radio"]
 
 
 class Sheet:
@@ -352,9 +404,57 @@ class Sheet:
                 borderColor=FIELD_BORDER,
                 fillColor=FIELD_FILL,
                 textColor=black,
+                fieldFlags=CHECKBOX_FLAGS,
             )
             self.canvas.setFont("Helvetica", 8.4)
             self.canvas.drawString(x + CHECK_SIZE + 5, self.y + 1.5, entry.label)
+        self.y -= 6
+
+    def radio_group(
+        self, prompt: str, name: str, choices: tuple[Choice, ...], label: str
+    ) -> None:
+        """A prompt and its mutually exclusive options, on one line if they fit."""
+
+        option_width = 14.0 + CHECK_SIZE
+        options_width = sum(
+            option_width + self.canvas.stringWidth(choice.label, "Helvetica", 8.4)
+            for choice in choices
+        )
+        prompt_width = self.canvas.stringWidth(prompt, *BODY)
+        one_line = prompt_width + 12 + options_width <= self.width
+
+        self.space(CHECK_SIZE + 24 if one_line else CHECK_SIZE + 24 + LEADING)
+        if one_line:
+            self.y -= CHECK_SIZE + 8
+            self.canvas.setFont(*BODY)
+            self.canvas.drawString(MARGIN, self.y + 1.5, prompt)
+            x = MARGIN + prompt_width + 12
+        else:
+            self.paragraph(prompt, gap=1.0)
+            self.y -= CHECK_SIZE + 5
+            x = MARGIN
+
+        self.placed.append(name)
+        for choice in choices:
+            self.canvas.acroForm.radio(
+                name=name,
+                value=choice.value,
+                tooltip=label,
+                selected=False,
+                x=x,
+                y=self.y,
+                size=CHECK_SIZE,
+                buttonStyle="circle",
+                shape="circle",
+                borderWidth=0.6,
+                borderColor=FIELD_BORDER,
+                fillColor=FIELD_FILL,
+                textColor=black,
+                fieldFlags=RADIO_FLAGS,
+            )
+            self.canvas.setFont("Helvetica", 8.4)
+            self.canvas.drawString(x + CHECK_SIZE + 4, self.y + 1.5, choice.label)
+            x += option_width + self.canvas.stringWidth(choice.label, "Helvetica", 8.4)
         self.y -= 6
 
     def signature(self, label: str) -> None:
@@ -411,6 +511,8 @@ def render(form: LibraryForm) -> bytes:
             sheet.block(block[1])
         elif kind == "checks":
             sheet.checks(block[1], block[2], block[3])
+        elif kind == "radio":
+            sheet.radio_group(block[1], block[2], block[3], block[5])
         elif kind == "sign":
             sheet.signature(block[1])
         elif kind == "keep":
@@ -1623,6 +1725,16 @@ def build_form(form: LibraryForm, out_dir: Path) -> dict:
     )
     if invalid:
         raise SystemExit(f"{form.slug}: unknown binding paths: {', '.join(invalid)}")
+    # A field the source PDF marks required can never be weakened afterwards —
+    # the save path ORs it and the renderer re-reads it from the live PDF — and
+    # a required checkbox that is false refuses to generate. An authored form
+    # must therefore carry no required field at all.
+    required = sorted(field["name"] for field in fields if field["required"])
+    if required:
+        raise SystemExit(
+            f"{form.slug}: fields marked required by the source PDF, which "
+            f"blocks generation: {', '.join(required)}"
+        )
     destination = out_dir / form.filename
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(content)
