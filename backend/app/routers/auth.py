@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from jose import jwt
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -75,6 +76,7 @@ from app.services.user_invitations import (
     resolve_invitation,
 )
 from app.services.workspace_mcp_access import lock_tenant_workspace_mcp_policy
+from app.utils.auth_errors import AuthRefusal
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -1050,6 +1052,118 @@ async def _resolve_oauth_tenant_and_user(
     return tenant, user, tenant_existed
 
 
+# ── Invitation acceptance through Google / Microsoft ───────────────────────────
+
+
+def _identity_already_linked() -> AuthRefusal:
+    return AuthRefusal(
+        code="identity_already_linked",
+        status_code=409,
+        detail=(
+            "This sign-in account is already linked to another LawHand user. "
+            "Use a different account or contact your firm administrator."
+        ),
+    )
+
+
+async def _precheck_invitation(db: AsyncSession, raw_token: str) -> None:
+    """Refuse a bad invitation link before sending anyone to the provider."""
+    try:
+        await resolve_invitation(db, raw_token)
+    finally:
+        # The lookup only reads; end its transaction so no GUC outlives it.
+        await db.rollback()
+
+
+async def _accept_invitation_via_oauth(
+    db: AsyncSession,
+    *,
+    raw_token: str,
+    provider: str,
+    email: str,
+    full_name: str | None,
+    subject: str,
+    entra_tenant_id: str | None = None,
+    entra_object_id: str | None = None,
+) -> tuple[Tenant, User]:
+    """Link a verified Google/Microsoft identity to an invited user and activate it.
+
+    Two things must both hold: the person holds a valid, unused invitation, and
+    the provider reports the address that invitation was sent to. A forwarded
+    link therefore cannot bind someone else's account. Microsoft's email/UPN is
+    only used here as that second factor on top of the token, never on its own.
+
+    Every check runs before the invitation is claimed, so a refused attempt
+    leaves the link usable for the right account. Must run inside a
+    transaction; any failure rolls back the claim with everything else.
+    """
+    ctx = await resolve_invitation(db, raw_token)
+    user = ctx.user
+
+    if (email or "").strip().lower() != (user.email or "").strip().lower():
+        raise AuthRefusal(
+            code="invite_email_mismatch",
+            status_code=403,
+            detail=(
+                "This invitation was sent to a different address. Sign in with "
+                "the account the invitation was sent to."
+            ),
+        )
+
+    # Identity collision checks are deliberately cross-tenant: one provider
+    # identity must never map to two LawHand users anywhere.
+    await enable_rls_bypass(db)
+    try:
+        other = await _resolve_existing_oauth_user(
+            db,
+            email=email,
+            provider=provider,
+            subject=subject,
+            allow_verified_email_match=False,
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+        )
+    except HTTPException as exc:
+        raise _identity_already_linked() from exc
+    if other is not None and other.id != user.id:
+        raise _identity_already_linked()
+    if user.oauth_subject and (user.oauth_provider, user.oauth_subject) != (
+        provider,
+        subject,
+    ):
+        raise _identity_already_linked()
+
+    await claim_invitation(db, ctx.invitation.id, provider)
+
+    if provider == "microsoft":
+        try:
+            _link_microsoft_identity(
+                user,
+                subject=subject,
+                entra_tenant_id=entra_tenant_id,
+                entra_object_id=entra_object_id,
+            )
+        except HTTPException as exc:
+            raise _identity_already_linked() from exc
+    else:
+        user.oauth_provider = provider
+        user.oauth_subject = subject
+    if full_name and not user.full_name:
+        user.full_name = full_name
+    if (user.password_hash or "").startswith("invite:"):
+        # A legacy invite placeholder is not a bcrypt hash; leaving it would
+        # make a later password sign-in attempt fail with a server error.
+        user.password_hash = None
+    user.is_active = True
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        raise _identity_already_linked() from exc
+
+    logger.info("Invitation accepted user_id=%s method=%s", user.id, provider)
+    return ctx.tenant, user
+
+
 # ── Microsoft OAuth ────────────────────────────────────────────────────────────
 
 
@@ -1065,13 +1179,20 @@ async def microsoft_login(
     phone: str = "",
     staff_size: str = "",
     return_to: str = "",
+    invite: str = "",
+    db: AsyncSession = Depends(get_db),
 ):
+    if invite:
+        # An invitation is for an existing firm; it never starts a signup.
+        signup = ""
     if signup == "true":
         _require_public_signup_enabled()
     if not _oauth_configured(
         settings.MICROSOFT_CLIENT_ID, settings.MICROSOFT_CLIENT_SECRET
     ):
         raise HTTPException(status_code=501, detail="Microsoft OAuth not configured")
+    if invite:
+        await _precheck_invitation(db, invite)
 
     state = secrets.token_urlsafe(32)
     signup_data = None
@@ -1084,16 +1205,15 @@ async def microsoft_login(
         }
     nonce = generate_nonce()
     code_verifier, code_challenge = generate_pkce_pair()
-    await _save_state(
-        request,
-        state,
-        {
-            "signup": signup_data,
-            "nonce": nonce,
-            "pkce_verifier": code_verifier,
-            "return_to": _validated_return_to(return_to),
-        },
-    )
+    state_data = {
+        "signup": signup_data,
+        "nonce": nonce,
+        "pkce_verifier": code_verifier,
+        "return_to": _validated_return_to(return_to),
+    }
+    if invite:
+        state_data["invite"] = invite
+    await _save_state(request, state, state_data)
 
     ms_tenant = settings.MICROSOFT_TENANT_ID
     redirect_uri = f"{settings.BACKEND_URL}/api/auth/microsoft/callback"
@@ -1223,35 +1343,49 @@ async def microsoft_callback(
         phone = None
         staff_size = None
 
-    async with db.begin():
-        # OAuth identity matching is intentionally cross-tenant: resolve an
-        # already-provisioned user before considering domain-based provisioning.
-        await enable_rls_bypass(db)
-        tenant, user, tenant_exists = await _resolve_oauth_tenant_and_user(
-            db,
-            email=email,
-            full_name=full_name,
-            provider="microsoft",
-            subject=ms_sub,
-            entra_tenant_id=claims.get("tid"),
-            entra_object_id=claims.get("oid"),
-            domain=domain,
-            tenant_name=tenant_name,
-            company_name=company_name,
-            address=address,
-            phone=phone,
-            staff_size=staff_size,
-        )
-        await ensure_stripe_customer(tenant, db)
+    invite_token = state_meta.get("invite")
+    if invite_token:
+        async with db.begin():
+            tenant, user = await _accept_invitation_via_oauth(
+                db,
+                raw_token=invite_token,
+                provider="microsoft",
+                email=email,
+                full_name=full_name,
+                subject=ms_sub,
+                entra_tenant_id=claims.get("tid"),
+                entra_object_id=claims.get("oid"),
+            )
+    else:
+        async with db.begin():
+            # OAuth identity matching is intentionally cross-tenant: resolve an
+            # already-provisioned user before considering domain-based provisioning.
+            await enable_rls_bypass(db)
+            tenant, user, tenant_exists = await _resolve_oauth_tenant_and_user(
+                db,
+                email=email,
+                full_name=full_name,
+                provider="microsoft",
+                subject=ms_sub,
+                entra_tenant_id=claims.get("tid"),
+                entra_object_id=claims.get("oid"),
+                domain=domain,
+                tenant_name=tenant_name,
+                company_name=company_name,
+                address=address,
+                phone=phone,
+                staff_size=staff_size,
+            )
+            await ensure_stripe_customer(tenant, db)
 
-        # New firm: the first user of a brand-new tenant is created as admin by
-        # _get_or_create_user. Seed system roles + assign Administrator so the
-        # minted JWT carries manage_roles/admin_settings caps. Inside db.begin()
-        # so provision flushes only; the transaction block commits on exit.
-        if not tenant_exists:
-            from app.services.rbac_service import provision_tenant_rbac
+            # New firm: the first user of a brand-new tenant is created as admin by
+            # _get_or_create_user. Seed system roles + assign Administrator so the
+            # minted JWT carries manage_roles/admin_settings caps. Inside db.begin()
+            # so provision flushes only; the transaction block commits on exit.
+            if not tenant_exists:
+                from app.services.rbac_service import provision_tenant_rbac
 
-            await provision_tenant_rbac(db, tenant.id, user.id)
+                await provision_tenant_rbac(db, tenant.id, user.id)
 
     jwt_token = await _issue_access_token(db, user, tenant)
     await _save_callback_replay(request, state, code, jwt_token, return_to)
@@ -1271,11 +1405,18 @@ async def google_login(
     phone: str = "",
     staff_size: str = "",
     return_to: str = "",
+    invite: str = "",
+    db: AsyncSession = Depends(get_db),
 ):
+    if invite:
+        # An invitation is for an existing firm; it never starts a signup.
+        signup = ""
     if signup == "true":
         _require_public_signup_enabled()
     if not _oauth_configured(settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET):
         raise HTTPException(status_code=501, detail="Google OAuth not configured")
+    if invite:
+        await _precheck_invitation(db, invite)
 
     state = secrets.token_urlsafe(32)
     signup_data = None
@@ -1288,16 +1429,15 @@ async def google_login(
         }
     nonce = generate_nonce()
     code_verifier, code_challenge = generate_pkce_pair()
-    await _save_state(
-        request,
-        state,
-        {
-            "signup": signup_data,
-            "nonce": nonce,
-            "pkce_verifier": code_verifier,
-            "return_to": _validated_return_to(return_to),
-        },
-    )
+    state_data = {
+        "signup": signup_data,
+        "nonce": nonce,
+        "pkce_verifier": code_verifier,
+        "return_to": _validated_return_to(return_to),
+    }
+    if invite:
+        state_data["invite"] = invite
+    await _save_state(request, state, state_data)
 
     redirect_uri = f"{settings.BACKEND_URL}/api/auth/google/callback"
     encoded_redirect = urllib.parse.quote(redirect_uri, safe="")
@@ -1410,33 +1550,45 @@ async def google_callback(
         phone = None
         staff_size = None
 
-    async with db.begin():
-        # OAuth identity matching is intentionally cross-tenant: resolve an
-        # already-provisioned user before considering domain-based provisioning.
-        await enable_rls_bypass(db)
-        tenant, user, tenant_exists = await _resolve_oauth_tenant_and_user(
-            db,
-            email=email,
-            full_name=full_name,
-            provider="google",
-            subject=google_sub,
-            domain=domain,
-            tenant_name=tenant_name,
-            company_name=company_name,
-            address=address,
-            phone=phone,
-            staff_size=staff_size,
-        )
-        await ensure_stripe_customer(tenant, db)
+    invite_token = state_meta.get("invite")
+    if invite_token:
+        async with db.begin():
+            tenant, user = await _accept_invitation_via_oauth(
+                db,
+                raw_token=invite_token,
+                provider="google",
+                email=email,
+                full_name=full_name,
+                subject=google_sub,
+            )
+    else:
+        async with db.begin():
+            # OAuth identity matching is intentionally cross-tenant: resolve an
+            # already-provisioned user before considering domain-based provisioning.
+            await enable_rls_bypass(db)
+            tenant, user, tenant_exists = await _resolve_oauth_tenant_and_user(
+                db,
+                email=email,
+                full_name=full_name,
+                provider="google",
+                subject=google_sub,
+                domain=domain,
+                tenant_name=tenant_name,
+                company_name=company_name,
+                address=address,
+                phone=phone,
+                staff_size=staff_size,
+            )
+            await ensure_stripe_customer(tenant, db)
 
-        # New firm: the first user of a brand-new tenant is created as admin by
-        # _get_or_create_user. Seed system roles + assign Administrator so the
-        # minted JWT carries manage_roles/admin_settings caps. Inside db.begin()
-        # so provision flushes only; the transaction block commits on exit.
-        if not tenant_exists:
-            from app.services.rbac_service import provision_tenant_rbac
+            # New firm: the first user of a brand-new tenant is created as admin by
+            # _get_or_create_user. Seed system roles + assign Administrator so the
+            # minted JWT carries manage_roles/admin_settings caps. Inside db.begin()
+            # so provision flushes only; the transaction block commits on exit.
+            if not tenant_exists:
+                from app.services.rbac_service import provision_tenant_rbac
 
-            await provision_tenant_rbac(db, tenant.id, user.id)
+                await provision_tenant_rbac(db, tenant.id, user.id)
 
     jwt_token = await _issue_access_token(db, user, tenant)
     await _save_callback_replay(request, state, code, jwt_token, return_to)
