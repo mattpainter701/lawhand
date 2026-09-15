@@ -53,6 +53,9 @@ class UserResponse(BaseModel):
     privacy_mode: bool = False
     workspace_mcp_enabled: bool = True
     workspace_mcp_active_grant_count: int = 0
+    # Set only while an invitation is open (not accepted, not revoked).
+    invitation_status: Optional[str] = None
+    invitation_expires_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

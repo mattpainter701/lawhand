@@ -7,6 +7,8 @@ import {
   reactivateUser,
   updateUser,
   inviteUser,
+  resendInvitation,
+  revokeInvitation,
   getAdminUsage,
   getUsageByUser,
   getAdminTenant,
@@ -19,6 +21,7 @@ import {
   assignUserRoles,
 } from '../api'
 import { format } from 'date-fns'
+import { invitationLabel, isInvitee, partitionUsers } from '../utils/invitations'
 import { useConfirm } from '../components/dialog/ConfirmProvider'
 import PromptAdminPage from './PromptAdminPage'
 import RolesTab from './admin/RolesTab'
@@ -508,6 +511,7 @@ function UsersTab({ billingTier, onNavigateMcp }) {
   const [error, setError] = useState(null)
   const [deactivating, setDeactivating] = useState(null)
   const [reactivating, setReactivating] = useState(null)
+  const [invitationBusy, setInvitationBusy] = useState(null)
   const [changingRole, setChangingRole] = useState(null)
   const [changingAccess, setChangingAccess] = useState(null)
   const [availableRoles, setAvailableRoles] = useState([])
@@ -594,6 +598,40 @@ function UsersTab({ billingTier, onNavigateMcp }) {
     }
   }
 
+  // Someone who was invited has no credential of their own until they accept,
+  // so they are brought in with a fresh link rather than switched on.
+  const handleResendInvite = async (u) => {
+    setInvitationBusy(u.id)
+    try {
+      await resendInvitation(u.id)
+      flash(`New invitation sent to ${u.email}. The previous link no longer works.`)
+      loadUsers()
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to resend invitation')
+    } finally {
+      setInvitationBusy(null)
+    }
+  }
+
+  const handleRevokeInvite = async (u) => {
+    if (!await confirmAction({
+      title: 'Revoke invitation?',
+      message: `The link sent to ${u.email} will stop working. You can send a new invitation later.`,
+      confirmLabel: 'Revoke invitation',
+      destructive: true,
+    })) return
+    setInvitationBusy(u.id)
+    try {
+      await revokeInvitation(u.id)
+      flash(`Invitation for ${u.email} revoked.`)
+      loadUsers()
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Failed to revoke invitation')
+    } finally {
+      setInvitationBusy(null)
+    }
+  }
+
   const handleAssignRoles = async (u, roleIds) => {
     if (!await confirmAction({ title: 'Update role assignments?', message: `Apply these role changes for ${u.email}?`, confirmLabel: 'Update roles' })) return
     setChangingRole(u.id)
@@ -637,9 +675,12 @@ function UsersTab({ billingTier, onNavigateMcp }) {
   if (loading) return <Spinner />
   if (error) return <ErrorMsg msg={error} />
 
-  const activeUsers = users.filter((u) => u.is_active !== false)
-  const inactiveUsers = users.filter((u) => u.is_active === false)
-  const displayUsers = showInactive ? users : activeUsers
+  const {
+    active: activeUsers,
+    invited: invitedUsers,
+    inactive: inactiveUsers,
+  } = partitionUsers(users)
+  const displayUsers = showInactive ? users : [...activeUsers, ...invitedUsers]
   const workspacePolicy = workspaceOverview?.workspace || { status_available: false }
   const managedMcpUser = users.find((u) => u.id === managingMcpUserId) || null
 
@@ -650,7 +691,7 @@ function UsersTab({ billingTier, onNavigateMcp }) {
           onClose={() => setShowInvite(false)}
           onSuccess={() => {
             setShowInvite(false)
-            flash('Invitation sent.')
+            flash('Invitation sent. The link expires in 7 days.')
             loadUsers()
           }}
         />
@@ -660,7 +701,9 @@ function UsersTab({ billingTier, onNavigateMcp }) {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <p className="text-sm text-brand-muted font-sans">
-            {activeUsers.length} active{inactiveUsers.length > 0 && `, ${inactiveUsers.length} inactive`}
+            {activeUsers.length} active
+            {invitedUsers.length > 0 && `, ${invitedUsers.length} invited`}
+            {inactiveUsers.length > 0 && `, ${inactiveUsers.length} inactive`}
           </p>
           {inactiveUsers.length > 0 && (
             <button
@@ -706,14 +749,26 @@ function UsersTab({ billingTier, onNavigateMcp }) {
             {displayUsers.map((u) => {
               const usage = usageByUser[u.id]
               const isInactive = u.is_active === false
+              const invitation = isInvitee(u) ? u.invitation_status : null
               return (
                 <tr
                   key={u.id}
-                  className={`hover:bg-brand-bg-soft transition-colors ${isInactive ? 'opacity-60' : ''}`}
+                  className={`hover:bg-brand-bg-soft transition-colors ${isInactive && !invitation ? 'opacity-60' : ''}`}
                 >
                   <td className="px-6 py-4">
                     <p className="text-brand-ink font-sans font-medium text-sm">{u.full_name || u.email}</p>
                     {u.full_name && <p className="text-brand-muted font-sans text-xs">{u.email}</p>}
+                    {invitation && (
+                      <span
+                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-sans font-medium ${
+                          invitation === 'pending'
+                            ? 'bg-brand-accent/10 text-brand-accent'
+                            : 'bg-brand-rose/10 text-brand-rose'
+                        }`}
+                      >
+                        {invitationLabel(u)}
+                      </span>
+                    )}
                     <UserAliases user={u} />
                   </td>
                   <td className="px-6 py-4">
@@ -761,6 +816,28 @@ function UsersTab({ billingTier, onNavigateMcp }) {
                     />
                   </td>
                   <td className="px-6 py-4">
+                    {invitation ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleResendInvite(u)}
+                          disabled={invitationBusy === u.id}
+                          className="rounded-lg border border-brand-line px-3 py-1.5 text-xs font-sans font-medium text-brand-ink hover:bg-brand-bg-soft disabled:opacity-50"
+                        >
+                          {invitationBusy === u.id ? 'Saving...' : 'Resend invite'}
+                        </button>
+                        {invitation !== 'revoked' && (
+                          <button
+                            type="button"
+                            onClick={() => handleRevokeInvite(u)}
+                            disabled={invitationBusy === u.id}
+                            className="rounded-lg px-3 py-1.5 text-xs font-sans font-medium text-brand-rose hover:bg-brand-rose/10 disabled:opacity-50"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </div>
+                    ) : (
                     <div className="inline-flex items-center gap-3">
                       <button
                         type="button"
@@ -784,6 +861,7 @@ function UsersTab({ billingTier, onNavigateMcp }) {
                           : !isInactive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
+                    )}
                   </td>
                 </tr>
               )

@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.15.05",
+      "version": "2026.09.15.05",
+      "title": "Invitations work, and sign-in explains a refusal",
+      "published_at": "2026-09-15",
+      "summary": "Invited colleagues can accept by choosing a password or continuing with Google or Microsoft, and a refused Google or Microsoft sign-in now explains why instead of showing an error code.",
+      "highlights": [
+        {
+          "title": "Accept an invitation your way",
+          "description": "The invitation email opens a page for your firm where you set a password or continue with the Google or Microsoft account the invitation was sent to."
+        },
+        {
+          "title": "Invitations are single use and expire",
+          "description": "Each link works once and expires after seven days. Administrators can resend or revoke an invitation from the Users list, where invited people now appear."
+        },
+        {
+          "title": "A clear message when sign-in is refused",
+          "description": "If Google or Microsoft sign-in cannot continue, for example for an account that has not been invited, the sign-in page says why and what to do next."
+        },
+        {
+          "title": "Earlier invitation links still open",
+          "description": "Invitations sent before this update open the new page and get a fresh seven-day window."
+        }
+      ]
+    },
+    {
       "id": "2026.09.15.04",
       "version": "2026.09.15.04",
       "title": "Assistant settings stick, and document access says who can see what",

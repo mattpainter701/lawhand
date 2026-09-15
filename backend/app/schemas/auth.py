@@ -57,6 +57,33 @@ class ResetPasswordRequest(BaseModel):
     _validate_password = field_validator("password")(_reject_common_password)
 
 
+class InviteLookupRequest(BaseModel):
+    # POSTed rather than put in a query string so the token stays out of
+    # access logs.
+    token: str = Field(min_length=1, max_length=128)
+
+
+class InviteProviders(BaseModel):
+    password: bool = True
+    google: bool = False
+    microsoft: bool = False
+
+
+class InviteLookupResponse(BaseModel):
+    email_masked: str
+    full_name: Optional[str] = None
+    firm_name: Optional[str] = None
+    expires_at: datetime
+    providers: InviteProviders
+
+
+class InviteAcceptRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=12, max_length=128)
+
+    _validate_password = field_validator("password")(_reject_common_password)
+
+
 class OAuthCallbackExchangeRequest(BaseModel):
     code: str = Field(min_length=16, max_length=256)
 

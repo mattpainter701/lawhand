@@ -225,6 +225,7 @@ const WORKSPACE_ROUTE_TITLES = [
   ['/demo', 'Guided demo'],
   ['/forgot-password', 'Reset password'],
   ['/reset-password', 'Reset password'],
+  ['/accept-invite', 'Accept invitation'],
   ['/auth/callback', 'Completing sign in'],
   ['/portal/client/matter', 'Secure client portal'],
   ['/portal/client/accept', 'Secure client portal'],

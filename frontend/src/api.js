@@ -344,19 +344,24 @@ export const isSafeInternalReturnTo = (value) =>
   /^\/(?!\/)/.test(value) &&
   !hasUnsafeReturnCharacter(value)
 
-export const buildOAuthLoginUrl = (provider, destination) => {
-  const query = isSafeInternalReturnTo(destination)
-    ? `?return_to=${encodeURIComponent(destination)}`
-    : ''
+export const buildOAuthLoginUrl = (provider, destination, { invite } = {}) => {
+  const params = []
+  if (isSafeInternalReturnTo(destination)) {
+    params.push(`return_to=${encodeURIComponent(destination)}`)
+  }
+  // An invitation token rides along so the callback can link this provider
+  // account to the invited person. The backend checks it before redirecting.
+  if (invite) params.push(`invite=${encodeURIComponent(invite)}`)
+  const query = params.length ? `?${params.join('&')}` : ''
   return `${BASE_URL}/auth/${provider}/login${query}`
 }
 
-export const loginMicrosoft = (destination) => {
-  window.location.href = buildOAuthLoginUrl('microsoft', destination)
+export const loginMicrosoft = (destination, options) => {
+  window.location.href = buildOAuthLoginUrl('microsoft', destination, options)
 }
 
-export const loginGoogle = (destination) => {
-  window.location.href = buildOAuthLoginUrl('google', destination)
+export const loginGoogle = (destination, options) => {
+  window.location.href = buildOAuthLoginUrl('google', destination, options)
 }
 
 export const checkOAuthStatus = () =>
@@ -369,6 +374,13 @@ export const forgotPassword = (email) =>
 
 export const resetPassword = (token, password) =>
   api.post('/auth/reset-password', { token, password }).then((r) => r.data)
+
+// Staff invitations. Tokens travel in request bodies, never query strings.
+export const lookupInvitation = (token) =>
+  api.post('/auth/invite/lookup', { token }).then((r) => r.data)
+
+export const acceptInvitation = (token, password) =>
+  api.post('/auth/invite/accept', { token, password }).then((r) => r.data)
 
 // Conversations
 export const getConversations = (params) =>
@@ -704,6 +716,12 @@ export const setUserBillingRate = (userId, rate) =>
 
 export const inviteUser = (data) =>
   api.post('/admin/users/invite', data).then((r) => r.data)
+
+export const resendInvitation = (userId) =>
+  api.post(`/admin/users/${userId}/invitation/resend`).then((r) => r.data)
+
+export const revokeInvitation = (userId) =>
+  api.delete(`/admin/users/${userId}/invitation`)
 
 export const getUsageByUser = (days = 30) =>
   api.get('/admin/usage/by-user', { params: { days } }).then((r) => r.data)

@@ -11,6 +11,7 @@ from app.models.platform import PlatformSetting
 from app.models.llm_routing_profile import LLMRoutingProfile
 from app.models.user import User, UserMemory
 from app.models.user_alias import UserAliasAddress
+from app.models.user_invitation import UserInvitation
 from app.models.document import Document, Chunk
 from app.models.conversation import Conversation, Message, UsageRecord
 from app.models.plugin import (
@@ -271,6 +272,7 @@ __all__ = [
     "User",
     "UserMemory",
     "UserAliasAddress",
+    "UserInvitation",
     "Document",
     "Chunk",
     "Conversation",
