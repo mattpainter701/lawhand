@@ -9,6 +9,24 @@ const sourceMissing = (template) => {
   return !template?.source_filename || !template?.source_sha256
 }
 
+/**
+ * How much of this template arrives filled, where templates are compared.
+ *
+ * The number is the whole promise of document automation, and until the server
+ * carried it a firm could only find it by opening each template in an editor —
+ * which is no way to tell a well-wired one from a badly-wired one. Silent
+ * where there are no fields yet: "0 of 0" on a template nobody has set up is
+ * noise, not information.
+ */
+function FillCoverage({ coverage }) {
+  if (!coverage?.total) return null
+  return (
+    <span className="block text-xs text-brand-muted">
+      {coverage.fills} of {coverage.total} fields fill from the matter
+    </span>
+  )
+}
+
 function TemplateLink({ template }) {
   return (
     <Link
@@ -18,6 +36,7 @@ function TemplateLink({ template }) {
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-brand-ink">{template.title}</span>
         <span className="block text-xs text-brand-muted">{template.format || 'markdown'}</span>
+        <FillCoverage coverage={template.fill_coverage} />
       </span>
       <ArrowRight size={15} className="shrink-0 text-brand-muted group-hover:text-brand-accent-2" aria-hidden="true" />
     </Link>

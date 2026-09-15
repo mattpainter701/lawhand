@@ -240,20 +240,30 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   const canvasHeight = viewport?.height
     || (Number(page.rotation || 0) % 180 ? Number(page.width) : Number(page.height)) * zoom
 
+  // Everything `undo` restores, captured once. Two of the six push sites had
+  // drifted from it: `commitRegions` and the Word review handler snapshotted
+  // `{ fields, regions, sourceReview }`, so undoing a region edit restored
+  // `previous.coverRegions || []` over the real covers and the next save
+  // persisted the empty list. Both keys are read whatever the format.
+  const editorSnapshot = useCallback(
+    () => ({ fields, regions, coverRegions, sourceReview }),
+    [fields, regions, coverRegions, sourceReview],
+  )
+
   const commitFields = useCallback((nextFields) => {
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     redoStack.current = []
     setHistoryVersion((value) => value + 1)
     setFields(nextFields)
     setDirty(true)
     setSaveError('')
-  }, [fields, regions, coverRegions, sourceReview])
+  }, [editorSnapshot])
 
   const undo = () => {
     const previous = undoStack.current.at(-1)
     if (!previous) return
     undoStack.current = undoStack.current.slice(0, -1)
-    redoStack.current = [...redoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    redoStack.current = [...redoStack.current.slice(-49), editorSnapshot()]
     setHistoryVersion((value) => value + 1)
     setFields(previous.fields)
     setRegions(previous.regions)
@@ -266,7 +276,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     const next = redoStack.current.at(-1)
     if (!next) return
     redoStack.current = redoStack.current.slice(0, -1)
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     setHistoryVersion((value) => value + 1)
     setFields(next.fields)
     setRegions(next.regions)
@@ -319,7 +329,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const commitCoverRegions = (nextCoverRegions) => {
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     redoStack.current = []
     setHistoryVersion((value) => value + 1)
     setCoverRegions(nextCoverRegions)
@@ -354,7 +364,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const commitRegions = (nextRegions) => {
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     redoStack.current = []
     setHistoryVersion((value) => value + 1)
     setRegions(nextRegions)
@@ -608,7 +618,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
             onModeSuggestion={setSourceModeSuggestion}
             onParagraphs={setWordParagraphs}
             onReviewChange={template.variable_schema?.source_review_version === 1 ? (next) => {
-              undoStack.current = [...undoStack.current.slice(-49), { fields, regions, sourceReview }]
+              undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
               redoStack.current = []
               setHistoryVersion(value => value + 1)
               setSourceReview(next)
@@ -732,9 +742,39 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                   className={`group rounded-sm border-2 ${fillColor ? 'bg-white/35' : active ? 'border-brand-accent bg-brand-accent/20' : 'border-brand-accent-2/70 bg-brand-accent-2/10'} ${active ? 'ring-2 ring-brand-accent ring-offset-1' : ''} ${locked ? 'cursor-not-allowed' : 'cursor-move'}`}
                   style={fillColor ? { borderColor: fillColor } : undefined}
                 >
-                  <span className={`pointer-events-none block max-w-full truncate rounded-sm px-1.5 py-0.5 text-[10px] font-semibold text-white ${fillColor ? '' : 'bg-brand-ink'}`} style={fillColor ? { backgroundColor: fillColor } : undefined}>
-                    {entry.field.label || entry.field.name}
-                  </span>
+                  {/* A focusable control rather than a decorative label. The
+                      placement used to be a bare Rnd with a pointer-events-none
+                      span, so a keyboard-only author could not select, move or
+                      remove a field from this canvas at all — only drag it with
+                      a mouse. Same nudge and delete keys as the intake editor. */}
+                  <button
+                    type="button"
+                    aria-label={showFills && coverage.states.has(entry.field.name)
+                      ? `Select ${entry.field.label || entry.field.name} — ${FILL_STATE_LABELS[coverage.states.get(entry.field.name)]}`
+                      : `Select ${entry.field.label || entry.field.name}`}
+                    onClick={() => setSelectedIdentity(entry.identity)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Delete' || event.key === 'Backspace') {
+                        event.preventDefault()
+                        removeField(entry)
+                        return
+                      }
+                      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) || locked) return
+                      event.preventDefault()
+                      const delta = event.shiftKey ? 10 : 1
+                      updateGeometry(entry, index, {
+                        x: rect.x + (event.key === 'ArrowRight' ? delta : event.key === 'ArrowLeft' ? -delta : 0),
+                        y: rect.y + (event.key === 'ArrowDown' ? delta : event.key === 'ArrowUp' ? -delta : 0),
+                        width: rect.width,
+                        height: rect.height,
+                      })
+                    }}
+                    className="block h-full w-full text-left"
+                  >
+                    <span className={`block max-w-full truncate rounded-sm px-1.5 py-0.5 text-[10px] font-semibold text-white ${fillColor ? '' : 'bg-brand-ink'}`} style={fillColor ? { backgroundColor: fillColor } : undefined}>
+                      {entry.field.label || entry.field.name}
+                    </span>
+                  </button>
                 </Rnd>
               )
             })}
@@ -787,15 +827,35 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                 />
               </PropertyRow>
               {selected.context && <p className="text-xs text-brand-muted">Source context: {selected.context}</p>}
+              {/* "Paragraph" is `{ field_type: 'text', multiline: true }` — the
+                  shape `createManualField` writes, the intake editor writes and
+                  the renderer reads (`pdf_templates.py` keys wrapping off the
+                  boolean). Studio used to offer `multiline` as a field_type and
+                  store it without the boolean, so a paragraph re-typed here
+                  silently stopped wrapping, and a paragraph authored at intake
+                  read back as plain text.
+
+                  An AcroForm field's type is the source's to state:
+                  `_reviewed_variable_schema` overwrites field_type, multiline,
+                  options, page and rect from the live PDF, so offering the
+                  control here only promises an edit that reverts on save. */}
               <PropertyRow label="Type">
                 <select
-                  disabled={Boolean(selected.docx_choice)}
-                  value={selected.field_type || selected.type || 'text'}
-                  onChange={(event) => updateField(selectedEntry.identity, { field_type: event.target.value })}
-                  className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink"
+                  aria-label="Field type"
+                  disabled={Boolean(selected.docx_choice) || Boolean(selected.pdf_field_name)}
+                  value={selected.multiline && (selected.field_type || selected.type || 'text') === 'text' ? 'multiline' : selected.field_type || selected.type || 'text'}
+                  onChange={(event) => updateField(selectedEntry.identity, event.target.value === 'multiline'
+                    ? { field_type: 'text', multiline: true }
+                    : { field_type: event.target.value, multiline: false })}
+                  className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink disabled:opacity-60"
                 >
                   {FIELD_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  {/* A choice or radio discovered in the source is not a type
+                      anyone may pick, but it must still show its own value
+                      rather than falling back to whatever option comes first. */}
+                  {['choice', 'radio'].includes(selected.field_type) && <option value={selected.field_type}>{selected.field_type}</option>}
                 </select>
+                {selected.pdf_field_name && <span className="mt-1 block text-[11px] text-brand-muted">The source PDF states this field&apos;s type.</span>}
               </PropertyRow>
               {['signature', 'date', 'initials'].includes(String(selected.field_type || '').toLowerCase()) && (
                 <PropertyRow label="Signer role">
@@ -824,13 +884,38 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                   <span>{fillStateHelp(selected, coverage.states.get(selected.name))}</span>
                 </p>
               )}
-              <label className="flex items-center gap-2 text-sm text-brand-ink">
+              {/* A source-required field keeps its requirement through save:
+                  the server ORs the submitted value with the one the PDF
+                  asserts. Checkboxes are the exception, which the server
+                  honours, so only the locked case is disabled here rather than
+                  offering a control that silently reverted. */}
+              {(() => {
+                const lockedRequired = Boolean(selected.source_required) && selected.field_type !== 'checkbox'
+                return (
+                  <label className={`flex items-start gap-2 text-sm ${lockedRequired ? 'text-brand-muted' : 'text-brand-ink'}`}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selected.required)}
+                      disabled={lockedRequired}
+                      onChange={(event) => updateField(selectedEntry.identity, { required: event.target.checked })}
+                      className="mt-1"
+                    />
+                    <span>Required{lockedRequired && <span className="mt-0.5 block text-[11px] text-brand-muted">The source PDF marks this field required, so it cannot be made optional here.</span>}</span>
+                  </label>
+                )
+              })()}
+              {/* Excluding was a one-way door: the canvas hides an excluded
+                  field and the only control wrote `included: false`, so an
+                  accidental exclude could not be undone through the UI. The
+                  field list still lists it, which is where it gets selected. */}
+              <label className="flex items-start gap-2 text-sm text-brand-ink">
                 <input
                   type="checkbox"
-                  checked={Boolean(selected.required)}
-                  onChange={(event) => updateField(selectedEntry.identity, { required: event.target.checked })}
+                  checked={selected.included !== false}
+                  onChange={(event) => updateField(selectedEntry.identity, { included: event.target.checked })}
+                  className="mt-1"
                 />
-                Required
+                <span>Include in template{selected.included === false && <span className="mt-0.5 block text-[11px] text-brand-muted">Excluded fields are hidden on the page and left out of generated documents.</span>}</span>
               </label>
               <details className="rounded-lg border border-brand-line p-2"><summary className="cursor-pointer text-xs font-semibold">Advanced field settings</summary><div className="mt-3 space-y-3">
               <details><summary className="cursor-pointer text-xs text-brand-muted">Advanced: internal field name</summary>

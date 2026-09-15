@@ -209,6 +209,37 @@ describe('PrepareFormWorkspace', () => {
     })
   })
 
+  it('draws fallback placements at the zoom the page box is drawn at', async () => {
+    // The external fallback is the one path that renders placements with no
+    // pdf.js viewport, so it is the only path that reads `scale`. It used to
+    // pass 1 while the page box is sized `page.width * zoom`, drawing every
+    // field 1/zoom too large and committing a drag back at the same wrong
+    // scale — silently, since the fallback exists because the page cannot be
+    // rendered and nobody can see that the geometry is wrong.
+    render(
+      <PrepareFormWorkspace
+        file={new File(['not a valid PDF'], 'form.pdf', { type: 'application/pdf' })}
+        previewUrl="blob:source"
+        analysis={{ suggested_variable_schema: { pages: [{ page: 1, width: 612, height: 792, rotation: 0 }] } }}
+        fields={[{
+          name: 'signer',
+          label: 'Signer',
+          pdf_source_key: 'overlay:signer',
+          confidence: 1,
+          pdf_overlays: [{ page: 1, rect: [72, 600, 220, 624], source_kind: 'acroform' }],
+        }]}
+        onFieldsChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Open original in a new tab' }))
+
+    // 148pt wide and 24pt tall at the default 0.9 zoom, not 148 x 24.
+    const placement = screen.getByRole('button', { name: 'Select Signer' }).parentElement
+    expect(parseFloat(placement.style.width)).toBeCloseTo(148 * 0.9, 5)
+    expect(parseFloat(placement.style.height)).toBeCloseTo(24 * 0.9, 5)
+  })
+
   it('requires opening the original when the PDF page preview fails', async () => {
     const onReviewConfirmed = vi.fn()
     const onSourceReviewReadyChange = vi.fn()

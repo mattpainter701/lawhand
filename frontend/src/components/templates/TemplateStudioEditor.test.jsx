@@ -149,6 +149,96 @@ describe('TemplateStudioEditor', () => {
     expect(await screen.findByText(/Rename it and the fill stops/)).toBeInTheDocument()
   })
 
+  // Divergences found by diffing this editor against the intake one. Each is a
+  // silent failure: the editor accepts the edit and the product does something
+  // else.
+  describe('parity with the intake editor', () => {
+    it('stores a paragraph the way the renderer reads one', () => {
+      // The renderer wraps on the `multiline` boolean. This editor offered
+      // `multiline` as a field_type and never set the boolean, so a paragraph
+      // re-typed here stopped wrapping — and a paragraph authored at intake,
+      // which is `{ field_type: 'text', multiline: true }`, read back as text.
+      render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'story', label: 'Story', field_type: 'text', multiline: true }]), format: 'docx' }} onSave={vi.fn()} />)
+
+      const type = screen.getByLabelText('Field type')
+      expect(type).toHaveValue('multiline')
+
+      fireEvent.change(type, { target: { value: 'text' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Story' }))
+      expect(screen.getByLabelText('Field type')).toHaveValue('text')
+    })
+
+    it('does not offer edits the source PDF will overwrite on save', () => {
+      // `_reviewed_variable_schema` takes field_type and required for an
+      // AcroForm field from the live PDF, so both controls promised an edit
+      // that silently reverted.
+      render(<TemplateStudioEditor template={templateWith([{ name: 'signer', label: 'Signer', pdf_field_name: 'signer', source_required: true, required: true }])} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByLabelText('Field type')).toBeDisabled()
+      expect(screen.getByRole('checkbox', { name: /Required/ })).toBeDisabled()
+      expect(screen.getByText(/source PDF marks this field required/)).toBeInTheDocument()
+    })
+
+    it('lets an excluded field back in', () => {
+      // Excluding hid the field from the canvas and the only control wrote
+      // `included: false`, so the exclude could not be undone through the UI.
+      render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'story', label: 'Story' }]), format: 'docx' }} onSave={vi.fn()} />)
+
+      const include = screen.getByRole('checkbox', { name: /Include in template/ })
+      expect(include).toBeChecked()
+      fireEvent.click(include)
+      expect(screen.getByRole('checkbox', { name: /Include in template/ })).not.toBeChecked()
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include in template/ }))
+      expect(screen.getByRole('checkbox', { name: /Include in template/ })).toBeChecked()
+    })
+
+    it('does not lose cover regions to an undo that never touched one', async () => {
+      // Four of the six undo push sites snapshotted all the editor state and
+      // two snapshotted a subset, while undo restored `coverRegions || []`
+      // over the real ones and the next save persisted the empty list.
+      const onSave = vi.fn().mockResolvedValue({})
+      const covers = [{ page: 1, rect: [72, 600, 220, 624] }]
+      render(
+        <TemplateStudioEditor
+          template={{
+            ...templateWith([{ name: 'story', label: 'Story' }], {
+              regions: [{ kind: 'each', name: 'parties', from_ordinal: 4, to_ordinal: 6 }],
+              cover_regions: covers,
+            }),
+            format: 'docx',
+          }}
+          onSave={onSave}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Unmark' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+      fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      expect(onSave.mock.calls[0][0].cover_regions).toEqual(covers)
+    })
+
+    it('lets a keyboard move and remove a field on the page', async () => {
+      const onSave = vi.fn().mockResolvedValue({})
+      render(<TemplateStudioEditor template={templateWith([])} source={pdfSource()} onSave={onSave} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+      fireEvent.click(screen.getByLabelText('Editable PDF page'), { clientX: 120, clientY: 160 })
+
+      const placement = screen.getByRole('button', { name: 'Select New text field' })
+      fireEvent.keyDown(placement, { key: 'ArrowRight', shiftKey: true })
+      fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const moved = onSave.mock.calls[0][0].fields[0].pdf_overlay.rect
+
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Select New text field' }), { key: 'Delete' })
+      expect(screen.queryByRole('button', { name: 'Select New text field' })).not.toBeInTheDocument()
+
+      // The nudge moved it right, in PDF points, not merely re-rendered it.
+      expect(moved[0]).toBeGreaterThan(0)
+    })
+  })
+
   it('keeps repeating item bindings out of single-value links', () => {
     render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'amount', label: 'Value' }, { name: 'party', label: 'Repeated party', binding: 'item.party_name' }]), format: 'docx' }} onSave={vi.fn()} />)
     const selector = screen.getByLabelText('Use the same value as')

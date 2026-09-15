@@ -270,7 +270,14 @@ export default function PrepareFormWorkspace({
       page,
       pageNumber,
       viewport: pdfSample ? viewport : null,
-      scale: pdfSample ? 1 : zoom,
+      // `scale` is only read when there is no viewport to transform through,
+      // and the page box is always `page.width * zoom` wide. A hardcoded 1
+      // here drew a PDF's fields at 1 CSS pixel per PDF point inside a box
+      // scaled by `zoom` — off by 1/zoom — and committed a drag back at the
+      // same wrong scale. The only path that reaches it is the external
+      // fallback, where the page cannot be rendered and nobody can see that
+      // the geometry is wrong, which is the path the fallback exists for.
+      scale: zoom,
       canvasWidth,
       canvasHeight,
     })
@@ -478,13 +485,13 @@ export default function PrepareFormWorkspace({
 
             {drawing && mode === 'edit' && <DrawFieldLayer key={`${pageNumber}:${zoom}`} mode="field" width={canvasWidth} height={canvasHeight} names={fields.map(field => field.name)} onCancel={() => setDrawing(false)} onCreate={(geometry, name) => {
               let field = createManualField('text', { page, pageNumber, fields })
-              const overlays = geometryToOverlays(field, 0, geometry, { page, pageNumber, viewport: pdfSample ? viewport : null, scale: pdfSample ? 1 : zoom, canvasWidth, canvasHeight })
+              const overlays = geometryToOverlays(field, 0, geometry, { page, pageNumber, viewport: pdfSample ? viewport : null, scale: zoom, canvasWidth, canvasHeight })
               field = { ...field, name, label: name, rect: overlays[0].rect, pdf_overlay: overlays[0], pdf_overlays: overlays }
               commitFields([...fields, field]); setSelectedIdentity(field.pdf_source_key); setDrawing(false)
             }} />}
             {(!pdfSample || viewport || canUseExternalFallback) && visiblePlacements.map(({ entry, overlay, index }) => {
               if (mode === 'preview' && entry.field.included === false) return null
-              const geometry = overlayToCanvasRect(overlay, page, pdfSample ? viewport : null, pdfSample ? 1 : zoom)
+              const geometry = overlayToCanvasRect(overlay, page, pdfSample ? viewport : null, zoom)
               const locked = Boolean(entry.field.pdf_field_name) || mode === 'preview'
               const confidence = Number(entry.field.confidence)
               const kind = sourceKind(entry.field)
