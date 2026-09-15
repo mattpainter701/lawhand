@@ -54,7 +54,7 @@ describe('portfolio keyboard navigation', () => {
     )
 
     const link = screen.getByRole('link', { name: 'Acme contract review' })
-    const toggle = screen.getByRole('button', { name: 'Set Active' })
+    const toggle = screen.getByRole('button', { name: 'Work on this' })
     expect(link).not.toContainElement(toggle)
     expect(toggle).toHaveClass('min-h-[44px]', 'min-w-[44px]')
 

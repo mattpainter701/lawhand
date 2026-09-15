@@ -3329,7 +3329,7 @@ export function PlatformTenantRow({ tenant: t, expanded, onToggle }) {
   )
 }
 
-function PlatformSmsTab({ platformKey, onAuthError }) {
+export function PlatformSmsTab({ platformKey, onAuthError }) {
   const [config, setConfig] = useState(null)
   const [form, setForm] = useState({
     account_sid: '',

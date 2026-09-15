@@ -1,5 +1,6 @@
 """Push-sync tasks and matter key-dates to Google Calendar."""
 
+from datetime import datetime, timedelta
 import logging
 
 import httpx
@@ -37,12 +38,37 @@ async def _get_token(
         return None
 
 
+#: How long a deadline occupies on a calendar. A task is a point in time, not
+#: a meeting, but a zero-length event is invisible in most calendar views.
+TASK_EVENT_DURATION = timedelta(minutes=30)
+
+
+def _google_schedule(due_date: str, due_time: str | None, timezone_name: str) -> dict:
+    """The start/end pair Google needs, timed or all-day.
+
+    Google pairs a timezone-less ``dateTime`` with a separate IANA ``timeZone``,
+    so the wall-clock value must not carry an offset of its own.
+    """
+    if not due_time:
+        return {"start": {"date": due_date}, "end": {"date": due_date}}
+
+    start = datetime.fromisoformat(f"{due_date}T{due_time}")
+    end = start + TASK_EVENT_DURATION
+    zone = timezone_name or "UTC"
+    return {
+        "start": {"dateTime": start.isoformat(), "timeZone": zone},
+        "end": {"dateTime": end.isoformat(), "timeZone": zone},
+    }
+
+
 async def upsert_task_event(
     tenant_id: str,
     task_id: str,
     title: str,
     due_date: str,
     *,
+    due_time: str | None = None,
+    timezone_name: str = "UTC",
     description: str = "",
     matter_name: str = "",
     is_completed: bool = False,
@@ -52,6 +78,10 @@ async def upsert_task_event(
 
     Uses an extended-property marker ``clarity_task_id`` to find existing events
     so we don't create duplicates on re-sync.
+
+    A task with a saved ``due_time`` becomes a timed event in
+    ``timezone_name``; without one it stays an all-day date, which is what a
+    date-only deadline is.
     """
     if not title:
         return None
@@ -92,8 +122,7 @@ async def upsert_task_event(
     event_body = {
         "summary": summary,
         "description": description or title,
-        "start": {"date": due_date},
-        "end": {"date": due_date},
+        **_google_schedule(due_date, due_time, timezone_name),
         "extendedProperties": {
             "private": {
                 "clarity_task_id": task_id,

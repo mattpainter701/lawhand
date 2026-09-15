@@ -2,6 +2,35 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.15.01",
+      "version": "2026.09.15.01",
+      "title": "Clearer matter actions, real deadline times, stronger evidence",
+      "published_at": "2026-09-15",
+      "summary": "\"Active\" means one thing on My Matters, the View link opens the matter, task due times reach Outlook and Google at the hour you set, an unfilable signed copy raises a task, and certificates record the signer's address.",
+      "highlights": [
+        {
+          "title": "\"Active\" has one meaning",
+          "description": "The My Matters row control is now \"Work on this\" / \"Working on this\". It marks you as working the matter and never changes the matter's status."
+        },
+        {
+          "title": "The View link opens the matter",
+          "description": "The View arrow on a matter row is a real link and reachable by keyboard. It previously looked clickable and did nothing."
+        },
+        {
+          "title": "Deadlines keep their time on your calendar",
+          "description": "A task with a due time reaches Outlook and Google as a timed event instead of an all-day entry, and the synced copy no longer appears beside the task."
+        },
+        {
+          "title": "An unfilable signed copy raises a task",
+          "description": "When filing a signed document keeps failing, an assigned follow-up task is raised on the matter. Filing keeps retrying and the task closes when it succeeds."
+        },
+        {
+          "title": "Certificates record the signer's address",
+          "description": "A signing evidence certificate records the signer's own address rather than an internal one of ours, and says so plainly when none can be attributed."
+        }
+      ]
+    },
+    {
       "id": "2026.09.14.01",
       "version": "2026.09.14.01",
       "title": "Drag a task on the calendar",

@@ -7,6 +7,7 @@ HTML certificate if PDF generation is unavailable for any reason.
 from datetime import datetime, timezone
 from html import escape as html_escape
 import re
+import textwrap
 
 
 def immutable_certificate_filename(
@@ -56,6 +57,27 @@ def filled_field_count(field_values) -> int:
 
 def _field_count(signer) -> int:
     return filled_field_count(getattr(signer, "field_values", None))
+
+
+# A certificate is the artifact the firm relies on if execution is challenged,
+# so it must not pass off an address we cannot attribute to the signer as
+# theirs. A bare dash reads as "none recorded"; this says what is actually
+# true, and the footnote below tells the reader what it means.
+IP_NOT_ATTRIBUTABLE = "not attributable"
+IP_NOT_ATTRIBUTABLE_NOTE = (
+    'An address shown as "not attributable" was not recorded from a request '
+    "that reached us through our own reverse proxy, so no signer address is "
+    "asserted for that signer."
+)
+
+
+def _signer_ip(signer) -> str:
+    value = str(getattr(signer, "signed_ip", None) or "").strip()
+    return value or IP_NOT_ATTRIBUTABLE
+
+
+def _any_unattributable(signers) -> bool:
+    return any(_signer_ip(s) == IP_NOT_ATTRIBUTABLE for s in signers)
 
 
 def build_certificate(
@@ -143,7 +165,7 @@ def build_certificate(
             lines = [
                 f"Name: {s.name}  <{s.email}>",
                 f"Signature: {s.typed_signature or '—'}",
-                f"Signed at: {signed}    IP: {s.signed_ip or '—'}",
+                f"Signed at: {signed}    IP: {_signer_ip(s)}",
                 f"Method: {_signer_method(s)}    Fields filled: {_field_count(s)}",
             ]
             for ln in lines:
@@ -155,6 +177,16 @@ def build_certificate(
                 y = height - inch
                 c.setFont("Helvetica", 10)
 
+        if _any_unattributable(signers):
+            if y < inch + 0.5 * inch:
+                c.showPage()
+                y = height - inch
+            y -= 0.1 * inch
+            c.setFont("Helvetica-Oblique", 8)
+            for ln in textwrap.wrap(IP_NOT_ATTRIBUTABLE_NOTE, 110):
+                c.drawString(inch, y, ln)
+                y -= 0.2 * inch
+
         c.showPage()
         c.save()
         return buf.getvalue(), f"{base}-signature-evidence.pdf", "application/pdf"
@@ -163,7 +195,7 @@ def build_certificate(
             f"<tr><td>{html_escape(str(s.name))} &lt;{html_escape(str(s.email))}&gt;</td>"
             f"<td>{html_escape(str(s.typed_signature or '—'))}</td>"
             f"<td>{html_escape(s.signed_at.isoformat() if s.signed_at else '—')}</td>"
-            f"<td>{html_escape(str(s.signed_ip or '—'))}</td>"
+            f"<td>{html_escape(_signer_ip(s))}</td>"
             f"<td>{html_escape(_signer_method(s))} / {_field_count(s)}</td></tr>"
             for s in signers
         )
@@ -181,6 +213,11 @@ def build_certificate(
             placement_note += (
                 f"<p>Executed copy SHA-256: {html_escape(str(executed_sha256))}</p>"
             )
+        attribution_note = (
+            f"<p><i>{html_escape(IP_NOT_ATTRIBUTABLE_NOTE)}</i></p>"
+            if _any_unattributable(signers)
+            else ""
+        )
         html = f"""<!doctype html><html><head><meta charset="utf-8">
 <title>Certificate of Completion</title></head><body>
 <h1>Signature Acknowledgment Certificate</h1>
@@ -192,5 +229,5 @@ def build_certificate(
 {placement_note}<p><i>This artifact records acknowledgments; it is not a signed copy of the source document.</i></p>
 <table border="1" cellpadding="6" cellspacing="0">
 <thead><tr><th>Signer</th><th>Signature</th><th>Signed at</th><th>IP</th><th>Method / fields</th></tr></thead>
-<tbody>{rows}</tbody></table></body></html>"""
+<tbody>{rows}</tbody></table>{attribution_note}</body></html>"""
         return html.encode("utf-8"), f"{base}-signature-evidence.html", "text/html"

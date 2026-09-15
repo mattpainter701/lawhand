@@ -5,6 +5,18 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.01 — Clearer matter actions, real deadline times, stronger evidence
+
+Released September 15, 2026.
+
+"Active" means one thing on My Matters, the View link opens the matter, task due times reach Outlook and Google at the hour you set, an unfilable signed copy raises a task, and certificates record the signer's address.
+
+- **"Active" has one meaning.** The My Matters row control is now "Work on this" / "Working on this". It marks you as working the matter and never changes the matter's status.
+- **The View link opens the matter.** The View arrow on a matter row is a real link and reachable by keyboard. It previously looked clickable and did nothing.
+- **Deadlines keep their time on your calendar.** A task with a due time reaches Outlook and Google as a timed event instead of an all-day entry, and the synced copy no longer appears beside the task.
+- **An unfilable signed copy raises a task.** When filing a signed document keeps failing, an assigned follow-up task is raised on the matter. Filing keeps retrying and the task closes when it succeeds.
+- **Certificates record the signer's address.** A signing evidence certificate records the signer's own address rather than an internal one of ours, and says so plainly when none can be attributed.
+
 ## 2026.09.14.01 — Drag a task on the calendar
 
 Released September 14, 2026.
