@@ -25,6 +25,7 @@ import {
 import DocxDocumentView from './DocxDocumentView'
 import TemplateBindingPicker from './TemplateBindingPicker'
 import useBindingCatalogue from './useBindingCatalogue'
+import { fieldsNeedingReview } from './pdfSourceReview'
 import {
   FILL_STATES,
   FILL_STATE_COLORS,
@@ -164,6 +165,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   const redoStack = useRef([])
   const [historyVersion, setHistoryVersion] = useState(0)
   const [highlightFills, setHighlightFills] = useState(false)
+  // A scan's uncertain fields have to be compared against the original before
+  // the template can publish. The wizard used to ask for this and throw the
+  // answer away; the server now records it and refuses publish without it, so
+  // it is asked here, on the screen where a firm can actually fix what they
+  // find rather than only attest to it.
+  const [sourceReviewed, setSourceReviewed] = useState(
+    () => Boolean(template.variable_schema?.pdf_source_review?.confirmed_digest),
+  )
   const scrollerRef = useRef(null)
   const onPageRenderError = useCallback(error => setRenderError(`Page ${pageNumber} could not be rendered. (${error?.message || 'Preview unavailable'})`), [pageNumber])
   useEffect(() => { onDirtyChange?.(dirty || Boolean(wordingSelection)) }, [dirty, wordingSelection, onDirtyChange])
@@ -171,6 +180,10 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
 
   const { groups: bindingGroups, collections, bindings, cards, smartFillNames, catalogueLoaded } = useBindingCatalogue()
   const coverage = fillCoverage(fields, { smartFillNames, bindings, cards })
+  const scannedTemplate = ['pdf', 'image'].includes(String(template?.format || '').toLowerCase())
+  const unreviewedFields = scannedTemplate
+    ? fieldsNeedingReview(fields, template.variable_schema)
+    : []
   // Until the catalogue lands every bound field would read as unresolvable, so
   // the fill highlight is unavailable rather than briefly wrong.
   const showFills = highlightFills && catalogueLoaded
@@ -292,6 +305,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const addField = (kind, position, name) => {
+    withdrawSourceReview()
     let field = createManualField(kind, { page, pageNumber, fields })
     if (position) {
       const initial = overlayToCanvasRect(field.pdf_overlay, page, viewport, viewport ? 1 : zoom)
@@ -393,6 +407,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const removeField = (entry) => {
+    withdrawSourceReview()
     // An AcroForm or detected field still exists in the document, so it is
     // excluded rather than deleted; only manual placements are truly removable.
     if (sourceKind(entry.field) === 'manual') {
@@ -404,7 +419,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     }
   }
 
+  // The attestation covers the fields that were on the page when it was made,
+  // so adding, removing or moving one withdraws it. The server re-arms on the
+  // same three through its digest; doing it here too means the editor never
+  // shows a reviewed template that publish would refuse.
+  const withdrawSourceReview = () => setSourceReviewed(false)
+
   const updateGeometry = (entry, placementIndex, geometry) => {
+    withdrawSourceReview()
     if (entry.field.pdf_field_name) return
     const overlays = geometryToOverlays(entry.field, placementIndex, geometry, {
       page,
@@ -441,7 +463,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     setSaving(true)
     setSaveError('')
     try {
-      await onSave({ ...mergedVariableSchema(template, fields, regions, coverRegions), ...(isDocx && template.variable_schema?.source_review_version === 1 ? { source_review: sourceReview } : {}), ...(applicability || template.variable_schema?.applicability ? { applicability } : {}) })
+      await onSave({ ...mergedVariableSchema(template, fields, regions, coverRegions), ...(isDocx && template.variable_schema?.source_review_version === 1 ? { source_review: sourceReview } : {}), ...(applicability || template.variable_schema?.applicability ? { applicability } : {}), ...(sourceReviewed ? { pdf_source_review: { confirmed: true } } : {}) })
       setDirty(false)
       setSavedAt(new Date())
     } catch (error) {
@@ -574,6 +596,32 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
           <span key={state}><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[state] }} />{FILL_STATE_LABELS[state]} {coverage.counts[state]}</span>
         ))}
       </div>
+      {/* A publish blocker, so it is loud while outstanding and quiet once
+          answered — not a checkbox buried in a panel. The wizard asked for
+          this attestation before a draft could even be created, which is a
+          heavier gate than the risk warrants: a draft generates nothing. What
+          matters is that nobody publishes a scan they have not checked. */}
+      {unreviewedFields.length > 0 && (
+        <div className={`border-b border-brand-line px-3 py-2 text-sm ${sourceReviewed ? 'bg-brand-bg' : 'bg-brand-amber/10'}`}>
+          <label className="flex items-start gap-2 text-brand-ink">
+            <input
+              type="checkbox"
+              aria-label="Confirm source comparison"
+              checked={sourceReviewed}
+              onChange={(event) => { setSourceReviewed(event.target.checked); setDirty(true) }}
+              className="mt-1 h-4 w-4 accent-brand-accent"
+            />
+            <span>
+              I compared every highlighted field with the original document and corrected anything uncertain.
+              <span className="mt-0.5 block text-[11px] text-brand-muted">
+                {sourceReviewed
+                  ? `Confirmed for the ${unreviewedFields.length} field${unreviewedFields.length === 1 ? '' : 's'} the scan was unsure of. Adding, removing or moving a field asks again.`
+                  : `${unreviewedFields.length} field${unreviewedFields.length === 1 ? '' : 's'} the scan was unsure of. This template cannot be published until you confirm.`}
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
       {placingTool && <div className="flex flex-wrap items-center gap-3 border-b border-brand-line bg-brand-accent/10 px-3 py-2 text-sm"><span>Click on the document to place a {placingTool} field.</span><button type="button" onClick={() => addField(placingTool)} className="text-xs underline">Place at page center</button><button type="button" onClick={() => setPlacingTool(null)} className="text-xs underline">Cancel placement</button></div>}
 
       {(saveError || duplicateNames.size > 0 || invalidNames.length > 0) && (

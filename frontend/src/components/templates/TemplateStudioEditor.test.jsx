@@ -149,6 +149,56 @@ describe('TemplateStudioEditor', () => {
     expect(await screen.findByText(/Rename it and the fill stops/)).toBeInTheDocument()
   })
 
+  // The scan's uncertain fields must be compared against the original before
+  // the template can publish. The wizard asked for this before a draft could
+  // be created and threw the answer away; it is asked here now, where a firm
+  // can fix what they find, and the server records and enforces it.
+  describe('source review', () => {
+    const uncertain = [{ name: 'signer', label: 'Signer', confidence: 0.4 }]
+
+    it('blocks nothing on a scan with nothing uncertain in it', () => {
+      render(<TemplateStudioEditor template={templateWith([{ name: 'signer', label: 'Signer', confidence: 1 }])} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.queryByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeInTheDocument()
+    })
+
+    it('records the confirmation with the saved schema', async () => {
+      const onSave = vi.fn().mockResolvedValue({})
+      render(<TemplateStudioEditor template={templateWith(uncertain)} source={pdfSource()} onSave={onSave} />)
+
+      expect(screen.getByText(/cannot be published until you confirm/)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
+      fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      // The client says only that a person confirmed; the server decides what
+      // that covers, so no digest is sent.
+      expect(onSave.mock.calls[0][0].pdf_source_review).toEqual({ confirmed: true })
+    })
+
+    it('reopens as confirmed when the saved template carries an attestation', () => {
+      render(<TemplateStudioEditor template={templateWith(uncertain, { pdf_source_review: { confirmed_digest: 'abc' } })} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).toBeChecked()
+    })
+
+    it('asks again once the fields stop being the ones that were confirmed', () => {
+      render(<TemplateStudioEditor template={templateWith(uncertain, { pdf_source_review: { confirmed_digest: 'abc' } })} source={pdfSource()} onSave={vi.fn()} />)
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).toBeChecked()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+      fireEvent.click(screen.getByLabelText('Editable PDF page'), { clientX: 120, clientY: 160 })
+
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeChecked()
+    })
+
+    it('leaves a Word template to its own review', () => {
+      render(<TemplateStudioEditor template={{ ...templateWith(uncertain), format: 'docx' }} onSave={vi.fn()} />)
+
+      expect(screen.queryByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeInTheDocument()
+    })
+  })
+
   // Divergences found by diffing this editor against the intake one. Each is a
   // silent failure: the editor accepts the edit and the product does something
   // else.

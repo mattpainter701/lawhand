@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.06 — A scanned form cannot be published unchecked
+
+Released September 15, 2026.
+
+Where a scan was unsure of a field, someone now has to compare it with the original document before the template can be published — and they do it on the screen where they can fix what they find.
+
+- **The source check is now enforced, not just asked for.** A PDF or image template with fields the scan was unsure of cannot be published until someone confirms they compared them with the original document.
+- **Check the form where you can correct it.** The confirmation moved from the upload step to the template editor, so a field that looks wrong can be fixed on the spot instead of only ticked off.
+- **Changing the fields asks again.** Adding, removing or moving a field withdraws the confirmation, because it no longer describes the form that was checked.
+- **A clean scan asks for nothing.** Where every field came straight from the document's own form fields, there is nothing uncertain to confirm and no extra step.
+
 ## 2026.09.15.05 — Say what fills a form field, and see how much of it fills
 
 Released September 15, 2026.

@@ -149,6 +149,7 @@ from app.services.template_bindings import (
     declared_bindings,
     is_item_binding,
 )
+from app.services import pdf_source_review
 from app.services import template_cards
 from app.services.template_cards import CardKind
 from app.services.template_fill_coverage import (
@@ -793,6 +794,23 @@ async def _verified_template_source(template: DocumentTemplate) -> bytes:
             status_code=409, detail="The original template failed its integrity check"
         )
     return content
+
+
+def _ensure_pdf_source_review(template, schema) -> None:
+    """Refuse to publish a scan nobody has checked against the original.
+
+    The Word half of the product has always had this. The PDF half asked for
+    the same attestation in the wizard and never sent it anywhere, so a
+    template full of OCR guesses could be published and used to generate real
+    documents with nothing having confirmed the boxes are where the scan
+    claimed.
+    """
+
+    if str(template.format or "").lower() not in {"pdf", "image"}:
+        return
+    reason = pdf_source_review.unresolved_reason(schema)
+    if reason:
+        raise HTTPException(status_code=422, detail=reason)
 
 
 async def _ensure_word_source_review(template, schema):
@@ -1670,7 +1688,33 @@ def _reviewed_variable_schema(raw: str | None, discovered: dict) -> dict:
     if discovered.get("source_review_version") == 1:
         schema["source_review_version"] = 1
         schema.pop("source_review", None)
+    _stamp_pdf_source_review(schema)
     return schema
+
+
+def _stamp_pdf_source_review(schema: dict) -> None:
+    """Record a source-review attestation against what is actually being saved.
+
+    The client says only whether the person confirmed; the server decides what
+    that confirmation covers. Letting a client supply the digest would let it
+    attest to a field set other than the one it is saving, which is the single
+    thing this record exists to prevent.
+
+    An unconfirmed save clears any previous attestation rather than leaving it
+    in place, so review state is never inherited by a field set nobody looked
+    at. It would re-arm at publish anyway — the digest would not match — but
+    leaving a stale confirmation on the row would make the editor show a
+    reviewed template that publish then refuses.
+    """
+
+    submitted = schema.pop("pdf_source_review", None)
+    confirmed = isinstance(submitted, dict) and submitted.get("confirmed") is True
+    if not confirmed:
+        return
+    schema["pdf_source_review"] = {
+        "confirmed_digest": pdf_source_review.review_digest(schema),
+        "confirmed_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _is_allowed_template_sample(filename: str | None, content_type: str | None) -> bool:
@@ -4948,6 +4992,7 @@ async def publish_template(
         )
 
     await _ensure_word_source_review(template, template.variable_schema)
+    _ensure_pdf_source_review(template, template.variable_schema)
     _ensure_usable_labels(template.variable_schema)
     _validate_approval_ready(
         template=template,
