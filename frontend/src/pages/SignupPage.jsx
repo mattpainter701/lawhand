@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
-import { register, signupWithPlan } from '../api'
-import { useAuth } from '../App'
+import { Link, useSearchParams } from 'react-router-dom'
+import { signupWithPlan } from '../api'
 
 function MicrosoftIcon() {
   return (
@@ -26,9 +25,7 @@ function GoogleIcon() {
 }
 
 export default function SignupPage() {
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { login: authLogin } = useAuth()
   const plan = searchParams.get('plan')
   const publicSignupEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED === 'true'
   // Every self-serve signup provisions a plan. Without an explicit choice that
@@ -53,6 +50,7 @@ export default function SignupPage() {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   const inputClasses = "w-full px-3 py-2 border border-brand-line rounded-lg text-sm font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent focus:border-brand-accent bg-brand-surface"
   const labelClasses = "block text-sm font-sans font-medium text-brand-ink mb-1"
@@ -78,6 +76,22 @@ export default function SignupPage() {
     )
   }
 
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-brand-bg flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-brand-line bg-brand-surface p-8 text-center shadow-xl">
+          <h1 className="font-serif text-2xl text-brand-ink">Registration received</h1>
+          <p className="mt-3 text-sm leading-relaxed text-brand-muted">
+            Your workspace is pending approval. No trial time has started yet. We will email you when access is ready.
+          </p>
+          <Link to="/login" className="mt-6 inline-flex rounded-lg border border-brand-line px-5 py-3 text-sm font-medium text-brand-ink-2">
+            Return to sign in
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
@@ -88,22 +102,17 @@ export default function SignupPage() {
     setLoading(true)
     try {
       const staffSize = form.staff_size ? parseInt(form.staff_size, 10) : null
-      if (isPlanSignup) {
-        await signupWithPlan({
-          plan: planId,
-          firm_name: form.company_name,
-          email: form.email,
-          password: form.password,
-          full_name: form.full_name || null,
-          staff_size: staffSize,
-          address: form.address || null,
-          phone: form.phone || null,
-        })
-      } else {
-        await register({ ...form, staff_size: staffSize })
-      }
-      const me = await authLogin()
-      navigate(me?.default_route || (planId === 'intake-only' ? '/intake/dashboard' : '/matters'), { replace: true })
+      await signupWithPlan({
+        plan: planId,
+        firm_name: form.company_name,
+        email: form.email,
+        password: form.password,
+        full_name: form.full_name || null,
+        staff_size: staffSize,
+        address: form.address || null,
+        phone: form.phone || null,
+      })
+      setSubmitted(true)
     } catch (err) {
       const detail = err.response?.data?.detail
       setError(
@@ -134,8 +143,8 @@ export default function SignupPage() {
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
 
       <div className="relative z-10 w-full max-w-md bg-brand-surface border border-brand-line rounded-2xl shadow-xl p-8">
-        <h1 className="font-serif text-2xl text-brand-ink mb-1">Create your account</h1>
-        <p className="font-sans text-brand-muted text-sm mb-3">Set up your firm's workspace in under a minute.</p>
+        <h1 className="font-serif text-2xl text-brand-ink mb-1">Request your account</h1>
+        <p className="font-sans text-brand-muted text-sm mb-3">Register your firm for review. Your trial starts only after approval.</p>
         {planLabel && (
           <div className="mb-6 rounded-xl border border-brand-accent/30 bg-brand-accent/5 px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-wider text-brand-accent">Selected product</p>
@@ -213,7 +222,7 @@ export default function SignupPage() {
           {error && <p role="alert" className="font-sans text-brand-rose text-sm">{error}</p>}
 
           <button type="submit" disabled={loading} className="w-full py-3 rounded-lg text-white font-sans text-sm font-medium bg-brand-accent hover:bg-brand-accent-2 active:opacity-90 transition-all duration-150 disabled:opacity-50">
-            {loading ? 'Creating account...' : 'Create Account with Email'}
+            {loading ? 'Sending request...' : 'Request LawHand access'}
           </button>
         </form>
 

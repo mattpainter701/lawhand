@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 TRIAL_MARKER = "trial"
 TRIAL_STARTED_KEY = "trial_started_at"
 TRIAL_ENDS_KEY = "trial_ends_at"
+SIGNUP_STATUS_KEY = "signup_status"
+SIGNUP_PENDING = "pending"
+SIGNUP_APPROVED = "approved"
 
 
 def trial_period_days() -> int:
@@ -124,6 +127,101 @@ async def notify_operator_trial_started(
         )
 
 
+async def notify_operator_signup_requested(
+    *, tenant_name: str, tenant_id, admin_email: str, requested_plan: str
+) -> None:
+    """Best-effort alert for a registration that still needs approval."""
+
+    from app.services.email import email_service
+
+    recipient = (getattr(get_settings(), "MARKETING_LEAD_EMAIL", "") or "").strip()
+    if not recipient:
+        return
+    safe_name = escape(tenant_name)
+    safe_email = escape(admin_email)
+    html_body = (
+        "<h2>New LawHand registration awaiting approval</h2>"
+        f"<p><strong>Firm:</strong> {safe_name}<br>"
+        f"<strong>Admin:</strong> {safe_email}<br>"
+        f"<strong>Requested plan:</strong> {escape(requested_plan)}<br>"
+        f"<strong>Tenant:</strong> {tenant_id}</p>"
+        "<p>No workspace access or trial spend has started.</p>"
+    )
+    text_body = (
+        "A new LawHand registration is awaiting Platform approval.\n\n"
+        f"Firm: {tenant_name}\nAdmin: {admin_email}\n"
+        f"Requested plan: {requested_plan}\nTenant: {tenant_id}\n\n"
+        "No workspace access or trial spend has started."
+    )
+    try:
+        await email_service.send_email(
+            [recipient],
+            f"LawHand registration awaiting approval — {tenant_name}",
+            html_body,
+            text_body,
+        )
+    except Exception:  # pragma: no cover - best effort by design
+        logger.exception("Signup-request notification raised (tenant_id=%s)", tenant_id)
+
+
+async def notify_trial_approved(
+    *,
+    tenant_name: str,
+    recipients: list[str],
+    trial_ends_at: datetime,
+    premium_ai_enabled: bool,
+) -> Any:
+    """Tell approved founders that their previously registered login is live."""
+
+    from app.services.email import EmailCategory, email_service, render_branded_email
+
+    unique_recipients = sorted(
+        {
+            address.strip().lower()
+            for address in recipients
+            if address and "@" in address
+        }
+    )
+    if not unique_recipients:
+        from app.services.email import EmailDeliveryResult
+
+        return EmailDeliveryResult.INVALID_RECIPIENT
+    end_label = trial_ends_at.astimezone(timezone.utc).strftime("%B %d, %Y")
+    login_url = (get_settings().FRONTEND_URL or "http://localhost:3000").rstrip("/")
+    safe_login_url = escape(f"{login_url}/login", quote=True)
+    premium_label = "enabled for this sponsored trial" if premium_ai_enabled else "off"
+    content = f"""
+    <div class="header">
+      <h1>Your LawHand trial is approved</h1>
+      <p>{escape(tenant_name)} can now enter its workspace</p>
+    </div>
+    <div class="body">
+      <p>Your registration has been approved. Sign in with the email and
+      password you chose when you registered.</p>
+      <p style="margin:28px 0;">
+        <a href="{safe_login_url}" style="background:#14253B;color:#fff;padding:13px 24px;border-radius:7px;text-decoration:none;font-weight:600;">Sign in to LawHand</a>
+      </p>
+      <div class="digest-content">
+        <p><strong>Trial access through:</strong> {escape(end_label)}</p>
+        <p><strong>Premium AI:</strong> {escape(premium_label)}</p>
+      </div>
+    </div>
+    """
+    text_body = (
+        f"Your LawHand trial for {tenant_name} is approved.\n\n"
+        f"Sign in: {login_url}/login\n"
+        f"Trial access through: {end_label}\n"
+        f"Premium AI: {premium_label}\n"
+    )
+    return await email_service.send_email(
+        unique_recipients,
+        "Your LawHand trial is approved",
+        render_branded_email(content),
+        text_body,
+        category=EmailCategory.SECURITY,
+    )
+
+
 async def notify_trial_extended(
     *,
     tenant_name: str,
@@ -184,4 +282,68 @@ async def notify_trial_extended(
         render_branded_email(content),
         text_body,
         category=EmailCategory.NOTIFICATION,
+    )
+
+
+async def notify_trial_invited(
+    *,
+    tenant_name: str,
+    admin_email: str,
+    admin_name: str | None,
+    invitation_url: str,
+    trial_ends_at: datetime,
+) -> Any:
+    """Invite a founding administrator into an operator-created trial.
+
+    The firm and its hashed invitation already exist when this runs. Delivery
+    is therefore reported to Platform instead of rolling provisioning back;
+    the one-time response also carries the acceptance URL for manual recovery.
+    """
+
+    from app.services.email import (
+        EmailCategory,
+        email_service,
+        render_branded_email,
+    )
+
+    end_label = trial_ends_at.astimezone(timezone.utc).strftime("%B %d, %Y")
+    safe_firm = escape(tenant_name)
+    safe_name = escape(admin_name or "there")
+    safe_url = escape(invitation_url, quote=True)
+    content = f"""
+    <div class="header">
+      <h1>Your LawHand workspace is ready</h1>
+      <p>{safe_firm} has been invited to a private trial</p>
+    </div>
+    <div class="body">
+      <p>Hi {safe_name},</p>
+      <p>Your LawHand workspace has been created. Set your password and enter
+      the workspace using the secure invitation below.</p>
+      <p style="margin:28px 0;">
+        <a href="{safe_url}" style="background:#14253B;color:#fff;padding:13px 24px;border-radius:7px;text-decoration:none;font-weight:600;">
+          Set up my LawHand account
+        </a>
+      </p>
+      <div class="digest-content">
+        <h2 style="margin-top:0;">Trial details</h2>
+        <p><strong>Trial access through:</strong> {escape(end_label)}</p>
+        <p>Premium AI is controlled separately by your LawHand contact.</p>
+      </div>
+      <p style="color:#666;font-size:13px;">For security, this invitation link
+      expires in 7 days. If it expires, ask your LawHand contact for a new one.</p>
+    </div>
+    """
+    text_body = (
+        f"Hi {admin_name or 'there'},\n\n"
+        f"Your LawHand workspace for {tenant_name} is ready.\n"
+        f"Set up your account: {invitation_url}\n\n"
+        f"Trial access through: {end_label}\n"
+        "This secure invitation expires in 7 days."
+    )
+    return await email_service.send_email(
+        [admin_email],
+        "Your LawHand workspace is ready",
+        render_branded_email(content),
+        text_body,
+        category=EmailCategory.SECURITY,
     )

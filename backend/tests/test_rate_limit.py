@@ -123,6 +123,13 @@ def test_demo_has_explicit_public_and_daily_limits_without_changing_unknown_fall
     assert TENANT_DAILY_LIMITS["payg"] == 10_000
 
 
+def test_signup_plan_is_limited_by_source_ip():
+    # Unauthenticated registration writes a pending tenant and emails the
+    # operator, so it carries an explicit per-source ceiling rather than the
+    # unknown-path fallback.
+    assert AUTH_LIMITS["/api/auth/signup/plan"] == (5, 3600)
+
+
 def test_a_trial_gets_a_subscription_allowance_not_the_payg_fallback():
     # An unlisted tier falls through to the payg entry, which would hand a
     # trial firm the highest allowance in the system. A trial is meant to be
