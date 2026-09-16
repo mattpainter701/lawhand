@@ -22,9 +22,17 @@ import {
   Undo2,
 } from 'lucide-react'
 
-import { getTemplateBindings, getTemplateCards } from '../../api'
 import DocxDocumentView from './DocxDocumentView'
 import TemplateBindingPicker from './TemplateBindingPicker'
+import useBindingCatalogue from './useBindingCatalogue'
+import { fieldNeedsReview, fieldsNeedingReview } from './pdfSourceReview'
+import {
+  FILL_STATES,
+  FILL_STATE_COLORS,
+  FILL_STATE_LABELS,
+  fillCoverage,
+  fillStateHelp,
+} from './fillCoverage'
 import DrawFieldLayer from './DrawFieldLayer'
 import WordDocumentPreview from './WordDocumentPreview'
 import { resolveWordPageSelection } from './wordPlaceholderMatches'
@@ -127,42 +135,6 @@ export const docxFieldName = (text) => {
 }
 
 
-/** Load the binding catalogue once and group it for the picker.
- *  The catalogue is static server-owned vocabulary, so a failure to load it
- *  degrades to name matching rather than blocking the editor.
- *
- *  Cards and the flat catalogue are loaded together and neither is required:
- *  cards drive the picker, while the flat catalogue still supplies tenant
- *  custom fields, the collections a repeating section may iterate, and the
- *  scenario lookup. Either request failing leaves the other usable. */
-function useBindingCatalogue() {
-  const [catalogue, setCatalogue] = useState({ groups: {}, collections: [], bindings: [], cards: [] })
-
-  useEffect(() => {
-    let cancelled = false
-    Promise.allSettled([getTemplateBindings(), getTemplateCards()])
-      .then(([flat, cards]) => {
-        if (cancelled) return
-        const loaded = flat.status === 'fulfilled' ? flat.value : null
-        const groups = {}
-        for (const entry of loaded?.bindings || []) {
-          if (!entry?.path) continue
-          ;(groups[entry.group || 'Other'] ||= []).push(entry)
-        }
-        setCatalogue({
-          groups,
-          collections: loaded?.collections || [],
-          bindings: loaded?.bindings || [],
-          cards: cards.status === 'fulfilled' ? (cards.value?.cards || []) : [],
-        })
-      })
-    return () => { cancelled = true }
-  }, [])
-
-  return catalogue
-}
-
-
 export default function TemplateStudioEditor({ template, source, sourceError, onSave, onDerived, onDirtyChange }) {
   const [fields, setFields] = useState(() => schemaFields(template))
   const [applicability, setApplicability] = useState(template.variable_schema?.applicability || null)
@@ -192,12 +164,38 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   const undoStack = useRef([])
   const redoStack = useRef([])
   const [historyVersion, setHistoryVersion] = useState(0)
+  const [highlightFills, setHighlightFills] = useState(false)
+  // A scan's uncertain fields have to be compared against the original before
+  // the template can publish. The wizard used to ask for this and throw the
+  // answer away; the server now records it and refuses publish without it, so
+  // it is asked here, on the screen where a firm can actually fix what they
+  // find rather than only attest to it.
+  const [sourceReviewed, setSourceReviewed] = useState(
+    () => Boolean(template.variable_schema?.pdf_source_review?.confirmed_digest),
+  )
   const scrollerRef = useRef(null)
+  // The retained source itself, for the case where we cannot render it. A
+  // template whose page will not display is exactly the one an author needs to
+  // open elsewhere before trusting anything on this screen.
+  const sourceUrl = useMemo(
+    () => (source instanceof Blob ? URL.createObjectURL(source) : ''),
+    [source],
+  )
+  useEffect(() => () => { if (sourceUrl) URL.revokeObjectURL(sourceUrl) }, [sourceUrl])
+
   const onPageRenderError = useCallback(error => setRenderError(`Page ${pageNumber} could not be rendered. (${error?.message || 'Preview unavailable'})`), [pageNumber])
   useEffect(() => { onDirtyChange?.(dirty || Boolean(wordingSelection)) }, [dirty, wordingSelection, onDirtyChange])
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
-  const { groups: bindingGroups, collections, bindings, cards } = useBindingCatalogue()
+  const { groups: bindingGroups, collections, bindings, cards, smartFillNames, catalogueLoaded } = useBindingCatalogue()
+  const coverage = fillCoverage(fields, { smartFillNames, bindings, cards })
+  const scannedTemplate = ['pdf', 'image'].includes(String(template?.format || '').toLowerCase())
+  const unreviewedFields = scannedTemplate
+    ? fieldsNeedingReview(fields, template.variable_schema)
+    : []
+  // Until the catalogue lands every bound field would read as unresolvable, so
+  // the fill highlight is unavailable rather than briefly wrong.
+  const showFills = highlightFills && catalogueLoaded
 
   const scenarioBinding = fields.find(field => field.name === applicability?.field)?.binding
   const scenarioDefinition = Object.values(bindingGroups).flat().find(entry => entry.path === scenarioBinding)
@@ -264,20 +262,30 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   const canvasHeight = viewport?.height
     || (Number(page.rotation || 0) % 180 ? Number(page.width) : Number(page.height)) * zoom
 
+  // Everything `undo` restores, captured once. Two of the six push sites had
+  // drifted from it: `commitRegions` and the Word review handler snapshotted
+  // `{ fields, regions, sourceReview }`, so undoing a region edit restored
+  // `previous.coverRegions || []` over the real covers and the next save
+  // persisted the empty list. Both keys are read whatever the format.
+  const editorSnapshot = useCallback(
+    () => ({ fields, regions, coverRegions, sourceReview }),
+    [fields, regions, coverRegions, sourceReview],
+  )
+
   const commitFields = useCallback((nextFields) => {
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     redoStack.current = []
     setHistoryVersion((value) => value + 1)
     setFields(nextFields)
     setDirty(true)
     setSaveError('')
-  }, [fields, regions, coverRegions, sourceReview])
+  }, [editorSnapshot])
 
   const undo = () => {
     const previous = undoStack.current.at(-1)
     if (!previous) return
     undoStack.current = undoStack.current.slice(0, -1)
-    redoStack.current = [...redoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    redoStack.current = [...redoStack.current.slice(-49), editorSnapshot()]
     setHistoryVersion((value) => value + 1)
     setFields(previous.fields)
     setRegions(previous.regions)
@@ -290,7 +298,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     const next = redoStack.current.at(-1)
     if (!next) return
     redoStack.current = redoStack.current.slice(0, -1)
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     setHistoryVersion((value) => value + 1)
     setFields(next.fields)
     setRegions(next.regions)
@@ -306,6 +314,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const addField = (kind, position, name) => {
+    withdrawSourceReview()
     let field = createManualField(kind, { page, pageNumber, fields })
     if (position) {
       const initial = overlayToCanvasRect(field.pdf_overlay, page, viewport, viewport ? 1 : zoom)
@@ -343,7 +352,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const commitCoverRegions = (nextCoverRegions) => {
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, coverRegions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     redoStack.current = []
     setHistoryVersion((value) => value + 1)
     setCoverRegions(nextCoverRegions)
@@ -378,7 +387,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const commitRegions = (nextRegions) => {
-    undoStack.current = [...undoStack.current.slice(-49), { fields, regions, sourceReview }]
+    undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
     redoStack.current = []
     setHistoryVersion((value) => value + 1)
     setRegions(nextRegions)
@@ -407,6 +416,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   }
 
   const removeField = (entry) => {
+    withdrawSourceReview()
     // An AcroForm or detected field still exists in the document, so it is
     // excluded rather than deleted; only manual placements are truly removable.
     if (sourceKind(entry.field) === 'manual') {
@@ -418,7 +428,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     }
   }
 
+  // The attestation covers the fields that were on the page when it was made,
+  // so adding, removing or moving one withdraws it. The server re-arms on the
+  // same three through its digest; doing it here too means the editor never
+  // shows a reviewed template that publish would refuse.
+  const withdrawSourceReview = () => setSourceReviewed(false)
+
   const updateGeometry = (entry, placementIndex, geometry) => {
+    withdrawSourceReview()
     if (entry.field.pdf_field_name) return
     const overlays = geometryToOverlays(entry.field, placementIndex, geometry, {
       page,
@@ -455,7 +472,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
     setSaving(true)
     setSaveError('')
     try {
-      await onSave({ ...mergedVariableSchema(template, fields, regions, coverRegions), ...(isDocx && template.variable_schema?.source_review_version === 1 ? { source_review: sourceReview } : {}), ...(applicability || template.variable_schema?.applicability ? { applicability } : {}) })
+      await onSave({ ...mergedVariableSchema(template, fields, regions, coverRegions), ...(isDocx && template.variable_schema?.source_review_version === 1 ? { source_review: sourceReview } : {}), ...(applicability || template.variable_schema?.applicability ? { applicability } : {}), ...(sourceReviewed ? { pdf_source_review: { confirmed: true } } : {}) })
       setDirty(false)
       setSavedAt(new Date())
     } catch (error) {
@@ -484,6 +501,19 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
   ))
 
   const previewProblem = sourceError || pdfError || renderError
+  // Placing a field needs a page to place it on. Where the preview failed, the
+  // stored page geometry is the only thing that makes a rectangle mean
+  // anything; without it a placement is drawn against a guessed 612x792 and
+  // written to the template as though it were measured. The intake editor has
+  // always guarded this; this editor armed every tool over a blank div and
+  // printed the error above it.
+  const pageHasAuthoritativeGeometry = effectivePages.some((item) => (
+    Number(item?.page) === pageNumber && Number(item?.width) > 0 && Number(item?.height) > 0
+  ))
+  const canPlaceFields = !previewProblem || pageHasAuthoritativeGeometry
+  const placementBlockedReason = canPlaceFields
+    ? ''
+    : 'The page could not be rendered and this template records no page size, so a field placed here could not be positioned. Open the original to check it.'
   const deriveSchema = {
     ...mergedVariableSchema(template, fields, regions),
     ...(isDocx && template.variable_schema?.source_review_version === 1 ? { source_review: sourceReview } : {}),
@@ -504,13 +534,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                 key={tool.kind}
                 icon={tool.icon}
                 label={tool.label}
+                disabled={!canPlaceFields}
                 active={placingTool === tool.kind}
                 onClick={() => setPlacingTool(current => current === tool.kind ? null : tool.kind)}
               />
             ))}
-            <ToolbarButton icon={Type} label="Draw field" onClick={() => { setPlacingTool(null); setDrawMode('field') }} />
-            <ToolbarButton icon={Eraser} label="Whiteout" onClick={() => { setPlacingTool(null); setDrawMode('whiteout') }} />
-            <ToolbarButton icon={Eraser} label="Cover" onClick={addCoverRegion} />
+            <ToolbarButton icon={Type} label="Draw field" disabled={!canPlaceFields} onClick={() => { setPlacingTool(null); setDrawMode('field') }} />
+            <ToolbarButton icon={Eraser} label="Whiteout" disabled={!canPlaceFields} onClick={() => { setPlacingTool(null); setDrawMode('whiteout') }} />
+            <ToolbarButton icon={Eraser} label="Cover" disabled={!canPlaceFields} onClick={addCoverRegion} />
             <span className="mx-1 hidden h-5 w-px bg-brand-line sm:block" aria-hidden="true" />
             <ToolbarButton icon={Undo2} label="Undo" onClick={undo} disabled={!undoStack.current.length} />
             <ToolbarButton icon={Redo2} label="Redo" onClick={redo} disabled={!redoStack.current.length} />
@@ -532,7 +563,6 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
           </>
         ) : (
           <>
-            <span className="text-xs font-semibold text-brand-muted"><span>{fields.filter(field => field.included !== false).length} fields</span> · {fields.filter(field => field.included !== false && (field.review_required || field.ai_suggested || Number(field.confidence ?? 1) < 0.75)).length} need review</span>
             <ToolbarButton icon={Undo2} label="Undo" onClick={undo} disabled={!undoStack.current.length} />
             <ToolbarButton icon={Redo2} label="Redo" onClick={redo} disabled={!redoStack.current.length} />
           </>
@@ -560,6 +590,67 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
           </button>
         </div>
       </fieldset>
+      {/* Discovery coverage answered "what did we find?". This row answers the
+          question that decides whether the template is worth having: how much
+          of it arrives filled. It sits outside the PDF/Word branch above
+          because a PDF template previously carried no field count at all. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-brand-line bg-brand-bg px-3 py-1.5 text-[11px] text-brand-muted">
+        {/* Not a live region: the save status below already owns that role,
+            and two of them read out over each other. */}
+        <span className="font-semibold">
+          <span>{fields.filter(field => field.included !== false).length} fields</span> · {fields.filter(field => field.included !== false && !sourceReviewed && (field.review_required || field.ai_suggested || Number(field.confidence ?? 1) < 0.75)).length} need review
+        </span>
+        {catalogueLoaded && coverage.total > 0 && (
+          <span className="font-semibold text-brand-ink">{coverage.fills} of {coverage.total} fill from the record</span>
+        )}
+        {pdfSource && (
+          <button
+            type="button"
+            aria-pressed={showFills}
+            disabled={!catalogueLoaded}
+            title={catalogueLoaded ? 'Colour each field by where its value comes from' : 'Loading the data-source catalogue…'}
+            onClick={() => setHighlightFills(value => !value)}
+            className={`rounded border border-brand-line px-2 py-0.5 disabled:opacity-40 ${showFills ? 'bg-brand-ink text-white' : 'bg-brand-surface-2'}`}
+          >
+            Highlight fill source
+          </button>
+        )}
+        {pdfSource && (showFills ? FILL_STATES.filter(state => coverage.counts[state] > 0).map(state => (
+          <span key={state}><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[state] }} />{FILL_STATE_LABELS[state]} {coverage.counts[state]}</span>
+        )) : (
+          <>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-blue-600" />Manual</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-amber-600" />Needs review</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-green-600" />Verified / source field</span>
+          </>
+        ))}
+      </div>
+      {/* A publish blocker, so it is loud while outstanding and quiet once
+          answered — not a checkbox buried in a panel. The wizard asked for
+          this attestation before a draft could even be created, which is a
+          heavier gate than the risk warrants: a draft generates nothing. What
+          matters is that nobody publishes a scan they have not checked. */}
+      {unreviewedFields.length > 0 && (
+        <div className={`border-b border-brand-line px-3 py-2 text-sm ${sourceReviewed ? 'bg-brand-bg' : 'bg-brand-amber/10'}`}>
+          <label className="flex items-start gap-2 text-brand-ink">
+            <input
+              type="checkbox"
+              aria-label="Confirm source comparison"
+              checked={sourceReviewed}
+              onChange={(event) => { setSourceReviewed(event.target.checked); setDirty(true) }}
+              className="mt-1 h-4 w-4 accent-brand-accent"
+            />
+            <span>
+              I compared every highlighted field with the original document and corrected anything uncertain.
+              <span className="mt-0.5 block text-[11px] text-brand-muted">
+                {sourceReviewed
+                  ? `Confirmed for all ${unreviewedFields.length} of them. Adding, removing or moving a field asks again.`
+                  : `${unreviewedFields.length} field${unreviewedFields.length === 1 ? '' : 's'} ${unreviewedFields.length === 1 ? 'has' : 'have'} not been checked against the original yet. This template cannot be published until you confirm.`}
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
       {placingTool && <div className="flex flex-wrap items-center gap-3 border-b border-brand-line bg-brand-accent/10 px-3 py-2 text-sm"><span>Click on the document to place a {placingTool} field.</span><button type="button" onClick={() => addField(placingTool)} className="text-xs underline">Place at page center</button><button type="button" onClick={() => setPlacingTool(null)} className="text-xs underline">Cancel placement</button></div>}
 
       {(saveError || duplicateNames.size > 0 || invalidNames.length > 0) && (
@@ -604,7 +695,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
             onModeSuggestion={setSourceModeSuggestion}
             onParagraphs={setWordParagraphs}
             onReviewChange={template.variable_schema?.source_review_version === 1 ? (next) => {
-              undoStack.current = [...undoStack.current.slice(-49), { fields, regions, sourceReview }]
+              undoStack.current = [...undoStack.current.slice(-49), editorSnapshot()]
               redoStack.current = []
               setHistoryVersion(value => value + 1)
               setSourceReview(next)
@@ -665,9 +756,15 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
 
         <div ref={scrollerRef} className="studio-document-scroll overflow-auto bg-brand-bg p-4">
           {previewProblem && (
-            <p role="alert" className="mb-3 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-brand-ink">
-              {previewProblem}
-            </p>
+            <div role="alert" className="mb-3 rounded-lg border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-sm text-brand-ink">
+              <p>{previewProblem}</p>
+              {placementBlockedReason && <p className="mt-1 text-xs text-brand-muted">{placementBlockedReason}</p>}
+              {sourceUrl && (
+                <a href={sourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-brand-accent-2 underline">
+                  Open the original in a new tab
+                </a>
+              )}
+            </div>
           )}
           <div
             aria-label="Editable PDF page"
@@ -704,6 +801,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
               )
               const active = entry.identity === selectedIdentity
               const locked = Boolean(entry.field.pdf_field_name)
+              const reviewColor = sourceKind(entry.field) === 'manual'
+                ? '#2563eb'
+                : fieldNeedsReview(entry.field) && !sourceReviewed
+                  ? '#d97706'
+                  : '#16a34a'
+              const fillColor = showFills
+                ? FILL_STATE_COLORS[coverage.states.get(entry.field.name)] || '#64748b'
+                : reviewColor
               return (
                 <Rnd
                   key={`${entry.identity}:${index}`}
@@ -722,11 +827,42 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                     height: ref.offsetHeight,
                   })}
                   onMouseDown={() => setSelectedIdentity(entry.identity)}
-                  className={`group rounded-sm border-2 ${active ? 'border-brand-accent bg-brand-accent/20' : 'border-brand-accent-2/70 bg-brand-accent-2/10'} ${locked ? 'cursor-not-allowed' : 'cursor-move'}`}
+                  className={`group rounded-sm border-2 ${fillColor ? 'bg-white/35' : active ? 'border-brand-accent bg-brand-accent/20' : 'border-brand-accent-2/70 bg-brand-accent-2/10'} ${active ? 'ring-2 ring-brand-accent ring-offset-1' : ''} ${locked ? 'cursor-not-allowed' : 'cursor-move'}`}
+                  style={fillColor ? { borderColor: fillColor } : undefined}
                 >
-                  <span className="pointer-events-none block max-w-full truncate rounded-sm bg-brand-ink px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    {entry.field.label || entry.field.name}
-                  </span>
+                  {/* A focusable control rather than a decorative label. The
+                      placement used to be a bare Rnd with a pointer-events-none
+                      span, so a keyboard-only author could not select, move or
+                      remove a field from this canvas at all — only drag it with
+                      a mouse. Same nudge and delete keys as the intake editor. */}
+                  <button
+                    type="button"
+                    aria-label={showFills && coverage.states.has(entry.field.name)
+                      ? `Select ${entry.field.label || entry.field.name} — ${FILL_STATE_LABELS[coverage.states.get(entry.field.name)]}`
+                      : `Select ${entry.field.label || entry.field.name}`}
+                    onClick={() => setSelectedIdentity(entry.identity)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Delete' || event.key === 'Backspace') {
+                        event.preventDefault()
+                        removeField(entry)
+                        return
+                      }
+                      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) || locked) return
+                      event.preventDefault()
+                      const delta = event.shiftKey ? 10 : 1
+                      updateGeometry(entry, index, {
+                        x: rect.x + (event.key === 'ArrowRight' ? delta : event.key === 'ArrowLeft' ? -delta : 0),
+                        y: rect.y + (event.key === 'ArrowDown' ? delta : event.key === 'ArrowUp' ? -delta : 0),
+                        width: rect.width,
+                        height: rect.height,
+                      })
+                    }}
+                    className="block h-full w-full text-left"
+                  >
+                    <span className={`block max-w-full truncate rounded-sm px-1.5 py-0.5 text-[10px] font-semibold text-white ${fillColor ? '' : 'bg-brand-ink'}`} style={fillColor ? { backgroundColor: fillColor } : undefined}>
+                      {entry.field.label || entry.field.name}
+                    </span>
+                  </button>
                 </Rnd>
               )
             })}
@@ -736,8 +872,18 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
         </>
         )}
 
-        <aside aria-label="Field properties" tabIndex={-1} className="studio-field-inspector overflow-y-auto border-t border-brand-line p-3 lg:border-l lg:border-t-0">
-          <fieldset disabled={saving || Boolean(wordingSelection)}>
+        {/* min-w-0: a grid item defaults to min-width:auto, so the field list's
+            longest label set the panel's content width and everything in it —
+            the label input, the fill-source explanation — was clipped past the
+            288px track with no scrollbar to reach it. */}
+        <aside aria-label="Field properties" tabIndex={-1} className="studio-field-inspector min-w-0 overflow-y-auto border-t border-brand-line p-3 lg:border-l lg:border-t-0">
+          {/* min-w-0: a fieldset's UA default is min-inline-size: min-content,
+              so it refuses to shrink below its widest child. The field list's
+              longest label was therefore setting the panel's content width,
+              and everything in it — the label input, the fill-source
+              explanation — ran past the 288px track with no way to scroll to
+              it. */}
+          <fieldset className="min-w-0" disabled={saving || Boolean(wordingSelection)}>
           <h2 className="text-sm font-semibold text-brand-ink">
             Fields <span className="font-normal text-brand-muted">({fields.filter((field) => field.included !== false).length})</span>
           </h2>
@@ -779,15 +925,41 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                 />
               </PropertyRow>
               {selected.context && <p className="text-xs text-brand-muted">Source context: {selected.context}</p>}
+              {selected.ai_suggested && (
+                <div className="rounded border border-brand-accent/30 bg-brand-accent/5 px-2 py-1.5 text-[11px] text-brand-muted">
+                  <p className="font-semibold text-brand-ink">AI proposal · verify against the source</p>
+                  {selected.ai_reason && <p className="mt-1">{selected.ai_reason}</p>}
+                </div>
+              )}
+              {/* "Paragraph" is `{ field_type: 'text', multiline: true }` — the
+                  shape `createManualField` writes, the intake editor writes and
+                  the renderer reads (`pdf_templates.py` keys wrapping off the
+                  boolean). Studio used to offer `multiline` as a field_type and
+                  store it without the boolean, so a paragraph re-typed here
+                  silently stopped wrapping, and a paragraph authored at intake
+                  read back as plain text.
+
+                  An AcroForm field's type is the source's to state:
+                  `_reviewed_variable_schema` overwrites field_type, multiline,
+                  options, page and rect from the live PDF, so offering the
+                  control here only promises an edit that reverts on save. */}
               <PropertyRow label="Type">
                 <select
-                  disabled={Boolean(selected.docx_choice)}
-                  value={selected.field_type || selected.type || 'text'}
-                  onChange={(event) => updateField(selectedEntry.identity, { field_type: event.target.value })}
-                  className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink"
+                  aria-label="Field type"
+                  disabled={Boolean(selected.docx_choice) || Boolean(selected.pdf_field_name)}
+                  value={selected.multiline && (selected.field_type || selected.type || 'text') === 'text' ? 'multiline' : selected.field_type || selected.type || 'text'}
+                  onChange={(event) => updateField(selectedEntry.identity, event.target.value === 'multiline'
+                    ? { field_type: 'text', multiline: true }
+                    : { field_type: event.target.value, multiline: false })}
+                  className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink disabled:opacity-60"
                 >
                   {FIELD_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  {/* A choice or radio discovered in the source is not a type
+                      anyone may pick, but it must still show its own value
+                      rather than falling back to whatever option comes first. */}
+                  {['choice', 'radio'].includes(selected.field_type) && <option value={selected.field_type}>{selected.field_type}</option>}
                 </select>
+                {selected.pdf_field_name && <span className="mt-1 block text-[11px] text-brand-muted">The source PDF states this field&apos;s type.</span>}
               </PropertyRow>
               {['signature', 'date', 'initials'].includes(String(selected.field_type || '').toLowerCase()) && (
                 <PropertyRow label="Signer role">
@@ -810,27 +982,61 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                   onChange={(binding) => updateField(selectedEntry.identity, { binding })}
                 />
               </PropertyRow>
-              <p className="text-[11px] leading-4 text-brand-muted">
-                {selected.binding && selected.binding !== 'manual'
-                  ? (selected.binding.startsWith('firm.') ? 'Uses the shared firm profile in every matter.' : 'Uses the selected data source, whatever this field is named.')
-                  : selected.binding === 'manual'
-                    ? 'Never filled automatically.'
-                    : 'Filled only when the field name happens to match a known record.'}
-              </p>
-              <label className="flex items-center gap-2 text-sm text-brand-ink">
+              {catalogueLoaded && coverage.states.has(selected.name) && (
+                <p className="flex items-start gap-1.5 text-[11px] leading-4 text-brand-muted">
+                  <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[coverage.states.get(selected.name)] }} />
+                  <span>{fillStateHelp(selected, coverage.states.get(selected.name))}</span>
+                </p>
+              )}
+              {/* A source-required field keeps its requirement through save:
+                  the server ORs the submitted value with the one the PDF
+                  asserts. Checkboxes are the exception, which the server
+                  honours, so only the locked case is disabled here rather than
+                  offering a control that silently reverted. */}
+              {(() => {
+                const lockedRequired = Boolean(selected.source_required) && selected.field_type !== 'checkbox'
+                return (
+                  <label className={`flex items-start gap-2 text-sm ${lockedRequired ? 'text-brand-muted' : 'text-brand-ink'}`}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selected.required)}
+                      disabled={lockedRequired}
+                      onChange={(event) => updateField(selectedEntry.identity, { required: event.target.checked })}
+                      className="mt-1"
+                    />
+                    <span>Required{lockedRequired && <span className="mt-0.5 block text-[11px] text-brand-muted">The source PDF marks this field required, so it cannot be made optional here.</span>}</span>
+                  </label>
+                )
+              })()}
+              {/* Excluding was a one-way door: the canvas hides an excluded
+                  field and the only control wrote `included: false`, so an
+                  accidental exclude could not be undone through the UI. The
+                  field list still lists it, which is where it gets selected. */}
+              <label className="flex items-start gap-2 text-sm text-brand-ink">
                 <input
                   type="checkbox"
-                  checked={Boolean(selected.required)}
-                  onChange={(event) => updateField(selectedEntry.identity, { required: event.target.checked })}
+                  checked={selected.included !== false}
+                  onChange={(event) => {
+                    withdrawSourceReview()
+                    updateField(selectedEntry.identity, { included: event.target.checked })
+                  }}
+                  className="mt-1"
                 />
-                Required
+                <span>Include in template{selected.included === false && <span className="mt-0.5 block text-[11px] text-brand-muted">Excluded fields are hidden on the page and left out of generated documents.</span>}</span>
               </label>
               <details className="rounded-lg border border-brand-line p-2"><summary className="cursor-pointer text-xs font-semibold">Advanced field settings</summary><div className="mt-3 space-y-3">
               <details><summary className="cursor-pointer text-xs text-brand-muted">Advanced: internal field name</summary>
               <PropertyRow label="Variable name">
                 <input
                   value={selected.name || ''}
-                  onChange={(event) => updateField(selectedEntry.identity, { name: event.target.value })}
+                  onChange={(event) => {
+                    // The digest uses the internal name to identify the field
+                    // set. Changing it therefore makes the saved attestation
+                    // describe a different set even though the visible label
+                    // and position stayed put.
+                    withdrawSourceReview()
+                    updateField(selectedEntry.identity, { name: event.target.value })
+                  }}
                   className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink"
                 />
               </PropertyRow>

@@ -2,6 +2,85 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.15.09",
+      "version": "2026.09.15.09",
+      "title": "One place to lay out a form, not two",
+      "published_at": "2026-09-15",
+      "summary": "Uploading a form now scans it and hands you straight to the template editor, instead of asking you to lay the fields out twice in two screens that had quietly drifted apart.",
+      "highlights": [
+        {
+          "title": "Upload, then edit — in one editor",
+          "description": "The upload step scans your document and shows what it found; laying out and naming the fields happens in the template editor, where you can also test, version and publish."
+        },
+        {
+          "title": "A scan that found nothing is no longer a dead end",
+          "description": "A flat PDF with no detectable fields can be saved as a draft, so you can open it in the editor and place the fields yourself."
+        },
+        {
+          "title": "The editor shows what needs checking",
+          "description": "Fields are coloured by whether they were read confidently, taken from the document's own form controls, or placed by hand — with an AI proposal marked as one."
+        },
+        {
+          "title": "A page that will not display no longer hides it",
+          "description": "Where the document cannot be shown, the editor offers the original file and stops you placing a field whose position it cannot work out."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.15.08",
+      "version": "2026.09.15.08",
+      "title": "A scanned form cannot be published unchecked",
+      "published_at": "2026-09-15",
+      "summary": "Where a scan was unsure of a field, someone now has to compare it with the original document before the template can be published — and they do it on the screen where they can fix what they find.",
+      "highlights": [
+        {
+          "title": "The source check is now enforced, not just asked for",
+          "description": "A PDF or image template with fields the scan was unsure of cannot be published until someone confirms they compared them with the original document."
+        },
+        {
+          "title": "Check the form where you can correct it",
+          "description": "The confirmation moved from the upload step to the template editor, so a field that looks wrong can be fixed on the spot instead of only ticked off."
+        },
+        {
+          "title": "Changing the fields asks again",
+          "description": "Adding, removing or moving a field withdraws the confirmation, because it no longer describes the form that was checked."
+        },
+        {
+          "title": "A clean scan asks for nothing",
+          "description": "Where every field came straight from the document's own form fields, there is nothing uncertain to confirm and no extra step."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.15.07",
+      "version": "2026.09.15.07",
+      "title": "Say what fills a form field, and see how much of it fills",
+      "published_at": "2026-09-15",
+      "summary": "The upload flow can now say where each field's value comes from, and both editors report how many of a form's fields fill themselves from the matter instead of being retyped.",
+      "highlights": [
+        {
+          "title": "Choose a data source while you review an uploaded form",
+          "description": "The Fills from control is now on the screen where a form's fields are first reviewed, for PDF and Word uploads alike, rather than only in Template Studio later."
+        },
+        {
+          "title": "See how much of a form fills itself",
+          "description": "Every editor reports how many fields arrive filled from the matter, broken down into bound, filled by field name, typed by hand, signed and no source."
+        },
+        {
+          "title": "Colour the page by where each value comes from",
+          "description": "A Fill source highlight recolours the fields on the document so a wired part of a form is distinguishable at a glance from a wall of retyping."
+        },
+        {
+          "title": "A warning before a rename quietly breaks a fill",
+          "description": "A field filling only because its name matches a known record now says so, and says that renaming it stops the fill, which nothing previously told anyone."
+        },
+        {
+          "title": "Publishing a card-bound template is no longer refused",
+          "description": "A required field bound with the card picker was refused at publish for having no data source, although it filled correctly. Approval now resolves it the same way the fill does."
+        }
+      ]
+    },
+    {
       "id": "2026.09.15.06",
       "version": "2026.09.15.06",
       "title": "Paying ends your trial, and billing stays reachable",

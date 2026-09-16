@@ -565,8 +565,7 @@ describe('document template workflow', () => {
     expect(screen.getByText('Options:').closest('p')).toHaveTextContent('Options: State Court, Federal Court')
     const mappedField = screen.getByLabelText('Automation key')
     fireEvent.change(mappedField, { target: { value: 'party_name' } })
-    await user.click(await screen.findByRole('link', { name: 'Open original in a new tab' }))
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
 
     await waitFor(() => expect({ upload: createTemplateFromUpload.mock.calls.length, json: createTemplate.mock.calls.length }).toEqual({ upload: 1, json: 0 }))
     expect(createTemplate).not.toHaveBeenCalled()
@@ -646,7 +645,7 @@ describe('document template workflow', () => {
     expect(screen.getByText(/Current source: second.docx/)).toHaveTextContent('ready to review')
     expect(await screen.findByDisplayValue('Second Letter')).toBeInTheDocument()
     expect(analyzeTemplateUpload.mock.calls[1][0].get('title')).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
 
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
     const form = createTemplateFromUpload.mock.calls[0][0]
@@ -808,7 +807,7 @@ describe('document template workflow', () => {
     expect(screen.queryByText('Wrong label')).not.toBeInTheDocument()
     expect(screen.getByText('Address requirement is absent from the source.')).toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
     const saved = createTemplateFromUpload.mock.calls[0][0]
     expect(saved.get('reviewed_body')).toBe('Client: {{client_name}}. Reference {{reference}}')
@@ -881,7 +880,7 @@ describe('document template workflow', () => {
     expect(await screen.findByText('AI proposal · verify')).toBeInTheDocument()
     expect(screen.getByText(/This value appears client-specific/)).toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
 
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
     expect(createTemplateFromUpload.mock.calls[0][0].get('analysis_token')).toBe('ai-token')
@@ -915,7 +914,7 @@ describe('document template workflow', () => {
     await user.click(screen.getByText('Advanced field name'))
     fireEvent.change(screen.getByLabelText('Automation key'), { target: { value: 'client_name' } })
     await user.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
 
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
     const form = createTemplateFromUpload.mock.calls[0][0]
@@ -943,7 +942,7 @@ describe('document template workflow', () => {
     fireEvent.mouseUp(source)
     await user.click(screen.getByRole('button', { name: 'Make selection a field' }))
     await user.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
     expect(createTemplateFromUpload.mock.calls[0][0].get('reviewed_body')).toBe('Applicant: {{client_name}}; role: {{client}}.')
   })
@@ -1414,7 +1413,11 @@ describe('document template workflow', () => {
     }))
   })
 
-  it('lets a reviewer repair a PDF with no automatic detections by placing a manual field', async () => {
+  it('saves a scan that found nothing, because the fields are placed in the editor', async () => {
+    // The wizard used to refuse this: a template with no fields was useless
+    // and the wizard was the only place to place one. Fields are placed in the
+    // editor now, so refusing the draft would leave a firm holding a flat PDF
+    // with nowhere to go.
     analyzeTemplateUpload.mockResolvedValue({
       title: 'Flat PDF', format: 'pdf', body: 'Extracted text',
       suggested_variable_schema: {
@@ -1430,22 +1433,16 @@ describe('document template workflow', () => {
     fireEvent.change(await screen.findByLabelText('Sample document'), {
       target: { files: [new File(['%PDF-1.7'], 'flat.pdf', { type: 'application/pdf' })] },
     })
+
     expect(await screen.findByText(/No reusable details located confidently/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Waiting for source preview' })).toBeDisabled()
-    await user.click(await screen.findByRole('link', { name: 'Open original in a new tab' }))
-    await user.click(screen.getByRole('button', { name: 'text' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save reusable template' })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+    expect(screen.getByText(/place the fields yourself in the editor/)).toBeInTheDocument()
+
+    const save = screen.getByRole('button', { name: 'Save draft and open the editor' })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
 
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
-    const schema = JSON.parse(createTemplateFromUpload.mock.calls[0][0].get('variable_schema'))
-    expect(schema.fields[0]).toEqual(expect.objectContaining({
-      name: 'field_1',
-      field_type: 'text',
-      included: true,
-      pdf_source_key: expect.stringMatching(/^manual:/),
-    }))
-    expect(schema.fields[0].pdf_overlay.rect).toHaveLength(4)
+    expect(JSON.parse(createTemplateFromUpload.mock.calls[0][0].get('variable_schema')).fields).toEqual([])
   })
 
   it('accepts a dropped image, previews it, and submits the analysis token', async () => {
@@ -1476,18 +1473,19 @@ describe('document template workflow', () => {
 
     expect(await screen.findByTitle('Source image preview: filled-form.webp')).toHaveAttribute('src', 'blob:handwritten-source')
     expect(screen.getByText(/Review handwriting carefully/)).toBeInTheDocument()
-    expect(await screen.findByRole('checkbox', { name: 'Confirm source comparison' })).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Confirm review below to save' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Select Case number' }))
-    await user.click(screen.getByRole('checkbox', { name: 'Include in template' }))
-    await user.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
-    await user.click(screen.getByRole('button', { name: 'Save reusable template' }))
+
+    // A scan this uncertain is exactly what the source-review gate is for, and
+    // that gate is the editor's now, enforced at publish. Asking for the
+    // attestation here bought nothing: it was never sent anywhere, and this is
+    // the one screen where a field that looks wrong cannot be corrected.
+    expect(screen.queryByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save draft and open the editor' }))
 
     await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
     const submitted = createTemplateFromUpload.mock.calls[0][0]
     expect(submitted.get('analysis_token')).toBe('analysis-123')
-    expect(submitted.get('reviewed_body')).toBe('Applicant: {{client_name}}\nCase: CV-OLD')
-    expect(JSON.parse(submitted.get('variable_schema')).fields[1].included).toBe(false)
+    expect(submitted.get('reviewed_body')).toBe('Applicant: {{client_name}}\nCase: {{case_number}}')
+    expect(JSON.parse(submitted.get('variable_schema')).fields).toHaveLength(2)
     expect(URL.createObjectURL).toHaveBeenCalledWith(file)
   })
 
