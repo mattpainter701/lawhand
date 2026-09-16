@@ -169,7 +169,9 @@ async def revoke_trial_tenant(
     if substantive:
         raise TrialRevocationRefused(
             "Tenant holds customer work product; revoke is refused: "
-            + ", ".join(f"{name}={count}" for name, count in sorted(substantive.items()))
+            + ", ".join(
+                f"{name}={count}" for name, count in sorted(substantive.items())
+            )
         )
 
     users = list(
