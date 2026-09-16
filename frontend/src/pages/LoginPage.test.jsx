@@ -42,6 +42,30 @@ describe('login', () => {
   it('shows no session notice on an ordinary visit', () => {
     render(<MemoryRouter><LoginPage /></MemoryRouter>)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['not_invited', /not been invited/i],
+    ['microsoft_not_linked', /not linked to a LawHand user/i],
+    ['account_inactive', /invitation email/i],
+    ['invite_email_mismatch', /does not match the address/i],
+  ])('explains a refused Google/Microsoft sign-in (%s) in plain words', (code, expected) => {
+    // Provider sign-in is a full-page navigation; the backend now lands here
+    // with a code instead of leaving the person on a raw JSON error.
+    window.history.pushState({}, '', `/login?error=${code}`)
+    render(<MemoryRouter><LoginPage /></MemoryRouter>)
+    expect(screen.getByRole('alert')).toHaveTextContent(expected)
+    window.history.pushState({}, '', '/login')
+  })
+
+  it('never renders an unknown error code from the address bar', () => {
+    window.history.pushState({}, '', '/login?error=%3Cimg%20src%3Dx%3E')
+    render(<MemoryRouter><LoginPage /></MemoryRouter>)
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(/did not complete/i)
+    expect(alert).not.toHaveTextContent('<img')
+    window.history.pushState({}, '', '/login')
   })
 
   it('presents LawHand as the firm source of truth', () => {

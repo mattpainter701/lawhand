@@ -137,7 +137,7 @@ Nothing here is optional unless marked.
 - [x] #429 `feat/platform-sms-provider` — platform-managed shared Twilio account (encrypted at rest) plus an operator test-send in the console.
 
 ### Identity and email (Microsoft 365)
-- [ ] Create the production Entra app under the getlawhand.com tenant with redirect URIs `https://getlawhand.com/api/auth/microsoft/callback` and `https://getlawhand.com/api/integrations/microsoft/callback`; set `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET`; keep `MICROSOFT_TENANT_ID=common` so customer firms can still connect.
+- [ ] Create the production Entra app under the getlawhand.com tenant with redirect URIs `https://getlawhand.com/api/auth/microsoft/callback` and `https://getlawhand.com/api/integrations/microsoft/callback`; set `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET`; set `MICROSOFT_TENANT_ID=organizations` so any customer firm's Entra tenant can sign in while personal Microsoft accounts, which cannot consent to the org-only Graph scopes, are refused.
 - [ ] Re-create the Google OAuth client under a getlawhand.com-owned Google Cloud project for Google-using customers.
 - [ ] Reconnect every existing tenant after the app swap (stored tokens are bound to the old client).
 - [ ] Enable outbound email: `EMAIL_ENABLED=true` with M365 SMTP (`smtp.office365.com:587`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM=support@getlawhand.com`) so marketing, trial, and operator notifications deliver. Until then, mail is logged not-sent.

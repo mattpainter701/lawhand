@@ -110,7 +110,7 @@ async def test_http_context_validation_precedes_model_work(monkeypatch, context,
     app.include_router(intake.router)
     route = next(route for route in intake.router.routes if route.path.endswith("/intake/ai-propose"))
     capability = next(dep.call for dep in route.dependant.dependencies if dep.name == "current_user")
-    app.dependency_overrides[capability] = lambda: SimpleNamespace(id=uuid4(), tenant_id=uuid4(), premium_ai_enabled=True)
+    app.dependency_overrides[capability] = lambda: SimpleNamespace(id=uuid4(), tenant_id=uuid4(), premium_ai_enabled=True, tenant=SimpleNamespace(billing_tier="flat", expires_at=None))
     app.dependency_overrides[intake.get_db] = lambda: SimpleNamespace()
     monkeypatch.setattr(intake, "set_tenant_context", AsyncMock())
     async def unchanged(**kwargs):

@@ -303,6 +303,7 @@ Draft a professional response email. The attorney will review before sending. Do
         practice_context: str = "General legal practice",
         model: str | None = None,
         privacy_mode: bool = False,
+        use_premium: bool = True,
     ) -> str:
         prompt = self.LLM_DRAFT_PROMPT.format(
             subject=email.get("subject", ""),
@@ -319,7 +320,7 @@ Draft a professional response email. The attorney will review before sending. Do
                 messages,
                 prepare_provider_text(tenant_name, privacy_mode),
                 context="",
-                use_premium=True,
+                use_premium=use_premium,
                 provider="litellm",
                 model=model,
             )
@@ -340,6 +341,7 @@ Draft a professional response email. The attorney will review before sending. Do
         standard_model: str | None = None,
         premium_model: str | None = None,
         privacy_mode: bool = False,
+        premium_drafts: bool = True,
     ) -> list[dict]:
         results = []
 
@@ -388,6 +390,7 @@ Draft a professional response email. The attorney will review before sending. Do
                     tenant_name,
                     model=premium_model,
                     privacy_mode=privacy_mode,
+                    use_premium=premium_drafts,
                 )
 
             await _auto_log_and_task(

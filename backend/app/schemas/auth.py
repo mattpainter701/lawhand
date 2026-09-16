@@ -57,6 +57,33 @@ class ResetPasswordRequest(BaseModel):
     _validate_password = field_validator("password")(_reject_common_password)
 
 
+class InviteLookupRequest(BaseModel):
+    # POSTed rather than put in a query string so the token stays out of
+    # access logs.
+    token: str = Field(min_length=1, max_length=128)
+
+
+class InviteProviders(BaseModel):
+    password: bool = True
+    google: bool = False
+    microsoft: bool = False
+
+
+class InviteLookupResponse(BaseModel):
+    email_masked: str
+    full_name: Optional[str] = None
+    firm_name: Optional[str] = None
+    expires_at: datetime
+    providers: InviteProviders
+
+
+class InviteAcceptRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=12, max_length=128)
+
+    _validate_password = field_validator("password")(_reject_common_password)
+
+
 class OAuthCallbackExchangeRequest(BaseModel):
     code: str = Field(min_length=16, max_length=256)
 
@@ -102,6 +129,12 @@ class UserInfo(BaseModel):
     # stop working.
     subscription_status: Optional[str] = None
     billing_status: Optional[str] = None
+    # Trial standing, so the browser can count down and, once the trial has
+    # ended, send the firm to billing instead of pages that will refuse it.
+    access_state: str = "active"  # active | trial | trial_expired
+    trial_ends_at: Optional[datetime] = None
+    # False on trials and demo workspaces regardless of the per-user flag.
+    premium_ai_available: bool = True
     enabled_modules: list[str] = []
     active_addons: list[str] = []
     capabilities: list[str] = []

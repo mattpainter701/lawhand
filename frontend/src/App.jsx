@@ -19,6 +19,7 @@ const HomePage = lazy(() => import('./pages/HomePage'))
 const SignupPage = lazy(() => import('./pages/SignupPage'))
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
+const AcceptInvitePage = lazy(() => import('./pages/AcceptInvitePage'))
 const LegalNoticePage = lazy(() => import('./pages/LegalNoticePage'))
 const TrustCenterPage = lazy(() => import('./pages/TrustCenterPage'))
 const ProductChatPage = lazy(() => import('./pages/ProductChatPage'))
@@ -276,6 +277,7 @@ export default function App() {
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route path="/terms" element={<LegalNoticePage type="terms" />} />
         <Route path="/privacy" element={<LegalNoticePage type="privacy" />} />
         <Route path="/trust-center" element={<TrustCenterPage />} />

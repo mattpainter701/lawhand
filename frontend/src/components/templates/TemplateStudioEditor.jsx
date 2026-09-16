@@ -1016,7 +1016,10 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                 <input
                   type="checkbox"
                   checked={selected.included !== false}
-                  onChange={(event) => updateField(selectedEntry.identity, { included: event.target.checked })}
+                  onChange={(event) => {
+                    withdrawSourceReview()
+                    updateField(selectedEntry.identity, { included: event.target.checked })
+                  }}
                   className="mt-1"
                 />
                 <span>Include in template{selected.included === false && <span className="mt-0.5 block text-[11px] text-brand-muted">Excluded fields are hidden on the page and left out of generated documents.</span>}</span>
@@ -1026,7 +1029,14 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
               <PropertyRow label="Variable name">
                 <input
                   value={selected.name || ''}
-                  onChange={(event) => updateField(selectedEntry.identity, { name: event.target.value })}
+                  onChange={(event) => {
+                    // The digest uses the internal name to identify the field
+                    // set. Changing it therefore makes the saved attestation
+                    // describe a different set even though the visible label
+                    // and position stayed put.
+                    withdrawSourceReview()
+                    updateField(selectedEntry.identity, { name: event.target.value })
+                  }}
                   className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink"
                 />
               </PropertyRow>

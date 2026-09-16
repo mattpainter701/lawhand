@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from typing import TypeVar
 
-from fastapi import HTTPException
+from app.utils.auth_errors import AuthRefusal
 
 
 TenantT = TypeVar("TenantT")
@@ -18,12 +18,22 @@ def require_active_tenant(tenant: TenantT | None) -> TenantT:
     session fails closed as soon as ``Tenant.is_active`` is cleared.
     """
 
+    # AuthRefusal is an HTTPException: every existing caller still sees the
+    # same 403 and detail. The code lets browser sign-in explain it in words.
     if tenant is None or not bool(getattr(tenant, "is_active", False)):
-        raise HTTPException(status_code=403, detail="Tenant account is inactive")
+        raise AuthRefusal(
+            code="tenant_inactive",
+            status_code=403,
+            detail="Tenant account is inactive",
+        )
     expires_at = getattr(tenant, "expires_at", None)
     if expires_at is not None:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at <= datetime.now(timezone.utc):
-            raise HTTPException(status_code=403, detail="Tenant access has expired")
+            raise AuthRefusal(
+                code="tenant_inactive",
+                status_code=403,
+                detail="Tenant access has expired",
+            )
     return tenant

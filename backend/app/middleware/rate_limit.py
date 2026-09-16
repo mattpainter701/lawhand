@@ -33,6 +33,10 @@ AUTH_LIMITS = {
     "/api/auth/register": (5, 600),
     "/api/auth/forgot-password": (5, 900),
     "/api/auth/reset-password": (5, 900),
+    # Invitation tokens carry 256 bits, so these limits guard load rather than
+    # guessing. Lookup runs once per page view; accept writes a password.
+    "/api/auth/invite/lookup": (20, 900),
+    "/api/auth/invite/accept": (5, 900),
     # Hosted MCP clients register from shared cloud egress. Ten requests/hour
     # can lock every customer out after a small retry burst, so keep a bounded
     # database-write ceiling that still accommodates brokered Claude/GPT users.

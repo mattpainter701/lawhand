@@ -229,6 +229,16 @@ describe('TemplateStudioEditor', () => {
       expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeChecked()
     })
 
+    it('asks again when a confirmed field is excluded', () => {
+      render(<TemplateStudioEditor template={templateWith(uncertain, { pdf_source_review: { confirmed_digest: 'abc' } })} source={pdfSource()} onSave={vi.fn()} />)
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).toBeChecked()
+
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include in template/ }))
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include in template/ }))
+
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeChecked()
+    })
+
     it('leaves a Word template to its own review', () => {
       render(<TemplateStudioEditor template={{ ...templateWith(uncertain), format: 'docx' }} onSave={vi.fn()} />)
 
