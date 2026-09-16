@@ -85,6 +85,30 @@ async def _run_document_ingest(row: DurableJob) -> dict:
         return {"document_id": str(doc.id), "chunks": doc.chunk_count}
 
 
+async def _run_matter_fact_extraction(row: DurableJob) -> dict:
+    """Extract supported record values from one intake document for review.
+
+    The worker never writes a record value: it proposes, and raises a review
+    task when the source yielded anything. A source with no readable text, or
+    no supported answer, completes normally.
+    """
+
+    from app.services.matter_fact_extraction import extract_and_queue
+
+    payload = row.payload or {}
+    async with async_session_maker() as session:
+        await set_tenant_context(session, str(row.tenant_id))
+        try:
+            return await extract_and_queue(
+                db=session,
+                tenant_id=row.tenant_id,
+                matter_id=uuid.UUID(str(payload["matter_id"])),
+                document_id=uuid.UUID(str(payload["document_id"])),
+            )
+        except (KeyError, TypeError, ValueError):
+            return {"status": "skipped", "reason": "malformed payload"}
+
+
 async def _run_cloud_sync(row: DurableJob) -> dict:
     from app.routers.documents import _process_document
     from app.services.corpus_revision import advance_rag_corpus_revision

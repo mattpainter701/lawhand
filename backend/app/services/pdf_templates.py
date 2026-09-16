@@ -482,6 +482,63 @@ def discover_pdf_fields(content: bytes) -> list[dict[str, Any]]:
     return fields
 
 
+def read_pdf_form_values(content: bytes) -> list[dict[str, Any]]:
+    """Return the values a person already entered into an AcroForm PDF.
+
+    Template discovery reads *structure* and enforces the strict geometry a
+    renderer needs. A filled intake form is instead an untrusted *data source*,
+    so this reader is deliberately tolerant: it never inspects widget borders,
+    rotation, or counts, and it never reads a signature. Each returned terminal
+    field carries the qualified PDF name, its human label (``/TU`` when the
+    author supplied one), its type, and its current value as text. Unfilled
+    fields are omitted so a blank never masquerades as an answer.
+    """
+
+    reader = _open_pdf(content)
+    raw_fields = reader.get_fields() or {}
+    values: list[dict[str, Any]] = []
+    for name, field in raw_fields.items():
+        raw_value = _resolve(field.get("/V"))
+        if raw_value is None:
+            continue
+        field_type = str(_resolve(field.get("/FT")) or "")
+        if field_type == "/Sig":
+            continue
+        flags = int(_resolve(field.get("/Ff")) or 0)
+        if field_type == "/Btn":
+            if flags & (1 << 16):  # push button, not a data field
+                continue
+            # An unchecked box or unselected radio reads as ``/Off``: that is a
+            # blank, not a "no". Omit it so a firm never accepts a false the
+            # client never actually marked.
+            if str(raw_value).lstrip("/") in {"", "Off"}:
+                continue
+            type_name = "radio" if flags & (1 << 15) else "checkbox"
+            text = "true"
+        elif field_type == "/Ch":
+            type_name = "choice"
+            if isinstance(raw_value, (list, tuple)):
+                text = ", ".join(str(_resolve(item)) for item in raw_value)
+            else:
+                text = str(raw_value)
+        else:
+            type_name = "text"
+            text = str(raw_value)
+        text = text.strip()
+        if not text:
+            continue
+        label = str(field.get("/TU") or name).replace("_", " ").strip()
+        values.append(
+            {
+                "pdf_field_name": name,
+                "label": label,
+                "field_type": type_name,
+                "value": text,
+            }
+        )
+    return values
+
+
 _LABEL_BLANK_PATTERN = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /&.'()-]{1,48})\s*:\s*$")
 _LABEL_BLANK_ALIASES = {
     "name": "client_name",
