@@ -2570,6 +2570,7 @@ async def get_me(
             else None
         ),
         billing_status=user.tenant.mcp_billing_status if user.tenant else None,
+        billing_checkout_available=bool(user.tenant and user.tenant.platform_billing_provider == "helcim" and settings.HELCIM_API_TOKEN and settings.HELCIM_PAYMENT_PLAN_ID),
         access_state=access_state(user.tenant),
         trial_ends_at=(
             user.tenant.expires_at if access_state(user.tenant) != "active" else None
@@ -2687,6 +2688,7 @@ async def update_me(
             else None
         ),
         billing_status=user.tenant.mcp_billing_status if user.tenant else None,
+        billing_checkout_available=bool(user.tenant and user.tenant.platform_billing_provider == "helcim" and settings.HELCIM_API_TOKEN and settings.HELCIM_PAYMENT_PLAN_ID),
         access_state=access_state(user.tenant),
         trial_ends_at=(
             user.tenant.expires_at if access_state(user.tenant) != "active" else None

@@ -262,6 +262,13 @@ GOOGLE_USER_SCOPES = (
     "https://www.googleapis.com/auth/calendar "
     "https://www.googleapis.com/auth/drive"
 )
+GOOGLE_SOLO_SCOPES = (
+    "openid email profile "
+    "https://www.googleapis.com/auth/gmail.readonly "
+    f"{GOOGLE_MAIL_SEND_SCOPE} "
+    "https://www.googleapis.com/auth/calendar "
+    "https://www.googleapis.com/auth/drive"
+)
 ZOOM_SCOPES = "meeting:write meeting:read user:read"
 
 SCOPE_ALIASES_GOOGLE = {
@@ -628,6 +635,7 @@ async def microsoft_callback(
 async def google_connect(
     request: Request,
     intent: str = Query("admin", description="admin=tenant-wide, user=per-user"),
+    account_mode: str = Query("workspace", description="workspace or personal for admin onboarding"),
     db: AsyncSession = Depends(get_db),
 ):
     if not is_oauth_client_configured(
@@ -648,6 +656,8 @@ async def google_connect(
         )
     if intent == "admin" and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    if account_mode not in {"workspace", "personal"} or (intent != "admin" and account_mode != "workspace"):
+        raise HTTPException(status_code=400, detail="Choose Google Workspace or Personal Google for admin onboarding")
 
     state = secrets.token_urlsafe(32)
     code_verifier, code_challenge = generate_pkce_pair()
@@ -661,11 +671,15 @@ async def google_connect(
             "tenant_id": str(user.tenant_id),
             "role": user.role,
             "pkce_verifier": code_verifier,
+            "account_mode": account_mode,
         },
     )
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
-    scopes = GOOGLE_ADMIN_SCOPES if intent == "admin" else GOOGLE_USER_SCOPES
+    scopes = (
+        GOOGLE_SOLO_SCOPES if intent == "admin" and account_mode == "personal"
+        else GOOGLE_ADMIN_SCOPES if intent == "admin" else GOOGLE_USER_SCOPES
+    )
 
     authorize_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
@@ -697,6 +711,13 @@ async def google_callback(
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
     intent = meta.get("intent", "user") if meta else "user"
+    account_mode = meta.get("account_mode", "workspace") if meta else "workspace"
+    if intent == "admin" and account_mode not in {"workspace", "personal"}:
+        return _error_redirect("google", "invalid_state")
+    expected_scopes = (
+        GOOGLE_SOLO_SCOPES if intent == "admin" and account_mode == "personal"
+        else GOOGLE_ADMIN_SCOPES if intent == "admin" else GOOGLE_USER_SCOPES
+    )
     code_verifier = meta.get("pkce_verifier") if meta else None
 
     token_payload = {
@@ -772,8 +793,12 @@ async def google_callback(
                 expires_in=expires_in,
                 scope_str=scope_str,
             )
-            apply_scope_audit(row, "google", GOOGLE_ADMIN_SCOPES, _scope_is_granted)
             account_type, account_domain = account_detect.detect_google(decoded)
+            if account_mode == "personal" and account_type != "personal":
+                raise HTTPException(status_code=400, detail="This consent is not a Personal Google account")
+            if account_mode == "workspace" and account_type != "workspace":
+                raise HTTPException(status_code=400, detail="Google Workspace administrator consent is required for this mode")
+            apply_scope_audit(row, "google", expected_scopes, _scope_is_granted)
             account_detect.apply_detection(row, account_type, account_domain)
         else:
             user_id, tenant_id = _require_state_user(meta, "user")
@@ -808,7 +833,8 @@ async def google_callback(
         if intent == "admin":
             await _onboarding_post_connect(db, tenant_id, "google")
             await _ensure_cloud_root(db, tenant_id)
-            _schedule_user_sync_post_connect(tenant_id, "google")
+            if account_mode == "workspace":
+                _schedule_user_sync_post_connect(tenant_id, "google")
 
     return await _post_connect_redirect(db, tenant_id, "google")
 

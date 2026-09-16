@@ -100,7 +100,9 @@ async def test_reenter_migration_error_returns_conflict_without_commit(monkeypat
 
 @pytest.mark.asyncio
 async def test_skip_defers_without_false_completion(monkeypatch):
-    tenant = _tenant(onboarding_completed=False, onboarding_step=3)
+    tenant = _tenant()
+    tenant.onboarding_completed = False
+    tenant.onboarding_step = 3
     db = _Db(tenant)
     user = SimpleNamespace(tenant_id="tenant", id="admin")
 

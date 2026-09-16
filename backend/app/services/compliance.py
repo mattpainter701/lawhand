@@ -38,6 +38,7 @@ from app.models.sms import (
 )
 from app.models.task import Task, TaskAutomationRun, TaskEvent
 from app.models.tenant import Tenant
+from app.models.tenant_credential import TenantCredential
 
 settings = get_settings()
 
@@ -292,7 +293,19 @@ async def onboarding_cloud_connection_blocked(
     if status["blocking"]:
         return True
     tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
-    return bool(tenant and not tenant.onboarding_completed and not status["configured"])
+    if not tenant or status["configured"]:
+        return False
+    active_credential = await db.scalar(
+        select(TenantCredential.id).where(
+            TenantCredential.tenant_id == tenant_id,
+            TenantCredential.provider.in_(("google", "microsoft")),
+            TenantCredential.is_active.is_(True),
+        ).limit(1)
+    )
+    # Completed tenants with a real provider credential may reconnect during
+    # an OAuth refresh. A completed row without one is not evidence of a valid
+    # prior setup and remains fail-closed.
+    return active_credential is None
 
 
 async def chat_attachment_ttl_days(db: AsyncSession, tenant_id: uuid.UUID) -> int:

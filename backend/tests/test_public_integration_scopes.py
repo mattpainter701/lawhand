@@ -19,6 +19,7 @@ from app.routers.integrations import (
     GOOGLE_USER_SCOPES,
     MICROSOFT_ADMIN_SCOPES,
     MICROSOFT_USER_SCOPES,
+    GOOGLE_SOLO_SCOPES,
 )
 from app.services.teams import TEAMS_CONNECT_SCOPES
 
@@ -62,3 +63,10 @@ def test_no_provider_publishes_an_undeclared_intent() -> None:
         assert set(intents) <= {"admin", "user", "teamsOptIn"}, (
             f"{provider} declares an intent the public page does not render"
         )
+
+
+def test_personal_google_onboarding_scopes_are_least_privilege() -> None:
+    assert "https://www.googleapis.com/auth/admin.directory.user.readonly" not in GOOGLE_SOLO_SCOPES
+    assert "https://www.googleapis.com/auth/gmail.readonly" in GOOGLE_SOLO_SCOPES
+    assert "https://www.googleapis.com/auth/drive" in GOOGLE_SOLO_SCOPES
+    assert "https://www.googleapis.com/auth/calendar" in GOOGLE_SOLO_SCOPES

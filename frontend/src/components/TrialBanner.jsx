@@ -22,7 +22,7 @@ export function resolveTrialState(user, now = Date.now()) {
   if (user.access_state === 'trial_expired') {
     return {
       tone: 'rose',
-      message: 'Your free trial has ended. Subscribe to get your firm working again.',
+      message: 'Your free trial has ended. Contact LawHand to restore firm access.',
       daysLeft: 0,
     }
   }
@@ -57,13 +57,13 @@ export default function TrialBanner({ user, canManageBilling = false, now }) {
     >
       <Clock size={15} aria-hidden="true" className="shrink-0" />
       <span>{state.message}</span>
-      {canManageBilling ? (
+      {canManageBilling && user?.billing_checkout_available ? (
         <Link to="/billing" className="underline underline-offset-2 hover:no-underline">
           Subscribe now
         </Link>
       ) : (
         <span className="font-normal opacity-90">
-          Ask a firm administrator to subscribe.
+          {canManageBilling ? 'Contact LawHand to request activation.' : 'Ask a firm administrator to contact LawHand.'}
         </span>
       )}
       {user?.premium_ai_available === false && state.daysLeft > 0 && (

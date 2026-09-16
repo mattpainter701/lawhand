@@ -129,6 +129,7 @@ class UserInfo(BaseModel):
     # stop working.
     subscription_status: Optional[str] = None
     billing_status: Optional[str] = None
+    billing_checkout_available: bool = False
     # Trial standing, so the browser can count down and, once the trial has
     # ended, send the firm to billing instead of pages that will refuse it.
     access_state: str = "active"  # active | trial | trial_expired

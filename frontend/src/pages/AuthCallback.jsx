@@ -34,7 +34,7 @@ export default function AuthCallback() {
         if (userObj?.role === 'admin' && enabledModules.includes('onboarding')) {
           getOnboardingStatus()
             .then((s) => {
-              if (!s.onboarding_completed) {
+              if (!s.onboarding_completed && !s.setup_deferred) {
                 navigate('/onboarding', { replace: true })
               } else {
                 navigate(defaultRoute, { replace: true })

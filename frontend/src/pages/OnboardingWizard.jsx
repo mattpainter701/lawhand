@@ -70,6 +70,7 @@ export default function OnboardingWizard() {
   const [storageChoice, setStorageChoice] = useState(null)
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageResult, setStorageResult] = useState(null)
+  const [googleAccountMode, setGoogleAccountMode] = useState('workspace')
 
   useEffect(() => {
     loadStatus()
@@ -104,7 +105,7 @@ export default function OnboardingWizard() {
   }
 
   const handleConnectGoogle = () => {
-    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=admin`
+    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=admin&account_mode=${googleAccountMode}`
   }
 
   const handleSyncUsers = async () => {
@@ -214,6 +215,7 @@ export default function OnboardingWizard() {
   const existingRoot = selectedProvider ? cloudRoot[selectedProvider] : null
   const storageReady = Boolean(existingRoot?.id)
   const confirmedRoot = storageResult?.status === 'ready' ? storageResult.root : existingRoot
+  const setupDeferred = Boolean(status?.setup_deferred)
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col">
@@ -285,6 +287,11 @@ export default function OnboardingWizard() {
       {/* Step content */}
       <div className="flex-1 flex items-start justify-center px-6 py-10">
         <div className="max-w-lg w-full animate-in fade-in slide-in-from-bottom-2 duration-300" key={step}>
+          {setupDeferred && step === STEP.WELCOME && (
+            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900" role="status">
+              Setup is deferred. Your core workspace remains available; no cloud connection or team import has been completed.
+            </div>
+          )}
           {error && (
             <div className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
               {error}
@@ -400,15 +407,21 @@ export default function OnboardingWizard() {
                         disabled={!agreementReady}
                         className="px-4 py-2 bg-brand-ink text-white font-sans text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        Connect
+                        Connect {googleAccountMode === 'personal' ? 'Personal Google' : 'Workspace'}
                       </button>
                     )}
                   </div>
                   <p className="text-brand-ink-2 font-sans text-xs leading-relaxed">
-                    Google Workspace: administrator consent enables directory sync,
-                    Gmail, Drive, and Calendar. Personal Gmail is not a Workspace
-                    directory; do not expect team import.
+                    {googleAccountMode === 'personal'
+                      ? 'Personal Google / Google One: connects your Gmail, Drive, and Calendar without directory access. Invite teammates from Admin instead.'
+                      : 'Google Workspace: administrator consent enables directory sync, Gmail, Drive, and Calendar.'}
                   </p>
+                  {!googleConnected && (
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs text-brand-ink-2">
+                      <label><input type="radio" name="google-account-mode" checked={googleAccountMode === 'workspace'} onChange={() => setGoogleAccountMode('workspace')} /> <span className="ml-1">Google Workspace administrator</span></label>
+                      <label><input type="radio" name="google-account-mode" checked={googleAccountMode === 'personal'} onChange={() => setGoogleAccountMode('personal')} /> <span className="ml-1">Personal Google / Google One</span></label>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -535,9 +548,11 @@ export default function OnboardingWizard() {
           {/* Step 3: Syncing */}
           {step === STEP.SYNC && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm text-center">
-              <h2 className="text-brand-ink font-sans text-lg font-bold mb-2">Import Your Team</h2>
+              <h2 className="text-brand-ink font-sans text-lg font-bold mb-2">{status?.integrations?.google?.account_type === 'personal' ? 'Confirm Personal Google Setup' : 'Import Your Team'}</h2>
               <p className="text-brand-ink-2 font-sans text-sm leading-relaxed mb-6">
-                {syncing
+                {status?.integrations?.google?.account_type === 'personal'
+                  ? 'Personal Google accounts do not have a Workspace directory to import. Gmail, Drive, and Calendar are connected; invite users from the Admin panel if needed.'
+                  : syncing
                   ? 'Pulling users from your connected directory. This may take a moment.'
                   : 'LawHand imports users from your connected directory. On personal accounts there is no directory to import; you can invite users from the Admin panel instead.'}
               </p>
@@ -556,7 +571,7 @@ export default function OnboardingWizard() {
                   disabled={syncing || !hasIntegration}
                   className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {syncing ? 'Syncing...' : 'Sync Users'}
+                  {syncing ? 'Syncing...' : status?.integrations?.google?.account_type === 'personal' ? 'Continue' : 'Sync Users'}
                 </button>
               </div>
             </div>
@@ -565,10 +580,12 @@ export default function OnboardingWizard() {
           {/* Step 4: Review */}
           {step === STEP.REVIEW && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
-              <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Review Imported Users</h2>
+              <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">{status?.integrations?.google?.account_type === 'personal' ? 'Review Google Setup' : 'Review Imported Users'}</h2>
               <WorkflowSynthesisPanel user={user} onboarding />
               <p className="text-brand-ink-2 font-sans text-sm mb-6">
-                {totalSynced > 0
+                {status?.integrations?.google?.account_type === 'personal'
+                  ? 'No team directory sync was performed for this personal Google account.'
+                  : totalSynced > 0
                   ? `${totalSynced} users were imported from your directory.`
                   : 'No users were imported yet. You can sync again from the Admin panel later.'}
               </p>
