@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { resetPassword } from '../api'
 import FormField from '../components/form/FormField'
 
@@ -28,6 +28,12 @@ export default function ResetPasswordPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (token && searchParams.get('invite') === '1') {
+    // Invitation emails sent before the accept page existed point here; the
+    // reset flow cannot redeem an invitation, so hand it to the page that can.
+    return <Navigate to={`/accept-invite?token=${encodeURIComponent(token)}`} replace />
   }
 
   if (!token) {

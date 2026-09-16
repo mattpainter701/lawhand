@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.15.07 — One place to lay out a form, not two
+## 2026.09.15.09 — One place to lay out a form, not two
 
 Released September 15, 2026.
 
@@ -16,7 +16,7 @@ Uploading a form now scans it and hands you straight to the template editor, ins
 - **The editor shows what needs checking.** Fields are coloured by whether they were read confidently, taken from the document's own form controls, or placed by hand — with an AI proposal marked as one.
 - **A page that will not display no longer hides it.** Where the document cannot be shown, the editor offers the original file and stops you placing a field whose position it cannot work out.
 
-## 2026.09.15.06 — A scanned form cannot be published unchecked
+## 2026.09.15.08 — A scanned form cannot be published unchecked
 
 Released September 15, 2026.
 
@@ -27,7 +27,7 @@ Where a scan was unsure of a field, someone now has to compare it with the origi
 - **Changing the fields asks again.** Adding, removing or moving a field withdraws the confirmation, because it no longer describes the form that was checked.
 - **A clean scan asks for nothing.** Where every field came straight from the document's own form fields, there is nothing uncertain to confirm and no extra step.
 
-## 2026.09.15.05 — Say what fills a form field, and see how much of it fills
+## 2026.09.15.07 — Say what fills a form field, and see how much of it fills
 
 Released September 15, 2026.
 
@@ -38,6 +38,28 @@ The upload flow can now say where each field's value comes from, and both editor
 - **Colour the page by where each value comes from.** A Fill source highlight recolours the fields on the document so a wired part of a form is distinguishable at a glance from a wall of retyping.
 - **A warning before a rename quietly breaks a fill.** A field filling only because its name matches a known record now says so, and says that renaming it stops the fill, which nothing previously told anyone.
 - **Publishing a card-bound template is no longer refused.** A required field bound with the card picker was refused at publish for having no data source, although it filled correctly. Approval now resolves it the same way the fill does.
+
+## 2026.09.15.06 — Paying ends your trial, and billing stays reachable
+
+Released September 15, 2026.
+
+Subscribing during a free trial now ends the trial straight away, a trial that has run out can still reach billing to pay, and premium AI becomes available once a firm subscribes.
+
+- **Paying ends the trial at once.** Subscribing during your free trial clears the trial end date, so your firm keeps working past the day the trial would have ended.
+- **You can always reach billing to pay.** If a trial runs out, an administrator can still sign in and open Billing to subscribe. Other pages wait until the subscription is active.
+- **One trial, not two.** Subscribing no longer starts a second free period at the payment provider, so the first charge arrives when you expect it.
+- **Premium AI turns on when you subscribe.** Premium AI stays off during a trial across chat, plugins, templates, document drafting and email drafts, and is available once the firm subscribes.
+
+## 2026.09.15.05 — Invitations work, and sign-in explains a refusal
+
+Released September 15, 2026.
+
+Invited colleagues can accept by choosing a password or continuing with Google or Microsoft, and a refused Google or Microsoft sign-in now explains why instead of showing an error code.
+
+- **Accept an invitation your way.** The invitation email opens a page for your firm where you set a password or continue with the Google or Microsoft account the invitation was sent to.
+- **Invitations are single use and expire.** Each link works once and expires after seven days. Administrators can resend or revoke an invitation from the Users list, where invited people now appear.
+- **A clear message when sign-in is refused.** If Google or Microsoft sign-in cannot continue, for example for an account that has not been invited, the sign-in page says why and what to do next.
+- **Earlier invitation links still open.** Invitations sent before this update open the new page and get a fresh seven-day window.
 
 ## 2026.09.15.04 — Assistant settings stick, and document access says who can see what
 

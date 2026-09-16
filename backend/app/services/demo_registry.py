@@ -95,6 +95,9 @@ _PURGE_ONLY_TABLES = {
     "storage_migration_matches",
     "storage_migrations",
     "user_alias_addresses",
+    # Staff invitations hold token hashes for a real tenant's invitees. Purge
+    # them with an expired demo; never clone them into another tenant.
+    "user_invitations",
     "matter_intakes",
     "api_access_logs",
     "brief_check_audits",
@@ -301,6 +304,7 @@ SENSITIVE_NEVER_CLONE = frozenset(
         "tenant_credentials",
         "tenant_oauth_apps",
         "tenant_plugin_setups",
+        "user_invitations",
         "user_oauth_tokens",
     }
 )

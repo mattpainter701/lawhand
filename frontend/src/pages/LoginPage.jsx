@@ -4,6 +4,7 @@ import { isSafeInternalReturnTo, loginMicrosoft, loginGoogle, login } from '../a
 import { useAuth } from '../App'
 import FormField from '../components/form/FormField'
 import LawHandLogo from '../components/LawHandLogo'
+import { loginErrorMessage } from '../utils/loginErrors'
 
 function MicrosoftIcon() {
   return (
@@ -55,6 +56,9 @@ export default function LoginPage() {
   // everywhere. Saying so turns an unexplained bounce back to this page into an
   // expected step, so nobody reports it as the app losing their work.
   const sessionExpired = searchParams.get('reason') === 'session_expired'
+  // Google/Microsoft refusals come back as `?error=<code>`; only known codes
+  // map to wording, so nothing from the address bar is rendered as text.
+  const signInRefusal = loginErrorMessage(searchParams.get('error'))
 
   const handleEmailLogin = async (e) => {
     e.preventDefault()
@@ -109,6 +113,15 @@ export default function LoginPage() {
             className="mb-6 rounded-lg border border-brand-line bg-brand-bg-soft px-4 py-3 text-sm text-brand-ink font-sans"
           >
             Your session ended. Sign in again to pick up where you left off.
+          </div>
+        )}
+
+        {signInRefusal && (
+          <div
+            role="alert"
+            className="mb-6 rounded-lg border border-brand-rose/20 bg-brand-rose/10 px-4 py-3 text-sm text-brand-rose font-sans"
+          >
+            {signInRefusal}
           </div>
         )}
 
