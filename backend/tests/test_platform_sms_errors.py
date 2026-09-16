@@ -53,6 +53,12 @@ def test_a_verify_sid_pasted_as_a_messaging_service_sid_is_named():
     # The operator is told which value they pasted, not just that it is wrong.
     assert "must start with MG" in str(error)
     assert "Verify Service SID" in str(error)
+    # Both clauses carry exactly one article; the console line names the same
+    # field the operator typed into, not a "stored" variant of it.
+    assert str(error) == (
+        "The Messaging Service SID must start with MG. You entered a Verify "
+        "Service SID. Copy the Messaging Service SID from the Twilio console."
+    )
 
 
 def test_an_account_sid_in_the_wrong_field_is_named_too():
@@ -86,6 +92,35 @@ def test_a_truncated_sid_is_rejected_on_shape():
             label="Account SID",
         )
     assert "32 hexadecimal" in str(exc_info.value)
+    assert str(exc_info.value).startswith(
+        "The Account SID does not look like a Twilio SID"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_stored_sid_is_validated_before_a_send(monkeypatch):
+    """A sender saved before shape checks existed still names the bad field."""
+
+    async def _config(_db):
+        return {
+            "account_sid": ACCOUNT_SID,
+            "encrypted_auth_token": "enc",
+            "messaging_service_sid": "MG123",
+            "from_number": None,
+            "is_active": True,
+        }
+
+    monkeypatch.setattr(platform_sms, "get_platform_sms_config", _config)
+    monkeypatch.setattr(platform_sms, "decrypt_token", lambda _value: "token")
+
+    with pytest.raises(PlatformSmsError) as exc_info:
+        await platform_sms.resolve_platform_sms_credentials(None)
+
+    message = str(exc_info.value)
+    assert message.startswith(
+        "The Messaging Service SID does not look like a Twilio SID"
+    )
+    assert "Copy the Messaging Service SID from the Twilio console" not in message
 
 
 def test_a_wellformed_sid_passes():
@@ -126,7 +161,13 @@ def test_a_twilio_rejection_is_a_caller_error_not_a_bad_gateway():
     # sent it. Reporting that as 502 is what let an edge proxy swallow the
     # message and leave the operator with nothing.
     error = _provider_rejection(
-        _response(400, {"message": "The 'From' number +15551234567 is not a valid...", "code": 21606})
+        _response(
+            400,
+            {
+                "message": "The 'From' number +15551234567 is not a valid...",
+                "code": 21606,
+            },
+        )
     )
     assert error.status_code == 400
     assert error.code == "platform_sms_provider_rejected"
@@ -205,9 +246,7 @@ async def test_a_timeout_is_a_gateway_timeout_not_a_silent_502(monkeypatch):
         )
 
     monkeypatch.setattr(platform_sms.httpx, "AsyncClient", _TimingOutClient)
-    monkeypatch.setattr(
-        platform_sms, "resolve_platform_sms_credentials", _credentials
-    )
+    monkeypatch.setattr(platform_sms, "resolve_platform_sms_credentials", _credentials)
 
     with pytest.raises(PlatformSmsError) as exc_info:
         await platform_sms.send_platform_test_sms(None, to="+17015273866")
@@ -240,9 +279,7 @@ async def test_an_unreachable_provider_is_a_bad_gateway(monkeypatch):
         )
 
     monkeypatch.setattr(platform_sms.httpx, "AsyncClient", _UnreachableClient)
-    monkeypatch.setattr(
-        platform_sms, "resolve_platform_sms_credentials", _credentials
-    )
+    monkeypatch.setattr(platform_sms, "resolve_platform_sms_credentials", _credentials)
 
     with pytest.raises(PlatformSmsError) as exc_info:
         await platform_sms.send_platform_test_sms(None, to="+17015273866")

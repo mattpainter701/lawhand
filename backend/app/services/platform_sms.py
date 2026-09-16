@@ -254,13 +254,13 @@ async def resolve_platform_sms_credentials(
         _clean(config.get("account_sid")),
         field="account_sid",
         expected_prefix="AC",
-        label="stored Account SID",
+        label="Account SID",
     )
     _validate_sid(
         _clean(config.get("messaging_service_sid")),
         field="messaging_service_sid",
         expected_prefix="MG",
-        label="stored Messaging Service SID",
+        label="Messaging Service SID",
     )
     _validate_sender_number(_clean(config.get("from_number")))
 
@@ -311,7 +311,7 @@ def _validate_sid(value: str, *, field: str, expected_prefix: str, label: str) -
         )
     if not _SID_SHAPE.match(value):
         raise PlatformSmsError(
-            f"{label} does not look like a Twilio SID: it should be "
+            f"The {label} does not look like a Twilio SID: it should be "
             f"{expected_prefix} followed by 32 hexadecimal characters.",
             status_code=400,
             code=f"platform_sms_invalid_{field}",
