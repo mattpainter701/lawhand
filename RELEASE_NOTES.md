@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.12 — Scans and prose can be read too, when you ask
+
+Released September 15, 2026.
+
+Document reading can now use a metered AI pass to find matter and client details a form field or label missed, such as a scan or a fact stated in a sentence. It is opt-in per firm and per document, and every value is yours to review.
+
+- **For scans and prose.** A PDF with no text layer, a form whose labels have drifted, or a detail written in a sentence can now be proposed instead of missed.
+- **Only when you ask.** The AI pass is off by default until your firm enables it, and on any document you tick the box to allow it for that read.
+- **Still reviewed, never automatic.** AI values arrive as proposals beside the deterministic ones. Nothing is written until you accept a value, and a value the document does not contain is refused.
+
 ## 2026.09.15.11 — A filled intake form fills the matter for you
 
 Released September 15, 2026.

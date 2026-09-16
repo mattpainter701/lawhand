@@ -6,9 +6,11 @@ and no value for a target the source never mentions.
 """
 
 from types import SimpleNamespace
+import uuid
 
+import pytest
 
-from app.services import matter_fact_extraction as extraction
+from app.services import intake_extraction_ai, matter_fact_extraction as extraction
 
 
 def standard_target(binding, *, label=None, max_length=None):
@@ -199,3 +201,170 @@ def test_read_pdf_form_values_reads_filled_widgets():
     assert values["approved"] == "true"
     # An unchecked box is omitted: a blank must not masquerade as an answer.
     assert "declined" not in values
+
+
+def test_reconcile_ai_values_keeps_only_real_then_storable_targets():
+    target = standard_target("matter.case_number")
+    proposal = intake_extraction_ai.AiExtractionProposal(
+        values=[
+            {"target_key": "matter.case_number", "value": "2024-CV-001"},
+            {"target_key": "invented.target", "value": "whatever"},
+        ]
+    )
+    assert intake_extraction_ai.reconcile_ai_values(proposal, [target]) == {
+        "matter.case_number": "2024-CV-001"
+    }
+
+    short = standard_target("client.name", max_length=5)
+    too_long = intake_extraction_ai.AiExtractionProposal(
+        values=[{"target_key": "client.name", "value": "much too long"}]
+    )
+    assert intake_extraction_ai.reconcile_ai_values(too_long, [short]) == {}
+
+
+def test_value_in_evidence_grounds_a_reviewed_value_in_the_source():
+    assert extraction._value_in_evidence("John Smith", "Client: John Smith", [])
+    assert not extraction._value_in_evidence("Nobody", "Client: John Smith", [])
+    assert extraction._value_in_evidence(
+        "true", "", [{"value": "true", "label": "approved"}]
+    )
+
+
+async def test_extract_with_ai_is_closed_when_the_platform_switch_is_off(monkeypatch):
+    monkeypatch.setattr(
+        intake_extraction_ai,
+        "settings",
+        SimpleNamespace(INTAKE_EXTRACTION_ENABLED=False),
+    )
+    with pytest.raises(intake_extraction_ai.IntakeExtractionUnavailable):
+        await intake_extraction_ai.extract_with_ai(
+            db=None,
+            user=None,
+            text="Case No.: 2024-CV-001",
+            targets=[standard_target("matter.case_number")],
+            document_sha256="a" * 64,
+        )
+
+
+async def test_extract_with_ai_reconciles_and_meters_one_usage_record(monkeypatch):
+    monkeypatch.setattr(
+        intake_extraction_ai,
+        "settings",
+        SimpleNamespace(
+            INTAKE_EXTRACTION_ENABLED=True,
+            INTAKE_EXTRACTION_MODEL="lawhand-intake-extraction",
+            INTAKE_EXTRACTION_INPUT_USD_PER_MILLION=0.30,
+            INTAKE_EXTRACTION_OUTPUT_USD_PER_MILLION=1.20,
+            INTAKE_EXTRACTION_MAX_CHARS=12000,
+        ),
+    )
+
+    async def fake_budget(_db, _user):
+        return None
+
+    monkeypatch.setattr(intake_extraction_ai, "check_token_budget", fake_budget)
+
+    class FakeLLM:
+        async def complete(self, **_kwargs):
+            return (
+                '{"values":[{"target_key":"matter.case_number","value":"2024-CV-001",'
+                '"confidence":0.8},{"target_key":"invented","value":"x"}]}',
+                100,
+                20,
+            )
+
+    added: list = []
+
+    class FakeDB:
+        def add(self, record):
+            added.append(record)
+
+        async def commit(self):
+            return None
+
+    values = await intake_extraction_ai.extract_with_ai(
+        db=FakeDB(),
+        user=SimpleNamespace(tenant_id=uuid.uuid4(), id=uuid.uuid4(), tenant=None),
+        text="Case No.: 2024-CV-001",
+        targets=[standard_target("matter.case_number")],
+        document_sha256="a" * 64,
+        llm=FakeLLM(),
+    )
+    assert values == {"matter.case_number": "2024-CV-001"}
+    assert len(added) == 1
+    assert added[0].operation_type == "intake_extraction"
+    assert added[0].tokens_in == 100 and added[0].tokens_out == 20
+    assert added[0].cost_usd is not None and added[0].cost_usd > 0
+
+
+async def test_extract_with_ai_reports_provider_and_parse_failures(monkeypatch):
+    monkeypatch.setattr(
+        intake_extraction_ai,
+        "settings",
+        SimpleNamespace(
+            INTAKE_EXTRACTION_ENABLED=True,
+            INTAKE_EXTRACTION_MODEL="lawhand-intake-extraction",
+            INTAKE_EXTRACTION_INPUT_USD_PER_MILLION=0.30,
+            INTAKE_EXTRACTION_OUTPUT_USD_PER_MILLION=1.20,
+            INTAKE_EXTRACTION_MAX_CHARS=12000,
+        ),
+    )
+
+    async def fake_budget(_db, _user):
+        return None
+
+    monkeypatch.setattr(intake_extraction_ai, "check_token_budget", fake_budget)
+
+    class FakeDB:
+        def add(self, _record):
+            return None
+
+        async def commit(self):
+            return None
+
+    class BrokenLLM:
+        async def complete(self, **_kwargs):
+            raise RuntimeError("provider down")
+
+    with pytest.raises(intake_extraction_ai.IntakeExtractionUnavailable):
+        await intake_extraction_ai.extract_with_ai(
+            db=FakeDB(),
+            user=SimpleNamespace(tenant_id=uuid.uuid4(), id=uuid.uuid4()),
+            text="Case No.: 1",
+            targets=[],
+            document_sha256="a" * 64,
+            llm=BrokenLLM(),
+        )
+
+    class BadJSONLLM:
+        async def complete(self, **_kwargs):
+            return ("not json", 1, 1)
+
+    with pytest.raises(intake_extraction_ai.IntakeExtractionUnavailable):
+        await intake_extraction_ai.extract_with_ai(
+            db=FakeDB(),
+            user=SimpleNamespace(tenant_id=uuid.uuid4(), id=uuid.uuid4()),
+            text="Case No.: 1",
+            targets=[],
+            document_sha256="a" * 64,
+            llm=BadJSONLLM(),
+        )
+
+
+def test_json_payload_strips_a_markdown_fence():
+    fence = intake_extraction_ai._NO_MARKDOWN
+    fenced = f"{fence}\n" + '{"values": []}\n' + fence
+    assert intake_extraction_ai._json_payload(fenced) == '{"values": []}'
+
+
+def test_ai_extraction_flag_is_separate_from_the_automatic_flag():
+    assert extraction.ai_extraction_enabled(None) is False
+    assert (
+        extraction.ai_extraction_enabled(
+            SimpleNamespace(custom_config={"intake_fact_extraction": {"enabled": True}})
+        )
+        is False
+    )
+    assert extraction.ai_extraction_enabled(
+        SimpleNamespace(custom_config={"intake_fact_extraction": {"ai_enabled": True}})
+    )

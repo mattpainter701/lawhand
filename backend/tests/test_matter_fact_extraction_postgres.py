@@ -228,6 +228,45 @@ async def test_source_change_blocks_accept(client, db_session, fact_case):
     assert stale.status_code == 409
 
 
+async def test_ai_candidate_flows_through_review_and_grounded_accept(
+    client, db_session, fact_case, monkeypatch
+):
+    case = fact_case
+    # The value is stated in prose, not as a label line, so only the AI pass
+    # finds it; acceptance still has to ground it in the source it occurred in.
+    case.source["bytes"] = b"The matter is docketed as 2024-CV-001.\n"
+
+    async def fake_extract_with_ai(**_kwargs):
+        return {"matter.case_number": "2024-CV-001"}
+
+    from app.services import intake_extraction_ai
+
+    monkeypatch.setattr(intake_extraction_ai, "extract_with_ai", fake_extract_with_ai)
+
+    proposal = await facts.propose(
+        db_session, case.user, case.matter_id, case.document_id, use_ai=True
+    )
+    entry = proposal_target(proposal, "matter.case_number")
+    assert entry["source_kind"] == "ai"
+    assert entry["value"] == "2024-CV-001"
+
+    accepted = await facts.accept(
+        db_session,
+        case.user,
+        case.matter_id,
+        case.document_id,
+        facts.FactDecision(target_key="matter.case_number", value="2024-CV-001"),
+    )
+    assert accepted["status"] == "accepted"
+    await set_tenant_context(db_session, str(case.tenant_id))
+    matter = await db_session.scalar(
+        select(Matter)
+        .where(Matter.id == case.matter_id)
+        .execution_options(populate_existing=True)
+    )
+    assert matter.case_number == "2024-CV-001"
+
+
 async def test_other_tenant_cannot_propose_or_accept(client, db_session, fact_case):
     case = fact_case
     other_tenant_id, other_user_id = uuid.uuid4(), uuid.uuid4()

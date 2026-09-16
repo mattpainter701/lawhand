@@ -42,6 +42,16 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 20
 
+  # Intake-document extraction reads a filled form for matter and client
+  # values. DeepSeek V4.1 Flash is the metered low-cost target rated in the
+  # price card for this route; it is requested only by trusted server code
+  # behind a per-tenant opt-in.
+  - model_name: lawhand-intake-extraction
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4.1-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 30
+
   # Platform-global Background Automations route. GPT 5.6 Luna uses the
   # Responses API on OpenCode Go; the application broker caps output, enforces
   # JSON schemas, and reserves shared request quota before this alias is called.

@@ -5,6 +5,13 @@
 - Define the non-public Founding Attorney offer at exactly $199 monthly for one AI attorney and up to two Core staff users for 24 months. No Premium usage or practice module is included by default; its server-enforced usage cap is always operator-visible while customer meter visibility remains backend-controlled.
 - Document the existing add-on entitlement and Plugins-page gaps, the separation between commercial plan, payment state, access plan, license class, module entitlement, and AI wallet, plus the provider work required before activation.
 
+## 2026.09.15.12 — AI reading of intake documents, metered and opt-in
+
+- Add `app/services/intake_extraction_ai.py`, an optional model pass over a bounded slice of an intake document's text. It requests the static gateway alias `lawhand-intake-extraction`, which `litellm_config.yaml` maps to `openrouter/deepseek/deepseek-v4.1-flash`, and returns `{target_key: value}` against the same closed target set the deterministic reader uses. A value naming an unknown target or failing the target's own normalization is dropped.
+- Gate the pass twice: `INTAKE_EXTRACTION_ENABLED` (platform, off) and a per-tenant `intake_fact_extraction.ai_enabled` flag (off). `extract_with_ai` checks the daily token budget before spend and records one `UsageRecord` (`operation_type="intake_extraction"`) priced at the DeepSeek V4.1 Flash rates. Any provider or parse failure raises `IntakeExtractionUnavailable` and the deterministic result stands; the review panel surfaces the warning.
+- `matter_fact_extraction.propose(..., use_ai=True)` merges AI values as `source_kind="ai"` candidates beside the deterministic ones, so a conflict is visible rather than resolved. `accept` now grounds a value either by an exact deterministic candidate or by its literal presence in the document text or form values, which is what lets a reviewer accept a value only the AI pass found while still refusing a value the document never stated.
+- Expose the opt-in on `POST /matters/{matter_id}/documents/{doc_id}/facts?ai=true` and as a checkbox in the `MatterDocumentFacts` panel. Regenerate the SBOM/AI-BOM inventory for the new AI route.
+
 ## 2026.09.15.11 — Filled intake documents become reviewed matter details
 
 - Add deterministic intake-document fact extraction. `app/services/matter_fact_extraction.py` reads a matter PDF, Word, or text source for values a person already entered — AcroForm widget values (`pdf_templates.read_pdf_form_values`), exact `Label: value` lines, and single-hit email, phone, and ZIP patterns — and proposes them against a closed target set: the standard matter/client fields in `intake_writeback.FIELD_TARGETS` plus tenant custom fields. Extraction never writes a record.
