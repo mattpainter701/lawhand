@@ -56,6 +56,9 @@ Production proof: login callback, admin/user consent callback, status with no
 missing scopes, one token refresh, the exact licensed Graph operation, and
 disconnect/revocation.
 
+The client secret expires. [Provider credential liveness in CI](#provider-credential-liveness-in-ci)
+probes it daily so an expiry surfaces as an alert rather than as failed sign-ins.
+
 ## Google Workspace
 
 Register:
@@ -73,6 +76,73 @@ unless those workflows are purchased and reviewed.
 Production proof: login callback, integration callback, granted-scope audit,
 token refresh, one licensed Drive/Gmail/Calendar operation, storage destination
 verification when enabled, and disconnect/revocation.
+
+The client pair is probed daily by
+[Provider credential liveness in CI](#provider-credential-liveness-in-ci).
+
+## Provider credential liveness in CI
+
+`scripts/prod_env_preflight.sh` checks the *shape* of `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` on the
+production host at deploy time. It cannot see a secret the provider has since stopped
+accepting — an expired Entra secret (Entra caps them at 24 months) or a client rotated or
+deleted upstream still passes every shape check, deploys cleanly, and then fails every
+sign-in as an opaque `invalid_client`.
+
+`.github/workflows/oauth-client-health.yml` closes that gap. It runs daily, calls
+`scripts/check_oauth_clients.py`, and opens a deduplicated `[production-alert]` issue when
+a provider stops accepting a credential, closing it on recovery.
+
+Each probe is side-effect free and needs no user token:
+
+- **Google** presents a deliberately invalid sentinel refresh token. Google authenticates
+  the confidential client before evaluating the grant, so `400 invalid_grant` proves the
+  client id and secret were accepted; `401 invalid_client` means they were not.
+- **Microsoft** requests a `client_credentials` token for
+  `https://graph.microsoft.com/.default`. `AADSTS7000215`/`7000216`/`7000222` mean the
+  secret was rejected or has expired. Entra authenticates the client before it evaluates
+  scopes, so any other clean rejection still proves the secret is live.
+
+Two results are *inconclusive* rather than an outage, and the alert says so: a blocked
+probe and a transport failure. Provider flakiness never reports a dead key.
+
+### Required repository configuration
+
+Actions secrets, mirroring the production values:
+
+| Secret | Production value |
+| --- | --- |
+| `GOOGLE_OAUTH_CLIENT_ID` | `GOOGLE_CLIENT_ID` |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | `GOOGLE_CLIENT_SECRET` |
+| `MICROSOFT_OAUTH_CLIENT_ID` | `MICROSOFT_CLIENT_ID` |
+| `MICROSOFT_OAUTH_CLIENT_SECRET` | `MICROSOFT_CLIENT_SECRET` |
+
+Actions variable (not a secret):
+
+| Variable | Value |
+| --- | --- |
+| `MICROSOFT_ENTRA_HOME_TENANT_ID` | Directory (tenant) GUID the app registration lives in |
+
+`MICROSOFT_ENTRA_HOME_TENANT_ID` is **not** `MICROSOFT_TENANT_ID`. The app config must stay
+`organizations` so every customer tenant can sign in; a `client_credentials` grant cannot
+run against `organizations` or `common` — against those Entra returns a misleading
+`AADSTS53003` Conditional Access error rather than a tenant error, so the probe needs the
+registration's own home directory GUID. The check treats `AADSTS53003` as inconclusive and
+refuses to build a request at all without a valid GUID.
+
+**When rotating a provider client secret, update the Actions secret in the same change.**
+A stale CI copy raises an alert against a credential that is actually healthy. The probe
+credentials are read-only liveness verification and grant no additional access.
+
+Run it by hand with **Actions → OAuth client health → Run workflow**, or locally:
+
+```bash
+GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... \
+  python3 scripts/check_oauth_clients.py --provider google
+```
+
+Unset credentials report `not_configured` and exit 0, so the check is inert until the
+secrets exist.
 
 ## Zoom meetings
 

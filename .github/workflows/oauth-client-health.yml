@@ -1,0 +1,206 @@
+name: OAuth client health
+
+# Shape checks on GOOGLE_* and MICROSOFT_* already run in
+# scripts/prod_env_preflight.sh, but only on the production host and only at
+# deploy time. They cannot see a client secret that Entra has since expired or
+# that was rotated upstream: the value still looks perfect and every sign-in
+# fails as an opaque invalid_client. This probes the providers for real.
+
+on:
+  schedule:
+    # Daily. Credential expiry is a slow failure and the provider auth
+    # endpoints should not be polled hard.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: oauth-client-health
+  cancel-in-progress: true
+
+jobs:
+  oauth-client-health:
+    name: Probe Google and Microsoft OAuth clients
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.1 (Node.js 24)
+        with:
+          persist-credentials: false
+
+      - name: Determine which provider clients are configured
+        id: configured
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_OAUTH_CLIENT_ID }}
+          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_OAUTH_CLIENT_SECRET }}
+          MICROSOFT_ENTRA_HOME_TENANT_ID: ${{ vars.MICROSOFT_ENTRA_HOME_TENANT_ID }}
+        run: |
+          set -Eeuo pipefail
+          # Only booleans are emitted; no credential value reaches an output.
+          google=false
+          microsoft=false
+          if [[ -n "$GOOGLE_CLIENT_ID" && -n "$GOOGLE_CLIENT_SECRET" ]]; then
+            google=true
+          fi
+          if [[ -n "$MICROSOFT_CLIENT_ID" && -n "$MICROSOFT_CLIENT_SECRET" ]]; then
+            microsoft=true
+            if [[ -z "$MICROSOFT_ENTRA_HOME_TENANT_ID" ]]; then
+              echo "::error::MICROSOFT_ENTRA_HOME_TENANT_ID is not set. client_credentials cannot run against the multi-tenant 'organizations' endpoint; set the repository variable to the directory GUID the app registration lives in."
+              exit 1
+            fi
+          fi
+          echo "google=$google" >> "$GITHUB_OUTPUT"
+          echo "microsoft=$microsoft" >> "$GITHUB_OUTPUT"
+          if [[ "$google" == "false" && "$microsoft" == "false" ]]; then
+            echo "::notice::No provider OAuth client credentials are configured; the liveness probe is inactive. See docs/integrations-setup.md."
+          fi
+
+      - name: Probe the Google OAuth client
+        id: google
+        if: steps.configured.outputs.google == 'true'
+        continue-on-error: true
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/check_oauth_clients.py --provider google | tee google-result.json
+
+      - name: Probe the Microsoft Entra app registration
+        id: microsoft
+        if: steps.configured.outputs.microsoft == 'true'
+        continue-on-error: true
+        env:
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_OAUTH_CLIENT_ID }}
+          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_OAUTH_CLIENT_SECRET }}
+          MICROSOFT_ENTRA_HOME_TENANT_ID: ${{ vars.MICROSOFT_ENTRA_HOME_TENANT_ID }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/check_oauth_clients.py --provider microsoft | tee microsoft-result.json
+
+      - name: Create, update, or resolve OAuth client alert
+        id: reconcile
+        if: ${{ always() && (steps.configured.outputs.google == 'true' || steps.configured.outputs.microsoft == 'true') }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8 (Node.js 24)
+        env:
+          GOOGLE_OUTCOME: ${{ steps.google.outcome }}
+          MICROSOFT_OUTCOME: ${{ steps.microsoft.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const title = '[production-alert] LawHand OAuth client credential failure';
+
+            // What each outcome means, so the issue never claims a key is dead
+            // when the probe simply could not reach a verdict.
+            const MEANING = {
+              passed: 'accepted by the provider',
+              passed_client_authenticated: 'accepted by the provider (an authorization-only complaint followed)',
+              not_configured: 'not configured; skipped',
+              credential_rejected: 'REJECTED — the client secret is wrong, revoked, or expired',
+              app_not_found: 'REJECTED — the app registration or directory is missing',
+              probe_blocked: 'inconclusive — the probe was blocked before any credential verdict',
+              transport_error: 'inconclusive — the provider was never reached cleanly',
+              unclassified: 'inconclusive — an unrecognised provider response; inspect the run log',
+            };
+
+            const read = (file) => {
+              try {
+                return JSON.parse(fs.readFileSync(file, 'utf8'));
+              } catch {
+                return null;
+              }
+            };
+            const describe = (label, outcome, file) => {
+              if (outcome === 'skipped' || outcome === '') return `- ${label}: not configured; skipped`;
+              const parsed = read(file);
+              const result = parsed && parsed.results ? Object.values(parsed.results)[0] : null;
+              if (!result) return `- ${label}: step ${outcome}; no probe result was written`;
+              const detail = result.provider_error || result.detail || '';
+              const meaning = MEANING[result.outcome] || result.outcome;
+              return `- ${label}: \`${result.outcome}\` — ${meaning}${detail ? ` (${detail})` : ''}`;
+            };
+
+            const lines = [
+              describe('Google', process.env.GOOGLE_OUTCOME, 'google-result.json'),
+              describe('Microsoft', process.env.MICROSOFT_OUTCOME, 'microsoft-result.json'),
+            ];
+            const failed =
+              process.env.GOOGLE_OUTCOME === 'failure' ||
+              process.env.MICROSOFT_OUTCOME === 'failure';
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            if (failed) {
+              const body = [
+                'The scheduled OAuth client probe could not confirm a provider credential.',
+                '',
+                ...lines,
+                `- Run: ${runUrl}`,
+                '',
+                'A `credential_rejected` or `app_not_found` result means customer sign-in and',
+                'that provider\'s integrations are already failing. Rotate or restore the client',
+                'secret in the provider console, update the production `.env` on the host, and',
+                'update the matching Actions secret — a stale CI copy alerts on a healthy key.',
+                '',
+                'Any other result is inconclusive rather than a confirmed outage; inspect the run',
+                'log before touching a credential. See `docs/integrations-setup.md`.',
+              ].join('\n');
+              if (existing) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing.number,
+                  body,
+                });
+                core.setOutput('transition', 'ongoing-failure');
+              } else {
+                await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body });
+                core.setOutput('transition', 'new-failure');
+              }
+              core.setFailed('A provider OAuth client credential could not be confirmed.');
+            } else if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: [`OAuth clients recovered. Successful run: ${runUrl}`, '', ...lines].join('\n'),
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+              });
+              core.setOutput('transition', 'recovered');
+            } else {
+              core.setOutput('transition', 'healthy');
+            }
+
+      - name: Send optional transition webhook
+        if: ${{ always() && (steps.reconcile.outputs.transition == 'new-failure' || steps.reconcile.outputs.transition == 'recovered') }}
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_TRANSITION: ${{ steps.reconcile.outputs.transition }}
+        run: |
+          if [ -z "$ALERT_WEBHOOK_URL" ]; then
+            echo "No optional alert webhook configured; GitHub issue delivery remains active."
+            exit 0
+          fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload="$(jq -n --arg text "LawHand OAuth client health: ${ALERT_TRANSITION}. ${run_url}" '{text: $text}')"
+          curl --fail --silent --show-error --max-time 15 \
+            -H 'Content-Type: application/json' --data "$payload" "$ALERT_WEBHOOK_URL" \
+            || echo "::warning::Optional OAuth client alert webhook delivery failed."
