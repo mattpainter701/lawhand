@@ -27,6 +27,7 @@ from app.services.matter_cloud_scope import (
     MatterCloudDocumentScope,
     load_matter_document_cloud_scope,
 )
+from app.services import google_service_account
 from app.services.token_vault import get_fresh_token, get_fresh_user_token
 from app.utils.text_processing import extract_text
 
@@ -1440,7 +1441,8 @@ class CloudSearchService:
             token = await get_fresh_user_token(db, tenant_id, user_id, "google")
             if token:
                 return token
-        return await get_fresh_token(db, tenant_id, "google")
+        token = await get_fresh_token(db, tenant_id, "google")
+        return await google_service_account.prefer_service_account(db, tenant_id, token)
 
     @staticmethod
     async def _get_microsoft_token(

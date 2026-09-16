@@ -116,6 +116,8 @@ Access and refresh tokens are stored encrypted. Ordinary guide and status screen
 
 Disconnecting or revoking a provider connection prevents future successful API access after revocation takes effect. It does not necessarily remove documents, captured messages, call records, accounting mappings, or audit history that were already imported or created in LawHand. Existing LawHand records remain subject to your organization's retention and deletion process.
 
+Your matter documents are stored in your **own** cloud account, not copied into a LawHand datastore. On Google Workspace, LawHand creates an organisation-owned Shared Drive (`LawHand Firm Records`) and keeps the matter root inside it, so the folders remain with the firm even if an administrator leaves. On Microsoft 365, the root belongs in a SharePoint site library. LawHand never deletes or renames your cloud folders — on disconnect, matter close, or when your firm leaves, the folders stay in your account. Before any cleanup, ask your administrator to inventory your roots and matter folders; a one-click handoff export is planned.
+
 If you are unsure which organization or personal connections are enabled, ask your LawHand administrator before using a workflow that searches, captures, synchronizes, or exports provider data.
 
 ## Related guides

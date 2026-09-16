@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.16.04 — Your cloud folders stay yours through staff changes
+
+Released September 16, 2026.
+
+Google Workspace onboarding now stores the matter root in an organisation-owned Shared Drive, so documents stay with the firm when an administrator leaves. LawHand shows who owns the root and never deletes customer cloud folders.
+
+- **Your documents stay with the firm.** On Google Workspace, LawHand creates an organisation-owned Shared Drive and keeps the matter root inside it, so access survives the administrator who connected leaving.
+- **Nothing is deleted when you leave.** Your folders live in your own cloud account. LawHand never deletes or renames them on disconnect, matter close, or when your firm leaves.
+- **Personal accounts are labelled honestly.** A personal Google root sits in one person's Drive, so onboarding reports it as at risk instead of claiming organisation ownership.
+
 ## 2026.09.16.03 — Cloud setup stays accurate when you revisit it
 
 Released September 16, 2026.

@@ -69,6 +69,7 @@ from app.services.provider_http import (
     ProviderNotFound,
     ProviderThrottled,
 )
+from app.services import google_service_account
 from app.services.token_vault import get_fresh_token
 
 settings = get_settings()
@@ -260,9 +261,12 @@ async def _delete_cloud_provider_object(
     drive_id: str | None,
 ) -> None:
     """Router-local storage delete shim until this moves into a storage service."""
-    token = await get_fresh_token(
-        db, str(tenant_id), _cloud_token_provider(storage_provider)
-    )
+    token_provider = _cloud_token_provider(storage_provider)
+    token = await get_fresh_token(db, str(tenant_id), token_provider)
+    if token_provider == "google":
+        token = await google_service_account.prefer_service_account(
+            db, str(tenant_id), token
+        )
     if not token:
         raise ProviderAuthError(f"No connected token for {storage_provider}")
 
