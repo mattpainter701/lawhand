@@ -417,6 +417,7 @@ async def copy_matter_document(
         document_sha256=hashlib.sha256(content).hexdigest(),
         positioned_fields=source.positioned_fields,
         signing_roles=source.signing_roles,
+        signing_placement_problems=source.signing_placement_problems,
         signing_placement_required=source.signing_placement_required,
         **_storage_result_document_fields(stored),
     )

@@ -35,6 +35,7 @@ import ContactPicker from '../components/ContactPicker'
 import MatterExpensesPanel from '../components/MatterExpensesPanel'
 import MatterWorkflowPanel from '../components/MatterWorkflowPanel'
 import GeneratedSigningPlacementReview from '../components/templates/GeneratedSigningPlacementReview'
+import { placementBlockMessage, placementProblemLines, placementReviewPossible } from '../components/templates/signingPlacementProblems'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 function Icon({ d, size = 18, className = '' }) {
@@ -2695,6 +2696,10 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
     name: signers.find(signer => signer.role === role && signer.name.trim())?.name.trim() || '',
   }))
   const duplicateRoles = [...new Set(signers.map(signer => signer.role).filter(role => signers.filter(other => other.role === role).length > 1))]
+  // A Word document has no page the review can render, so offering the button
+  // would send staff to a screen that cannot clear the block.
+  const reviewPossible = placementReviewPossible(selectedDocument)
+  const placementLines = placementProblemLines(selectedDocument)
   useEffect(() => {
     let cancelled = false
     setSigningSource(null)
@@ -2780,7 +2785,7 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
       return
     }
     if (selectedDocument?.signing_placement_required && !positionedFields.length) {
-      setErr('Review signing positions on the final PDF and add the required fields before sending.'); return
+      setErr(placementBlockMessage(selectedDocument)); return
     }
     if (requiredRoles.some(role => !positionedFields.some(field => field.role === role))) { setErr('Add signing fields for every role required by this document.'); return }
     if (positionedFields.some(field => preparedSigners.filter(signer => signer.role === field.role).length !== 1)) {
@@ -2972,10 +2977,17 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
           </div>
           {selectedDocument && (
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => setReviewOpen(true)} className="rounded border border-brand-line px-3 py-2 text-sm">Review PDF signing positions</button>
-              <span className="text-xs text-brand-muted">Place a signature, initials, or date block per signer on the PDF (optional — fields in the PDF and printed signature lines are detected automatically)</span>
+              {reviewPossible && <button type="button" onClick={() => setReviewOpen(true)} className="rounded border border-brand-line px-3 py-2 text-sm">Review PDF signing positions</button>}
+              {reviewPossible && <span className="text-xs text-brand-muted">Place a signature, initials, or date block per signer on the PDF (optional — fields in the PDF and printed signature lines are detected automatically)</span>}
               {positionedFields.length > 0 && <span className="text-xs">{positionedFields.length} positioned signing fields</span>}
             </div>
+          )}
+          {/* The template defect behind an unsendable document, shown before
+              staff fill the form rather than after they press Send. */}
+          {selectedDocument && !positionedFields.length && placementLines.length > 0 && (
+            <ul role="alert" className="space-y-1 rounded-lg border border-brand-amber/40 bg-brand-amber/5 p-3 text-xs text-brand-ink">
+              {placementLines.map((line) => <li key={line}>{line}</li>)}
+            </ul>
           )}
           {reviewOpen && (signingSource ? <GeneratedSigningPlacementReview key={docId} source={signingSource} initialFields={initialFields} signerRoles={placementSigners} onChange={setPositionedFields} /> : <p role="status">Loading final PDF for placement review…</p>)}
           <label className="inline-flex items-center gap-2 text-xs text-brand-muted">

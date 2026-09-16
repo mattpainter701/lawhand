@@ -209,3 +209,100 @@ it('tells staff when the signed copy is waiting on storage, and links the filed 
   expect(screen.getByRole('link', { name: 'Signed copy filed' })).toHaveAttribute('href', expect.stringContaining('/documents/executed/download'))
   expect(screen.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
 })
+
+const unbound = (overrides = {}) => ({
+  id: 'blocked',
+  filename: 'Fee agreement.pdf',
+  content_type: 'application/pdf',
+  signing_placement_required: true,
+  positioned_fields: [],
+  signing_placement_problems: [{
+    code: 'missing_signer_role',
+    detail: "Signing field 'client_sig' requires a signer role before it can be positioned",
+    field: 'client_sig',
+    role: '',
+    remedy: 'Open the template, select this field, and set its signer role.',
+  }],
+  ...overrides,
+})
+
+it('names the unbound signing field instead of asking for a blind re-review', async () => {
+  api.getMatterDocuments.mockResolvedValue({ items: [unbound()] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Fee agreement.pdf' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'blocked' } })
+
+  // Visible before the form is filled in, not only after Send is refused.
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('client_sig')
+  expect(alert).toHaveTextContent('set its signer role')
+})
+
+it('puts the same reason on the error when staff press send', async () => {
+  api.getMatterDocuments.mockResolvedValue({ items: [unbound()] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Fee agreement.pdf' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'blocked' } })
+  await fillSigner()
+  fireEvent.submit(screen.getByPlaceholderText('Signer 1 full name').closest('form'))
+
+  expect(api.createSignatureRequest).not.toHaveBeenCalled()
+  const alerts = screen.getAllByRole('alert').map((node) => node.textContent).join(' ')
+  expect(alerts).toContain('client_sig')
+})
+
+it('offers the placement review for a PDF, which can still be rescued by hand', async () => {
+  api.getMatterDocuments.mockResolvedValue({ items: [unbound()] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Fee agreement.pdf' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'blocked' } })
+
+  expect(screen.getByRole('button', { name: 'Review PDF signing positions' })).toBeInTheDocument()
+})
+
+it('withholds the review for a Word document and says to regenerate it as a PDF', async () => {
+  // The dead end: the review canvas renders with pdf.js, so this button could
+  // never have cleared the block on a .docx however many times it was pressed.
+  api.getMatterDocuments.mockResolvedValue({ items: [unbound({
+    id: 'word',
+    filename: 'Engagement letter.docx',
+    content_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    signing_placement_problems: [{
+      code: 'no_pdf_output',
+      detail: 'This document was generated as DOCX, which has no PDF page to position signing fields on',
+      field: '',
+      role: '',
+      remedy: 'Regenerate this document with Word-to-PDF conversion enabled: signing positions can only be placed on a PDF.',
+    }],
+  })] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Engagement letter.docx' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'word' } })
+
+  expect(screen.queryByRole('button', { name: 'Review PDF signing positions' })).not.toBeInTheDocument()
+  expect(await screen.findByRole('alert')).toHaveTextContent('Word-to-PDF conversion')
+})
+
+it('stops warning once the fields have been placed by hand', async () => {
+  api.getMatterDocuments.mockResolvedValue({ items: [unbound()] })
+  api.getMatterDocumentSigningSource.mockResolvedValue(new Blob(['final pdf']))
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Fee agreement.pdf' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'blocked' } })
+  expect(await screen.findByRole('alert')).toHaveTextContent('client_sig')
+
+  fireEvent.click(screen.getByRole('button', { name: 'Review PDF signing positions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirm final PDF placement' }))
+
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+})
+
+it('says nothing about placements for a document that needs none', async () => {
+  api.getMatterDocuments.mockResolvedValue({ items: [{ id: 'plain', filename: 'Letter.pdf' }] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Letter.pdf' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'plain' } })
+
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Review PDF signing positions' })).toBeInTheDocument()
+})

@@ -4528,3 +4528,307 @@ async def test_a_word_activation_test_without_conversion_still_readies_publish(
     assert current["status"] == "ready_to_publish"
     assert current["tested_version_no"] == current["current_version_no"]
     assert current["last_test_rendered_at"]
+
+
+async def _activate_with_signing_schema(
+    *, client, db_session, template_id, values, signature_fields
+):
+    """Re-point an active PDF template at ``signature_fields`` and re-activate.
+
+    Editing the field map deactivates the template, so the activation preview
+    and the activation itself both have to be run again.
+    """
+    from app.models.document_template import DocumentTemplate
+
+    template = await db_session.get(DocumentTemplate, uuid.UUID(template_id))
+    schema = dict(template.variable_schema or {})
+    schema["fields"] = [*schema["fields"], *signature_fields]
+    changed = await client.patch(
+        f"/api/templates/{template_id}", json={"variable_schema": schema}
+    )
+    if changed.status_code != 200:
+        return changed
+    activation = await client.post(
+        f"/api/templates/{template_id}/render-file",
+        json={"variables": values, "preview_purpose": "activation"},
+    )
+    assert activation.status_code == 200, activation.text
+    return await client.patch(f"/api/templates/{template_id}", json={"is_active": True})
+
+
+async def _force_legacy_signing_schema(db_session, template_id, signature_fields):
+    """Write a signing field straight onto an already-active template row.
+
+    Saving the field map now rejects an off-page overlay, and activation now
+    rejects a field with no signer role, so neither shape can be created
+    through the API any more. Rows carrying them already exist, though --
+    they are precisely the templates that predate these guards -- so the
+    generation and dispatch behaviour they produce still has to be pinned.
+    """
+    from app.models.document_template import DocumentTemplate
+    from app.models.document_template_version import DocumentTemplateVersion
+    from sqlalchemy import select, text
+
+    template = await db_session.get(DocumentTemplate, uuid.UUID(template_id))
+    # Generation reads the published version snapshot, not the live row, so
+    # that is where a legacy field map actually lives.
+    version = await db_session.scalar(
+        select(DocumentTemplateVersion).where(
+            DocumentTemplateVersion.template_id == template.id,
+            DocumentTemplateVersion.version_no == template.published_version_no,
+        )
+    )
+    assert version is not None, "template was never published"
+    # The published version is append-only (migration 156) because it is the
+    # evidence for documents that may already be filed or signed. This helper
+    # deliberately seeds the very shape that guard exists to forbid -- a legacy
+    # field map the publish API would now reject -- so the guard is lifted
+    # before the rows are touched and restored immediately after. Each xdist
+    # worker has its own database, so this cannot race another worker's
+    # append-only assertions.
+    await db_session.execute(
+        text("ALTER TABLE document_template_versions DISABLE TRIGGER USER")
+    )
+    try:
+        for row in (template, version):
+            schema = dict(row.variable_schema or {})
+            schema["fields"] = [*schema["fields"], *signature_fields]
+            row.variable_schema = schema
+        await db_session.commit()
+    finally:
+        if db_session.in_transaction():
+            await db_session.rollback()
+        await db_session.execute(
+            text("ALTER TABLE document_template_versions ENABLE TRIGGER USER")
+        )
+        await db_session.commit()
+
+
+async def _generate_into_matter(*, client, template_id, matter, values):
+    preview = await client.post(
+        f"/api/templates/{template_id}/render-file",
+        json={
+            "variables": values,
+            "matter_id": str(matter.id),
+            "preview_purpose": "generation",
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    generated = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={
+            "variables": values,
+            "matter_id": str(matter.id),
+            "preview_id": preview.headers["x-clarity-preview-id"],
+        },
+    )
+    assert generated.status_code == 200, generated.text
+    return generated
+
+
+async def _latest_document(db_session, matter):
+    from app.models.matter_document import MatterDocument
+    from sqlalchemy import select
+
+    return (
+        (
+            await db_session.execute(
+                select(MatterDocument)
+                .where(MatterDocument.matter_id == matter.id)
+                .order_by(MatterDocument.created_at.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _signature_field(name, role, rect):
+    field = {
+        "name": name,
+        "field_type": "signature",
+        "pdf_source_key": f"manual:{uuid.uuid4()}",
+        "required": False,
+        "pdf_overlay": {"page": 1, "rect": rect},
+    }
+    if role is not None:
+        field["signer_role"] = role
+    return field
+
+
+@pytest.mark.asyncio
+async def test_activation_refuses_a_template_whose_signing_field_cannot_bind(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """The template shape that stalled a matter is rejected before anyone uses it."""
+    template_id, matter, values, _ = await _prepare_active_pdf_generation(
+        client=client,
+        db_session=db_session,
+        test_tenant=test_tenant,
+        test_user=test_user,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slug="unbindable-signing-field",
+    )
+
+    refused = await _activate_with_signing_schema(
+        client=client,
+        db_session=db_session,
+        template_id=template_id,
+        values=values,
+        # Template Studio leaves the signer role optional, so this is exactly
+        # what a template author produces by tabbing past that one box.
+        signature_fields=[_signature_field("client_sig", None, [72, 100, 216, 136])],
+    )
+
+    assert refused.status_code == 422, refused.text
+    assert "client_sig" in refused.json()["detail"]
+    assert "signer role" in refused.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_saving_a_signing_field_off_the_page_is_refused_outright(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    template_id, matter, values, _ = await _prepare_active_pdf_generation(
+        client=client,
+        db_session=db_session,
+        test_tenant=test_tenant,
+        test_user=test_user,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slug="offpage-signing-field",
+    )
+
+    refused = await _activate_with_signing_schema(
+        client=client,
+        db_session=db_session,
+        template_id=template_id,
+        values=values,
+        signature_fields=[
+            _signature_field("client_sig", "client", [520, 100, 900, 136])
+        ],
+    )
+
+    assert refused.status_code == 422, refused.text
+    assert "outside its signed page bounds" in refused.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_generated_document_records_which_signing_field_went_unbound(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """A good placement survives its broken sibling, and the reason is kept."""
+    template_id, matter, values, _ = await _prepare_active_pdf_generation(
+        client=client,
+        db_session=db_session,
+        test_tenant=test_tenant,
+        test_user=test_user,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slug="partly-bound-signing",
+    )
+    await _force_legacy_signing_schema(
+        db_session,
+        template_id,
+        [
+            _signature_field("client_sig", "client", [72, 100, 216, 136]),
+            _signature_field("attorney_sig", None, [240, 100, 384, 136]),
+        ],
+    )
+
+    await _generate_into_matter(
+        client=client, template_id=template_id, matter=matter, values=values
+    )
+    document = await _latest_document(db_session, matter)
+
+    # The working field is kept: one bad sibling no longer discards it.
+    assert [item["role"] for item in document.positioned_fields] == ["client"]
+    assert document.signing_placement_required is True
+    assert [item["code"] for item in document.signing_placement_problems] == [
+        "missing_signer_role"
+    ]
+    problem = document.signing_placement_problems[0]
+    assert problem["field"] == "attorney_sig" and problem["remedy"]
+
+
+@pytest.mark.asyncio
+async def test_a_blocked_document_names_the_field_when_staff_try_to_send_it(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """The dispatch block used to name nothing at all."""
+    template_id, matter, values, _ = await _prepare_active_pdf_generation(
+        client=client,
+        db_session=db_session,
+        test_tenant=test_tenant,
+        test_user=test_user,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slug="blocked-dispatch-explains",
+    )
+    await _force_legacy_signing_schema(
+        db_session,
+        template_id,
+        [_signature_field("client_sig", None, [72, 100, 216, 136])],
+    )
+    await _generate_into_matter(
+        client=client, template_id=template_id, matter=matter, values=values
+    )
+    document = await _latest_document(db_session, matter)
+    assert document.positioned_fields == []
+
+    blocked = await client.post(
+        f"/api/matters/{matter.id}/signatures",
+        json={
+            "document_id": str(document.id),
+            "signers": [
+                {"name": "Client", "email": "client@example.test", "role": "client"}
+            ],
+        },
+    )
+
+    assert blocked.status_code == 422, blocked.text
+    detail = blocked.json()["detail"]
+    assert "client_sig" in detail
+    assert "signer role" in detail
+    # The message this replaced, which named no field and no remedy.
+    assert detail != (
+        "Review signing field positions on the final generated PDF before sending."
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_listed_document_carries_its_placement_problems_to_the_ui(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    template_id, matter, values, _ = await _prepare_active_pdf_generation(
+        client=client,
+        db_session=db_session,
+        test_tenant=test_tenant,
+        test_user=test_user,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slug="listed-placement-problems",
+    )
+    await _force_legacy_signing_schema(
+        db_session,
+        template_id,
+        [_signature_field("client_sig", None, [72, 100, 216, 136])],
+    )
+    await _generate_into_matter(
+        client=client, template_id=template_id, matter=matter, values=values
+    )
+    document = await _latest_document(db_session, matter)
+
+    listed = await client.get(f"/api/matters/{matter.id}/documents")
+    assert listed.status_code == 200, listed.text
+    row = next(
+        item for item in listed.json()["items"] if item["id"] == str(document.id)
+    )
+
+    assert row["signing_placement_required"] is True
+    assert row["positioned_fields"] == []
+    assert [item["code"] for item in row["signing_placement_problems"]] == [
+        "missing_signer_role"
+    ]
+    assert row["signing_placement_problems"][0]["field"] == "client_sig"
