@@ -172,13 +172,13 @@ async def upsert_platform_sms_provider(
         _clean(config.get("account_sid")),
         field="account_sid",
         expected_prefix="AC",
-        label="The Account SID",
+        label="Account SID",
     )
     _validate_sid(
         _clean(config.get("messaging_service_sid")),
         field="messaging_service_sid",
         expected_prefix="MG",
-        label="The Messaging Service SID",
+        label="Messaging Service SID",
     )
     _validate_sender_number(_clean(config.get("from_number")))
 
@@ -254,13 +254,13 @@ async def resolve_platform_sms_credentials(
         _clean(config.get("account_sid")),
         field="account_sid",
         expected_prefix="AC",
-        label="The stored Account SID",
+        label="Account SID",
     )
     _validate_sid(
         _clean(config.get("messaging_service_sid")),
         field="messaging_service_sid",
         expected_prefix="MG",
-        label="The stored Messaging Service SID",
+        label="Messaging Service SID",
     )
     _validate_sender_number(_clean(config.get("from_number")))
 
@@ -295,19 +295,23 @@ def _describe_sid(value: str) -> str:
 
 
 def _validate_sid(value: str, *, field: str, expected_prefix: str, label: str) -> None:
-    """Reject a SID whose type prefix or shape is not what ``field`` needs."""
+    """Reject a SID whose type prefix or shape is not what ``field`` needs.
+
+    ``label`` is the bare noun phrase (e.g. "Account SID"), capitalized as it
+    reads mid-sentence — callers must not prepend an article of their own.
+    """
     if not value:
         return
     if value[:2].upper() != expected_prefix:
         raise PlatformSmsError(
-            f"{label} must start with {expected_prefix}. You entered "
+            f"The {label} must start with {expected_prefix}. You entered "
             f"{_describe_sid(value)}. Copy the {label} from the Twilio console.",
             status_code=400,
             code=f"platform_sms_invalid_{field}",
         )
     if not _SID_SHAPE.match(value):
         raise PlatformSmsError(
-            f"{label} does not look like a Twilio SID: it should be "
+            f"The {label} does not look like a Twilio SID: it should be "
             f"{expected_prefix} followed by 32 hexadecimal characters.",
             status_code=400,
             code=f"platform_sms_invalid_{field}",
