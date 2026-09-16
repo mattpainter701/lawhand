@@ -3658,8 +3658,14 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
     setNotice(null)
     try {
       const payload = { is_active: form.is_active }
-      for (const field of ['account_sid', 'auth_token', 'messaging_service_sid', 'from_number', 'status_callback_url']) {
+      // Account SID and Auth Token are kept unless replaced; the API returns
+      // the SID masked, so an empty box means "leave it as it is". The sender
+      // fields round-trip, so an emptied box clears the stored value.
+      for (const field of ['account_sid', 'auth_token']) {
         if (form[field].trim()) payload[field] = form[field].trim()
+      }
+      for (const field of ['messaging_service_sid', 'from_number', 'status_callback_url']) {
+        payload[field] = form[field].trim()
       }
       const data = await updatePlatformSmsProvider(platformKey, payload)
       setConfig(data)
@@ -3746,9 +3752,9 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
           {[
             ['account_sid', 'Account SID', config?.account_sid ? `leave blank to keep (${config.account_sid})` : 'AC…'],
             ['auth_token', 'Auth Token', config?.auth_token_configured ? 'leave blank to keep' : ''],
-            ['messaging_service_sid', 'Messaging Service SID', 'MG… (or set a From number)'],
+            ['messaging_service_sid', 'Messaging Service SID', 'MG… (clear to remove)'],
             ['from_number', 'From number', '+15551234567'],
-            ['status_callback_url', 'Status callback URL', 'optional'],
+            ['status_callback_url', 'Status callback URL', 'https://… (optional)'],
           ].map(([field, label, placeholder]) => (
             <label key={field} className="block">
               <span className="text-xs font-sans font-medium text-brand-muted">{label}</span>
@@ -3761,6 +3767,10 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
               />
             </label>
           ))}
+          <p className="md:col-span-2 text-xs font-sans text-brand-muted">
+            Empty a Messaging Service SID, From number, or Status callback URL box to remove it.
+            Account SID and Auth Token stay as they are unless you replace them.
+          </p>
           <label className="flex items-center gap-2 md:col-span-2 text-sm font-sans text-brand-ink-2">
             <input type="checkbox" checked={form.is_active} onChange={setField('is_active')} />
             Active
