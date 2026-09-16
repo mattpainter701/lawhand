@@ -106,14 +106,16 @@ async def test_inactive_user_redirects_account_inactive(
 
 
 @pytest.mark.asyncio
-async def test_expired_firm_redirects_tenant_inactive(client, db_session, monkeypatch):
+async def test_inactive_firm_redirects_tenant_inactive(client, db_session, monkeypatch):
+    # An elapsed trial may sign in to pay (test_trial_conversion.py); a firm
+    # that has been switched off may not.
     monkeypatch.setattr(auth_router.settings, "FRONTEND_URL", "http://localhost:3000")
     tenant = Tenant(
         id=uuid.uuid4(),
         name="Lapsed Firm",
         domain=f"lapsed-{uuid.uuid4().hex[:8]}.example",
         billing_tier="payg",
-        is_active=True,
+        is_active=False,
         expires_at=datetime.now(timezone.utc) - timedelta(days=1),
     )
     user = User(

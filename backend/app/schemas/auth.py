@@ -129,6 +129,12 @@ class UserInfo(BaseModel):
     # stop working.
     subscription_status: Optional[str] = None
     billing_status: Optional[str] = None
+    # Trial standing, so the browser can count down and, once the trial has
+    # ended, send the firm to billing instead of pages that will refuse it.
+    access_state: str = "active"  # active | trial | trial_expired
+    trial_ends_at: Optional[datetime] = None
+    # False on trials and demo workspaces regardless of the per-user flag.
+    premium_ai_available: bool = True
     enabled_modules: list[str] = []
     active_addons: list[str] = []
     capabilities: list[str] = []

@@ -12,6 +12,7 @@ from jose import JWTError, jwt
 from app.database import get_db
 from app.config import get_settings
 from app.services import session_policy
+from app.services.tenant_access import allows_expired_trial, require_sign_in_tenant
 from app.services.tenant_state import require_active_tenant
 
 settings = get_settings()
@@ -207,7 +208,12 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     )
     if epoch_refusal:
         raise HTTPException(status_code=401, detail="Session ended; sign in again")
-    require_active_tenant(user.tenant)
+    if allows_expired_trial(request.url.path):
+        # A firm whose trial has ended may still see its account and pay;
+        # every other route below keeps the hard stop.
+        require_sign_in_tenant(user.tenant)
+    else:
+        require_active_tenant(user.tenant)
     if not user.license_active and not _is_license_exempt(request):
         raise HTTPException(status_code=403, detail="Standard license required")
 

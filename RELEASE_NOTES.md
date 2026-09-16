@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.06 — Paying ends your trial, and billing stays reachable
+
+Released September 15, 2026.
+
+Subscribing during a free trial now ends the trial straight away, a trial that has run out can still reach billing to pay, and premium AI becomes available once a firm subscribes.
+
+- **Paying ends the trial at once.** Subscribing during your free trial clears the trial end date, so your firm keeps working past the day the trial would have ended.
+- **You can always reach billing to pay.** If a trial runs out, an administrator can still sign in and open Billing to subscribe. Other pages wait until the subscription is active.
+- **One trial, not two.** Subscribing no longer starts a second free period at the payment provider, so the first charge arrives when you expect it.
+- **Premium AI turns on when you subscribe.** Premium AI stays off during a trial across chat, plugins, templates, document drafting and email drafts, and is available once the firm subscribes.
+
 ## 2026.09.15.05 — Invitations work, and sign-in explains a refusal
 
 Released September 15, 2026.
