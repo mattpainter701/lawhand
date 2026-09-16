@@ -89,6 +89,12 @@ class Tenant(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # Explicit operator grant for a trial firm. Premium remains off by default;
+    # this flag only relaxes the tenant-level trial gate, while each user must
+    # still carry their own premium_ai_enabled entitlement.
+    premium_ai_trial_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Onboarding (Sprint 8)
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"

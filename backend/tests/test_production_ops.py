@@ -296,8 +296,8 @@ def _production_env(**overrides: str) -> str:
         "VITE_PUBLIC_SITE_URL": "https://ops-test.invalid",
         "VITE_CONTACT_URL": "mailto:support@getlawhand.com",
         "DEV_MODE": "false",
-        "PUBLIC_SIGNUP_ENABLED": "false",
-        "VITE_PUBLIC_SIGNUP_ENABLED": "false",
+        "PUBLIC_SIGNUP_ENABLED": "true",
+        "VITE_PUBLIC_SIGNUP_ENABLED": "true",
         "SECRET_KEY": "ops-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz",
         "MCP_PRODUCT_ENABLED": "false",
         "TEMPLATE_STUDIO_RENDER_ENABLED": "false",
@@ -1338,7 +1338,7 @@ def test_host_capacity_override_requires_reason_and_cannot_be_persisted(
     )
 
 
-def test_production_preflight_rejects_launch_flags_and_unstaged_credentials(
+def test_production_preflight_accepts_signup_but_rejects_unstaged_credentials(
     tmp_path: Path,
 ) -> None:
     result = _run_preflight(
@@ -1358,8 +1358,8 @@ def test_production_preflight_rejects_launch_flags_and_unstaged_credentials(
         "RESEARCH_MCP_PUBLIC_URL is required when the Research MCP product is enabled"
         in output
     )
-    assert "PUBLIC_SIGNUP_ENABLED must remain false" in output
-    assert "VITE_PUBLIC_SIGNUP_ENABLED must remain false" in output
+    assert "PUBLIC_SIGNUP_ENABLED" not in output
+    assert "VITE_PUBLIC_SIGNUP_ENABLED" not in output
     assert "MCP_UPSTREAM_API_KEY must be at least 32 characters" in output
     assert "TOKEN_ENCRYPTION_KEYS must contain at least new_key,old_key" in output
     assert OLD_FERNET_KEY not in output
@@ -1428,7 +1428,7 @@ def test_production_preflight_rejects_public_signup_flag_drift(tmp_path: Path) -
     output = result.stdout + result.stderr
 
     assert result.returncode != 0
-    assert "VITE_PUBLIC_SIGNUP_ENABLED must remain false" in output
+    assert "PUBLIC_SIGNUP_ENABLED must be true" in output
     assert "PUBLIC_SIGNUP_ENABLED and VITE_PUBLIC_SIGNUP_ENABLED must match" in output
 
 
@@ -1877,11 +1877,11 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
             "services"
         ]
         assert services["backend"]["environment"]["PUBLIC_SIGNUP_ENABLED"] == (
-            "${PUBLIC_SIGNUP_ENABLED:-false}"
+            "${PUBLIC_SIGNUP_ENABLED:-true}"
         )
         assert (
             services["frontend"]["build"]["args"]["VITE_PUBLIC_SIGNUP_ENABLED"]
-            == "${VITE_PUBLIC_SIGNUP_ENABLED:-false}"
+            == "${VITE_PUBLIC_SIGNUP_ENABLED:-true}"
         )
 
     production_models = [
@@ -1891,16 +1891,18 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
     for prod_services in production_models:
         for service in ("backend", "scheduler"):
             assert prod_services[service]["environment"]["PUBLIC_SIGNUP_ENABLED"] == (
-                "${PUBLIC_SIGNUP_ENABLED:-false}"
+                "${PUBLIC_SIGNUP_ENABLED:-true}"
             )
             # Production intentionally ignores stale host SMB_ENABLED=false values.
             assert prod_services[service]["environment"]["SMB_ENABLED"] == "true"
     prod_services = production_models[-1]
     assert (
         prod_services["frontend"]["build"]["args"]["VITE_PUBLIC_SIGNUP_ENABLED"]
-        == "${VITE_PUBLIC_SIGNUP_ENABLED:-false}"
+        == "${VITE_PUBLIC_SIGNUP_ENABLED:-true}"
     )
     env_example = (ROOT / ".env.prod.example").read_text(encoding="utf-8")
+    assert "PUBLIC_SIGNUP_ENABLED=true" in env_example
+    assert "VITE_PUBLIC_SIGNUP_ENABLED=true" in env_example
     assert "SMB_ENABLED=true" in env_example
     assert "TEMPLATE_STUDIO_RENDER_ENABLED=false" in env_example
 

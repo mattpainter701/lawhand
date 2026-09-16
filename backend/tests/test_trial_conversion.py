@@ -374,6 +374,14 @@ async def test_running_trial_reports_its_end_date(client, db_session):
         ),
         (
             SimpleNamespace(
+                billing_tier="trial",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=5),
+                premium_ai_trial_enabled=True,
+            ),
+            True,
+        ),
+        (
+            SimpleNamespace(
                 billing_tier="payg",
                 expires_at=datetime.now(timezone.utc) - timedelta(days=5),
             ),
@@ -382,9 +390,9 @@ async def test_running_trial_reports_its_end_date(client, db_session):
         (SimpleNamespace(billing_tier="demo", expires_at=None), False),
         (None, False),
     ],
-    ids=["paid", "trial", "ended-trial", "demo", "no-firm"],
+    ids=["paid", "trial", "sponsored-trial", "ended-trial", "demo", "no-firm"],
 )
-def test_premium_ai_needs_a_paid_firm_even_when_the_user_flag_is_on(tenant, allowed):
+def test_premium_ai_needs_a_paid_or_sponsored_firm_and_user_flag(tenant, allowed):
     user = SimpleNamespace(premium_ai_enabled=True, tenant=tenant)
 
     assert tenant_access.user_may_use_premium_ai(user) is allowed

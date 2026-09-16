@@ -166,6 +166,7 @@ async def test_accountant_can_manage_licensing_without_admin_role(
 
 @pytest.mark.asyncio
 async def test_trial_tenant_cannot_enable_premium_ai(db_session, test_tenant):
+    test_tenant.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     settings_row = TenantSettings(
         tenant_id=test_tenant.id,
         custom_config={

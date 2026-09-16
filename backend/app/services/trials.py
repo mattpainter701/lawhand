@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from html import escape
 from typing import Any
 
 from sqlalchemy import select
@@ -121,3 +122,66 @@ async def notify_operator_trial_started(
             tenant_id,
             delivery.value,
         )
+
+
+async def notify_trial_extended(
+    *,
+    tenant_name: str,
+    recipients: list[str],
+    trial_ends_at: datetime,
+) -> Any:
+    """Tell a firm's administrators that their trial window was extended.
+
+    The operator update is authoritative even when mail is unavailable, so the
+    typed delivery result is returned for Platform to surface without rolling
+    the extension back.
+    """
+
+    from app.services.email import (
+        EmailCategory,
+        EmailDeliveryResult,
+        email_service,
+        render_branded_email,
+    )
+
+    unique_recipients = sorted(
+        {
+            address.strip().lower()
+            for address in recipients
+            if address and "@" in address
+        }
+    )
+    if not unique_recipients:
+        return EmailDeliveryResult.INVALID_RECIPIENT
+
+    end_utc = trial_ends_at.astimezone(timezone.utc)
+    end_label = end_utc.strftime("%B %d, %Y at %H:%M UTC")
+    safe_name = escape(tenant_name)
+    content = f"""
+    <div class="header">
+      <h1>Your LawHand trial was extended</h1>
+      <p>More time for {safe_name} to evaluate the workspace</p>
+    </div>
+    <div class="body">
+      <p>Good news — your LawHand trial has been extended.</p>
+      <div class="digest-content">
+        <h2 style="margin-top:0;">Your new trial end date</h2>
+        <p style="font-size:18px;"><strong>{escape(end_label)}</strong></p>
+      </div>
+      <p>Your team can continue using its existing workspace and data. Premium
+      AI remains governed separately by your account settings.</p>
+      <p>If you have questions, reply to your LawHand contact.</p>
+    </div>
+    """
+    text_body = (
+        f"Your LawHand trial for {tenant_name} was extended.\n\n"
+        f"New trial end date: {end_label}\n\n"
+        "Your existing workspace and data remain available."
+    )
+    return await email_service.send_email(
+        unique_recipients,
+        "Your LawHand trial has been extended",
+        render_branded_email(content),
+        text_body,
+        category=EmailCategory.NOTIFICATION,
+    )

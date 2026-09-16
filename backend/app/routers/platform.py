@@ -345,6 +345,7 @@ class TenantSummary(BaseModel):
     # expiry so operators can distinguish a trial from a paid tenant that
     # happens to carry an expiry.
     on_trial: bool = False
+    premium_ai_trial_enabled: bool = False
     flat_seat_count: int
     is_active: bool
     stripe_customer_id: Optional[str]
@@ -379,6 +380,9 @@ class TenantUpdate(BaseModel):
     # Trial control: set a future instant to start/extend a trial, a past
     # instant to revoke access, or null to end the trial marker outright.
     trial_ends_at: Optional[datetime] = None
+    # Firm-wide sponsored Premium AI grant during a trial. This updates the
+    # tenant gate and every licensed human user; ordinary trials default off.
+    premium_ai_trial_enabled: Optional[bool] = None
 
 
 class PlatformLLMConfigUpdate(BaseModel):
@@ -589,6 +593,7 @@ async def list_tenants(
                 tenant_type=_tenant_type(t),
                 expires_at=t.expires_at,
                 on_trial=on_trial.get(str(t.id), False),
+                premium_ai_trial_enabled=t.premium_ai_trial_enabled,
                 flat_seat_count=t.flat_seat_count,
                 is_active=t.is_active,
                 stripe_customer_id=_mask(t.stripe_customer_id),
@@ -895,6 +900,7 @@ async def get_tenant_detail(
             tenant_type=_tenant_type(tenant),
             expires_at=tenant.expires_at,
             on_trial=config_marks_trial((ts.custom_config or {}) if ts else None),
+            premium_ai_trial_enabled=tenant.premium_ai_trial_enabled,
             flat_seat_count=tenant.flat_seat_count,
             is_active=tenant.is_active,
             stripe_customer_id=_mask(tenant.stripe_customer_id),
@@ -914,6 +920,8 @@ async def get_tenant_detail(
                 "full_name": u.full_name,
                 "role": u.role,
                 "is_active": u.is_active,
+                "license_active": u.license_active,
+                "premium_ai_enabled": u.premium_ai_enabled,
                 "created_at": u.created_at,
             }
             for u in users
@@ -1014,6 +1022,9 @@ async def update_tenant(
             detail="Use the demo workspace panel to terminate disposable demos",
         )
 
+    trial_extension_end: datetime | None = None
+    trial_extension_recipients: list[str] = []
+
     # All mutable tenant configuration lives behind ordinary tenant RLS. The
     # platform token authorizes selecting this one context; it never enables a
     # cross-tenant bypass.
@@ -1072,6 +1083,34 @@ async def update_tenant(
             "to": body.seat_count,
         }
         tenant.flat_seat_count = body.seat_count
+
+    if _field_was_sent(body, "premium_ai_trial_enabled"):
+        premium_enabled = bool(body.premium_ai_trial_enabled)
+        audit_changes["premium_ai_trial_enabled"] = {
+            "from": tenant.premium_ai_trial_enabled,
+            "to": premium_enabled,
+        }
+        tenant.premium_ai_trial_enabled = premium_enabled
+        tenant_users = list(
+            (
+                await db.scalars(
+                    select(User).where(
+                        User.tenant_id == tenant.id,
+                        User.principal_type == "human",
+                    )
+                )
+            ).all()
+        )
+        affected_users = 0
+        for tenant_user in tenant_users:
+            desired = premium_enabled and tenant_user.license_active
+            if tenant_user.premium_ai_enabled != desired:
+                tenant_user.premium_ai_enabled = desired
+                affected_users += 1
+        audit_changes["premium_ai_users"] = {
+            "licensed_users_enabled": premium_enabled,
+            "affected_users": affected_users,
+        }
 
     if _field_was_sent(body, "hidden_matter_panels"):
         from app.services.matter_panel_visibility import validate_hidden_panels
@@ -1192,6 +1231,7 @@ async def update_tenant(
             db.add(ts)
             await db.flush()
         custom_config = dict(ts.custom_config or {})
+        old_end = tenant.expires_at
         new_end = body.trial_ends_at
         if new_end is not None and new_end.tzinfo is None:
             new_end = new_end.replace(tzinfo=timezone.utc)
@@ -1211,6 +1251,24 @@ async def update_tenant(
             custom_config.setdefault(
                 TRIAL_STARTED_KEY, datetime.now(timezone.utc).isoformat()
             )
+            old_end_utc = (
+                old_end
+                if old_end is None or old_end.tzinfo is not None
+                else old_end.replace(tzinfo=timezone.utc)
+            )
+            if old_end_utc is not None and new_end > old_end_utc:
+                trial_extension_end = new_end
+                trial_extension_recipients = list(
+                    (
+                        await db.scalars(
+                            select(User.email).where(
+                                User.tenant_id == tenant.id,
+                                User.role == "admin",
+                                User.is_active.is_(True),
+                            )
+                        )
+                    ).all()
+                )
         ts.custom_config = custom_config
 
     standard_provider_sent = _field_was_sent(
@@ -1338,7 +1396,21 @@ async def update_tenant(
     await db.flush()
     await clear_tenant_context(db)
     await db.commit()
-    return {"status": "updated", "tenant_id": tenant_id}
+    trial_email_status = None
+    if trial_extension_end is not None:
+        from app.services.trials import notify_trial_extended
+
+        delivery = await notify_trial_extended(
+            tenant_name=tenant.name,
+            recipients=trial_extension_recipients,
+            trial_ends_at=trial_extension_end,
+        )
+        trial_email_status = delivery.value
+    return {
+        "status": "updated",
+        "tenant_id": tenant_id,
+        "trial_email_status": trial_email_status,
+    }
 
 
 @router.get("/usage", response_model=PlatformUsage)

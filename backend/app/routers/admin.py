@@ -1912,12 +1912,15 @@ async def patch_user(
                 detail="Premium AI requires an active standard license.",
             )
         if body.premium_ai_enabled:
-            from app.services.trials import tenant_on_trial
+            from app.services.tenant_access import tenant_allows_premium_ai_by_id
 
-            if await tenant_on_trial(db, admin.tenant_id):
+            if not await tenant_allows_premium_ai_by_id(db, admin.tenant_id):
                 raise HTTPException(
                     status_code=400,
-                    detail="Premium AI is not available during the free trial.",
+                    detail=(
+                        "Premium AI is not available during the free trial "
+                        "unless a platform operator sponsors it."
+                    ),
                 )
         user.premium_ai_enabled = body.premium_ai_enabled
 
@@ -2265,6 +2268,12 @@ async def invite_user(
             detail="A user with this email already exists in your tenant.",
         )
 
+    premium_trial_grant = bool(
+        await db.scalar(
+            select(Tenant.premium_ai_trial_enabled).where(Tenant.id == admin.tenant_id)
+        )
+    )
+
     # No credential until the invitation is accepted: the token lives hashed in
     # user_invitations, never in password_hash.
     new_user = User(
@@ -2274,6 +2283,7 @@ async def invite_user(
         role=role,
         is_active=False,
         license_active=True,
+        premium_ai_enabled=premium_trial_grant,
         workspace_mcp_enabled=await tenant_workspace_mcp_default(db, admin.tenant_id),
         password_hash=None,
     )

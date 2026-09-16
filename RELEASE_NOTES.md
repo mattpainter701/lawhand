@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.10 — Start a real trial, and know when it ends
+
+Released September 15, 2026.
+
+A new firm can now register itself for a bounded 30-day LawHand trial, while the LawHand team can extend or end that access and keep expensive Premium AI under a separate switch.
+
+- **Register and begin a 30-day trial.** Creating a new firm account starts a full-platform trial with a visible end date. Premium AI is off by default and no card is required.
+- **An extension arrives by email.** When the LawHand team extends a trial, firm administrators receive a branded email with the new end date.
+- **Premium AI stays a deliberate exception.** A trial extension does not turn on Premium AI. If LawHand sponsors it for a trial, that grant is explicit and can be withdrawn separately.
+
 ## 2026.09.15.09 — One place to lay out a form, not two
 
 Released September 15, 2026.

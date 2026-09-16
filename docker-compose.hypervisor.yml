@@ -167,7 +167,7 @@ services:
       APP_COMMIT: ${APP_COMMIT:-}
       APP_BUILD_TIME: ${APP_BUILD_TIME:-}
       RUN_SCHEDULER: "false" # API processes never own background jobs
-      PUBLIC_SIGNUP_ENABLED: ${PUBLIC_SIGNUP_ENABLED:-false}
+      PUBLIC_SIGNUP_ENABLED: ${PUBLIC_SIGNUP_ENABLED:-true}
       # Production invariant: override stale SMB_ENABLED=false from env_file.
       SMB_ENABLED: "true"
       WORKSPACE_MCP_ENABLED: ${WORKSPACE_MCP_ENABLED:-false}
@@ -315,7 +315,7 @@ services:
       APP_COMMIT: ${APP_COMMIT:-}
       APP_BUILD_TIME: ${APP_BUILD_TIME:-}
       RUN_SCHEDULER: "true"
-      PUBLIC_SIGNUP_ENABLED: ${PUBLIC_SIGNUP_ENABLED:-false}
+      PUBLIC_SIGNUP_ENABLED: ${PUBLIC_SIGNUP_ENABLED:-true}
       # Keep scheduler retrieval policy identical to the API process.
       SMB_ENABLED: "true"
       WORKSPACE_MCP_ENABLED: ${WORKSPACE_MCP_ENABLED:-false}
@@ -376,7 +376,7 @@ services:
       args:
         VITE_PUBLIC_SITE_URL: ${VITE_PUBLIC_SITE_URL:?Set VITE_PUBLIC_SITE_URL to https://DOMAIN in .env}
         VITE_CONTACT_URL: ${VITE_CONTACT_URL:?Set VITE_CONTACT_URL in .env}
-        VITE_PUBLIC_SIGNUP_ENABLED: ${VITE_PUBLIC_SIGNUP_ENABLED:-false}
+        VITE_PUBLIC_SIGNUP_ENABLED: ${VITE_PUBLIC_SIGNUP_ENABLED:-true}
         VITE_GA_MEASUREMENT_ID: ${VITE_GA_MEASUREMENT_ID:-}
         VITE_GOOGLE_SITE_VERIFICATION: ${VITE_GOOGLE_SITE_VERIFICATION:-}
         VITE_ORG_SAME_AS: ${VITE_ORG_SAME_AS:-}

@@ -58,9 +58,9 @@ class Settings(BaseSettings):
     # When unset (None), Secure/SameSite are derived from BACKEND_URL scheme.
     COOKIE_SECURE: bool | None = None
     COOKIE_SAMESITE: str = "lax"  # lax | strict | none
-    # New tenant creation is operator/invite-only for the first-customer
-    # release. Do not enable until trial expiry and paid conversion are enforced.
-    PUBLIC_SIGNUP_ENABLED: bool = False
+    # New firms enter the bounded 30-day full-platform trial. Deployments may
+    # still turn this off as an incident-response kill switch.
+    PUBLIC_SIGNUP_ENABLED: bool = True
 
     # Guided sales demo. Settings are cached at process startup, so rotating the
     # access code requires an API restart (but no code change).

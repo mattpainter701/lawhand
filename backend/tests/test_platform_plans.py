@@ -2,11 +2,13 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from httpx import AsyncClient
 from sqlalchemy import select
+from unittest.mock import AsyncMock
 
 from app.models.mcp_product import MCPProductKey, MCPUsageEvent
 from app.models.llm_routing_profile import LLMRoutingProfile
 from app.models.operator_audit import OperatorAuditLog
 from app.models.tenant import TenantSettings
+from app.services.email import EmailDeliveryResult, email_service
 from app.services.mcp_product import hash_key
 from tests.platform_auth_helpers import platform_headers
 
@@ -232,6 +234,76 @@ async def test_operator_sets_and_revokes_trial_window(
     await db_session.refresh(ts)
     assert test_tenant.expires_at is None
     assert ts.custom_config["trial"] is False
+
+
+@pytest.mark.asyncio
+async def test_operator_extension_emails_admins_and_reports_delivery(
+    client: AsyncClient, db_session, test_tenant, test_user, monkeypatch
+):
+    original_end = datetime.now(timezone.utc) + timedelta(days=30)
+    extended_end = original_end + timedelta(days=180)
+    test_tenant.expires_at = original_end
+    db_session.add(
+        TenantSettings(
+            tenant_id=test_tenant.id,
+            custom_config={
+                "trial": True,
+                "trial_started_at": datetime.now(timezone.utc).isoformat(),
+                "trial_ends_at": original_end.isoformat(),
+            },
+        )
+    )
+    send = AsyncMock(return_value=EmailDeliveryResult.SENT)
+    monkeypatch.setattr(email_service, "send_email", send)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/platform/tenants/{test_tenant.id}",
+        json={"trial_ends_at": extended_end.isoformat()},
+        headers=platform_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["trial_email_status"] == "sent"
+    send.assert_awaited_once()
+    assert send.await_args.args[0] == [test_user.email]
+    assert "extended" in send.await_args.args[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_operator_can_sponsor_and_revoke_premium_ai_during_trial(
+    client: AsyncClient, db_session, test_tenant, test_user
+):
+    test_tenant.expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    await db_session.commit()
+
+    enabled = await client.put(
+        f"/api/platform/tenants/{test_tenant.id}",
+        json={"premium_ai_trial_enabled": True},
+        headers=platform_headers(),
+    )
+    assert enabled.status_code == 200, enabled.text
+    await db_session.refresh(test_tenant)
+    await db_session.refresh(test_user)
+    assert test_tenant.premium_ai_trial_enabled is True
+    assert test_user.premium_ai_enabled is True
+
+    detail = await client.get(
+        f"/api/platform/tenants/{test_tenant.id}", headers=platform_headers()
+    )
+    assert detail.json()["tenant"]["premium_ai_trial_enabled"] is True
+    assert detail.json()["users"][0]["premium_ai_enabled"] is True
+
+    disabled = await client.put(
+        f"/api/platform/tenants/{test_tenant.id}",
+        json={"premium_ai_trial_enabled": False},
+        headers=platform_headers(),
+    )
+    assert disabled.status_code == 200
+    await db_session.refresh(test_tenant)
+    await db_session.refresh(test_user)
+    assert test_tenant.premium_ai_trial_enabled is False
+    assert test_user.premium_ai_enabled is False
 
 
 @pytest.mark.asyncio
