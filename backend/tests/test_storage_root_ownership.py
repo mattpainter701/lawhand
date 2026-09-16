@@ -687,3 +687,59 @@ async def test_storage_token_leaves_microsoft_on_the_delegated_token(monkeypatch
         == "ms-token"
     )
     prefer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_org_drive_provision_failure_falls_back_to_my_drive(monkeypatch):
+    """Acceptance: a failed Shared Drive *creation* must not strand onboarding."""
+
+    async def fake_token(*_args, **_kwargs):
+        return "g-token"
+
+    monkeypatch.setattr(cloud_init, "get_fresh_token", fake_token)
+    monkeypatch.setattr(
+        cloud_init, "_google_org_shared_drive_id", AsyncMock(return_value="")
+    )
+    monkeypatch.setattr(cloud_init.settings, "GOOGLE_AUTO_SHARED_DRIVE", True)
+    monkeypatch.setattr(
+        cloud_init, "_google_account_type", AsyncMock(return_value="workspace")
+    )
+    monkeypatch.setattr(
+        cloud_init,
+        "_provision_org_shared_drive",
+        AsyncMock(side_effect=RuntimeError("drive create failed")),
+    )
+    ensure_personal = AsyncMock(return_value="my-drive-root")
+    monkeypatch.setattr(cloud_init, "_ensure_gdrive_folder", ensure_personal)
+    monkeypatch.setattr(
+        cloud_init,
+        "_get_gdrive_folder_metadata",
+        AsyncMock(
+            return_value={
+                "id": "my-drive-root",
+                "name": "lawhand-records",
+                "webViewLink": "https://drive/my-drive-root",
+            }
+        ),
+    )
+
+    root = await cloud_init.initialize_cloud_root_folder(None, "tenant-1")
+
+    assert root["google_drive"]["id"] == "my-drive-root"
+    ensure_personal.assert_awaited_once_with(
+        "g-token", cloud_init.ROOT_FOLDER_NAME, "root"
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_google_credential_leaves_no_root_without_raising(monkeypatch):
+    """No delegated token and no service account: return cleanly, no root."""
+    monkeypatch.setattr(cloud_init, "get_fresh_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        cloud_init, "_google_org_shared_drive_id", AsyncMock(return_value="")
+    )
+    monkeypatch.setattr(google_service_account, "is_configured", lambda: False)
+
+    root = await cloud_init.initialize_cloud_root_folder(None, "tenant-1")
+
+    assert "google_drive" not in root
