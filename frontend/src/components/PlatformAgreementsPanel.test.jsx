@@ -16,7 +16,7 @@ describe('PlatformAgreementsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getPlatformAgreementDefinitions.mockResolvedValue({ agreements: [] })
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '<article class="server-legal__article"><h1>Terms</h1><p>Current terms</p></article>' })
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '<article class="server-legal__article"><h1>Terms</h1><p>Current terms</p></article>' })
     vi.stubGlobal('crypto', { subtle: { digest: vi.fn().mockResolvedValue(new Uint8Array(32).buffer) } })
   })
 
@@ -62,7 +62,7 @@ describe('PlatformAgreementsPanel', () => {
       return result.buffer
     })
     vi.stubGlobal('crypto', { subtle: { digest } })
-    global.fetch = vi.fn()
+    globalThis.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, text: async () => '<html><script src="a.js"></script><article class="server-legal__article"><p>ignored shell</p></article></html>' })
       .mockResolvedValueOnce({ ok: true, text: async () => '<html><script src="b.js"></script><article class="server-legal__article"><p>different shell</p></article></html>' })
     const first = await fetchTermsHash()
@@ -78,7 +78,7 @@ describe('PlatformAgreementsPanel', () => {
       return result.buffer
     })
     vi.stubGlobal('crypto', { subtle: { digest } })
-    global.fetch = vi.fn()
+    globalThis.fetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>current</p></article>' })
       .mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>current</p></article>' })
       .mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>current</p></article>' })
@@ -87,14 +87,14 @@ describe('PlatformAgreementsPanel', () => {
     const changed = await fetchTermsHash({ ...TERMS_DEFAULTS, intro: 'updated' })
     expect(second).toBe(first)
     expect(changed).not.toBe(first)
-    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '<main>missing article</main>' })
+    globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => '<main>missing article</main>' })
     await expect(fetchTermsHash()).rejects.toThrow(/canonical legal article/i)
   })
 
   it('aborts publishing when the canonical Terms source changes', async () => {
     const user = userEvent.setup()
-    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>v1</p></article>' }).mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>v2</p></article>' })
-    global.crypto.subtle.digest.mockResolvedValueOnce(new Uint8Array(32).buffer).mockResolvedValueOnce(new Uint8Array(32).fill(1).buffer)
+    globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>v1</p></article>' }).mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>v2</p></article>' })
+    globalThis.crypto.subtle.digest.mockResolvedValueOnce(new Uint8Array(32).buffer).mockResolvedValueOnce(new Uint8Array(32).fill(1).buffer)
     render(<PlatformAgreementsPanel platformKey="key" />)
     await user.click(await screen.findByRole('button', { name: /load current LawHand Terms/i }))
     await user.click(screen.getByRole('checkbox', { name: /counsel approved/i }))
