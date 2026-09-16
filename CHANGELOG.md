@@ -1,3 +1,8 @@
+## 2026.09.16.01 — Proposed Core and AI commercial catalog
+
+- Add an operator-only, non-checkout Core/AI commercial catalog and deterministic quote API. Core attorney seats are $99 monthly or $89 monthly equivalent billed annually; AI attorney seats are $199/$169; staff seats are $39/$33 on either plan. Quotes return exact line totals and explicitly remain `checkout_ready: false`.
+- Document the founding-customer offer, the separation between commercial plan, payment state, access plan, license class and AI entitlement, and the Helcim/allowance work required before the proposed catalog can be activated or published.
+
 ## 2026.09.15.09 — One visual field editor
 
 - Retire `PrepareFormWorkspace.jsx` (723 lines) and its use in the upload wizard. It and `TemplateStudioEditor` were two hand-built copies of the same editor — 197 byte-identical lines, roughly two-thirds of the intake one already present in the other — and the six silent divergences fixed in 2026.09.15.07 are what that cost. `docs/template-studio-editor-diff.md` records the measurement and the decision. The wizard's job is now getting the file in and scanned; the editor's job is making it right. `handleUploadedTemplate` already redirected to `/templates/{id}/studio` after create, so the handoff needed no building.
