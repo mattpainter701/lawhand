@@ -21,7 +21,7 @@ vi.mock('../components/CompliancePanel', async () => {
     AgreementAcceptancePanel: ({ onStatusChange }) => {
       // Report once after mount; reporting during render would re-render the
       // wizard forever.
-      useEffect(() => { onStatusChange?.({ blocking: false }) }, [onStatusChange])
+      useEffect(() => { onStatusChange?.({ blocking: false, configured: true }) }, [onStatusChange])
       return null
     },
   }
@@ -80,6 +80,12 @@ describe('OnboardingWizard', () => {
     expect(reenterOnboarding).toHaveBeenCalledOnce()
     expect(await screen.findByText('Connect Your Firm')).toBeInTheDocument()
     expect(getOnboardingStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('surfaces a safe OAuth failure returned by the provider', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT))
+    render(<MemoryRouter initialEntries={['/onboarding?error=account_mode_mismatch&provider=google']}><OnboardingWizard /></MemoryRouter>)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/selected Google account type did not match/i)
   })
 
   it('treats a tenant completed before the storage step existed as complete', () => {

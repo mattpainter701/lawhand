@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.16.01",
+      "version": "2026.09.16.01",
+      "title": "Onboarding tells the truth about setup and account access",
+      "published_at": "2026-09-16",
+      "summary": "Firms can defer setup without false completion evidence, cloud agreement gating follows the controlled rollout setting, and solo Google accounts can connect Gmail, Drive, and Calendar without pretending to sync a Workspace directory.",
+      "highlights": [
+        {
+          "title": "Set up later is honest",
+          "description": "Deferring setup keeps your core workspace available and leaves onboarding ready to re-enter; it does not claim that integrations, storage, or team import are complete."
+        },
+        {
+          "title": "Choose the right Google account",
+          "description": "Google Workspace administrators can enable directory sync, while Personal Google / Google One connects Gmail, Drive, and Calendar without requesting directory access."
+        },
+        {
+          "title": "Cloud setup is fail-closed",
+          "description": "When agreement enforcement is enabled, new cloud connections wait for current agreements; controlled rollout remains visibly non-blocking."
+        }
+      ]
+    },
+    {
       "id": "2026.09.15.12",
       "version": "2026.09.15.12",
       "title": "Scans and prose can be read too, when you ask",

@@ -96,3 +96,25 @@ async def test_reenter_migration_error_returns_conflict_without_commit(monkeypat
         )
     assert exc.value.status_code == 409
     assert db.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_skip_defers_without_false_completion(monkeypatch):
+    tenant = _tenant()
+    tenant.onboarding_completed = False
+    tenant.onboarding_step = 3
+    db = _Db(tenant)
+    user = SimpleNamespace(tenant_id="tenant", id="admin")
+
+    async def auth(*_args): return user
+    async def context(*_args): return None
+    monkeypatch.setattr(onboarding, "get_current_user", auth)
+    monkeypatch.setattr(onboarding, "set_tenant_context", context)
+
+    result = await onboarding.skip_onboarding(None, db)
+
+    assert result["status"] == "ok"
+    assert "deferred" in result["message"]
+    assert tenant.onboarding_completed is False
+    assert tenant.onboarding_step == onboarding.STEP_WELCOME
+    assert db.commits == 1

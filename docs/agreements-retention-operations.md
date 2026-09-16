@@ -34,7 +34,8 @@ blocked. Production rollout order:
 
 1. Apply migration `139_agreements_retention` and deploy with the gate off.
 2. Have counsel approve each immutable hosted document and its effective date.
-3. Calculate SHA-256 over the exact served bytes, then publish through the
+3. Calculate SHA-256 over the canonical Terms content source shared by the
+   customer-facing Terms page, then publish through the
    platform API using a `platform:write` operator credential.
 4. Confirm tenant administrators can review and accept every required version.
 5. Give existing tenants an acceptance window and monitor the platform view.

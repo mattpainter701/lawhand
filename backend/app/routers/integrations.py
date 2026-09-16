@@ -57,10 +57,11 @@ from app.services.zoom_phone import (
     zoom_phone_webhook_jobs,
     zoom_webhook_validation_response,
 )
-from app.services.compliance import agreement_status
+from app.services.compliance import onboarding_cloud_connection_blocked
 from app.utils.oauth_security import (
     generate_pkce_pair,
     is_oauth_client_configured,
+    verify_google_id_token,
 )
 
 settings = get_settings()
@@ -262,6 +263,29 @@ GOOGLE_USER_SCOPES = (
     "https://www.googleapis.com/auth/calendar "
     "https://www.googleapis.com/auth/drive"
 )
+GOOGLE_SOLO_SCOPES = (
+    "openid email profile "
+    "https://www.googleapis.com/auth/gmail.readonly "
+    f"{GOOGLE_MAIL_SEND_SCOPE} "
+    "https://www.googleapis.com/auth/calendar "
+    "https://www.googleapis.com/auth/drive"
+)
+
+
+def _google_scopes_for_mode(intent: str, account_mode: str) -> str:
+    if intent == "admin" and account_mode == "personal":
+        return GOOGLE_SOLO_SCOPES
+    if intent == "admin":
+        return GOOGLE_ADMIN_SCOPES
+    return GOOGLE_USER_SCOPES
+
+
+def _google_account_mode_matches(account_mode: str, account_type: str) -> bool:
+    return (account_mode == "personal" and account_type == "personal") or (
+        account_mode == "workspace" and account_type == "workspace"
+    )
+
+
 ZOOM_SCOPES = "meeting:write meeting:read user:read"
 
 SCOPE_ALIASES_GOOGLE = {
@@ -411,10 +435,14 @@ async def microsoft_connect(
 
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
-    if (await agreement_status(db, user.tenant_id))["blocking"]:
+    if await onboarding_cloud_connection_blocked(db, user.tenant_id):
         raise HTTPException(
             status_code=428,
-            detail="Accept the current tenant agreements before connecting an integration",
+            detail=(
+                "Cloud connections are unavailable until the current required tenant "
+                "agreements are published and accepted. Choose Set up later to use "
+                "the core workspace while an administrator completes this step."
+            ),
         )
     if intent == "admin" and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -624,6 +652,9 @@ async def microsoft_callback(
 async def google_connect(
     request: Request,
     intent: str = Query("admin", description="admin=tenant-wide, user=per-user"),
+    account_mode: str = Query(
+        "workspace", description="workspace or personal for admin onboarding"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     if not is_oauth_client_configured(
@@ -633,13 +664,24 @@ async def google_connect(
 
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
-    if (await agreement_status(db, user.tenant_id))["blocking"]:
+    if await onboarding_cloud_connection_blocked(db, user.tenant_id):
         raise HTTPException(
             status_code=428,
-            detail="Accept the current tenant agreements before connecting an integration",
+            detail=(
+                "Cloud connections are unavailable until the current required tenant "
+                "agreements are published and accepted. Choose Set up later to use "
+                "the core workspace while an administrator completes this step."
+            ),
         )
     if intent == "admin" and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    if account_mode not in {"workspace", "personal"} or (
+        intent != "admin" and account_mode != "workspace"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Choose Google Workspace or Personal Google for admin onboarding",
+        )
 
     state = secrets.token_urlsafe(32)
     code_verifier, code_challenge = generate_pkce_pair()
@@ -653,11 +695,12 @@ async def google_connect(
             "tenant_id": str(user.tenant_id),
             "role": user.role,
             "pkce_verifier": code_verifier,
+            "account_mode": account_mode,
         },
     )
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
-    scopes = GOOGLE_ADMIN_SCOPES if intent == "admin" else GOOGLE_USER_SCOPES
+    scopes = _google_scopes_for_mode(intent, account_mode)
 
     authorize_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
@@ -689,6 +732,10 @@ async def google_callback(
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
     intent = meta.get("intent", "user") if meta else "user"
+    account_mode = meta.get("account_mode", "workspace") if meta else "workspace"
+    if intent == "admin" and account_mode not in {"workspace", "personal"}:
+        return _error_redirect("google", "invalid_state")
+    expected_scopes = _google_scopes_for_mode(intent, account_mode)
     code_verifier = meta.get("pkce_verifier") if meta else None
 
     token_payload = {
@@ -719,23 +766,32 @@ async def google_callback(
             return _error_redirect("google", "no_access_token")
 
         if intent == "admin":
+            # Account mode is security-sensitive. Verify the signed Google
+            # identity before creating/updating a tenant credential; never
+            # classify a provider tier from an unverified JWT payload. The
+            # per-user flow deliberately has no OpenID scope and may omit it.
+            id_token = token_data.get("id_token")
+            if not id_token:
+                return _error_redirect("google", "identity_verification_failed")
+            try:
+                verified_claims = await verify_google_id_token(
+                    id_token,
+                    client_id=settings.GOOGLE_CLIENT_ID,
+                    access_token=access_token,
+                )
+            except HTTPException:
+                return _error_redirect("google", "identity_verification_failed")
+            account_type, account_domain = account_detect.detect_google(verified_claims)
+            if not _google_account_mode_matches(account_mode, account_type):
+                return _error_redirect("google", "account_mode_mismatch")
             _user_id, tenant_id = _require_state_user(meta, "admin")
             admin_user_id = _user_id
             await set_tenant_context(db, tenant_id)
 
             # Resolve service account email from Google id_token
             service_email = None
-            decoded = None
-            id_token = token_data.get("id_token")
-            if id_token:
-                try:
-                    payload = id_token.split(".")[1]
-                    # Add padding
-                    payload += "=" * (4 - len(payload) % 4)
-                    decoded = _json.loads(base64.urlsafe_b64decode(payload))
-                    service_email = decoded.get("email")
-                except Exception:
-                    pass
+            decoded = verified_claims
+            service_email = decoded.get("email")
 
             existing = await db.execute(
                 select(TenantCredential).where(
@@ -764,8 +820,7 @@ async def google_callback(
                 expires_in=expires_in,
                 scope_str=scope_str,
             )
-            apply_scope_audit(row, "google", GOOGLE_ADMIN_SCOPES, _scope_is_granted)
-            account_type, account_domain = account_detect.detect_google(decoded)
+            apply_scope_audit(row, "google", expected_scopes, _scope_is_granted)
             account_detect.apply_detection(row, account_type, account_domain)
         else:
             user_id, tenant_id = _require_state_user(meta, "user")
@@ -800,7 +855,8 @@ async def google_callback(
         if intent == "admin":
             await _onboarding_post_connect(db, tenant_id, "google")
             await _ensure_cloud_root(db, tenant_id)
-            _schedule_user_sync_post_connect(tenant_id, "google")
+            if account_mode == "workspace":
+                _schedule_user_sync_post_connect(tenant_id, "google")
 
     return await _post_connect_redirect(db, tenant_id, "google")
 

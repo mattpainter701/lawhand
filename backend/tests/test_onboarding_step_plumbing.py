@@ -170,7 +170,10 @@ async def test_status_reports_the_provider_and_root_the_storage_step_saved(monke
     monkeypatch.setattr(onboarding, "_load_tenant", load_tenant)
     monkeypatch.setattr(onboarding, "_get_integration_status", integration_status)
 
-    db = _SeqDb(results=[_result("google_drive")], scalars=[0, 3, 4])
+    async def agreements(*_args):
+        return {"configured": True, "blocking": False}
+    monkeypatch.setattr(onboarding, "agreement_status", agreements)
+    db = _SeqDb(results=[_result("google_drive"), _result(SimpleNamespace(custom_config={}))], scalars=[0, 3, 4])
     response = await onboarding.get_onboarding_status(None, db)
 
     assert response.primary_cloud_provider == "google_drive"
@@ -197,11 +200,86 @@ async def test_status_reports_storage_not_ready_for_a_malformed_root(monkeypatch
     monkeypatch.setattr(onboarding, "_load_tenant", load_tenant)
     monkeypatch.setattr(onboarding, "_get_integration_status", integration_status)
 
-    db = _SeqDb(results=[_result(None)], scalars=[0, 0, 1])
+    async def agreements(*_args):
+        return {"configured": True, "blocking": False}
+    monkeypatch.setattr(onboarding, "agreement_status", agreements)
+    db = _SeqDb(results=[_result(None), _result(SimpleNamespace(custom_config={}))], scalars=[0, 0, 1])
     response = await onboarding.get_onboarding_status(None, db)
 
     assert response.storage_ready is False
     assert response.primary_cloud_provider is None
+
+
+@pytest.mark.asyncio
+async def test_status_reports_agreement_configuration(monkeypatch):
+    tenant = _tenant()
+    _wire_auth(monkeypatch, tenant)
+
+    async def load_tenant(_db, _tenant_id): return tenant
+    async def integration_status(*_args):
+        return {
+            "microsoft": IntegrationConnectionStatus(connected=False),
+            "google": IntegrationConnectionStatus(connected=False),
+        }
+    async def agreements(*_args):
+        return {"configured": False, "blocking": False}
+
+    monkeypatch.setattr(onboarding, "_load_tenant", load_tenant)
+    monkeypatch.setattr(onboarding, "_get_integration_status", integration_status)
+    monkeypatch.setattr(onboarding, "agreement_status", agreements)
+    db = _SeqDb(results=[_result(None), _result(SimpleNamespace(custom_config={}))], scalars=[0, 0, 0])
+
+    response = await onboarding.get_onboarding_status(None, db)
+
+    assert response.agreements_configured is False
+    assert response.agreements_blocking is False
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_agreements_block_new_tenant_cloud_connection(monkeypatch):
+    tenant = _tenant(onboarding_completed=False)
+
+    async def agreements(*_args):
+        return {"configured": False, "complete": False, "enforced": False, "blocking": False}
+
+    class Db(_SeqDb):
+        def __init__(self):
+            super().__init__()
+            self.values = [tenant, None]
+        async def scalar(self, _statement): return self.values.pop(0)
+
+    monkeypatch.setattr(onboarding, "agreement_status", agreements)
+    # The helper lives in compliance; patch its imported dependency to keep
+    # this lifecycle invariant database-free.
+    from app.services import compliance
+    monkeypatch.setattr(compliance, "agreement_status", agreements)
+
+    assert not await compliance.onboarding_cloud_connection_blocked(Db(), TENANT_ID)
+
+    async def enforced(*_args):
+        return {"configured": False, "complete": False, "enforced": True, "blocking": True}
+
+    monkeypatch.setattr(compliance, "agreement_status", enforced)
+    assert await compliance.onboarding_cloud_connection_blocked(Db(), TENANT_ID)
+
+
+@pytest.mark.asyncio
+async def test_configured_existing_tenant_is_not_blocked_by_rollout_flag(monkeypatch):
+    tenant = _tenant(onboarding_completed=True)
+
+    async def agreements(*_args):
+        return {"configured": False, "complete": False, "enforced": False, "blocking": False}
+
+    class Db(_SeqDb):
+        def __init__(self):
+            super().__init__()
+            self.values = [tenant, "credential-id"]
+        async def scalar(self, _statement): return self.values.pop(0)
+
+    from app.services import compliance
+    monkeypatch.setattr(compliance, "agreement_status", agreements)
+
+    assert not await compliance.onboarding_cloud_connection_blocked(Db(), TENANT_ID)
 
 
 # ── Directory sync must not skip the storage step ────────────────────────

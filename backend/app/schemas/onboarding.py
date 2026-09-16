@@ -8,6 +8,7 @@ class IntegrationConnectionStatus(BaseModel):
     scopes: str | None = None
     service_account_email: str | None = None
     granted_by_user_id: str | None = None
+    account_type: str | None = None
 
 
 class OnboardingStatusResponse(BaseModel):
@@ -21,6 +22,9 @@ class OnboardingStatusResponse(BaseModel):
     primary_cloud_provider: str | None = None
     cloud_root: dict | None = None
     storage_ready: bool = False
+    agreements_configured: bool = False
+    agreements_blocking: bool = False
+    setup_deferred: bool = False
 
 
 class OnboardingCompleteResponse(BaseModel):

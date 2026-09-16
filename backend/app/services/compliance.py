@@ -38,6 +38,7 @@ from app.models.sms import (
 )
 from app.models.task import Task, TaskAutomationRun, TaskEvent
 from app.models.tenant import Tenant
+from app.models.tenant_credential import TenantCredential
 
 settings = get_settings()
 
@@ -276,6 +277,43 @@ async def agreement_status(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, 
         "blocking": enforced and not complete,
         "agreements": items,
     }
+
+
+async def onboarding_cloud_connection_blocked(
+    db: AsyncSession, tenant_id: uuid.UUID
+) -> bool:
+    """Fail closed for first-run cloud OAuth when counsel has not configured agreements.
+
+    The rollout flag remains compatible with existing connected tenants. A new
+    tenant must have a configured, current agreement set before granting a
+    tenant-wide cloud credential; this prevents the UI's "Not published" state
+    from being bypassed by calling OAuth directly.
+    """
+    status = await agreement_status(db, tenant_id)
+    if status["blocking"]:
+        return True
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    if not tenant:
+        return False
+    active_credential = await db.scalar(
+        select(TenantCredential.id)
+        .where(
+            TenantCredential.tenant_id == tenant_id,
+            TenantCredential.provider.in_(("google", "microsoft")),
+            TenantCredential.is_active.is_(True),
+        )
+        .limit(1)
+    )
+    # Tenants with a real provider credential may reconnect during
+    # an OAuth refresh. A completed row without one is not evidence of a valid
+    # prior setup and remains fail-closed.
+    if active_credential is not None:
+        return False
+    # Respect the deployment rollout flag. During controlled rollout, an
+    # unpublished agreement set is visible but does not block first-run OAuth.
+    # Once enforcement is enabled, incomplete or unpublished agreements fail
+    # closed for tenants without an existing credential.
+    return bool(status["enforced"] and not status["complete"])
 
 
 async def chat_attachment_ttl_days(db: AsyncSession, tenant_id: uuid.UUID) -> int:

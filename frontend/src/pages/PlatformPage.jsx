@@ -6,6 +6,7 @@ import { Activity, AlertTriangle, Database, Server, Shield, Users, Zap, Search, 
 import { useConfirm } from '../components/dialog/ConfirmProvider'
 import { getPlatformDemoWorkspaces, terminatePlatformDemoWorkspace } from '../api'
 import PlatformComplianceCard from '../components/PlatformComplianceCard'
+import PlatformAgreementsPanel from '../components/PlatformAgreementsPanel'
 
 const apiErrorMessage = (error, fallback) => {
   const detail = error?.response?.data?.detail
@@ -3914,6 +3915,7 @@ export default function PlatformPage() {
     { id: 'tenants', label: 'Tenants', icon: Users },
     { id: 'demos', label: 'Demos', icon: Users },
     { id: 'integrations', label: 'Integrations', icon: Zap },
+    { id: 'agreements', label: 'Agreements', icon: FileText },
     { id: 'mcp', label: 'MCP', icon: Key },
     { id: 'sms', label: 'SMS', icon: PhoneCall },
     { id: 'ai-routing', label: 'AI Routing', icon: Cpu },
@@ -4225,6 +4227,8 @@ export default function PlatformPage() {
             }}
           />
         )}
+
+        {tab === 'agreements' && <PlatformAgreementsPanel platformKey={platformKey} />}
 
         {/* ── Logs Tab ── */}
         {tab === 'mcp' && (

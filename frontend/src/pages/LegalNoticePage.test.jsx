@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import LegalNoticePage from './LegalNoticePage'
+import LegalNoticePage, { termsContent } from './LegalNoticePage'
 
 const EMAIL = 'support@getlawhand.com'
 
@@ -75,5 +75,8 @@ describe('LegalNoticePage', () => {
     expect(within(toc).getByRole('link', { name: /Professional responsibility/ })).toHaveAttribute('href', '#professional-responsibility')
     expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy')
     expect(screen.getByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('heading', { level: 1, name: termsContent.title })).toBeInTheDocument()
+    expect(screen.getByText(termsContent.intro)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: termsContent.sections[0][1] })).toBeInTheDocument()
   })
 })

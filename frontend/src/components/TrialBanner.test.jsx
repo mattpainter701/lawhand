@@ -27,10 +27,16 @@ describe('TrialBanner', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/ends today|1 day left/i)
   })
 
-  it('explains an ended trial and points an admin at billing', () => {
-    renderBanner({ user: { access_state: 'trial_expired', trial_ends_at: inDays(-1) }, canManageBilling: true })
+  it('explains an ended trial and only links billing when checkout is available', () => {
+    renderBanner({ user: { access_state: 'trial_expired', trial_ends_at: inDays(-1), billing_checkout_available: true }, canManageBilling: true })
     expect(screen.getByRole('status')).toHaveTextContent(/free trial has ended/i)
     expect(screen.getByRole('link', { name: /subscribe now/i })).toHaveAttribute('href', '/billing')
+  })
+
+  it('does not promise checkout when billing is unavailable', () => {
+    renderBanner({ user: { access_state: 'trial_expired' }, canManageBilling: true })
+    expect(screen.queryByRole('link', { name: /subscribe now/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/contact LawHand/i)
   })
 
   it('tells a non-admin who to ask instead of offering a link they cannot use', () => {

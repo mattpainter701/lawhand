@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import {
   getOnboardingStatus,
@@ -32,6 +32,12 @@ const STEPS = [
   { id: STEP.COMPLETE, label: 'Complete' },
 ]
 
+const OAUTH_ERROR_MESSAGES = {
+  account_mode_mismatch: 'The selected Google account type did not match the consented account. Choose Google Workspace or Personal Google and try again.',
+  identity_verification_failed: 'Google identity verification failed. No connection was saved; try again or contact LawHand support.',
+  token_exchange_failed: 'Google authorization could not be completed. No connection was saved; try again.',
+}
+
 const STORAGE_OPTIONS = [
   {
     id: 'google_drive',
@@ -59,10 +65,12 @@ export function normalizeStep(status) {
 export default function OnboardingWizard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialOAuthError = searchParams.get('error')
   const [step, setStep] = useState(STEP.WELCOME)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState(() => initialOAuthError ? (OAUTH_ERROR_MESSAGES[initialOAuthError] || 'The cloud connection could not be completed. No connection was saved; try again.') : null)
   const [syncing, setSyncing] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -70,10 +78,17 @@ export default function OnboardingWizard() {
   const [storageChoice, setStorageChoice] = useState(null)
   const [storageBusy, setStorageBusy] = useState(false)
   const [storageResult, setStorageResult] = useState(null)
+  const [googleAccountMode, setGoogleAccountMode] = useState('workspace')
 
   useEffect(() => {
     loadStatus()
   }, [])
+
+  useEffect(() => {
+    const code = searchParams.get('error')
+    if (!code) return
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const loadStatus = async () => {
     try {
@@ -104,7 +119,7 @@ export default function OnboardingWizard() {
   }
 
   const handleConnectGoogle = () => {
-    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=admin`
+    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=admin&account_mode=${googleAccountMode}`
   }
 
   const handleSyncUsers = async () => {
@@ -204,7 +219,8 @@ export default function OnboardingWizard() {
   const msConnected = status?.integrations?.microsoft?.connected
   const googleConnected = status?.integrations?.google?.connected
   const hasIntegration = msConnected || googleConnected
-  const agreementReady = agreementStatus !== null && !agreementStatus.blocking
+  const agreementsConfigured = agreementStatus?.configured ?? status?.agreements_configured
+  const agreementReady = agreementStatus !== null && !agreementStatus.blocking && (agreementsConfigured || !agreementStatus.enforced)
   const syncedUsers = status?.synced_users || {}
   const totalSynced = (syncedUsers.microsoft || 0) + (syncedUsers.google || 0)
   const cloudRoot = status?.cloud_root || {}
@@ -213,6 +229,7 @@ export default function OnboardingWizard() {
   const existingRoot = selectedProvider ? cloudRoot[selectedProvider] : null
   const storageReady = Boolean(existingRoot?.id)
   const confirmedRoot = storageResult?.status === 'ready' ? storageResult.root : existingRoot
+  const setupDeferred = Boolean(status?.setup_deferred)
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col">
@@ -226,7 +243,7 @@ export default function OnboardingWizard() {
             onClick={handleSkip}
             className="text-brand-ink-2 hover:text-brand-ink font-sans text-xs transition-colors"
           >
-            Skip setup
+            Set up later
           </button>
         </div>
       </div>
@@ -284,8 +301,13 @@ export default function OnboardingWizard() {
       {/* Step content */}
       <div className="flex-1 flex items-start justify-center px-6 py-10">
         <div className="max-w-lg w-full animate-in fade-in slide-in-from-bottom-2 duration-300" key={step}>
+          {setupDeferred && step === STEP.WELCOME && (
+            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900" role="status">
+              Setup is deferred. Your core workspace remains available; no cloud connection or team import has been completed.
+            </div>
+          )}
           {error && (
-            <div className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
+            <div role="alert" className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
               {error}
               <button
                 onClick={() => setError(null)}
@@ -343,12 +365,27 @@ export default function OnboardingWizard() {
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Connect Your Firm</h2>
               <p className="text-brand-ink-2 font-sans text-sm mb-8">
-                Grant LawHand access to your firm's directory so we can import users
-                and sync email. This requires admin consent.
+                Connect a supported work account to import users and sync email. A
+                Google Workspace administrator is required for directory sync; a
+                personal Gmail account does not provide a team directory.
               </p>
 
               <div className="mb-8 rounded-xl border border-brand-line bg-brand-bg-soft p-4">
                 <AgreementAcceptancePanel compact onStatusChange={setAgreementStatus} />
+                {agreementStatus && !agreementStatus.configured && agreementStatus.enforced && (
+                  <p className="mt-3 text-xs leading-relaxed text-amber-800" role="alert">
+                    Cloud connections are paused until the required counsel-owned
+                    agreements are published and current. You can use the core
+                    workspace and choose Set up later.
+                  </p>
+                )}
+                {agreementStatus && !agreementStatus.configured && !agreementStatus.enforced && (
+                  <p className="mt-3 text-xs leading-relaxed text-brand-muted" role="status">
+                    No required agreements are published yet. Agreement enforcement
+                    is in controlled rollout mode, so you may continue; acceptance
+                    has not been recorded.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-4 mb-8">
@@ -391,13 +428,21 @@ export default function OnboardingWizard() {
                         disabled={!agreementReady}
                         className="px-4 py-2 bg-brand-ink text-white font-sans text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        Connect
+                        Connect {googleAccountMode === 'personal' ? 'Personal Google' : 'Workspace'}
                       </button>
                     )}
                   </div>
                   <p className="text-brand-ink-2 font-sans text-xs leading-relaxed">
-                    Required: Read directory users, read Gmail, read Google Drive, read calendar.
+                    {googleAccountMode === 'personal'
+                      ? 'Personal Google / Google One: connects your Gmail, Drive, and Calendar without directory access. Invite teammates from Admin instead.'
+                      : 'Google Workspace: administrator consent enables directory sync, Gmail, Drive, and Calendar.'}
                   </p>
+                  {!googleConnected && (
+                    <div className="mt-3 flex flex-wrap gap-3 text-xs text-brand-ink-2">
+                      <label><input type="radio" name="google-account-mode" checked={googleAccountMode === 'workspace'} onChange={() => setGoogleAccountMode('workspace')} /> <span className="ml-1">Google Workspace administrator</span></label>
+                      <label><input type="radio" name="google-account-mode" checked={googleAccountMode === 'personal'} onChange={() => setGoogleAccountMode('personal')} /> <span className="ml-1">Personal Google / Google One</span></label>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -424,8 +469,9 @@ export default function OnboardingWizard() {
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Where Should Documents Live?</h2>
               <p className="text-brand-ink-2 font-sans text-sm mb-6">
-                Matter documents are stored in your firm's own cloud account, never on LawHand infrastructure.
-                Choose the provider and confirm the folder before any matter is created.
+                Your connected cloud account is the matter-document system of record.
+                Confirm its folder before any matter is created; setup will stop if
+                the cloud root cannot be verified.
               </p>
 
               {storageOptions.length === 0 ? (
@@ -523,9 +569,11 @@ export default function OnboardingWizard() {
           {/* Step 3: Syncing */}
           {step === STEP.SYNC && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm text-center">
-              <h2 className="text-brand-ink font-sans text-lg font-bold mb-2">Import Your Team</h2>
+              <h2 className="text-brand-ink font-sans text-lg font-bold mb-2">{status?.integrations?.google?.account_type === 'personal' ? 'Confirm Personal Google Setup' : 'Import Your Team'}</h2>
               <p className="text-brand-ink-2 font-sans text-sm leading-relaxed mb-6">
-                {syncing
+                {status?.integrations?.google?.account_type === 'personal'
+                  ? 'Personal Google accounts do not have a Workspace directory to import. Gmail, Drive, and Calendar are connected; invite users from the Admin panel if needed.'
+                  : syncing
                   ? 'Pulling users from your connected directory. This may take a moment.'
                   : 'LawHand imports users from your connected directory. On personal accounts there is no directory to import; you can invite users from the Admin panel instead.'}
               </p>
@@ -544,7 +592,7 @@ export default function OnboardingWizard() {
                   disabled={syncing || !hasIntegration}
                   className="flex-1 py-2.5 px-4 bg-brand-ink text-white font-sans text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {syncing ? 'Syncing...' : 'Sync Users'}
+                  {syncing ? 'Syncing...' : status?.integrations?.google?.account_type === 'personal' ? 'Continue' : 'Sync Users'}
                 </button>
               </div>
             </div>
@@ -553,10 +601,12 @@ export default function OnboardingWizard() {
           {/* Step 4: Review */}
           {step === STEP.REVIEW && (
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
-              <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Review Imported Users</h2>
+              <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">{status?.integrations?.google?.account_type === 'personal' ? 'Review Google Setup' : 'Review Imported Users'}</h2>
               <WorkflowSynthesisPanel user={user} onboarding />
               <p className="text-brand-ink-2 font-sans text-sm mb-6">
-                {totalSynced > 0
+                {status?.integrations?.google?.account_type === 'personal'
+                  ? 'No team directory sync was performed for this personal Google account.'
+                  : totalSynced > 0
                   ? `${totalSynced} users were imported from your directory.`
                   : 'No users were imported yet. You can sync again from the Admin panel later.'}
               </p>
