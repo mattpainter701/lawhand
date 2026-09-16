@@ -39,7 +39,7 @@ Personal Microsoft accounts cannot grant the permissions LawHand requires. Do no
 | Bulk user import and seat provisioning | Yes | Yes | No — invite each user |
 | Shared team storage (SharePoint site, Shared Drive) | Yes | Yes | No |
 | Microsoft Teams | Yes | Not applicable | Not applicable |
-| Firm-owned custody of matter files | Yes | Yes | No — files sit in a personal account |
+| Firm-owned custody of matter files | Yes — bind to a SharePoint site library | Yes — LawHand creates an organization-owned Shared Drive | No — files sit in a personal account |
 
 Zoom Phone authenticates against Zoom rather than Microsoft or Google, so it is unaffected by cloud tier.
 
@@ -76,7 +76,7 @@ Before a firm connects a provider, confirm:
 - the account tier is known and recorded;
 - for Google Workspace, the Admin SDK API is enabled and the authorizing account holds Directory read access;
 - for Microsoft 365, a storage destination is chosen — matter files bind to the connected identity's OneDrive unless SharePoint is selected explicitly;
-- an organization-owned service identity is used where file custody must survive staff turnover; and
+- for Google Workspace, no Google Cloud setup is required from the customer: LawHand creates the organisation-owned Shared Drive, adds its own service account, and places the root inside it when the administrator connects, so file custody survives staff turnover. If Workspace policy blocks that, the root falls back to the admin's My Drive and is reported `at_risk`; and
 - the seat count is compatible with the tier, since personal accounts require each user to be invited individually.
 
 Record the business owner, technical owner, granted scopes, and disconnect procedure as described in [Integrations](/admin?tab=integrations).

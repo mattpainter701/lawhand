@@ -164,6 +164,18 @@ class Settings(BaseSettings):
     # Google Workspace — domain-wide delegation service account
     GOOGLE_SERVICE_ACCOUNT_EMAIL: str = ""
     GOOGLE_SERVICE_ACCOUNT_KEY: str = ""  # JSON key or path
+    # Customer-facing automation: when a Workspace admin connects, LawHand
+    # creates a per-tenant Shared Drive and adds its service account to it, so
+    # the firm never configures Google Cloud itself and the root is not shared
+    # with another tenant. An operator can pin a specific drive per tenant with
+    # TenantSettings.custom_config["google_shared_drive_id"]; there is no
+    # deployment-global drive, which would break tenant isolation.
+    GOOGLE_AUTO_SHARED_DRIVE: bool = True
+    GOOGLE_ORG_SHARED_DRIVE_NAME: str = "LawHand Firm Records"
+    # Optional Workspace admin to impersonate via domain-wide delegation for
+    # directory and mail operations. Storage does not need it when the service
+    # account is a member of the Shared Drive.
+    GOOGLE_IMPERSONATE_SUBJECT: str = ""
 
     OPENAI_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""

@@ -18,6 +18,7 @@ from app.services.cloud_init import (
     GRAPH_BASE,
     canonical_matter_folder_name,
 )
+from app.services import google_service_account
 from app.services.token_vault import get_fresh_token
 
 PROVIDER_LABELS = {
@@ -291,11 +292,12 @@ async def audit_matter_cloud_folders(
             }
             continue
         try:
-            token = await get_fresh_token(
-                db,
-                str(tenant_uuid),
-                "google" if provider == "google_drive" else "microsoft",
-            )
+            auth_provider = "google" if provider == "google_drive" else "microsoft"
+            token = await get_fresh_token(db, str(tenant_uuid), auth_provider)
+            if auth_provider == "google":
+                token = await google_service_account.prefer_service_account(
+                    db, str(tenant_uuid), token
+                )
             if not token:
                 raise RuntimeError("provider token unavailable")
             children = await _list_children(provider, token, root)
