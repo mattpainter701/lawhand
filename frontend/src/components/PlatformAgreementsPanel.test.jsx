@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import PlatformAgreementsPanel, { TERMS_DEFAULTS } from './PlatformAgreementsPanel'
+import PlatformAgreementsPanel, { fetchTermsHash, TERMS_DEFAULTS } from './PlatformAgreementsPanel'
 import { getPlatformAgreementDefinitions, publishPlatformAgreementDefinition } from '../api'
 
 vi.mock('../api', () => ({
@@ -16,7 +16,7 @@ describe('PlatformAgreementsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getPlatformAgreementDefinitions.mockResolvedValue({ agreements: [] })
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new TextEncoder().encode('terms-v1').buffer })
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '<article class="server-legal__article"><h1>Terms</h1><p>Current terms</p></article>' })
     vi.stubGlobal('crypto', { subtle: { digest: vi.fn().mockResolvedValue(new Uint8Array(32).buffer) } })
   })
 
@@ -55,9 +55,45 @@ describe('PlatformAgreementsPanel', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/Terms published/i)
   })
 
-  it('aborts publishing when the served Terms bytes change', async () => {
+  it('hashes shared Terms content while ignoring route shell and asset changes', async () => {
+    const digest = vi.fn(async (_algorithm, bytes) => {
+      const result = new Uint8Array(32)
+      for (const byte of new Uint8Array(bytes)) result[0] = (result[0] + byte) % 256
+      return result.buffer
+    })
+    vi.stubGlobal('crypto', { subtle: { digest } })
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => '<html><script src="a.js"></script><article class="server-legal__article"><p>ignored shell</p></article></html>' })
+      .mockResolvedValueOnce({ ok: true, text: async () => '<html><script src="b.js"></script><article class="server-legal__article"><p>different shell</p></article></html>' })
+    const first = await fetchTermsHash()
+    const second = await fetchTermsHash()
+    expect(second).toBe(first)
+    expect(digest).toHaveBeenCalledTimes(2)
+  })
+
+  it('changes the hash when shared Terms content changes and fails without the canonical article', async () => {
+    const digest = vi.fn(async (_algorithm, bytes) => {
+      const result = new Uint8Array(32)
+      for (const byte of new Uint8Array(bytes)) result[0] = (result[0] + byte) % 256
+      return result.buffer
+    })
+    vi.stubGlobal('crypto', { subtle: { digest } })
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>current</p></article>' })
+      .mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>current</p></article>' })
+      .mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>current</p></article>' })
+    const first = await fetchTermsHash({ ...TERMS_DEFAULTS, intro: 'current' })
+    const second = await fetchTermsHash({ ...TERMS_DEFAULTS, intro: 'current' })
+    const changed = await fetchTermsHash({ ...TERMS_DEFAULTS, intro: 'updated' })
+    expect(second).toBe(first)
+    expect(changed).not.toBe(first)
+    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '<main>missing article</main>' })
+    await expect(fetchTermsHash()).rejects.toThrow(/canonical legal article/i)
+  })
+
+  it('aborts publishing when the canonical Terms source changes', async () => {
     const user = userEvent.setup()
-    global.fetch.mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new TextEncoder().encode('v1').buffer }).mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new TextEncoder().encode('v2').buffer })
+    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>v1</p></article>' }).mockResolvedValueOnce({ ok: true, text: async () => '<article class="server-legal__article"><p>v2</p></article>' })
     global.crypto.subtle.digest.mockResolvedValueOnce(new Uint8Array(32).buffer).mockResolvedValueOnce(new Uint8Array(32).fill(1).buffer)
     render(<PlatformAgreementsPanel platformKey="key" />)
     await user.click(await screen.findByRole('button', { name: /load current LawHand Terms/i }))

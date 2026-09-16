@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { getPlatformAgreementDefinitions, publishPlatformAgreementDefinition } from '../api'
+import { termsContent } from '../pages/LegalNoticePage'
 
 const TERMS_DEFAULTS = {
   kind: 'terms_of_use',
@@ -10,10 +11,13 @@ const TERMS_DEFAULTS = {
   required_for_onboarding: true,
 }
 
-async function fetchTermsHash() {
+async function fetchTermsHash(content = termsContent) {
   const response = await fetch('/terms', { cache: 'no-store' })
   if (!response.ok) throw new Error('Could not fetch the served Terms page.')
-  const bytes = await response.arrayBuffer()
+  const document = new DOMParser().parseFromString(await response.text(), 'text/html')
+  const article = document.querySelector('article.server-legal__article')
+  if (!article) throw new Error('The served Terms page did not contain the canonical legal article.')
+  const bytes = new TextEncoder().encode(JSON.stringify(content))
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -74,12 +78,12 @@ export default function PlatformAgreementsPanel({ platformKey }) {
       </div>
       <div className="rounded-xl border border-brand-line bg-brand-surface p-5">
         <h3 className="font-semibold text-brand-ink">Load current LawHand Terms</h3>
-        <p className="mt-1 text-sm text-brand-muted">Fetches the same-origin served bytes with no-store and computes SHA-256 in your browser. Review with counsel before publishing.</p>
+        <p className="mt-1 text-sm text-brand-muted">Fetches the same-origin Terms page with no-store, verifies its canonical legal article, and computes SHA-256 over the shared Terms content source. Review with counsel before publishing.</p>
         {!draft ? <button type="button" onClick={prepare} disabled={busy} className="mt-4 rounded-lg bg-brand-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? 'Loading…' : 'Load current LawHand Terms'}</button> : (
           <div className="mt-4 space-y-3">
             <dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-brand-muted">Kind</dt><dd className="font-mono">{draft.kind}</dd></div><div><dt className="text-brand-muted">Title</dt><dd>{draft.title}</dd></div><div><dt className="text-brand-muted">Version</dt><dd>{draft.version}</dd></div><div><dt className="text-brand-muted">Effective</dt><dd>{draft.effective_at}</dd></div><div><dt className="text-brand-muted">URL</dt><dd className="break-all">{draft.document_url}</dd></div><div><dt className="text-brand-muted">Required for onboarding</dt><dd>{draft.required_for_onboarding ? 'Yes' : 'No'}</dd></div></dl>
             <div><p className="text-xs text-brand-muted">SHA-256</p><p className="break-all font-mono text-xs">{draft.content_hash}</p></div>
-            <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={approval} onChange={(event) => setApproval(event.target.checked)} /><span>I confirm counsel approved publishing these exact served Terms bytes.</span></label>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={approval} onChange={(event) => setApproval(event.target.checked)} /><span>I confirm counsel approved publishing this exact Terms content.</span></label>
             <div className="flex gap-2"><button type="button" onClick={publish} disabled={busy || !approval} className="rounded-lg bg-brand-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? 'Publishing…' : 'Re-fetch, verify, and publish'}</button><button type="button" onClick={() => setDraft(null)} disabled={busy} className="rounded-lg border border-brand-line px-4 py-2 text-sm">Cancel</button></div>
           </div>
         )}

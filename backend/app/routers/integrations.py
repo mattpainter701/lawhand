@@ -765,22 +765,22 @@ async def google_callback(
         if not access_token:
             return _error_redirect("google", "no_access_token")
 
-        # Account mode is security-sensitive. Verify the signed Google identity
-        # before creating/updating the tenant credential; never classify a
-        # provider tier from an unverified JWT payload.
-        id_token = token_data.get("id_token")
-        if not id_token:
-            return _error_redirect("google", "identity_verification_failed")
-        try:
-            verified_claims = await verify_google_id_token(
-                id_token,
-                client_id=settings.GOOGLE_CLIENT_ID,
-                access_token=access_token,
-            )
-        except HTTPException:
-            return _error_redirect("google", "identity_verification_failed")
-
         if intent == "admin":
+            # Account mode is security-sensitive. Verify the signed Google
+            # identity before creating/updating a tenant credential; never
+            # classify a provider tier from an unverified JWT payload. The
+            # per-user flow deliberately has no OpenID scope and may omit it.
+            id_token = token_data.get("id_token")
+            if not id_token:
+                return _error_redirect("google", "identity_verification_failed")
+            try:
+                verified_claims = await verify_google_id_token(
+                    id_token,
+                    client_id=settings.GOOGLE_CLIENT_ID,
+                    access_token=access_token,
+                )
+            except HTTPException:
+                return _error_redirect("google", "identity_verification_failed")
             account_type, account_domain = account_detect.detect_google(verified_claims)
             if not _google_account_mode_matches(account_mode, account_type):
                 return _error_redirect("google", "account_mode_mismatch")

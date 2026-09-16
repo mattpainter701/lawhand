@@ -30,7 +30,7 @@ defer setup, and allowed direct re-entry.
 1. Open Platform → **Agreements** and click **Load current LawHand Terms**.
 2. Confirm the preview is `terms_of_use`, title `LawHand Terms of Use`, version
    `2026-07-27`, effective `2026-07-27T00:00:00.000Z`, URL `${window.location.origin}/terms`,
-   and review the complete SHA-256 hash with counsel.
+   and review the complete SHA-256 hash of the canonical Terms content source with counsel.
 3. Check the explicit counsel-approval box. The panel re-fetches `/terms` with
    `cache: no-store` and recomputes the hash immediately before publishing; if
    the bytes changed, publishing is aborted.
