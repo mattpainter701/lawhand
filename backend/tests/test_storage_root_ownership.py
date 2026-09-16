@@ -743,3 +743,324 @@ async def test_no_google_credential_leaves_no_root_without_raising(monkeypatch):
     root = await cloud_init.initialize_cloud_root_folder(None, "tenant-1")
 
     assert "google_drive" not in root
+
+
+# -- helper branch coverage (diff-coverage gate) ------------------------------
+
+
+def test_org_shared_drive_binding_requires_org_owner_type():
+    assert google_service_account._org_shared_drive_binding(None) is None
+    assert (
+        google_service_account._org_shared_drive_binding({"google_drive": {"id": "x"}})
+        is None
+    )
+    assert google_service_account._org_shared_drive_binding(_ORG_ROOT)["id"] == "root-1"
+    google_service_account._clear_drive_access_cache()
+
+
+def test_unknown_owner_type_is_at_risk():
+    result = storage_root_ownership.classify_binding(
+        "google_drive", {"id": "x", "owner_type": "something-else"}
+    )
+    assert result["status"] == storage_root_ownership.AT_RISK
+
+
+def test_load_service_account_rejects_missing_and_malformed(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        google_service_account.settings, "GOOGLE_SERVICE_ACCOUNT_KEY", ""
+    )
+    assert google_service_account.load_service_account() is None
+
+    monkeypatch.setattr(
+        google_service_account.settings, "GOOGLE_SERVICE_ACCOUNT_KEY", "{not json"
+    )
+    assert google_service_account.load_service_account() is None
+
+    monkeypatch.setattr(
+        google_service_account.settings,
+        "GOOGLE_SERVICE_ACCOUNT_KEY",
+        str(tmp_path / "missing.json"),
+    )
+    assert google_service_account.load_service_account() is None
+
+    incomplete = tmp_path / "sa.json"
+    incomplete.write_text('{"client_email": "svc@x"}', encoding="utf-8")
+    monkeypatch.setattr(
+        google_service_account.settings,
+        "GOOGLE_SERVICE_ACCOUNT_KEY",
+        str(incomplete),
+    )
+    assert google_service_account.load_service_account() is None
+
+
+@pytest.mark.asyncio
+async def test_get_access_token_returns_none_on_transport_error(monkeypatch):
+    _configure_service_account(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr(
+        google_service_account.httpx, "AsyncClient", _mock_client(handler)
+    )
+    assert await google_service_account.get_access_token(["s"]) is None
+
+
+@pytest.mark.asyncio
+async def test_get_access_token_returns_none_without_a_token(monkeypatch):
+    _configure_service_account(monkeypatch)
+    monkeypatch.setattr(
+        google_service_account.httpx,
+        "AsyncClient",
+        _mock_client(lambda request: httpx.Response(200, json={"expires_in": 3600})),
+    )
+    assert await google_service_account.get_access_token(["s"]) is None
+
+
+@pytest.mark.asyncio
+async def test_service_account_access_probe(monkeypatch):
+    monkeypatch.setattr(
+        google_service_account.httpx,
+        "AsyncClient",
+        _mock_client(lambda request: httpx.Response(200, json={"id": "d"})),
+    )
+    assert (
+        await google_service_account._service_account_can_access_drive("t", "d") is True
+    )
+
+    monkeypatch.setattr(
+        google_service_account.httpx,
+        "AsyncClient",
+        _mock_client(lambda request: httpx.Response(403, json={})),
+    )
+    assert (
+        await google_service_account._service_account_can_access_drive("t", "d")
+        is False
+    )
+
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr(google_service_account.httpx, "AsyncClient", _mock_client(boom))
+    assert (
+        await google_service_account._service_account_can_access_drive("t", "d")
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefer_service_account_caches_a_successful_probe(monkeypatch):
+    monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+    )
+    probe = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        google_service_account, "_service_account_can_access_drive", probe
+    )
+
+    for _ in range(2):
+        assert (
+            await google_service_account.prefer_service_account(
+                object(), "tenant", "delegated", cloud_root=_ORG_ROOT
+            )
+            == "sa-token"
+        )
+    assert probe.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_prefer_service_account_loads_root_and_tolerates_errors(monkeypatch):
+    monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+    )
+    monkeypatch.setattr(
+        google_service_account,
+        "_service_account_can_access_drive",
+        AsyncMock(return_value=True),
+    )
+
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: _ORG_ROOT)
+    assert (
+        await google_service_account.prefer_service_account(
+            db, "11111111-1111-1111-1111-111111111111", "delegated"
+        )
+        == "sa-token"
+    )
+
+    broken = AsyncMock()
+    broken.execute.side_effect = RuntimeError("db down")
+    assert (
+        await google_service_account.prefer_service_account(
+            broken, "11111111-1111-1111-1111-111111111111", "delegated"
+        )
+        == "delegated"
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_shared_drive_child_folders_paginates():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(
+                200, json={"files": [{"id": "a"}], "nextPageToken": "p2"}
+            )
+        return httpx.Response(200, json={"files": [{"id": "b"}]})
+
+    client = RealAsyncClient(transport=httpx.MockTransport(handler))
+    folders = await cloud_init._list_shared_drive_child_folders(client, {}, "drive-1")
+    assert [f["id"] for f in folders] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_list_shared_drive_child_folders_raises_on_error():
+    client = RealAsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500))
+    )
+    with pytest.raises(RuntimeError, match="Shared Drive folder listing failed"):
+        await cloud_init._list_shared_drive_child_folders(client, {}, "drive-1")
+
+
+@pytest.mark.asyncio
+async def test_org_root_reuses_an_existing_folder_before_creating(monkeypatch):
+    monkeypatch.setattr(
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+    )
+    monkeypatch.setattr(
+        cloud_init,
+        "_list_shared_drive_child_folders",
+        AsyncMock(
+            return_value=[{"id": "e", "name": "lawhand-records", "webViewLink": "u"}]
+        ),
+    )
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _mock_client(lambda request: httpx.Response(200, json={})),
+    )
+
+    binding = await cloud_init._ensure_gdrive_org_root("drive-1", "lawhand-records")
+
+    assert binding["id"] == "e"
+
+
+@pytest.mark.asyncio
+async def test_org_root_409_reuses_the_folder_created_by_a_race(monkeypatch):
+    monkeypatch.setattr(
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+    )
+    calls = {"n": 0}
+
+    async def fake_list(client, headers, drive_id):
+        calls["n"] += 1
+        return [] if calls["n"] == 1 else [{"id": "e2", "name": "lawhand-records"}]
+
+    monkeypatch.setattr(cloud_init, "_list_shared_drive_child_folders", fake_list)
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _mock_client(lambda request: httpx.Response(409, text="exists")),
+    )
+
+    binding = await cloud_init._ensure_gdrive_org_root("drive-1", "lawhand-records")
+
+    assert binding["id"] == "e2"
+
+
+@pytest.mark.asyncio
+async def test_org_root_creation_raises_on_unexpected_status(monkeypatch):
+    monkeypatch.setattr(
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+    )
+    monkeypatch.setattr(
+        cloud_init, "_list_shared_drive_child_folders", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        cloud_init.httpx,
+        "AsyncClient",
+        _mock_client(lambda request: httpx.Response(403, text="denied")),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Failed to create Google Shared Drive folder"
+    ):
+        await cloud_init._ensure_gdrive_org_root("drive-1", "lawhand-records")
+
+
+@pytest.mark.asyncio
+async def test_delete_shared_drive_swallows_provider_errors(monkeypatch):
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom")
+
+    monkeypatch.setattr(cloud_init.httpx, "AsyncClient", _mock_client(boom))
+    await cloud_init._delete_gdrive_shared_drive("g-token", "drive-1")
+
+
+@pytest.mark.asyncio
+async def test_google_account_type_returns_none_on_error():
+    db = AsyncMock()
+    db.execute.side_effect = RuntimeError("db down")
+    assert (
+        await cloud_init._google_account_type(
+            db, "11111111-1111-1111-1111-111111111111"
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_org_shared_drive_id_returns_empty_on_error():
+    db = AsyncMock()
+    db.execute.side_effect = RuntimeError("db down")
+    assert (
+        await cloud_init._google_org_shared_drive_id(
+            db, "11111111-1111-1111-1111-111111111111"
+        )
+        == ""
+    )
+
+
+@pytest.mark.asyncio
+async def test_cloud_search_google_token_falls_back_to_service_account(monkeypatch):
+    from app.services import cloud_search
+    from app.services.cloud_search import CloudSearchService
+
+    monkeypatch.setattr(
+        cloud_search, "get_fresh_user_token", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(cloud_search, "get_fresh_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        google_service_account,
+        "prefer_service_account",
+        AsyncMock(return_value="sa-token"),
+    )
+
+    assert (
+        await CloudSearchService._get_google_token(object(), "tenant", None)
+        == "sa-token"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cloud_sync_get_token_uses_service_account_for_google(monkeypatch):
+    from app.services import cloud_sync
+    from app.services.cloud_sync import CloudSyncService
+
+    monkeypatch.setattr(
+        cloud_sync, "get_fresh_user_token", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(cloud_sync, "get_fresh_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(cloud_sync, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(
+        google_service_account,
+        "prefer_service_account",
+        AsyncMock(return_value="sa-token"),
+    )
+
+    service = CloudSyncService.__new__(CloudSyncService)
+    assert await service._get_token(object(), "tenant", "google", None) == "sa-token"
