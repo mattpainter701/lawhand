@@ -31,9 +31,10 @@ defer setup, and allowed direct re-entry.
 2. Confirm the preview is `terms_of_use`, title `LawHand Terms of Use`, version
    `2026-07-27`, effective `2026-07-27T00:00:00.000Z`, URL `${window.location.origin}/terms`,
    and review the complete SHA-256 hash of the canonical Terms content source with counsel.
-3. Check the explicit counsel-approval box. The panel re-fetches `/terms` with
-   `cache: no-store` and recomputes the hash immediately before publishing; if
-   the bytes changed, publishing is aborted.
+3. Check the explicit counsel-approval box. The panel revalidates `/terms`
+   availability and its canonical legal article with `cache: no-store`, then
+   recomputes the deterministic canonical content hash immediately before
+   publishing; a mismatch or validation failure aborts publishing.
 4. Click **Re-fetch, verify, and publish**. No placeholder text is seeded and
    nothing is auto-published.
 5. For each tenant, open onboarding after publication. The tenant administrator

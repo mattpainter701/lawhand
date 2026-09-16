@@ -141,9 +141,9 @@ const notices = {
   },
   terms: {
     eyebrow: 'Rules for using LawHand',
-    title: 'Terms of Use',
-    intro: 'These Terms of Use apply to the LawHand public website and to your access to a LawHand workspace. LawHand is a multi-tenant, AI-assisted legal operations platform for law firms and legal professionals.',
-    sections: termsSections,
+    title: termsContent.title,
+    intro: termsContent.intro,
+    sections: termsContent.sections,
     otherPath: '/privacy',
     otherLabel: 'Privacy Policy',
   },
