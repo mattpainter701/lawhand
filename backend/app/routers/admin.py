@@ -101,8 +101,10 @@ def _user_response(
     user: User,
     assignments: dict | None = None,
     workspace_mcp_active_grant_count: int = 0,
+    invitation: tuple[str, datetime] | None = None,
 ) -> UserResponse:
     assigned = (assignments or {}).get(user.id, {})
+    invitation_status, invitation_expires_at = invitation or (None, None)
     return UserResponse(
         id=str(user.id),
         email=user.email,
@@ -129,6 +131,8 @@ def _user_response(
         privacy_mode=user.privacy_mode,
         workspace_mcp_enabled=user.workspace_mcp_enabled,
         workspace_mcp_active_grant_count=workspace_mcp_active_grant_count,
+        invitation_status=invitation_status,
+        invitation_expires_at=invitation_expires_at,
         created_at=user.created_at,
     )
 
@@ -201,6 +205,8 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     """List all users in the current tenant."""
+    from app.services.user_invitations import invitation_statuses
+
     admin = await _require_admin(request, db)
     await set_tenant_context(db, str(admin.tenant_id))
 
@@ -210,14 +216,23 @@ async def list_users(
         .order_by(User.created_at.asc())
     )
     users = result.scalars().all()
-    assignments = await _user_role_assignments(db, [u.id for u in users])
+    user_ids = [u.id for u in users]
+    assignments = await _user_role_assignments(db, user_ids)
     workspace_mcp_counts = await _workspace_mcp_active_grant_counts(
-        db, admin.tenant_id, [u.id for u in users]
+        db, admin.tenant_id, user_ids
+    )
+    invitations = await invitation_statuses(
+        db, tenant_id=admin.tenant_id, user_ids=user_ids
     )
 
     return UserList(
         users=[
-            _user_response(u, assignments, workspace_mcp_counts.get(u.id, 0))
+            _user_response(
+                u,
+                assignments,
+                workspace_mcp_counts.get(u.id, 0),
+                invitations.get(u.id),
+            )
             for u in users
         ],
         total=len(users),
@@ -282,6 +297,11 @@ async def deactivate_user(
                 detail=f"This user granted org-wide OAuth consent for {', '.join(providers)}. Deactivating will break integrations. Re-authorize with another admin first, or use ?force=true.",
             )
 
+    from app.services.user_invitations import revoke_open_invitation
+
+    # A deactivated person must not be able to walk back in through an
+    # invitation link that was still sitting in their inbox.
+    await revoke_open_invitation(db, tenant_id=admin.tenant_id, user_id=target_user.id)
     target_user.is_active = False
     await db.commit()
 
@@ -2110,6 +2130,8 @@ async def reactivate_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Re-enable a previously deactivated user."""
+    from app.services.user_invitations import has_unaccepted_invitation
+
     admin = await _require_admin(request, db)
     await set_tenant_context(db, str(admin.tenant_id))
 
@@ -2122,9 +2144,95 @@ async def reactivate_user(
     if user.is_active:
         return {"status": "already_active", "user_id": user_id}
 
+    # Activating someone who never accepted their invitation would hand them an
+    # account with no credential of their own, reachable by Google email match.
+    if await has_unaccepted_invitation(db, tenant_id=admin.tenant_id, user_id=user.id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This person hasn't accepted their invitation yet. "
+                "Resend the invitation instead."
+            ),
+        )
+
     user.is_active = True
     await db.commit()
     return {"status": "reactivated", "user_id": user_id}
+
+
+async def _pending_invitee(db: AsyncSession, admin: User, user_id: str) -> User:
+    """Load a same-tenant user who was invited and has never accepted."""
+    from app.services.user_invitations import has_unaccepted_invitation
+
+    try:
+        parsed_user_id = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = await db.scalar(
+        select(User).where(User.id == parsed_user_id, User.tenant_id == admin.tenant_id)
+    )
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.is_active or not await has_unaccepted_invitation(
+        db, tenant_id=admin.tenant_id, user_id=user.id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="This person has no pending invitation.",
+        )
+    return user
+
+
+@router.post("/users/{user_id}/invitation/resend", response_model=InviteUserResponse)
+async def resend_invitation(
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Issue a fresh invitation link, invalidating the previous one."""
+    from app.services.user_invitations import create_invitation
+
+    admin = await _require_admin(request, db)
+    tenant_id = str(admin.tenant_id)
+    await set_tenant_context(db, tenant_id)
+    user = await _pending_invitee(db, admin, user_id)
+
+    invite_token = await create_invitation(
+        db,
+        tenant_id=admin.tenant_id,
+        user_id=user.id,
+        created_by_user_id=admin.id,
+    )
+    invitee_id, invitee_email, invitee_name = str(user.id), user.email, user.full_name
+    await db.commit()
+
+    await _send_invitation_email(
+        db,
+        tenant_id=tenant_id,
+        to_email=invitee_email,
+        invitee_name=invitee_name,
+        inviter_name=admin.full_name or admin.email,
+        invite_token=invite_token,
+    )
+    return InviteUserResponse(status="invited", user_id=invitee_id, email=invitee_email)
+
+
+@router.delete("/users/{user_id}/invitation", status_code=204)
+async def revoke_invitation(
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a pending invitation so its link can no longer be used."""
+    from app.services.user_invitations import revoke_open_invitation
+
+    admin = await _require_admin(request, db)
+    await set_tenant_context(db, str(admin.tenant_id))
+    user = await _pending_invitee(db, admin, user_id)
+
+    if not await revoke_open_invitation(db, tenant_id=admin.tenant_id, user_id=user.id):
+        raise HTTPException(status_code=404, detail="No open invitation")
+    await db.commit()
 
 
 @router.post("/users/invite", response_model=InviteUserResponse)
@@ -2134,58 +2242,93 @@ async def invite_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Invite a new user by email. Creates an inactive account and sends an invite link."""
-    import secrets
-
-    from app.services.email import email_delivery_http_error
-    from app.services.email_admin import send_admin_notification
+    from app.services.user_invitations import create_invitation
+    from app.services.workspace_mcp_access import tenant_workspace_mcp_default
 
     admin = await _require_admin(request, db)
     tenant_id = str(admin.tenant_id)
     await set_tenant_context(db, tenant_id)
 
-    # Check for existing user
+    role = _validate_user_role(body.role)
+    email = body.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email address is required")
+
     existing = await db.execute(
-        select(User).where(User.tenant_id == admin.tenant_id, User.email == body.email)
+        select(User.id).where(
+            User.tenant_id == admin.tenant_id, func.lower(User.email) == email
+        )
     )
-    if existing.scalar_one_or_none():
+    if existing.first() is not None:
         raise HTTPException(
             status_code=409,
             detail="A user with this email already exists in your tenant.",
         )
 
-    role = _validate_user_role(body.role)
-
-    # Create inactive user with a random password (they will set their own via invite link)
-    invite_token = secrets.token_urlsafe(32)
-    from app.services.workspace_mcp_access import tenant_workspace_mcp_default
-
+    # No credential until the invitation is accepted: the token lives hashed in
+    # user_invitations, never in password_hash.
     new_user = User(
         tenant_id=admin.tenant_id,
-        email=body.email,
+        email=email,
         full_name=body.full_name,
         role=role,
         is_active=False,
         license_active=True,
         workspace_mcp_enabled=await tenant_workspace_mcp_default(db, admin.tenant_id),
-        # Store invite token temporarily in password_hash field (hashed prefix)
-        password_hash=f"invite:{invite_token}",
+        password_hash=None,
     )
     db.add(new_user)
+    await db.flush()
+    invite_token = await create_invitation(
+        db,
+        tenant_id=admin.tenant_id,
+        user_id=new_user.id,
+        created_by_user_id=admin.id,
+    )
+    new_user_id = str(new_user.id)
     await db.commit()
-    await db.refresh(new_user)
 
-    # Build invite URL (uses existing reset-password flow)
-    base_url = settings.FRONTEND_URL or "http://localhost:3000"
-    invite_url = f"{base_url}/reset-password?token={invite_token}&invite=1"
+    await _send_invitation_email(
+        db,
+        tenant_id=tenant_id,
+        to_email=email,
+        invitee_name=body.full_name,
+        inviter_name=admin.full_name or admin.email,
+        invite_token=invite_token,
+    )
+    return InviteUserResponse(status="invited", user_id=new_user_id, email=email)
 
+
+async def _send_invitation_email(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    to_email: str,
+    invitee_name: Optional[str],
+    inviter_name: str,
+    invite_token: str,
+) -> None:
+    """Email an invitation link, raising the delivery error if it was not sent.
+
+    Names are escaped: both are free text typed by an administrator, and this
+    HTML goes straight into someone's inbox.
+    """
+    from html import escape
+
+    from app.services.email import email_delivery_http_error
+    from app.services.email_admin import send_admin_notification
+    from app.services.user_invitations import invitation_url
+
+    invite_url = escape(invitation_url(invite_token), quote=True)
+    greeting = f" {escape(invitee_name)}" if invitee_name else ""
     html_body = f"""
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
       <div style="background:#14253B;padding:24px 32px;border-radius:8px 8px 0 0;">
         <h1 style="color:#fff;margin:0;font-size:20px;">You've been invited to LawHand</h1>
       </div>
       <div style="padding:24px 32px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
-        <p>Hi{" " + body.full_name if body.full_name else ""},</p>
-        <p><strong>{admin.full_name or admin.email}</strong> has invited you to join their firm on LawHand.</p>
+        <p>Hi{greeting},</p>
+        <p><strong>{escape(inviter_name)}</strong> has invited you to join their firm on LawHand.</p>
         <p style="margin:24px 0;">
           <a href="{invite_url}" style="background:#14253B;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">
             Accept Invitation
@@ -2199,7 +2342,7 @@ async def invite_user(
     delivery_result = await send_admin_notification(
         db=db,
         tenant_id=tenant_id,
-        to_emails=[body.email],
+        to_emails=[to_email],
         subject="You've been invited to LawHand",
         html_body=html_body,
     )
@@ -2215,10 +2358,6 @@ async def invite_user(
                 "was not delivered."
             ),
         )
-
-    return InviteUserResponse(
-        status="invited", user_id=str(new_user.id), email=new_user.email
-    )
 
 
 # ─────────────────────────────────────────────────────

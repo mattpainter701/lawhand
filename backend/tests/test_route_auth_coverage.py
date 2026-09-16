@@ -92,6 +92,14 @@ PUBLIC_ROUTES: dict[tuple[frozenset[str], str], str] = {
         "/api/auth/reset-password",
     ): "authenticated by the emailed reset token",
     (
+        frozenset({"POST"}),
+        "/api/auth/invite/lookup",
+    ): "read-only; authenticated by a hashed, expiring, single-use emailed invitation token",
+    (
+        frozenset({"POST"}),
+        "/api/auth/invite/accept",
+    ): "authenticated by a hashed, expiring, single-use emailed invitation token",
+    (
         frozenset({"GET", "POST"}),
         "/api/auth/verify-alias",
     ): "authenticated by a tenant-scoped, expiring, single-use emailed alias token",

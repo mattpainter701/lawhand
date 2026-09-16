@@ -23,6 +23,13 @@ class _ProviderTokenResponse:
         }
 
 
+def _assert_login_redirect(response, code: str) -> None:
+    """Browser sign-in refusals land on the login page with a stable code."""
+    assert response.status_code == 303, response.text
+    assert response.headers["location"].endswith(f"/login?error={code}")
+    assert response.headers["cache-control"] == "no-store"
+
+
 async def _oauth_client(db_session):
     async def override_get_db():
         yield db_session
@@ -186,8 +193,7 @@ async def test_oauth_callback_rejects_ambiguous_cross_tenant_email_mapping(
         )
     app.dependency_overrides.clear()
 
-    assert response.status_code == 409
-    assert "multiple accounts" in response.json()["detail"]
+    _assert_login_redirect(response, "identity_conflict")
     for user in users:
         await db_session.refresh(user)
         assert user.oauth_provider is None
@@ -232,8 +238,7 @@ async def test_microsoft_same_email_cannot_claim_unlinked_existing_account(
         )
     app.dependency_overrides.clear()
 
-    assert response.status_code == 403
-    assert "not linked" in response.json()["detail"].lower()
+    _assert_login_redirect(response, "microsoft_not_linked")
     await db_session.refresh(user)
     assert user.oauth_provider is None
     assert user.oauth_subject is None
@@ -291,8 +296,7 @@ async def test_oauth_callback_rejects_ambiguous_provider_subject_mapping(
         )
     app.dependency_overrides.clear()
 
-    assert response.status_code == 409
-    assert "multiple accounts" in response.json()["detail"]
+    _assert_login_redirect(response, "identity_conflict")
 
 
 @pytest.mark.asyncio
@@ -319,12 +323,10 @@ async def test_oauth_callback_cannot_provision_in_launch_mode(
         )
     app.dependency_overrides.clear()
 
-    assert response.status_code == 403
-    detail = response.json()["detail"].lower()
-    if provider == "microsoft":
-        assert "not linked" in detail
-    else:
-        assert "public signup is not enabled" in detail
+    _assert_login_redirect(
+        response,
+        "microsoft_not_linked" if provider == "microsoft" else "signup_disabled",
+    )
     assert (
         await db_session.execute(select(func.count()).select_from(Tenant))
     ).scalar_one() == 0
@@ -469,8 +471,7 @@ async def test_microsoft_login_refuses_to_move_an_established_tenant_link(
         },
     )
 
-    assert response.status_code == 409
-    assert "tenant link mismatch" in response.json()["detail"].lower()
+    _assert_login_redirect(response, "identity_conflict")
     await db_session.refresh(user)
     assert user.entra_tenant_id == other_tenant_id
     assert user.oauth_subject == ENTRA_OBJECT_ID
@@ -500,8 +501,7 @@ async def test_microsoft_entra_claims_still_cannot_claim_account_by_email(
         },
     )
 
-    assert response.status_code == 403
-    assert "not linked" in response.json()["detail"].lower()
+    _assert_login_redirect(response, "microsoft_not_linked")
     await db_session.refresh(user)
     assert user.oauth_subject is None
     assert user.entra_object_id is None

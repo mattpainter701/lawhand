@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 
 from app.models.rbac import Role, UserRole
 from app.models.user import User
+from app.models.user_invitation import UserInvitation
 from app.models.tenant import Tenant, TenantSettings
 from app.models.workspace_mcp_grant import WorkspaceMCPGrant
 from app.models.workspace_mcp_audit import WorkspaceMCPAuditEvent
@@ -579,4 +580,13 @@ async def test_invite_user_reports_email_failure_but_preserves_inactive_record(
     )
     assert invited_user is not None
     assert invited_user.is_active is False
-    assert invited_user.password_hash.startswith("invite:")
+    # The invitee holds no credential until they accept; the token is stored
+    # only as a hash on the invitation row, which survives a failed send so an
+    # administrator can resend.
+    assert invited_user.password_hash is None
+    invitation = await db_session.scalar(
+        select(UserInvitation).where(UserInvitation.user_id == invited_user.id)
+    )
+    assert invitation is not None
+    assert len(invitation.token_hash) == 64
+    assert invitation.accepted_at is None and invitation.revoked_at is None

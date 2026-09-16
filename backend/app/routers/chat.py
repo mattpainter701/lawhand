@@ -686,12 +686,19 @@ def _auto_tier(query: str, user_requested_premium: bool) -> bool:
     return False
 
 
-def _premium_for_user(user, query: str, user_requested_premium: bool) -> bool:
-    """Apply per-user premium assignment after route classification."""
-    return bool(
-        getattr(user, "premium_ai_enabled", False)
-        and _auto_tier(query, user_requested_premium)
-    )
+async def _premium_for_user(db, user, query: str, user_requested_premium: bool) -> bool:
+    """Apply per-user premium assignment after route classification.
+
+    The per-user flag alone is not enough: a firm on a trial or a demo
+    workspace never gets premium AI, even for a user whose flag was set. The
+    firm is resolved from ``user.tenant_id``, because this handler's user is
+    built from the verified token and carries no loaded ``tenant``.
+    """
+    from app.services.tenant_access import resolve_user_premium_ai
+
+    if not _auto_tier(query, user_requested_premium):
+        return False
+    return await resolve_user_premium_ai(db, user)
 
 
 _PUBLIC_GENERAL_MATTER_DETAIL = (
@@ -2410,7 +2417,7 @@ async def _send_message_under_generation_lock(
 
     reject_demo_premium(user, body.use_premium_llm)
     await _apply_conversation_preferences(db, user, conv, body)
-    use_premium = _premium_for_user(user, body.content, body.use_premium_llm)
+    use_premium = await _premium_for_user(db, user, body.content, body.use_premium_llm)
     route = await resolve_llm_route(
         db,
         user.tenant_id,
@@ -3173,7 +3180,9 @@ async def _stream_message_under_generation_lock(
     try:
         reject_demo_premium(user, body.use_premium_llm)
         await _apply_conversation_preferences(db, user, conv, body)
-        use_premium = _premium_for_user(user, body.content, body.use_premium_llm)
+        use_premium = await _premium_for_user(
+            db, user, body.content, body.use_premium_llm
+        )
         route = await resolve_llm_route(
             db,
             user.tenant_id,

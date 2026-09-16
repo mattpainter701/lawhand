@@ -213,7 +213,10 @@ async def test_launch_mode_rejects_public_email_and_oauth_signup(
 
     assert plan_response.status_code == 403
     assert register_response.status_code == 403
-    assert oauth_response.status_code == 403
+    # Browser OAuth is a full-page navigation, so its refusal lands on the
+    # login page with a code rather than a JSON body.
+    assert oauth_response.status_code == 303
+    assert oauth_response.headers["location"].endswith("/login?error=signup_disabled")
     assert "request access" in plan_response.json()["detail"].lower()
     assert (
         await db_session.execute(
