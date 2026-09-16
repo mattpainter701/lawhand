@@ -3631,7 +3631,13 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
     try {
       const data = await getPlatformSmsProvider(platformKey)
       setConfig(data)
-      setForm((prev) => ({ ...prev, auth_token: '' }))
+      setForm((prev) => ({
+        ...prev,
+        auth_token: '',
+        messaging_service_sid: data?.messaging_service_sid || '',
+        from_number: data?.from_number || '',
+        status_callback_url: data?.status_callback_url || '',
+      }))
     } catch (e) {
       if (e?.response?.status === 403) onAuthError?.()
       setError(apiErrorMessage(e, 'Failed to load SMS settings.'))
@@ -3657,7 +3663,13 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
       }
       const data = await updatePlatformSmsProvider(platformKey, payload)
       setConfig(data)
-      setForm((prev) => ({ ...prev, auth_token: '' }))
+      setForm((prev) => ({
+        ...prev,
+        auth_token: '',
+        messaging_service_sid: data?.messaging_service_sid || '',
+        from_number: data?.from_number || '',
+        status_callback_url: data?.status_callback_url || '',
+      }))
       setNotice('Shared SMS sender saved.')
     } catch (e) {
       if (e?.response?.status === 403) onAuthError?.()
@@ -3719,6 +3731,11 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
             <span className="px-2 py-1 rounded bg-brand-bg-soft text-brand-muted">
               Token {config.auth_token_configured ? `set ••••${config.auth_token_hint || ''}` : 'not set'}
             </span>
+            {config.account_sid && (
+              <span className="px-2 py-1 rounded bg-brand-bg-soft text-brand-muted">
+                SID {config.account_sid}
+              </span>
+            )}
           </div>
         )}
 
@@ -3727,7 +3744,7 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
 
         <form onSubmit={handleSave} className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            ['account_sid', 'Account SID', 'AC…'],
+            ['account_sid', 'Account SID', config?.account_sid ? `leave blank to keep (${config.account_sid})` : 'AC…'],
             ['auth_token', 'Auth Token', config?.auth_token_configured ? 'leave blank to keep' : ''],
             ['messaging_service_sid', 'Messaging Service SID', 'MG… (or set a From number)'],
             ['from_number', 'From number', '+15551234567'],

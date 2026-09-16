@@ -45,7 +45,7 @@ def test_a_verify_sid_pasted_as_a_messaging_service_sid_is_named():
             VERIFY_SID,
             field="messaging_service_sid",
             expected_prefix="MG",
-            label="The Messaging Service SID",
+            label="Messaging Service SID",
         )
     error = exc_info.value
     assert error.status_code == 400
@@ -61,7 +61,7 @@ def test_an_account_sid_in_the_wrong_field_is_named_too():
             ACCOUNT_SID,
             field="messaging_service_sid",
             expected_prefix="MG",
-            label="The Messaging Service SID",
+            label="Messaging Service SID",
         )
     assert "an Account SID" in str(exc_info.value)
 
@@ -72,7 +72,7 @@ def test_an_unrecognised_prefix_is_still_rejected_without_guessing():
             "ZZ" + "d" * 32,
             field="account_sid",
             expected_prefix="AC",
-            label="The Account SID",
+            label="Account SID",
         )
     assert "starting with ZZ" in str(exc_info.value)
 
@@ -83,27 +83,27 @@ def test_a_truncated_sid_is_rejected_on_shape():
             "AC123",
             field="account_sid",
             expected_prefix="AC",
-            label="The Account SID",
+            label="Account SID",
         )
     assert "32 hexadecimal" in str(exc_info.value)
 
 
 def test_a_wellformed_sid_passes():
     _validate_sid(
-        ACCOUNT_SID, field="account_sid", expected_prefix="AC", label="The Account SID"
+        ACCOUNT_SID, field="account_sid", expected_prefix="AC", label="Account SID"
     )
     _validate_sid(
         MESSAGING_SID,
         field="messaging_service_sid",
         expected_prefix="MG",
-        label="The Messaging Service SID",
+        label="Messaging Service SID",
     )
 
 
 def test_an_absent_sid_is_not_a_shape_error():
     # Completeness is a separate check with its own message.
     _validate_sid(
-        "", field="messaging_service_sid", expected_prefix="MG", label="The MG SID"
+        "", field="messaging_service_sid", expected_prefix="MG", label="MG SID"
     )
 
 
