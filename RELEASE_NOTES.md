@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.16.07 — Word templates place their signature fields themselves
+
+Released September 16, 2026.
+
+Word templates now place their signature fields on the generated PDF by the caption printed beside each one, so a document made from Word is ready to send like one made from a PDF template.
+
+- **Word templates place their own signature fields.** A signing field in a Word template is placed at its caption in the generated PDF, so no one has to position it by hand.
+- **The caption is read from the document, or set in Studio.** The text around the field in the Word document is the default; a Word signing field in Template Studio can name a different caption.
+- **Signature lines print as rules.** A signing field in a generated Word document now prints as a ruled line for the signer instead of a blank gap.
+
 ## 2026.09.16.05 — A document that cannot be signed now tells you why
 
 Released September 16, 2026.

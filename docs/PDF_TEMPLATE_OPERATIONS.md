@@ -185,6 +185,7 @@ approval record.
 | `... position these signing fields on the PDF: ...` on publish or activate | A PDF template's signing field was never placed on the page | Place each named field in Prepare Form, then preview and activate again. Word templates are exempt: their positions are placed on the generated PDF. |
 | `... has no reviewed signing positions. ... Unbound: ...` when sending for signature | The document generated, but one or more signing fields could not be bound to the generated PDF | The message names each field and its remedy. Either fix the template and regenerate, or open the placement review and place the fields on this PDF by hand. |
 | `... cannot be sent for signature: This document was generated as DOCX ...` | Signing positions can only be placed on a PDF, and this document was saved as a Word file | Regenerate the document with Word-to-PDF conversion enabled. There is no placement review for a `.docx`, so the conversion is the only route. |
+| `... its caption ... was not found in the generated PDF` or `... is printed N times` | A Word template's signing field is placed at the caption printed beside it; the caption read from the Word document was not in the converted PDF, or appears more than once with no rule to tell the copies apart | Open the template in Studio, select the field, and set its anchor text to the caption exactly as printed (and where the field sits: after, before, or under it); or place the field by hand on the generated PDF before sending. |
 
 ## Operator triage
 

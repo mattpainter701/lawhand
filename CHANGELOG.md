@@ -1,3 +1,12 @@
+## 2026.09.16.07 — Word templates bind their signing fields by caption
+
+- `app/services/esign/anchors.py` (new): `locate_word_signing_fields` places each of a Word template's signing fields on the converted PDF at the caption printed beside it — after the caption ("Client Signature: ____"), before it ("____, MOTHER"), or on the line under it — over the printed rule when there is one. A missing caption is `anchor_not_found`; one printed more than once with no rule to tell the copies apart is `anchor_ambiguous`; both are reported for that field alone and stay recoverable by hand. Every placement is validated as a PDF template's would be.
+- `app/services/docx_templates.py`: `word_signing_anchors` reads the caption from around each signing field's span in the retained Word document (an author's `pdf_anchor: {text, placement}` on the field wins). A signing field now prints as a 24-character rule in the generated document unless its paragraph already draws one, so the PDF carries the blank the locator looks for and a printed copy has a line to sign on.
+- `template_placement_report` takes `word_anchors`; a Word template converted to PDF now binds like a PDF template instead of reporting `word_source_not_positionable`. The generate endpoint passes them for every Word-to-PDF generation.
+- Publish/activation gate: a Word signing field with a `pdf_anchor` that is present but empty is refused, naming the field. Absent anchors are derived, so existing templates publish unchanged.
+- Template Studio: a Word signing field gets "Anchor text" and where the field sits relative to it; a cleared anchor is dropped rather than saved empty.
+- Tests: `test_esign_anchors.py` (33) for the locator, the derivation, the printed rule and the report; the full Word lifecycle through the real endpoints in `test_document_templates.py`; two publish-gate cases; three Studio tests.
+
 ## 2026.09.16.05 — Signing placement binding reports why it failed
 
 - `app/services/esign/placement.py`: replace the fail-on-first binding of a template's signing fields with a per-field `PlacementReport` of `PlacementProblem` values, each carrying a stable code (`missing_signer_role`, `missing_pdf_placement`, `page_out_of_range`, `invalid_geometry`, `unsupported_pdf_page`, `unreadable_pdf`, `no_pdf_output`, `word_source_not_positionable`), the field and role it belongs to, and the remedy. One misconfigured field no longer discards every placement bound beside it. `generated_signing_metadata` and `template_positioned_fields` keep their previous contracts over the new report.

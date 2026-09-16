@@ -20,7 +20,10 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 from app.services.template_bindings import is_item_binding, item_key
-from app.services.esign.placement import is_signing_template_field
+from app.services.esign.placement import (
+    is_signing_template_field,
+    signing_template_fields,
+)
 
 
 class TemplateDocxError(ValueError):
@@ -688,6 +691,94 @@ def _open_docx(content: bytes) -> Document:
         raise TemplateDocxError("The DOCX is damaged or could not be parsed.") from exc
 
 
+#: What a signing field becomes in the generated document: a printed rule
+#: for the signer, and the blank the anchor locator looks for in the PDF.
+SIGNING_RULE = "_" * 24
+_RULE = re.compile(r"_{8,}")
+
+
+def _derived_word_anchor(field: dict, paragraphs: list[str]) -> tuple[str, str]:
+    """The caption around a signing field's span, and where the field sits.
+
+    "Client Signature: ____" anchors after its caption; "____, MOTHER" before
+    it; a placeholder alone on its line anchors below the line above it.
+    """
+    anchor = field.get("docx_anchor")
+    ordinal = start = end = None
+    if isinstance(anchor, dict):
+        try:
+            ordinal, start, end = (
+                int(anchor["paragraph_ordinal"]),
+                int(anchor["start"]),
+                int(anchor["end"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            ordinal = None
+    if ordinal is None:
+        needle = (
+            str(field.get("source_text") or "")
+            or "{{" + str(field.get("name") or "") + "}}"
+        )
+        for index, text in enumerate(paragraphs):
+            position = text.find(needle) if needle else -1
+            if position >= 0:
+                ordinal, start, end = index, position, position + len(needle)
+                break
+    if ordinal is None or not 0 <= ordinal < len(paragraphs):
+        return "", "after"
+    combined = paragraphs[ordinal]
+    before = combined[:start].strip()
+    after = combined[end:].strip(" ,;:_\t")
+    if before:
+        return before, "after"
+    if after:
+        return after, "before"
+    for text in reversed(paragraphs[:ordinal]):
+        if text.strip():
+            return text.strip(), "below"
+    return "", "after"
+
+
+def word_signing_anchors(content: bytes, variable_schema: dict | None) -> list:
+    """One anchor per included signing field, from the template's own text.
+
+    An author's ``pdf_anchor`` on the field wins; otherwise the caption is
+    read from around the field's span in the Word document.
+    """
+    from app.services.esign.anchors import PLACEMENTS, WordAnchor
+
+    document = _open_docx(content)
+    paragraphs = [
+        "".join(run.text for run in paragraph.runs)
+        for _, paragraph in iter_docx_paragraphs_with_anchors(document)
+    ]
+    anchors = []
+    for field in signing_template_fields(variable_schema):
+        name = str(field.get("name") or "")
+        role = str(field.get("signer_role") or "").strip()
+        kind = (
+            "date"
+            if field.get("field_type") == "date"
+            else str(field.get("signing_type") or field.get("field_type"))
+        )
+        override = field.get("pdf_anchor")
+        if isinstance(override, dict) and str(override.get("text") or "").strip():
+            placement = override.get("placement")
+            anchors.append(
+                WordAnchor(
+                    name,
+                    kind,
+                    role,
+                    str(override["text"]).strip(),
+                    placement if placement in PLACEMENTS else "after",
+                )
+            )
+            continue
+        text, placement = _derived_word_anchor(field, paragraphs)
+        anchors.append(WordAnchor(name, kind, role, text, placement))
+    return anchors
+
+
 def fill_docx_template(
     content: bytes,
     *,
@@ -715,6 +806,7 @@ def fill_docx_template(
     from app.services.docx_source_review import word_values
 
     variables = word_values(fields, variables)
+    signing_names: set[str] = set()
     for name, field in by_name.items():
         if field.get("included") is not False and is_signing_template_field(field):
             if str(variables.get(name) or "").strip():
@@ -722,6 +814,7 @@ def fill_docx_template(
                     f"Signing field {name!r} must remain blank for signing."
                 )
             variables[name] = ""
+            signing_names.add(name)
 
     unknown = set(variables) - set(by_name)
     if unknown:
@@ -784,6 +877,8 @@ def fill_docx_template(
             )
             continue
 
+        if name in signing_names:
+            value = SIGNING_RULE
         replacements.append((f"{{{{{name}}}}}", value))
         source_text = str(field.get("source_text") or field.get("example") or "")
         if source_text and source_text != f"{{{{{name}}}}}":
@@ -800,6 +895,14 @@ def fill_docx_template(
             if combined[start:end] != source_text:
                 raise TemplateDocxError(
                     f"The retained Word document no longer matches the reviewed location for {name!r}. Re-upload and review the template."
+                )
+            if name in signing_names:
+                # A signing field prints as a rule for the signer -- unless the
+                # paragraph already draws one beside it.
+                value = (
+                    ""
+                    if _RULE.search(combined[:start] + combined[end:])
+                    else SIGNING_RULE
                 )
             if _replace_at_span(paragraph, start, end, value):
                 replacement_count += 1
