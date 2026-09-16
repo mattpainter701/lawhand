@@ -519,6 +519,29 @@ export default function OnboardingWizard() {
                 </div>
               )}
 
+              {status?.root_ownership?.status === 'durable' && (
+                <div className="mb-6 px-4 py-3 rounded-xl border border-green-200 bg-green-50 text-xs font-sans" data-testid="root-ownership">
+                  <p className="text-green-800 font-semibold">Organisation-owned storage</p>
+                  <p className="text-green-800 mt-1">
+                    These documents stay with the firm even if the account that connected
+                    them is deactivated or leaves.
+                  </p>
+                </div>
+              )}
+              {status?.root_ownership?.status === 'at_risk' && (
+                <div className="mb-6 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-xs font-sans" data-testid="root-ownership" role="status">
+                  <p className="text-amber-800 font-semibold">This storage is tied to one person's account</p>
+                  <p className="text-amber-800 mt-1">
+                    {(status.root_ownership.at_risk_providers || []).length > 0
+                      ? `${status.root_ownership.at_risk_providers.join(', ')} live in a personal drive.`
+                      : 'A bound document root lives in a personal drive.'}{' '}
+                    If that account is deactivated or leaves, the firm loses access. Move
+                    matters to an organisation-owned location under Admin → Integrations →
+                    Cloud → Storage migration.
+                  </p>
+                </div>
+              )}
+
               {msConnected && (
                 <p className="mb-6 text-[11px] text-brand-muted font-sans">
                   Prefer a SharePoint library? Finish setup with OneDrive, then choose the site and library under Admin → Integrations → Cloud → Document storage.
@@ -649,6 +672,18 @@ export default function OnboardingWizard() {
                   <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
                     <span className="text-amber-800 font-sans text-sm">Document storage not confirmed</span>
                     <button onClick={() => advanceStep(STEP.STORAGE)} className="text-amber-800 font-sans text-sm font-bold underline">Fix</button>
+                  </div>
+                )}
+                {status?.root_ownership?.status === 'durable' && (
+                  <div className="flex items-center justify-between px-4 py-3 bg-brand-bg rounded-xl">
+                    <span className="text-brand-ink font-sans text-sm">Storage ownership</span>
+                    <span className="text-green-700 font-sans text-sm font-bold">Organisation-owned</span>
+                  </div>
+                )}
+                {status?.root_ownership?.status === 'at_risk' && (
+                  <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <span className="text-amber-800 font-sans text-sm">Storage tied to one person's drive</span>
+                    <button onClick={() => advanceStep(STEP.STORAGE)} className="text-amber-800 font-sans text-sm font-bold underline">Review</button>
                   </div>
                 )}
               </div>

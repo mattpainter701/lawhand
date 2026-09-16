@@ -66,9 +66,11 @@ Drive and is reported `at_risk`. Portal originals are stored under
 `{matter}/client_uploads`; reviewed derivatives become new documents in the
 appropriate matter folder. Provider failure is fail-closed and does not silently
 create a durable local copy. LawHand never deletes or destructively renames a
-customer's cloud folders, and a tenant handoff is expected to deliver an XLSX
-manifest of roots and matter folders before any LawHand-side cleanup. See
-[Cloud root ownership and tenant handoff](docs/storage-root-ownership-and-handoff.md).
+customer's cloud folders. A tenant **handoff manifest** (the roots and matter
+folders, as XLSX) is planned, not yet implemented; see the ownership and handoff
+design for the current guarantee and the
+[Cloud root ownership and tenant handoff](docs/storage-root-ownership-and-handoff.md)
+follow-ups.
 
 The SaaS still stores its control plane—matters, clients, tasks, assignments,
 cloud object IDs, hashes, indexing metadata, and audit history—so the accurate

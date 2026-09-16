@@ -21,10 +21,12 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from pathlib import Path
 
 import httpx
 from jose import jwt
+from sqlalchemy import select
 
 from app.config import get_settings
 
@@ -154,3 +156,51 @@ async def get_access_token(
     expires_in = int(data.get("expires_in", 3600))
     _token_cache[key] = (token, now + expires_in)
     return token
+
+
+async def _tenant_uses_org_shared_drive(db, tenant_id: object | None) -> bool:
+    """True when the tenant's Google root is an org-owned Shared Drive.
+
+    Matches on the persisted ``owner_type`` rather than a bare ``drive_id``,
+    because My Drive files also carry a drive id.
+    """
+    if db is None or tenant_id is None:
+        return False
+    try:
+        from app.models.tenant import Tenant
+
+        result = await db.execute(
+            select(Tenant.cloud_root_folder).where(
+                Tenant.id == uuid.UUID(str(tenant_id))
+            )
+        )
+        cloud_root = result.scalar_one_or_none()
+    except Exception:
+        logger.warning(
+            "Could not determine Google storage ownership for tenant", exc_info=True
+        )
+        return False
+    if not isinstance(cloud_root, dict):
+        return False
+    binding = cloud_root.get("google_drive")
+    return bool(
+        isinstance(binding, dict)
+        and (binding.get("owner_type") or "").strip() == "org_shared_drive"
+    )
+
+
+async def prefer_service_account(db, tenant_id: object | None, delegated: str | None):
+    """Prefer the service-account token for an org Shared Drive tenant.
+
+    Root creation is not enough on its own: matter-folder provisioning,
+    uploads, reads, search, sharing, rename, and repair must all use an
+    identity that survives the connecting administrator. Falls back to the
+    supplied delegated token when the tenant is not on an org drive, the
+    service account is not configured, or minting fails.
+    """
+    if not delegated and not is_configured():
+        return delegated
+    if not await _tenant_uses_org_shared_drive(db, tenant_id):
+        return delegated
+    service_token = await get_access_token(DRIVE_SCOPES)
+    return service_token or delegated

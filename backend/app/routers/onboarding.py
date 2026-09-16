@@ -33,6 +33,7 @@ from app.schemas.onboarding import (
     IntegrationConnectionStatus,
 )
 from app.services.compliance import agreement_status
+from app.services.storage_root_ownership import classify_cloud_root
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/onboarding", tags=["onboarding"])
@@ -177,7 +178,6 @@ async def get_onboarding_status(
         tenant.cloud_root_folder if isinstance(tenant.cloud_root_folder, dict) else None
     )
     agreements = await agreement_status(db, user.tenant_id)
-    from app.services.storage_root_ownership import classify_cloud_root
 
     return OnboardingStatusResponse(
         onboarding_completed=tenant.onboarding_completed,
@@ -270,12 +270,14 @@ async def reenter_onboarding(
             "status": "ok",
             "onboarding_step": STEP_CONNECT,
             "migration_id": str(migration.id),
+            "root_ownership": classify_cloud_root(tenant.cloud_root_folder),
         }
     await db.commit()
     return {
         "status": "ok",
         "onboarding_step": STEP_CONNECT,
         "cloud_root": tenant.cloud_root_folder,
+        "root_ownership": classify_cloud_root(tenant.cloud_root_folder),
     }
 
 

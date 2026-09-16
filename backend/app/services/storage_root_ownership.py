@@ -14,6 +14,8 @@ to call from health, onboarding, and export paths.
 
 from __future__ import annotations
 
+from app.services import google_service_account
+
 PROVIDER_LABELS = {
     "onedrive": "Microsoft OneDrive",
     "sharepoint": "Microsoft SharePoint",
@@ -40,6 +42,7 @@ def classify_binding(provider: str, binding: object) -> dict:
         "status": UNBOUND,
         "org_owned": False,
         "owner_type": None,
+        "access_org_owned": False,
         "detail": "No document root is bound for this provider.",
     }
     if not isinstance(binding, dict) or not _binding_id(binding):
@@ -58,12 +61,25 @@ def classify_binding(provider: str, binding: object) -> dict:
             owner_type = "user_my_drive"
 
     result["owner_type"] = owner_type
+    if owner_type == "org_shared_drive":
+        # Runtime access uses LawHand's own service account only when one is
+        # configured; otherwise the org drive is still reached with a person's
+        # delegated token and breaks if that account leaves.
+        result["access_org_owned"] = google_service_account.is_configured()
     if owner_type in ORG_OWNED_TYPES:
         result["status"] = DURABLE
         result["org_owned"] = True
-        result["detail"] = (
-            "Root is owned by the organisation and survives staff changes."
-        )
+        if result["access_org_owned"]:
+            result["detail"] = (
+                "Root is organisation-owned and LawHand reaches it with its own "
+                "service account."
+            )
+        else:
+            result["detail"] = (
+                "Root is organisation-owned, but LawHand still reaches it with a "
+                "user credential; access is at risk until a service identity is "
+                "configured."
+            )
     elif owner_type:
         result["status"] = AT_RISK
         result["detail"] = (
@@ -92,9 +108,11 @@ def classify_cloud_root(cloud_root: object) -> dict:
     else:
         status = AT_RISK
     at_risk = [item["label"] for item in bound if not item["org_owned"]]
+    access_at_risk = [item["label"] for item in bound if not item["access_org_owned"]]
     return {
         "status": status,
         "org_owned": status == DURABLE,
         "at_risk_providers": at_risk,
+        "access_at_risk": access_at_risk,
         "providers": providers,
     }

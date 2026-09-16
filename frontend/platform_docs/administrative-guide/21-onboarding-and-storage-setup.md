@@ -43,7 +43,7 @@ The root should belong to the **organisation**, not to the administrator who hap
 
 - **Google Workspace.** When an administrator connects, LawHand creates an organisation-owned Shared Drive (`LawHand Firm Records`) and adds LawHand's own service account as a member, then creates `lawhand-records` inside it. Nothing is configured in the customer's Google Cloud; the account is only asked to sign in. The drive survives the connecting admin leaving.
 - **Microsoft.** The root belongs in a SharePoint site library rather than a personal OneDrive. Until an app-only identity is bound, access still uses the connecting administrator's delegated token; if that account is removed, reconnect another administrator from Integrations → Cloud.
-- **Personal Google.** There is no organisation and no Shared Drive, so the root lives in the individual's own Drive. It is reported `at_risk`: the owner should share the root with a second account, and it is important to export a handoff manifest (below) if the account changes.
+- **Personal Google.** There is no organisation and no Shared Drive, so the root lives in the individual's own Drive. It is reported `at_risk`: the owner should share the root with a second account, and it is important to inventory the folders if the account changes (an export manifest is planned, below).
 
 The onboarding status reports this as `root_ownership`: `durable` when every bound root is organisation-owned, `at_risk` when any root lives in one person's drive, and `unbound` when no root exists yet. LawHand never deletes or destructively renames a customer's cloud folders.
 
@@ -66,11 +66,13 @@ A failed attempt records nothing: no half-created root, no primary provider chan
 
 ## Handoff when a tenant leaves
 
-LawHand never deletes a customer's cloud folders, on churn or at any other time. Before LawHand-side cleanup, the firm should receive an XLSX manifest of its roots and matter folders (provider, folder name, ID, path, URL, and owning identity) so the folders can be located and kept after access is revoked. See [Cloud root ownership and tenant handoff](https://github.com/mattpainter701/lawhand/blob/main/docs/storage-root-ownership-and-handoff.md).
+LawHand never deletes a customer's cloud folders, on churn or at any other time. An XLSX handoff manifest of roots and matter folders (provider, folder name, ID, path, URL, and owning identity) is planned so the folders can be located and kept after access is revoked; until it ships, inventory the folders from **Document storage** before LawHand-side cleanup. See [Cloud root ownership and tenant handoff](https://github.com/mattpainter701/lawhand/blob/main/docs/storage-root-ownership-and-handoff.md).
 
 ## Re-running setup
 
 **Restart setup** on the Complete screen (or `POST /api/admin/onboarding/reenter`) reopens the wizard at Connect while keeping the firm live. The existing root is preserved and audited; the Storage step shows it as **Folder exists**. Completing setup again records an `onboarding_rerun` audit entry against the root and does not change it.
+
+Re-entry also reports **storage ownership** on the Storage and Review steps. When a bound root lives in a personal drive it is flagged **at risk** with the provider named, and the administrator is pointed to **Storage migration** to move matters to an organisation-owned location. `POST /api/admin/onboarding/reenter` returns the same `root_ownership` summary so the wizard can show it without a second request.
 
 Re-entry with a target provider starts a storage migration instead of a plain re-run. Use Administration → Integrations → Advanced → Storage migration for that flow; it discovers and reconciles existing folders before any cutover, and requires explicit confirmation.
 

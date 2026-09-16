@@ -22,14 +22,18 @@ leaves without their folders breaking.
 
 | Provider | Resource location | Access identity | Durable? |
 |---|---|---|---|
-| Google Drive (Shared Drive) | Org Shared Drive, `driveId` recorded | Service account (DWD or Shared Drive member) | Yes |
+| Google Drive (Shared Drive) | Org Shared Drive, `driveId` recorded | Service account for provisioning, uploads, reads, search, sharing, rename, and repair | Yes (when a service account is configured) |
 | Google Drive (My Drive) | Granting admin's My Drive | Delegated admin token | No — at risk |
-| SharePoint | Org site document library | Delegated admin token (app-only planned) | Resource yes, identity no |
+| SharePoint | Org site document library | Delegated admin token (app-only planned) | Custody yes, access at risk |
 | OneDrive | Granting admin's `/me/drive` | Delegated admin token | No — at risk |
 
-`app/services/storage_root_ownership.py` classifies a persisted root as
-`durable`, `at_risk`, or `unbound`; `/api/admin/onboarding/status` returns it as
-`root_ownership`.
+Custody and access are reported separately. `app/services/storage_root_ownership.py`
+classifies each bound root as `durable`, `at_risk`, or `unbound`, and lists
+`access_at_risk` providers whose runtime token is still a person's delegated
+credential; `/api/admin/onboarding/status` returns this as `root_ownership`.
+`google_service_account.prefer_service_account()` selects the service-account
+token for an `owner_type=org_shared_drive` tenant across the storage paths so a
+`durable` Google root is durable for LawHand availability too, not only custody.
 
 ## Environment contract
 
@@ -40,13 +44,14 @@ customer only signs in and connects.
 |---|---|
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | LawHand's central service-account identity |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | LawHand service-account JSON (inline or path) |
-| `GOOGLE_AUTO_SHARED_DRIVE` | Auto-create a Shared Drive on Workspace connect (default true) |
+| `GOOGLE_AUTO_SHARED_DRIVE` | Auto-create a per-tenant Shared Drive on Workspace connect (default true) |
 | `GOOGLE_ORG_SHARED_DRIVE_NAME` | Name of the auto-created Shared Drive |
-| `GOOGLE_SHARED_DRIVE_ID` | Optional operator pin to a specific Shared Drive |
 | `GOOGLE_IMPERSONATE_SUBJECT` | Workspace admin to impersonate for directory/mail only |
 
-A tenant may override the Shared Drive with
-`TenantSettings.custom_config["google_shared_drive_id"]`.
+A specific drive can be pinned **per tenant** with
+`TenantSettings.custom_config["google_shared_drive_id"]`. There is deliberately
+no deployment-global drive id: one shared drive across tenants would put several
+firms' identically named `lawhand-records` roots in one folder.
 
 ## Google Workspace — customer flow (no GCP setup)
 
@@ -60,11 +65,13 @@ The customer's only action is the normal admin sign-in/connect. On a Workspace
 3. Creates `lawhand-records` inside the drive and records `drive_id` +
    `owner_type=org_shared_drive`.
 
-From step 2 onward LawHand can operate with its own service-account identity, so
-the root survives the admin being deactivated or leaving. If the drive can't be
-created (Workspace policy) or the service account can't be added (external
-sharing disabled), LawHand falls back to the admin's My Drive and reports
-`root_ownership.status = at_risk`.
+From step 2 onward LawHand uses its own service-account identity for this
+tenant's Google storage operations — matter-folder provisioning, uploads,
+reads, search, sharing, rename, and repair — not just root creation, so the root
+survives the admin being deactivated or leaving. If the drive can't be created
+(Workspace policy) or the service account can't be added (external sharing
+disabled), LawHand rolls back the unused drive, falls back to the admin's My
+Drive, and reports `root_ownership.status = at_risk`.
 
 ### Operator setup (once, not per customer)
 

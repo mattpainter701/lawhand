@@ -115,6 +115,39 @@ describe('OnboardingWizard', () => {
     expect(screen.getByRole('button', { name: 'Create folder' })).toBeEnabled()
   })
 
+  it('warns when the bound storage root is tied to one person', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.STORAGE, {
+      cloud_root: { google_drive: { id: 'root-1', folder_name: 'lawhand-records' } },
+      storage_ready: true,
+      root_ownership: {
+        status: 'at_risk',
+        org_owned: false,
+        at_risk_providers: ['Google Drive'],
+        providers: {},
+      },
+    }))
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    expect(await screen.findByText('Where Should Documents Live?')).toBeInTheDocument()
+    const callout = screen.getByTestId('root-ownership')
+    expect(callout).toHaveTextContent(/tied to one person's account/i)
+    expect(callout).toHaveTextContent(/Google Drive live in a personal drive/i)
+  })
+
+  it('confirms organisation-owned storage', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.STORAGE, {
+      cloud_root: { google_drive: { id: 'root-1', folder_name: 'lawhand-records' } },
+      storage_ready: true,
+      root_ownership: { status: 'durable', org_owned: true, at_risk_providers: [], providers: {} },
+    }))
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    expect(await screen.findByText('Where Should Documents Live?')).toBeInTheDocument()
+    expect(screen.getByTestId('root-ownership')).toHaveTextContent(/Organisation-owned storage/i)
+  })
+
   it('creates the root folder, shows where it is, and only then allows continuing', async () => {
     getOnboardingStatus
       .mockResolvedValueOnce(statusAt(STEP.STORAGE))
