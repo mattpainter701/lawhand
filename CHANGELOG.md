@@ -1,7 +1,9 @@
-## 2026.09.16.01 — Proposed Core and AI commercial catalog
+## 2026.09.16.01 — Proposed Core, AI, and add-on commercial catalog
 
-- Add an operator-only, non-checkout Core/AI commercial catalog and deterministic quote API. Core attorney seats are $99 monthly or $89 monthly equivalent billed annually; AI attorney seats are $199/$169; staff seats are $39/$33 on either plan. Quotes return exact line totals and explicitly remain `checkout_ready: false`.
-- Document the founding-customer offer, the separation between commercial plan, payment state, access plan, license class and AI entitlement, and the Helcim/allowance work required before the proposed catalog can be activated or published.
+- Add an operator-only, non-checkout commercial catalog and deterministic quote API. Core stays inexpensive at $49/$39 annual-equivalent per attorney and $19/$15 per staff user. AI access is $299/$249 per attorney and $149/$129 per staff user, includes no model usage, and requires a separate prepaid usage wallet with a hard stop.
+- Price every current practice plugin once per firm in $99 specialist, $199 workflow-workspace, or $299 portal-workspace bands, with lower annual equivalents. Combined quotes return exact seat and add-on line totals and remain `checkout_ready: false`.
+- Define the non-public Founding Attorney offer at exactly $199 monthly for one AI attorney and up to two Core staff users for 24 months. No Premium usage or practice module is included by default; its server-enforced usage cap is always operator-visible while customer meter visibility remains backend-controlled.
+- Document the existing add-on entitlement and Plugins-page gaps, the separation between commercial plan, payment state, access plan, license class, module entitlement, and AI wallet, plus the provider work required before activation.
 
 ## 2026.09.15.09 — One visual field editor
 
