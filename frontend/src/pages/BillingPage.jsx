@@ -4,15 +4,28 @@ import { getBillingStatus, createCheckoutSession, createPortalSession } from '..
 import { useAuth } from '../App'
 import PlatformSubscription from '../components/PlatformSubscription'
 
+// Anything that is not recognised used to read "Pay-as-you-go", which would
+// label a firm on a free trial as a paying pay-as-you-go customer on the very
+// page it is sent to in order to subscribe.
+const TIER_LABELS = {
+  flat: { text: 'Flat-seat subscription', className: 'bg-green-100 text-green-800' },
+  trial: { text: 'Free trial', className: 'bg-blue-100 text-blue-800' },
+  intake_trial: { text: 'Free trial', className: 'bg-blue-100 text-blue-800' },
+  demo: { text: 'Demo workspace', className: 'bg-gray-100 text-gray-800' },
+  payg: { text: 'Pay-as-you-go', className: 'bg-yellow-100 text-yellow-800' },
+}
+
+export function tierBadgeLabel(tier) {
+  return TIER_LABELS[tier] || { text: tier || 'Unknown', className: 'bg-gray-100 text-gray-800' }
+}
+
 function TierBadge({ tier }) {
-  const isFlat = tier === 'flat'
+  const label = tierBadgeLabel(tier)
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-        isFlat ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-      }`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${label.className}`}
     >
-      {isFlat ? 'Flat-seat subscription' : 'Pay-as-you-go'}
+      {label.text}
     </span>
   )
 }
@@ -110,6 +123,23 @@ export default function BillingPage({ embedded = false }) {
         {error && (
           <div className="mb-6 bg-brand-rose/10 border border-brand-rose/20 rounded-lg px-4 py-3 text-sm text-brand-rose font-sans">
             {error}
+          </div>
+        )}
+
+        {/* An ended trial is sent here by the route guard, because the API
+            refuses every other route. Say why, rather than leaving the firm to
+            infer it from a page that simply looks empty. */}
+        {searchParams.get('reason') === 'trial_expired' && (
+          <div
+            role="status"
+            className="mb-6 rounded-lg border border-brand-rose/30 bg-brand-rose/10 px-4 py-4 font-sans"
+          >
+            <p className="text-sm font-semibold text-brand-ink">Your free trial has ended</p>
+            <p className="mt-1 text-sm text-brand-ink-2">
+              Subscribe below to get your firm working again. Your matters, documents and
+              settings are all still here, and premium AI becomes available once the
+              subscription is active.
+            </p>
           </div>
         )}
 

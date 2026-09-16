@@ -5,6 +5,7 @@ import { useAuth } from '../App'
 import Sidebar from './Sidebar'
 import { visibleNavigation, mobileNavigation, isNavigationActive } from '../navigation'
 import BillingStatusBanner from './BillingStatusBanner'
+import TrialBanner from './TrialBanner'
 import { getConversations, createConversation, deleteConversation, getDocuments, deleteDocument, logout, updateMe } from '../api'
 import { canAccessModuleList } from '../moduleAccess'
 import { useConfirm } from './dialog/ConfirmProvider'
@@ -373,6 +374,7 @@ export default function AppShell({ children, title }) {
             </div>
           </header>
 
+          <TrialBanner user={user} canManageBilling={hasFinanceAccess} />
           <BillingStatusBanner user={user} canManageBilling={hasFinanceAccess} />
 
           {user?.demo && (

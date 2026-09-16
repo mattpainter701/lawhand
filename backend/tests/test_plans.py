@@ -46,9 +46,22 @@ def test_mcp_only_plan_shape():
     assert plan.billing_tier == "payg"
 
 
+def test_full_trial_plan_shape():
+    plan = get_plan("full-trial")
+    assert plan.modules == list(MODULES)
+    assert plan.default_module == "matters"
+    assert plan.public_signup is True
+    assert plan.upsell_target == "full-platform"
+    # Its own tier: payg carries the Research/premium markup and the highest
+    # daily allowance, and an unlisted tier would fall back to payg.
+    assert plan.billing_tier == "trial"
+    assert get_plan("full-platform").billing_tier == "payg"
+
+
 def test_public_plans_only_returns_signup_enabled():
     ids = {p.id for p in public_plans()}
     assert "intake-only" in ids
+    assert "full-trial" in ids
     assert "mcp-only" not in ids
     assert "full-platform" not in ids
     assert "demo" not in ids
@@ -68,7 +81,7 @@ def test_get_plan_unknown_returns_none():
 
 
 def test_every_plan_module_has_a_catalog_entry_and_valid_default():
-    for plan_id in ("demo", "intake-only", "mcp-only", "full-platform"):
+    for plan_id in ("demo", "intake-only", "mcp-only", "full-trial", "full-platform"):
         plan = get_plan(plan_id)
         assert plan.default_module in plan.modules
         assert all(module_id in MODULES for module_id in plan.modules)
