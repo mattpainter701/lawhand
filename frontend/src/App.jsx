@@ -187,6 +187,13 @@ function ProtectedRoute({ children, adminOnly = false, financeOnly = false, modu
     return <Navigate to={`/login?return_to=${encodeURIComponent(location.pathname + location.search)}`} replace />
   }
 
+  // An ended trial can still sign in, but the API refuses every route except
+  // account and billing. Land the firm where it can actually act instead of
+  // letting each page 403 on its own.
+  if (user.access_state === 'trial_expired' && !location.pathname.startsWith('/billing')) {
+    return <Navigate to="/billing?reason=trial_expired" replace />
+  }
+
   if (adminOnly && user.role !== 'admin') {
     return <Navigate to={user.default_route || '/matters'} replace />
   }

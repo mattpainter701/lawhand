@@ -108,6 +108,24 @@ demo workspaces regardless of the per-user flag.
   payment. Premium AI becomes available to users whose flag is on.
 - **An expired firm that pays** regains full access on the next subscription
   sync. `POST /api/billing/subscription/refresh` forces one.
-- The browser does not yet route an expired firm to billing or show a
-  countdown. `/api/auth/me` now carries what that UI needs; the trial banner
-  and expired-state routing are a separate change.
+- **An expired firm is routed to billing** and a firm on trial sees a
+  countdown; see "What the firm sees" below.
+
+## What the firm sees
+
+- `AppShell` renders `TrialBanner` for any firm whose `/api/auth/me` reports
+  `access_state: "trial"`. It counts whole days from `trial_ends_at` and
+  escalates from neutral to amber at 7 days and red at 2. A user without
+  finance access is told to ask a firm administrator rather than shown a
+  billing link they cannot use. Demo workspaces never see it: they report
+  `access_state: "active"` and carry their own banner.
+- Once `access_state` is `trial_expired`, every protected route redirects to
+  `/billing?reason=trial_expired`, which explains the hard stop. This mirrors
+  the allowlist above. Without it each page fails with its own `403` and the
+  firm never reaches the one screen that can end the lockout.
+- **Self-serve signup provisions the `full-trial` plan.** Signup previously
+  fell through to `register()`, which creates a tenant with no `expires_at`,
+  so turning on `PUBLIC_SIGNUP_ENABLED` as it stood would have handed out
+  unlimited free accounts with no trial window at all. `full-trial` carries
+  every module on the `trial` billing tier (1,000 requests/day) with premium
+  AI off, and upsells to `full-platform`.

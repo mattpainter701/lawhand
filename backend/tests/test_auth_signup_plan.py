@@ -63,6 +63,52 @@ async def test_public_signup_provisions_intake_tenant(public_client, db_session)
 
 
 @pytest.mark.asyncio
+async def test_full_trial_signup_provisions_the_whole_platform_on_the_trial_tier(
+    public_client, db_session
+):
+    """The self-serve trial is the full product minus premium AI.
+
+    Its own billing tier matters: payg carries the Research/premium usage
+    markup and the highest daily allowance, and an unlisted tier falls back to
+    payg. Paying converts the firm to "flat".
+    """
+    resp = await public_client.post(
+        "/api/auth/signup/plan",
+        json={
+            "plan": "full-trial",
+            "firm_name": "Whole Platform Co",
+            "email": "owner@wholeplatform.co",
+            "password": "longenoughpw123",
+            "full_name": "Platform Owner",
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    user = (
+        await db_session.execute(
+            select(User).where(User.email == "owner@wholeplatform.co")
+        )
+    ).scalar_one()
+    assert user.role == "admin"
+    assert user.premium_ai_enabled is False
+
+    tenant = (
+        await db_session.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
+    assert tenant.billing_tier == "trial"
+    remaining = tenant.expires_at.astimezone(timezone.utc) - datetime.now(timezone.utc)
+    assert timedelta(days=29, hours=23) < remaining <= timedelta(days=30, minutes=5)
+
+    settings_row = (
+        await db_session.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+        )
+    ).scalar_one()
+    assert settings_row.custom_config["plan"] == "full-trial"
+    assert settings_row.custom_config["trial"] is True
+
+
+@pytest.mark.asyncio
 async def test_public_signup_sets_thirty_day_trial_and_no_premium(
     public_client, db_session
 ):

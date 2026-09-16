@@ -31,8 +31,17 @@ export default function SignupPage() {
   const { login: authLogin } = useAuth()
   const plan = searchParams.get('plan')
   const publicSignupEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED === 'true'
-  const isPlanSignup = plan === 'intake-only'
-  const planLabel = plan === 'intake-only' ? 'Call Intake + Tasks' : null
+  // Every self-serve signup provisions a plan. Without an explicit choice that
+  // is the 30-day full-platform trial; register() would otherwise create a
+  // firm with no trial window and no expiry at all.
+  const planId = plan === 'intake-only' ? 'intake-only' : 'full-trial'
+  const isPlanSignup = true
+  const planLabel =
+    planId === 'intake-only' ? 'Call Intake + Tasks' : 'Full platform — 30-day free trial'
+  const planNote =
+    planId === 'intake-only'
+      ? 'Create the workspace first. You can invite your team after setup.'
+      : 'No credit card. Premium AI becomes available when you subscribe.'
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -81,7 +90,7 @@ export default function SignupPage() {
       const staffSize = form.staff_size ? parseInt(form.staff_size, 10) : null
       if (isPlanSignup) {
         await signupWithPlan({
-          plan,
+          plan: planId,
           firm_name: form.company_name,
           email: form.email,
           password: form.password,
@@ -94,7 +103,7 @@ export default function SignupPage() {
         await register({ ...form, staff_size: staffSize })
       }
       const me = await authLogin()
-      navigate(me?.default_route || (isPlanSignup ? '/intake/dashboard' : '/matters'), { replace: true })
+      navigate(me?.default_route || (planId === 'intake-only' ? '/intake/dashboard' : '/matters'), { replace: true })
     } catch (err) {
       const detail = err.response?.data?.detail
       setError(
@@ -131,7 +140,7 @@ export default function SignupPage() {
           <div className="mb-6 rounded-xl border border-brand-accent/30 bg-brand-accent/5 px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-wider text-brand-accent">Selected product</p>
             <p className="mt-1 font-serif text-lg font-bold text-brand-ink">{planLabel}</p>
-            <p className="mt-1 text-xs text-brand-ink-2">Create the workspace first. You can invite your team after setup.</p>
+            <p className="mt-1 text-xs text-brand-ink-2">{planNote}</p>
           </div>
         )}
 
