@@ -9,7 +9,7 @@ icon: mail
 
 # Firm email intake
 
-Open [Administration → Integrations → Email intake](/admin?tab=integrations&integration=email-intake). Enable the firm address, choose the firm's IANA time zone (for example, `America/Chicago`), and save changes. Staff can download the **LawHand** contact here or from the Matters tip.
+Open [Administration → Integrations → Email intake](/admin?tab=integrations&integration=email-intake). Enable the firm address, choose the firm's IANA time zone (for example, `America/Chicago`), and save changes. Staff can download the **LawHand Tasks** contact here or from [Tasks](/tasks).
 
 ## Address ownership and permissions
 
@@ -25,9 +25,9 @@ Microsoft 365 custom domains may require their own DKIM setup. Have the mail adm
 
 ## Review behavior
 
-Forward with `[TASK] Jane, review this tomorrow` at the beginning of the subject. Names before a comma suggest an owner; an absent name suggests the submitter. Relative dates use the receipt date in the configured firm time zone. Changing the time zone affects new requests, not existing suggestions.
+Forward with `[TASK]`, `[REVIEW]`, or `[DEADLINE]` at the beginning of the subject. Names before a comma suggest an owner; an absent name suggests the submitter. Relative dates use the receipt date in the configured firm time zone. Changing the time zone affects new requests, not existing suggestions. A deadline cannot be filed until the reviewer confirms a date.
 
-Every request waits in **Needs review**, accessible from Matters and the administration section. Staff confirm the matter, owner, title, and optional date before **File + create to-do** stores the correspondence and ordinary task together. It does not send email, synchronize calendars, execute body commands, or calculate court deadlines. Authenticated but unmatched or untagged forwards remain available for manual review.
+Every request waits in **Needs review**, accessible from Tasks and the administration section. Staff confirm the matter, owner, title, and date before filing stores the correspondence and task together. The normal task assignment notice and due-date calendar projection run only after the write is durable. The flow does not execute body commands or calculate court deadlines. Authenticated but unmatched or untagged forwards remain available for manual review.
 
 ## Replace, disable, and troubleshoot
 

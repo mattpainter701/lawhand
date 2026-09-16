@@ -1944,8 +1944,8 @@ export const disableMatterInboundAlias = (matterId) =>
 export const getMatterInboundEmail = (matterId, status = 'pending') =>
   api.get(`/matters/${matterId}/inbound-email`, { params: { status } }).then(r => r.data)
 
-export const acceptMatterInboundEmail = (matterId, inboundId) =>
-  api.post(`/matters/${matterId}/inbound-email/${inboundId}/accept`).then(r => r.data)
+export const acceptMatterInboundEmail = (matterId, inboundId, review = null) =>
+  api.post(`/matters/${matterId}/inbound-email/${inboundId}/accept`, review || {}).then(r => r.data)
 
 export const createMatterInboundExpenseDraft = (matterId, inboundId, attachmentIndex = null) =>
   api.post(

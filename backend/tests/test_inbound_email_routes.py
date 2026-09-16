@@ -495,6 +495,34 @@ async def test_tagged_accept_returns_durable_task_even_if_notification_fails(
 
 
 @pytest.mark.asyncio
+async def test_matter_deadline_requires_a_reviewed_date(monkeypatch):
+    user, matter = user_and_matter()
+    alias = alias_row(user, matter)
+    item = inbound_row(user, matter, alias)
+    item.subject = "[DEADLINE] File response"
+
+    monkeypatch.setattr(routes, "get_current_user", AsyncMock(return_value=user))
+    monkeypatch.setattr(routes, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(routes, "_get_matter_or_404", AsyncMock(return_value=matter))
+    monkeypatch.setattr(routes, "_pending_inbound_or_404", AsyncMock(return_value=item))
+    filing = AsyncMock()
+    monkeypatch.setattr(routes, "file_inbound_email", filing)
+
+    with pytest.raises(HTTPException) as error:
+        await routes.accept_matter_inbound_email(
+            matter.id,
+            item.id,
+            object(),
+            FakeDB(),
+            routes.InboundEmailAcceptRequest(title="File response"),
+        )
+
+    assert error.value.status_code == 422
+    assert "Confirm a due date" in error.value.detail
+    filing.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_inbound_receipt_creates_internal_review_draft(monkeypatch):
     user, matter = user_and_matter()
     alias = alias_row(user, matter)

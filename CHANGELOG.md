@@ -1,3 +1,12 @@
+## 2026.09.16.07 — Unified reviewed email tasks
+
+- Extend the deterministic leading subject grammar to `[TASK]`, `[REVIEW]`, and `[DEADLINE]` for both per-matter and firm-wide aliases. Preserve the selected task type and priority through firm review instead of flattening every request to a general, medium-priority to-do.
+- Move the staff firm-intake surface from Matters to Tasks, download the shared address as **LawHand Tasks**, and keep Administration as the address, sender, and time-zone control plane.
+- Require a human-confirmed date before either intake path can file a tagged deadline. Matter review now allows the reviewer to correct the title and date before filing; firm review continues to require an open matter and active human assignee.
+- Dispatch the ordinary task-assignment notice and connected Google/Outlook calendar projection after a firm-intake task is durable. Provider failure is logged and does not turn a successful filing into an unsafe retry.
+- Add a production GitHub workflow for the Cloudflare Email Worker so `m-` and `f-` alias support deploys from the exact `main` source. The workflow uses a dedicated least-privilege `CLOUDFLARE_WORKERS_API_TOKEN`, separate from DNS credentials.
+- Clarify that receipt extraction is a review action on a matter email, not a separate intake address.
+
 ## 2026.09.16.06 — Signing plans are reviewed before they are sent
 
 - `app/services/esign/plan.py`: `SigningPlan.review()` reports what staff should look at before a plan reaches a signer. `warn` findings — a role placed by the fallback block, more than `MAX_LINES_PER_SIGNER` (3) signature lines for one person, a document that could not be read as a form — mean the plan guessed; an `info` finding lists captioned lines left blank for parties not among the signers (`SigningPlan.left_for_others`). `summary()` persists `review` and `review_required` in the request's existing `signing_plan` JSON, so no migration.

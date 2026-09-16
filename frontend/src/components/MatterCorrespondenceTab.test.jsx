@@ -90,13 +90,37 @@ describe('InboundEmailPanel subject-tag review', () => {
     )
 
     expect(await screen.findByText('Task tag detected')).toBeInTheDocument()
-    expect(screen.getByText('Nigel I need to meet with you')).toBeInTheDocument()
+    expect(screen.getByLabelText('Task title')).toHaveValue('Nigel I need to meet with you')
     expect(screen.getByText(/calendar sync will be requested for the reviewer’s connected Outlook or Google calendar/i)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /file \+ create task/i }))
 
-    expect(acceptMatterInboundEmail).toHaveBeenCalledWith('matter-1', 'email-1')
+    expect(acceptMatterInboundEmail).toHaveBeenCalledWith('matter-1', 'email-1', {
+      title: 'Nigel I need to meet with you',
+      due_date: '2026-09-09',
+    })
     expect(await screen.findByText(/email filed and task created for sep 9, 2026/i)).toBeInTheDocument()
     expect(onFiled).toHaveBeenCalledOnce()
+  })
+
+  it('does not file a deadline until its date is confirmed', async () => {
+    getMatterInboundAlias.mockResolvedValue({
+      enabled: true,
+      alias: { address: 'm-example@intake.getlawhand.com' },
+    })
+    getMatterInboundEmail.mockResolvedValue({
+      items: [{ ...taggedEmail, subject: '[DEADLINE] File response', task_suggestion: {
+        ...taggedEmail.task_suggestion,
+        tag: 'deadline', title: 'File response', task_type: 'deadline', priority: 'high',
+        due_date: null, calendar_sync: false,
+      } }],
+      total: 1,
+    })
+    render(<ConfirmProvider><InboundEmailPanel matterId="matter-1" onFiled={vi.fn()} /></ConfirmProvider>)
+
+    const submit = await screen.findByRole('button', { name: 'File + create deadline' })
+    expect(submit).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Due date (required)'), '2026-09-30')
+    expect(submit).toBeEnabled()
   })
 })

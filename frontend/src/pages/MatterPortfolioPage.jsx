@@ -32,7 +32,6 @@ import {
 } from '../components/matters/MatterListTable'
 import { TableSkeleton } from '../components/LoadingSkeleton'
 import { AlertBanner, EmptyState, Spinner } from '../components/ui'
-import FirmEmailIntake from '../components/FirmEmailIntake'
 
 function Icon({ d, size = 16, className = '' }) {
   return (
@@ -868,8 +867,6 @@ export default function MatterPortfolioPage() {
       </div>
 
       <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-6 md:py-10">
-        <FirmEmailIntake />
-
         {/* ── My Matters ─────────────────────────────────────────────────────── */}
         <div className="mb-12">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

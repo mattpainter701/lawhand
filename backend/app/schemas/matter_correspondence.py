@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CorrespondenceRules(BaseModel):
@@ -106,6 +106,13 @@ class InboundEmailItem(BaseModel):
 class InboundEmailListResponse(BaseModel):
     items: list[InboundEmailItem]
     total: int
+
+
+class InboundEmailAcceptRequest(BaseModel):
+    """Human-confirmed overrides for an explicit tagged task."""
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    due_date: Optional[date] = None
 
 
 class InboundEmailReviewResponse(BaseModel):

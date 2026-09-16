@@ -34,6 +34,7 @@ import {
 } from '../components/ui'
 import { canAccessModuleList } from '../moduleAccess'
 import TaskBoard from '../components/tasks/TaskBoard'
+import FirmEmailIntake from '../components/FirmEmailIntake'
 
 const PRIORITY_COLORS = {
   urgent: 'bg-brand-rose/10 text-brand-rose border-brand-rose/20',
@@ -1433,6 +1434,8 @@ export default function TasksPage() {
   return (
     <WorkspacePage width={viewMode === 'board' ? 'full' : 'compact'}>
       <div>
+        <FirmEmailIntake />
+
         {/* Header */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>

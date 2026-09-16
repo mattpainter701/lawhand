@@ -265,6 +265,7 @@ export function InboundEmailPanel({ matterId, onFiled }) {
   const [pending, setPending] = useState([])
   const [busy, setBusy] = useState(null)
   const [message, setMessage] = useState(null)
+  const [taskEdits, setTaskEdits] = useState({})
 
   const load = useCallback(async () => {
     try {
@@ -350,7 +351,12 @@ export function InboundEmailPanel({ matterId, onFiled }) {
     setMessage(null)
     try {
       if (action === 'accept') {
-        const result = await acceptMatterInboundEmail(matterId, item.id)
+        const suggestion = item.task_suggestion
+        const edits = taskEdits[item.id] || {}
+        const result = await acceptMatterInboundEmail(matterId, item.id, suggestion ? {
+          title: edits.title ?? suggestion.title,
+          due_date: edits.due_date ?? suggestion.due_date ?? null,
+        } : null)
         setMessage(result?.task_id
           ? `Email filed and task created${result.task_due_date ? ` for ${fmtDateOnly(result.task_due_date)}` : ''}.`
           : 'Email filed to this matter.')
@@ -438,6 +444,10 @@ export function InboundEmailPanel({ matterId, onFiled }) {
         ) : (
           <div className="mt-3 space-y-3">
             {pending.map((item) => {
+              const edits = taskEdits[item.id] || {}
+              const taskTitle = edits.title ?? item.task_suggestion?.title ?? ''
+              const taskDue = edits.due_date ?? item.task_suggestion?.due_date ?? ''
+              const deadlineNeedsDate = item.task_suggestion?.tag === 'deadline' && !taskDue
               return (
                 <article key={item.id} className="rounded-lg border border-brand-line bg-brand-surface p-3 sm:p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -457,12 +467,36 @@ export function InboundEmailPanel({ matterId, onFiled }) {
                         <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
                           <p className="flex items-center gap-1.5 font-semibold">
                             <CalendarPlus size={14} />
-                            {item.task_suggestion.tag === 'deadline' ? 'Deadline tag' : 'Task tag'} detected
+                            {item.task_suggestion.tag === 'deadline' ? 'Deadline' : item.task_suggestion.tag === 'review' ? 'Review' : 'Task'} tag detected
                           </p>
-                          <p className="mt-1">{item.task_suggestion.title}</p>
+                          <label className="mt-2 block text-xs font-semibold">
+                            Task title
+                            <input
+                              className="mt-1 w-full rounded border border-blue-200 bg-white px-2 py-1.5 text-sm font-normal text-brand-ink"
+                              value={taskTitle}
+                              maxLength={500}
+                              onChange={(event) => setTaskEdits((current) => ({
+                                ...current,
+                                [item.id]: { ...current[item.id], title: event.target.value },
+                              }))}
+                            />
+                          </label>
+                          <label className="mt-2 block text-xs font-semibold">
+                            Due date {item.task_suggestion.tag === 'deadline' ? '(required)' : '(optional)'}
+                            <input
+                              type="date"
+                              className="mt-1 block rounded border border-blue-200 bg-white px-2 py-1.5 text-sm font-normal text-brand-ink"
+                              value={taskDue}
+                              required={item.task_suggestion.tag === 'deadline'}
+                              onChange={(event) => setTaskEdits((current) => ({
+                                ...current,
+                                [item.id]: { ...current[item.id], due_date: event.target.value },
+                              }))}
+                            />
+                          </label>
                           <p className="mt-1 text-xs text-blue-800">
-                            Due {fmtDateOnly(item.task_suggestion.due_date)}
-                            {item.task_suggestion.calendar_sync
+                            Due {fmtDateOnly(taskDue || null)}
+                            {taskDue
                               ? ' · calendar sync will be requested for the reviewer’s connected Outlook or Google calendar'
                               : ' · no calendar event will be created until a due date is added'}
                           </p>
@@ -471,18 +505,11 @@ export function InboundEmailPanel({ matterId, onFiled }) {
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <button
-                        onClick={() => review(item, 'expense')}
-                        disabled={busy === item.id}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-brand-amber/30 bg-brand-amber/10 px-3 py-2 text-xs font-medium text-brand-ink hover:bg-brand-amber/15 disabled:opacity-60"
-                      >
-                        <Receipt size={14} /> Extract receipt
-                      </button>
-                      <button
                         onClick={() => review(item, 'accept')}
-                        disabled={busy === item.id}
+                        disabled={busy === item.id || (item.task_suggestion && (!taskTitle.trim() || deadlineNeedsDate))}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-brand-ink px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
                       >
-                        <FileCheck size={14} /> {item.task_suggestion ? 'File + create task' : 'File to matter'}
+                        <FileCheck size={14} /> {item.task_suggestion ? `File + create ${item.task_suggestion.tag}` : 'File to matter'}
                       </button>
                       <button
                         onClick={() => review(item, 'reject')}
@@ -491,6 +518,21 @@ export function InboundEmailPanel({ matterId, onFiled }) {
                       >
                         <Ban size={14} /> Reject
                       </button>
+                      <details className="relative text-xs">
+                        <summary className="cursor-pointer rounded-lg border border-brand-line px-3 py-2 font-medium text-brand-muted hover:text-brand-ink">
+                          More
+                        </summary>
+                        <div className="absolute right-0 z-10 mt-1 w-64 rounded-lg border border-brand-line bg-white p-2 shadow-lg">
+                          <button
+                            onClick={() => review(item, 'expense')}
+                            disabled={busy === item.id}
+                            className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left font-medium text-brand-ink hover:bg-brand-amber/10 disabled:opacity-60"
+                          >
+                            <Receipt size={14} className="mt-0.5 shrink-0" />
+                            <span>Create an expense draft from a receipt attachment</span>
+                          </button>
+                        </div>
+                      </details>
                     </div>
                   </div>
                 </article>

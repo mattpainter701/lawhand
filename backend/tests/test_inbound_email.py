@@ -129,6 +129,7 @@ def test_task_subject_tag_parses_relative_meeting_from_received_date():
         ("[DEADLINE] File response by 09/15/2026", "deadline", "2026-09-15"),
         ("[TASK due=2026-09-12] Call client", "task", "2026-09-12"),
         ("[TASK] Review exhibits tomorrow", "task", "2026-08-27"),
+        ("[REVIEW] Settlement draft tomorrow", "review", "2026-08-27"),
     ],
 )
 def test_task_subject_tag_supports_bounded_date_forms(
@@ -142,6 +143,14 @@ def test_task_subject_tag_supports_bounded_date_forms(
     assert suggestion is not None
     assert suggestion.tag == expected_tag
     assert suggestion.due_date.isoformat() == expected_due
+
+
+def test_review_subject_tag_has_explicit_review_semantics():
+    suggestion = parse_email_task_tag("[REVIEW] Settlement draft")
+
+    assert suggestion is not None
+    assert suggestion.task_type == "review"
+    assert suggestion.priority == "medium"
 
 
 @pytest.mark.parametrize(
