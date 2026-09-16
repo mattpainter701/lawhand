@@ -80,7 +80,10 @@ PUBLIC_ROUTES: dict[tuple[frozenset[str], str], str] = {
     # Pre-authentication entry points — these routes exist specifically to
     # issue a session credential, so requiring one would be circular.
     (frozenset({"POST"}), "/api/auth/login"): "issues the session credential",
-    (frozenset({"POST"}), "/api/auth/register"): "creates the account + session",
+    (frozenset({"POST"}), "/api/auth/register"): (
+        "closed; returns 410, self-registration is a pending request via "
+        "/api/auth/signup/plan"
+    ),
     (frozenset({"POST"}), "/api/auth/logout"): "clears cookies; no data returned",
     (frozenset({"POST"}), "/api/auth/refresh"): "rotates the refresh token itself",
     (

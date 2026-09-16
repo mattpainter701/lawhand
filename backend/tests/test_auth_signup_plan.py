@@ -12,8 +12,15 @@ from app.services.email import EmailDeliveryResult, email_service
 
 
 @pytest_asyncio.fixture
-async def public_client(db_session, monkeypatch):
+async def public_client(db_session, test_redis, monkeypatch):
     monkeypatch.setattr(auth_router.settings, "PUBLIC_SIGNUP_ENABLED", True)
+    # Attach the flushed per-test Redis so the signup POST is rate-limited by
+    # the production limiter instead of the process-global in-memory fallback,
+    # which would otherwise accumulate across tests and 429 this file.
+    previous_redis = getattr(app.state, "redis", None)
+    app.state.redis = test_redis
+    async for _key in test_redis.scan_iter("rate:auth:/api/auth/signup/plan:*"):
+        await test_redis.delete(_key)
 
     async def override_get_db():
         yield db_session
@@ -24,6 +31,7 @@ async def public_client(db_session, monkeypatch):
     ) as ac:
         yield ac
     app.dependency_overrides.clear()
+    app.state.redis = previous_redis
 
 
 @pytest.mark.asyncio
@@ -269,4 +277,36 @@ async def test_launch_mode_rejects_public_email_and_oauth_signup(
         await db_session.execute(
             select(User).where(User.email.like("%@unapproved.example"))
         )
+    ).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_register_is_closed_even_with_public_signup_enabled(
+    public_client, db_session
+):
+    """The legacy account endpoint must not provision when signup is on.
+
+    Only the plan signup, which records a pending firm for operator approval,
+    may create a workspace. `/api/auth/register` is closed so it cannot mint an
+    active tenant and session that bypass the approval boundary.
+    """
+    resp = await public_client.post(
+        "/api/auth/register",
+        json={
+            "email": "closed@nofirm.example",
+            "password": "longenoughpw123",
+            "full_name": "Closed Owner",
+            "company_name": "Closed Firm",
+        },
+    )
+
+    assert resp.status_code == 410
+    assert "signup/plan" in resp.json()["detail"]
+    assert (
+        await db_session.execute(
+            select(User).where(User.email == "closed@nofirm.example")
+        )
+    ).scalars().all() == []
+    assert (
+        await db_session.execute(select(Tenant).where(Tenant.name == "Closed Firm"))
     ).scalars().all() == []

@@ -27,6 +27,21 @@ so the switch stays reversible.
   it for a trial firm; both the firm grant and the user's flag must then be on.
 - `/api/auth/me` reports `access_state: "trial"` and `trial_ends_at`.
 
+## Registration is a request, never a session
+
+- The only path that creates a firm is `POST /api/auth/signup/plan`. It records
+  an inactive tenant and inactive founder with a `signup_status: pending`
+  marker, then emails the operator. No trial clock, session, Stripe customer,
+  module access, or AI spend exists until Platform approval.
+- `POST /api/auth/register` is **closed** (`410`); it no longer provisions a
+  tenant or mints a session.
+- **Google and Microsoft OAuth are sign-in only.** Completing a provider flow
+  for a domain with no workspace is refused (`not_invited`) instead of
+  provisioning a tenant, so OAuth cannot bypass approval.
+- `POST /api/auth/signup/plan` is rate-limited by source IP (5 per hour),
+  matching the marketing lead form, because it writes a pending tenant and
+  emails the operator from an unauthenticated request.
+
 ## When the trial ends unpaid: billing only
 
 The firm is a hard stop except for paying. An active, non-synthetic firm whose
