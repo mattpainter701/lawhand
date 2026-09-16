@@ -36,6 +36,13 @@
       "source": "litellm_config.yaml"
     },
     {
+      "api_base": "default/provider",
+      "api_key_env": "os.environ/OPENROUTER_API_KEY",
+      "provider_model": "openrouter/deepseek/deepseek-v4.1-flash",
+      "route_name": "lawhand-intake-extraction",
+      "source": "litellm_config.yaml"
+    },
+    {
       "api_base": "https://opencode.ai/zen/go/v1",
       "api_key_env": "os.environ/OPENCODE_GO_API_KEY",
       "provider_model": "openai/gpt-5.6-luna",

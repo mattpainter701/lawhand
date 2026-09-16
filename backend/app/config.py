@@ -275,6 +275,15 @@ class Settings(BaseSettings):
     BACKGROUND_ASSISTANT_ENABLED: bool = False
     BACKGROUND_PROSPECT_CONFIDENTIAL_ENABLED: bool = False
     BACKGROUND_MATTER_CONFIDENTIAL_ENABLED: bool = False
+    # Intake-document AI extraction. Off by default and additionally per-tenant
+    # opt-in. The static gateway alias targets DeepSeek V4.1 Flash, which the
+    # price card already rates; a failed or unpriced call falls back to the
+    # deterministic reader rather than blocking the review.
+    INTAKE_EXTRACTION_ENABLED: bool = False
+    INTAKE_EXTRACTION_MODEL: str = "lawhand-intake-extraction"
+    INTAKE_EXTRACTION_INPUT_USD_PER_MILLION: float = 0.30
+    INTAKE_EXTRACTION_OUTPUT_USD_PER_MILLION: float = 1.20
+    INTAKE_EXTRACTION_MAX_CHARS: int = 12000
     AI_REQUEST_TIMEOUT_SECONDS: float = 30.0
     BACKGROUND_AI_POOL: str = "background-default"
     BACKGROUND_AI_ACCOUNT_FIVE_HOUR_LIMIT: int = 2050

@@ -41,6 +41,8 @@ from app.schemas.matter_document import (
     MatterDocumentUpdate,
 )
 from app.services.document_accountability import append_document_integrity_event
+from app.services import matter_fact_extraction
+from app.services.durable_jobs import enqueue_job
 from app.services.matter_document_organization import (
     DocumentOrganizationError,
     get_folder_or_404,
@@ -557,6 +559,18 @@ async def upload_matter_document(
         document_category=document_category,
     )
     db.add(doc)
+    await db.flush()
+    # Opt-in per firm. When on, a filled intake form is read for record values
+    # in the background and a review task is raised; the upload itself never
+    # waits on extraction, and extraction never writes a record directly.
+    if matter_fact_extraction.extraction_enabled(ts):
+        await enqueue_job(
+            db,
+            tenant_id=user.tenant_id,
+            kind="matter_fact_extraction",
+            idempotency_key=f"matter-facts:{doc.id}",
+            payload={"matter_id": str(matter.id), "document_id": str(doc.id)},
+        )
     await db.commit()
     await db.refresh(doc)
     return await serialize_document(db, tenant_id=user.tenant_id, document=doc)
@@ -796,4 +810,44 @@ async def download_matter_document(
         path=doc.storage_path,
         filename=doc.filename,
         media_type=doc.content_type or "application/octet-stream",
+    )
+
+
+@router.post("/matters/{matter_id}/documents/{doc_id}/facts")
+async def propose_matter_document_facts(
+    matter_id: str,
+    doc_id: str,
+    request: Request,
+    ai: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    """Propose record values the source document itself supports.
+
+    Read-only against the records: every candidate is returned for review and
+    nothing is written until a reviewer accepts a specific one. ``ai=true``
+    adds a bounded model pass for scans and drifted labels; it is opt-in, metered,
+    and fails soft to the deterministic result.
+    """
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    return await matter_fact_extraction.propose(
+        db, user, uuid.UUID(matter_id), uuid.UUID(doc_id), use_ai=ai
+    )
+
+
+@router.post("/matters/{matter_id}/documents/{doc_id}/facts/accept")
+async def accept_matter_document_fact(
+    matter_id: str,
+    doc_id: str,
+    payload: matter_fact_extraction.FactDecision,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Write one reviewed value after re-proving it against the live source."""
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    return await matter_fact_extraction.accept(
+        db, user, uuid.UUID(matter_id), uuid.UUID(doc_id), payload
     )
