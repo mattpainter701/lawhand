@@ -2270,9 +2270,7 @@ async def invite_user(
 
     premium_trial_grant = bool(
         await db.scalar(
-            select(Tenant.premium_ai_trial_enabled).where(
-                Tenant.id == admin.tenant_id
-            )
+            select(Tenant.premium_ai_trial_enabled).where(Tenant.id == admin.tenant_id)
         )
     )
 

@@ -83,9 +83,8 @@ def tenant_allows_premium_ai(tenant) -> bool:
     """Fail closed unless the firm is paid or has an explicit trial grant."""
     if tenant is None or _is_synthetic(tenant):
         return False
-    return (
-        getattr(tenant, "expires_at", None) is None
-        or bool(getattr(tenant, "premium_ai_trial_enabled", False))
+    return getattr(tenant, "expires_at", None) is None or bool(
+        getattr(tenant, "premium_ai_trial_enabled", False)
     )
 
 

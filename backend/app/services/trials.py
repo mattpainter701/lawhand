@@ -145,7 +145,11 @@ async def notify_trial_extended(
     )
 
     unique_recipients = sorted(
-        {address.strip().lower() for address in recipients if address and "@" in address}
+        {
+            address.strip().lower()
+            for address in recipients
+            if address and "@" in address
+        }
     )
     if not unique_recipients:
         return EmailDeliveryResult.INVALID_RECIPIENT
