@@ -187,7 +187,13 @@ def plan_signing_placements(
 
 
 def review_notes(plan, filename):
-    """The plan's warnings, worded for the matter timeline."""
+    """The plan's warnings, worded for the matter timeline.
+
+    Intake sends without a staff step, so a plan that is missing entirely must
+    not abort the send: there are simply no warnings to record.
+    """
+    if plan is None:
+        return []
     return [
         f"{filename or 'Document'}: {item['detail']}"
         for item in plan.review()
