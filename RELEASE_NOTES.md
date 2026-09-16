@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.11 — A filled intake form fills the matter for you
+
+Released September 15, 2026.
+
+A filled intake form or fee agreement that lands on a matter can be read for the details it already contains. Each supported matter or client field is proposed for review, and nothing is saved until a person accepts it.
+
+- **The answers you already have.** Open a filled PDF form, or a document with clear “Label: value” lines, and LawHand proposes the matter and client details it can read.
+- **Reviewed, then recorded against the matter.** Accept a proposed value and it is written to the matter or client record with its source. A value the document no longer supports is refused.
+- **Off until your firm switches it on.** Reading documents at upload is opt-in per firm. Until then, the review panel is still available on any matter document you choose.
+
 ## 2026.09.15.10 — Start a real trial, and know when it ends
 
 Released September 15, 2026.

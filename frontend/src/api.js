@@ -3016,6 +3016,11 @@ export const proposeTemplateFact = (matterId, documentId, fieldId) =>
 export const acceptTemplateFact = (matterId, documentId, fieldId, payload) =>
   api.post(`/templates/fact-review/${matterId}/${documentId}/${fieldId}/accept`, payload).then(r => r.data)
 
+export const proposeMatterDocumentFacts = (matterId, documentId) =>
+  api.post(`/matters/${matterId}/documents/${documentId}/facts`).then(r => r.data)
+export const acceptMatterDocumentFact = (matterId, documentId, payload) =>
+  api.post(`/matters/${matterId}/documents/${documentId}/facts/accept`, payload).then(r => r.data)
+
 export const getTemplateAIProfile = (key) =>
   platformApi(key).get('/platform/llm/template-profile').then((r) => r.data)
 
