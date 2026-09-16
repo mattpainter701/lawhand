@@ -17,6 +17,15 @@ from app.services import cloud_init, google_service_account, storage_root_owners
 # capture the real class before the monkeypatch to avoid recursive calls.
 RealAsyncClient = httpx.AsyncClient
 
+_ORG_ROOT = {
+    "google_drive": {
+        "id": "root-1",
+        "folder_name": "lawhand-records",
+        "drive_id": "shared-1",
+        "owner_type": "org_shared_drive",
+    }
+}
+
 
 def _mock_client(handler):
     return lambda **kwargs: RealAsyncClient(
@@ -93,8 +102,10 @@ def test_empty_and_malformed_roots_are_unbound():
 @pytest.fixture(autouse=True)
 def _clear_token_cache():
     google_service_account._clear_cache()
+    google_service_account._clear_drive_access_cache()
     yield
     google_service_account._clear_cache()
+    google_service_account._clear_drive_access_cache()
 
 
 def _configure_service_account(monkeypatch):
@@ -512,17 +523,17 @@ async def test_prefer_service_account_uses_the_service_account_for_an_org_drive(
 ):
     monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
     monkeypatch.setattr(
-        google_service_account,
-        "_tenant_uses_org_shared_drive",
-        AsyncMock(return_value=True),
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
     )
     monkeypatch.setattr(
-        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+        google_service_account,
+        "_service_account_can_access_drive",
+        AsyncMock(return_value=True),
     )
 
     assert (
         await google_service_account.prefer_service_account(
-            object(), "tenant", "delegated"
+            object(), "tenant", "delegated", cloud_root=_ORG_ROOT
         )
         == "sa-token"
     )
@@ -531,17 +542,12 @@ async def test_prefer_service_account_uses_the_service_account_for_an_org_drive(
 @pytest.mark.asyncio
 async def test_prefer_service_account_keeps_delegated_token_off_org(monkeypatch):
     monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
-    monkeypatch.setattr(
-        google_service_account,
-        "_tenant_uses_org_shared_drive",
-        AsyncMock(return_value=False),
-    )
     mint = AsyncMock(return_value="sa-token")
     monkeypatch.setattr(google_service_account, "get_access_token", mint)
 
     assert (
         await google_service_account.prefer_service_account(
-            object(), "tenant", "delegated"
+            object(), "tenant", "delegated", cloud_root={}
         )
         == "delegated"
     )
@@ -552,17 +558,35 @@ async def test_prefer_service_account_keeps_delegated_token_off_org(monkeypatch)
 async def test_prefer_service_account_falls_back_when_minting_fails(monkeypatch):
     monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
     monkeypatch.setattr(
-        google_service_account,
-        "_tenant_uses_org_shared_drive",
-        AsyncMock(return_value=True),
-    )
-    monkeypatch.setattr(
         google_service_account, "get_access_token", AsyncMock(return_value=None)
     )
 
     assert (
         await google_service_account.prefer_service_account(
-            object(), "tenant", "delegated"
+            object(), "tenant", "delegated", cloud_root=_ORG_ROOT
+        )
+        == "delegated"
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefer_service_account_falls_back_when_it_cannot_reach_the_drive(
+    monkeypatch,
+):
+    """A minted service-account token that cannot access the drive must not be used."""
+    monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
+    )
+    monkeypatch.setattr(
+        google_service_account,
+        "_service_account_can_access_drive",
+        AsyncMock(return_value=False),
+    )
+
+    assert (
+        await google_service_account.prefer_service_account(
+            object(), "tenant", "delegated", cloud_root=_ORG_ROOT
         )
         == "delegated"
     )
@@ -576,26 +600,57 @@ async def test_matter_provisioning_uses_service_account_when_delegated_is_gone(
     monkeypatch.setattr(cloud_init, "get_fresh_token", AsyncMock(return_value=None))
     monkeypatch.setattr(google_service_account, "is_configured", lambda: True)
     monkeypatch.setattr(
-        google_service_account,
-        "_tenant_uses_org_shared_drive",
-        AsyncMock(return_value=True),
-    )
-    monkeypatch.setattr(
         google_service_account, "get_access_token", AsyncMock(return_value="sa-token")
     )
-    cloud_root = {
-        "google_drive": {
-            "id": "root-1",
-            "owner_type": "org_shared_drive",
-            "drive_id": "shared-1",
-        }
-    }
+    monkeypatch.setattr(
+        google_service_account,
+        "_service_account_can_access_drive",
+        AsyncMock(return_value=True),
+    )
 
     tokens = await cloud_init.get_matter_provisioning_tokens(
-        object(), "tenant-1", cloud_root
+        object(), "tenant-1", _ORG_ROOT
     )
 
     assert tokens["google"] == "sa-token"
+
+
+@pytest.mark.asyncio
+async def test_org_root_creation_failure_falls_back_to_my_drive(monkeypatch):
+    """Acceptance: a failed Shared Drive root must not strand onboarding."""
+
+    async def fake_token(*_args, **_kwargs):
+        return "g-token"
+
+    monkeypatch.setattr(cloud_init, "get_fresh_token", fake_token)
+    monkeypatch.setattr(
+        cloud_init, "_google_org_shared_drive_id", AsyncMock(return_value="drive-1")
+    )
+    monkeypatch.setattr(
+        cloud_init,
+        "_ensure_gdrive_org_root",
+        AsyncMock(side_effect=RuntimeError("root create failed")),
+    )
+    ensure_personal = AsyncMock(return_value="my-drive-root")
+    monkeypatch.setattr(cloud_init, "_ensure_gdrive_folder", ensure_personal)
+    monkeypatch.setattr(
+        cloud_init,
+        "_get_gdrive_folder_metadata",
+        AsyncMock(
+            return_value={
+                "id": "my-drive-root",
+                "name": "lawhand-records",
+                "webViewLink": "https://drive/my-drive-root",
+            }
+        ),
+    )
+
+    root = await cloud_init.initialize_cloud_root_folder(None, "tenant-1")
+
+    assert root["google_drive"]["id"] == "my-drive-root"
+    ensure_personal.assert_awaited_once_with(
+        "g-token", cloud_init.ROOT_FOLDER_NAME, "root"
+    )
 
 
 @pytest.mark.asyncio

@@ -205,6 +205,34 @@ async def initialize_cloud_root_folder(
     # admin's My Drive (user-owned) exactly as before.
     g_token = await get_fresh_token(db, tenant_id, "google")
     if _provider_root_is_absent(saved_root, "google_drive"):
+
+        async def _personal_my_drive_root() -> None:
+            if not g_token:
+                return
+            try:
+                folder_id = await _ensure_gdrive_folder(
+                    g_token, ROOT_FOLDER_NAME, "root"
+                )
+                folder_meta = await _get_gdrive_folder_metadata(g_token, folder_id)
+                result["google_drive"] = {
+                    "id": folder_id,
+                    "folder_name": folder_meta.get("name") or ROOT_FOLDER_NAME,
+                    "url": folder_meta.get("webViewLink")
+                    or f"https://drive.google.com/drive/folders/{folder_id}",
+                }
+                logger.info(
+                    "Ensured %s in the granting admin's My Drive for tenant %s "
+                    "(no org Shared Drive configured)",
+                    ROOT_FOLDER_NAME,
+                    tenant_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create Google Drive root folder for tenant %s: %s",
+                    tenant_id,
+                    exc,
+                )
+
         org_drive_id = await _google_org_shared_drive_id(db, tenant_id)
         if (
             not org_drive_id
@@ -234,35 +262,17 @@ async def initialize_cloud_root_folder(
                     tenant_id,
                 )
             except Exception as exc:
+                # The drive exists but its root could not be created or bound.
+                # Never strand onboarding: fall back to the admin's My Drive.
                 logger.warning(
-                    "Failed to create Google Shared Drive root for tenant %s: %s",
+                    "Failed to create Google Shared Drive root for tenant %s; "
+                    "falling back to My Drive: %s",
                     tenant_id,
                     exc,
                 )
-        elif g_token:
-            try:
-                folder_id = await _ensure_gdrive_folder(
-                    g_token, ROOT_FOLDER_NAME, "root"
-                )
-                folder_meta = await _get_gdrive_folder_metadata(g_token, folder_id)
-                result["google_drive"] = {
-                    "id": folder_id,
-                    "folder_name": folder_meta.get("name") or ROOT_FOLDER_NAME,
-                    "url": folder_meta.get("webViewLink")
-                    or f"https://drive.google.com/drive/folders/{folder_id}",
-                }
-                logger.info(
-                    "Ensured %s in the granting admin's My Drive for tenant %s "
-                    "(no org Shared Drive configured)",
-                    ROOT_FOLDER_NAME,
-                    tenant_id,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to create Google Drive root folder for tenant %s: %s",
-                    tenant_id,
-                    exc,
-                )
+                await _personal_my_drive_root()
+        else:
+            await _personal_my_drive_root()
 
     if result:
         if "path" not in saved_root:

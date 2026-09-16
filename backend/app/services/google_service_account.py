@@ -158,40 +158,56 @@ async def get_access_token(
     return token
 
 
-async def _tenant_uses_org_shared_drive(
-    db, tenant_id: object | None, cloud_root: object | None = None
-) -> bool:
-    """True when the tenant's Google root is an org-owned Shared Drive.
+DRIVE_ACCESS_CACHE_SECONDS = 600
+_DRIVE_ACCESS_CACHE: dict[tuple[str, str], float] = {}
+GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3"
 
-    Matches on the persisted ``owner_type`` rather than a bare ``drive_id``,
-    because My Drive files also carry a drive id. Callers that already hold the
-    tenant root pass it in to avoid a second read.
-    """
-    if cloud_root is None:
-        if db is None or tenant_id is None:
-            return False
-        try:
-            from app.models.tenant import Tenant
 
-            result = await db.execute(
-                select(Tenant.cloud_root_folder).where(
-                    Tenant.id == uuid.UUID(str(tenant_id))
-                )
-            )
-            cloud_root = result.scalar_one_or_none()
-        except Exception:
-            logger.warning(
-                "Could not determine Google storage ownership for tenant",
-                exc_info=True,
-            )
-            return False
+def _org_shared_drive_binding(cloud_root: object) -> dict | None:
+    """Return the google_drive binding when it is an org Shared Drive root."""
     if not isinstance(cloud_root, dict):
-        return False
+        return None
     binding = cloud_root.get("google_drive")
-    return bool(
-        isinstance(binding, dict)
-        and (binding.get("owner_type") or "").strip() == "org_shared_drive"
-    )
+    if not isinstance(binding, dict):
+        return None
+    if (binding.get("owner_type") or "").strip() != "org_shared_drive":
+        return None
+    return binding
+
+
+async def _load_tenant_cloud_root(db, tenant_id: object | None):
+    if db is None or tenant_id is None:
+        return None
+    try:
+        from app.models.tenant import Tenant
+
+        result = await db.execute(
+            select(Tenant.cloud_root_folder).where(
+                Tenant.id == uuid.UUID(str(tenant_id))
+            )
+        )
+        return result.scalar_one_or_none()
+    except Exception:
+        logger.warning("Could not read tenant cloud root", exc_info=True)
+        return None
+
+
+async def _service_account_can_access_drive(token: str, drive_id: str) -> bool:
+    """Probe the Shared Drive with the service-account token."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{GOOGLE_DRIVE_API}/drives/{drive_id}",
+                params={"fields": "id"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError:
+        return False
+    return resp.status_code == 200
+
+
+def _clear_drive_access_cache() -> None:
+    _DRIVE_ACCESS_CACHE.clear()
 
 
 async def prefer_service_account(
@@ -205,14 +221,38 @@ async def prefer_service_account(
 
     Root creation is not enough on its own: matter-folder provisioning,
     uploads, reads, search, sharing, rename, and repair must all use an
-    identity that survives the connecting administrator. Falls back to the
-    supplied delegated token when the tenant is not on an org drive, the
-    service account is not configured, or minting fails. Pass ``cloud_root``
-    when the caller already holds it to avoid a second tenant read.
+    identity that survives the connecting administrator. The service-account
+    token is only returned once a probe confirms it can actually reach this
+    customer's drive; otherwise the supplied delegated token is used, so a
+    minted-but-unauthorized service account never breaks storage operations.
+    Pass ``cloud_root`` when the caller already holds it to avoid a second
+    tenant read.
     """
     if not delegated and not is_configured():
         return delegated
-    if not await _tenant_uses_org_shared_drive(db, tenant_id, cloud_root):
+    if cloud_root is None:
+        cloud_root = await _load_tenant_cloud_root(db, tenant_id)
+    binding = _org_shared_drive_binding(cloud_root)
+    if not binding:
+        return delegated
+    drive_id = str(binding.get("drive_id") or "").strip()
+    if not drive_id:
         return delegated
     service_token = await get_access_token(DRIVE_SCOPES)
-    return service_token or delegated
+    if not service_token:
+        return delegated
+
+    cache_key = (str(tenant_id), drive_id)
+    now = time.time()
+    if _DRIVE_ACCESS_CACHE.get(cache_key, 0) > now:
+        return service_token
+    if await _service_account_can_access_drive(service_token, drive_id):
+        _DRIVE_ACCESS_CACHE[cache_key] = now + DRIVE_ACCESS_CACHE_SECONDS
+        return service_token
+    logger.warning(
+        "Service account cannot reach Google Shared Drive %s for tenant %s; "
+        "using the delegated token",
+        drive_id,
+        tenant_id,
+    )
+    return delegated
