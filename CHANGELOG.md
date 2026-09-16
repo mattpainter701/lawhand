@@ -5,6 +5,13 @@
 - Define the non-public Founding Attorney offer at exactly $199 monthly for one AI attorney and up to two Core staff users for 24 months. No Premium usage or practice module is included by default; its server-enforced usage cap is always operator-visible while customer meter visibility remains backend-controlled.
 - Document the existing add-on entitlement and Plugins-page gaps, the separation between commercial plan, payment state, access plan, license class, module entitlement, and AI wallet, plus the provider work required before activation.
 
+## 2026.09.15.11 — Filled intake documents become reviewed matter details
+
+- Add deterministic intake-document fact extraction. `app/services/matter_fact_extraction.py` reads a matter PDF, Word, or text source for values a person already entered — AcroForm widget values (`pdf_templates.read_pdf_form_values`), exact `Label: value` lines, and single-hit email, phone, and ZIP patterns — and proposes them against a closed target set: the standard matter/client fields in `intake_writeback.FIELD_TARGETS` plus tenant custom fields. Extraction never writes a record.
+- `POST /matters/{matter_id}/documents/{doc_id}/facts` returns reviewable proposals and `.../facts/accept` applies one. Acceptance re-reads and re-extracts the source, so a value the document no longer yields is refused with `409`, and an existing differing value requires an explicit `replace_existing`. Standard writes reuse `intake_writeback._apply_value`; custom writes upsert `MatterCustomFieldValue`/`ContactCustomFieldValue`. The audit event stores an HMAC of the accepted value, never the value.
+- Add a durable job (`matter_fact_extraction`) and an upload trigger in `upload_matter_document`, gated per tenant by `TenantSettings.custom_config.intake_fact_extraction.enabled` and off by default. A source that yields proposals raises one review task pointing at the document.
+- Frontend adds `MatterDocumentFacts` to the matter document preview: proposals are listed with their source and the record's current value, and accepted one at a time.
+
 ## 2026.09.15.10 — Public trials and operator access controls
 
 - Enable public registration end to end. The signup page now always uses the merged `full-trial` plan, which provisions a server-enforced 30-day expiry, the full module set on the bounded `trial` rate tier, and no Premium AI. Production Compose defaults, `.env.prod.example`, and preflight now agree that both signup flags are `true`; a mismatch or disabled production flag fails preflight, while dev1 remains explicitly closed.

@@ -26,6 +26,7 @@ JOB_HANDLERS = {
     "document_ingest": JobHandler(_WORKER, "_run_document_ingest"),
     "cloud_sync": JobHandler(_WORKER, "_run_cloud_sync"),
     "user_sync": JobHandler(_WORKER, "_run_user_sync"),
+    "matter_fact_extraction": JobHandler(_WORKER, "_run_matter_fact_extraction"),
     "mcp_stripe_meter": JobHandler(
         "app.services.mcp_product", "deliver_mcp_meter_event", "payload"
     ),
