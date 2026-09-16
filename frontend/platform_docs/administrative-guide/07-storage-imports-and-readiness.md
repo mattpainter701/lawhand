@@ -37,11 +37,13 @@ The Microsoft tenant grant requests directory read, mail read, file read/write, 
 
 LawHand currently uses that access to enumerate permitted directory users; list and search Outlook message metadata and previews; retrieve a selected full message for capture; list, search, download, and index supported OneDrive or configured SharePoint files; write files and matter folders through enabled workflows; and create or update calendar events tied to tasks and key dates.
 
-The current Microsoft file grant is delegated `Files.ReadWrite.All`. It is sufficient for the implemented folders but broader than `lawhand-records`. Prefer an organization-owned service identity with only the required business access, or an approved SharePoint binding. Verify create/read/update/delete using a non-sensitive file; do not rely only on the consent screen.
+The current Microsoft file grant is delegated `Files.ReadWrite.All`. It is sufficient for the implemented folders but broader than `lawhand-records`. Prefer an organization-owned service identity with only the required business access, or an approved SharePoint binding. Verify create/read/update/delete using a non-sensitive file; do not rely only on the consent screen. Bind the root to a SharePoint site library rather than a personal OneDrive so the firm keeps custody; while access still uses the connecting administrator's delegated token, a removed administrator requires reconnecting another administrator from Integrations → Cloud.
 
 ### Google Workspace permission and use notes
 
 The Google administrator grant requests identity/profile, organization directory user read-only, Gmail read-only, Drive read/write, Calendar read/write, and offline access. Per-user grants omit directory administration. Directory access does not itself authorize every user's Gmail; mail, Drive, and Calendar operate as the account that completed the applicable connection.
+
+On a Google Workspace connection LawHand also creates an organisation-owned Shared Drive (`LawHand Firm Records`), adds its own service account as a member, and stores the tenant root inside it. The customer configures nothing in Google Cloud, and the root survives the connecting administrator leaving. If Workspace policy blocks Shared Drive creation or the service-account membership, the root falls back to that administrator's My Drive and onboarding reports `root_ownership.status = at_risk`; treat that as a retention risk, not a normal end state.
 
 LawHand currently uses Gmail read access for headers, labels, snippets, search, and selected full-message capture. It uses Drive access for file metadata, search, configured synchronization, document download/indexing, and supported folder/file writes. Calendar access creates and maintains LawHand-linked events.
 
@@ -85,3 +87,5 @@ Record provider identifiers and diagnostic timestamps in the restricted operatio
 Provider access and refresh tokens are encrypted. For cloud-bound matter files, durable source bytes live in the customer datastore. LawHand retains the control-plane records needed to operate the service: tenant/client/matter metadata, tasks, provider object identifiers, hashes/sizes, audit history, and—when enabled—captured email or extracted/indexed text. This is not a zero-customer-data architecture; it is a customer-owned document-content architecture.
 
 Disconnecting or revoking the provider stops future successful API calls after revocation takes effect. It does not automatically delete already imported LawHand records. Confirm the tenant retention decision before disconnecting, and use the supported deletion process where removal is required.
+
+LawHand never deletes or destructively renames a customer's cloud folders — not on disconnect, matter close, provider change, or tenant exit. Because the root and matter folders live in the customer's own account, a tenant that leaves keeps them; deliver the XLSX handoff manifest of roots and matter folders before any LawHand-side cleanup. See [Cloud root ownership and tenant handoff](https://github.com/mattpainter701/lawhand/blob/main/docs/storage-root-ownership-and-handoff.md).

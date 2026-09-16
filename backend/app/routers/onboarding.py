@@ -177,6 +177,7 @@ async def get_onboarding_status(
         tenant.cloud_root_folder if isinstance(tenant.cloud_root_folder, dict) else None
     )
     agreements = await agreement_status(db, user.tenant_id)
+    from app.services.storage_root_ownership import classify_cloud_root
 
     return OnboardingStatusResponse(
         onboarding_completed=tenant.onboarding_completed,
@@ -187,6 +188,7 @@ async def get_onboarding_status(
         primary_cloud_provider=primary,
         cloud_root=cloud_root,
         storage_ready=_has_any_root(cloud_root),
+        root_ownership=classify_cloud_root(cloud_root),
         agreements_configured=agreements["configured"],
         agreements_blocking=agreements["blocking"],
         setup_deferred=bool(

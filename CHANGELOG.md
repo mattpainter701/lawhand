@@ -1,3 +1,13 @@
+## 2026.09.16.04 — Organization-owned cloud roots and tenant handoff
+
+- Create a per-tenant organisation-owned Google Shared Drive (`LawHand Firm Records`) on Google Workspace connect, add LawHand's own service account as a member, and store the tenant root inside it, so matter storage survives the connecting administrator being deactivated or leaving. No customer Google Cloud setup is required.
+- Mint Google service-account tokens (JWT bearer, optional domain-wide-delegation subject) in `app/services/google_service_account.py`; prefer the service account for Shared Drive storage and fall back to the connecting admin's delegated token until the account has been added.
+- Classify every bound root as `durable`, `at_risk`, or `unbound` in `app/services/storage_root_ownership.py`, reporting custody and `access_at_risk` separately, and expose it as `root_ownership` on `GET /api/admin/onboarding/status`; personal Google roots are reported at risk rather than claimed as organisation-owned.
+- Surface that ownership in the onboarding wizard: the Storage step shows an organisation-owned confirmation or an at-risk warning naming the personal drive(s), the Review step shows a storage-ownership row, and `POST /api/admin/onboarding/reenter` returns the same `root_ownership` summary so re-entry flags an at-risk root instead of silently treating it as done.
+- Resolve the runtime storage identity through `google_service_account.prefer_service_account()`: matter-folder provisioning, uploads, reads, search, sharing, rename, repair, metadata sync, discovery, and cloud-document delete now use LawHand's service account for an `owner_type=org_shared_drive` tenant, so the turnover guarantee covers LawHand availability, not only custody. SharePoint access remains delegated until Microsoft app-only lands.
+- Document the ownership model, the never-delete guarantee, the Google/Microsoft customer flows, and the planned XLSX tenant handoff manifest in `docs/storage-root-ownership-and-handoff.md`, and align the administrator guide, user guide, and README.
+- Config: `GOOGLE_AUTO_SHARED_DRIVE`, `GOOGLE_ORG_SHARED_DRIVE_NAME` (operator-only; optional per-tenant pin via `TenantSettings.custom_config["google_shared_drive_id"]`).
+
 ## 2026.09.16.03 — Accurate onboarding re-entry and Google account copy
 
 - Persist an explicit onboarding re-entry marker in tenant settings so a completed firm can revisit Connect, Storage, Sync, and Review without legacy step normalization jumping back to Complete. Clear the marker on completion or deferral while preserving the live workspace and existing cloud root.

@@ -198,27 +198,70 @@ async def initialize_cloud_root_folder(
                     exc,
                 )
 
-    # Google Drive
+    # Google Drive. An org-owned Shared Drive is preferred: its root is
+    # created with the service account and survives the departure of the admin
+    # who connected the account. Without one, fall back to the connecting
+    # admin's My Drive (user-owned) exactly as before.
     g_token = await get_fresh_token(db, tenant_id, "google")
-    if g_token and _provider_root_is_absent(saved_root, "google_drive"):
-        try:
-            folder_id = await _ensure_gdrive_folder(g_token, ROOT_FOLDER_NAME, "root")
-            folder_meta = await _get_gdrive_folder_metadata(g_token, folder_id)
-            result["google_drive"] = {
-                "id": folder_id,
-                "folder_name": folder_meta.get("name") or ROOT_FOLDER_NAME,
-                "url": folder_meta.get("webViewLink")
-                or f"https://drive.google.com/drive/folders/{folder_id}",
-            }
-            logger.info(
-                "Ensured %s in Google Drive for tenant %s", ROOT_FOLDER_NAME, tenant_id
-            )
-        except Exception as exc:
-            logger.warning(
-                "Failed to create Google Drive root folder for tenant %s: %s",
-                tenant_id,
-                exc,
-            )
+    if _provider_root_is_absent(saved_root, "google_drive"):
+        org_drive_id = await _google_org_shared_drive_id(db, tenant_id)
+        if (
+            not org_drive_id
+            and g_token
+            and settings.GOOGLE_AUTO_SHARED_DRIVE
+            and await _google_account_type(db, tenant_id) == "workspace"
+        ):
+            # Workspace admin just connected: create the org Shared Drive for
+            # them and add LawHand's service account, so the firm does no GCP
+            # setup and the root survives staff turnover.
+            try:
+                org_drive_id = await _provision_org_shared_drive(db, tenant_id, g_token)
+            except Exception as exc:
+                logger.warning(
+                    "Google Shared Drive auto-provision failed for tenant %s: %s",
+                    tenant_id,
+                    exc,
+                )
+        if org_drive_id:
+            try:
+                result["google_drive"] = await _ensure_gdrive_org_root(
+                    org_drive_id, ROOT_FOLDER_NAME, fallback_token=g_token
+                )
+                logger.info(
+                    "Ensured %s in Google Shared Drive for tenant %s",
+                    ROOT_FOLDER_NAME,
+                    tenant_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create Google Shared Drive root for tenant %s: %s",
+                    tenant_id,
+                    exc,
+                )
+        elif g_token:
+            try:
+                folder_id = await _ensure_gdrive_folder(
+                    g_token, ROOT_FOLDER_NAME, "root"
+                )
+                folder_meta = await _get_gdrive_folder_metadata(g_token, folder_id)
+                result["google_drive"] = {
+                    "id": folder_id,
+                    "folder_name": folder_meta.get("name") or ROOT_FOLDER_NAME,
+                    "url": folder_meta.get("webViewLink")
+                    or f"https://drive.google.com/drive/folders/{folder_id}",
+                }
+                logger.info(
+                    "Ensured %s in the granting admin's My Drive for tenant %s "
+                    "(no org Shared Drive configured)",
+                    ROOT_FOLDER_NAME,
+                    tenant_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create Google Drive root folder for tenant %s: %s",
+                    tenant_id,
+                    exc,
+                )
 
     if result:
         if "path" not in saved_root:
@@ -905,6 +948,227 @@ async def _ensure_gdrive_folder(token: str, folder_name: str, parent_id: str) ->
             f"Failed to create Google Drive folder '{folder_name}': "
             f"{resp.status_code} {resp.text[:200]}"
         )
+
+
+async def _google_org_shared_drive_id(db: AsyncSession | None, tenant_id: str) -> str:
+    """Resolve the org-owned Shared Drive for a tenant, if one is configured.
+
+    A tenant-level override wins over the deployment default so an operator can
+    route one firm to its own Shared Drive without a code change.
+    """
+    if db is not None:
+        try:
+            result = await db.execute(
+                select(TenantSettings).where(
+                    TenantSettings.tenant_id == uuid.UUID(str(tenant_id))
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row and isinstance(row.custom_config, dict):
+                configured = str(
+                    row.custom_config.get("google_shared_drive_id") or ""
+                ).strip()
+                if configured:
+                    return configured
+        except Exception:
+            logger.warning(
+                "Could not read tenant Google Shared Drive config", exc_info=True
+            )
+    return (settings.GOOGLE_SHARED_DRIVE_ID or "").strip()
+
+
+def _gdrive_binding_from_item(item: dict, folder_name: str, drive_id: str) -> dict:
+    folder_id = item["id"]
+    return {
+        "id": folder_id,
+        "folder_name": item.get("name") or folder_name,
+        "url": item.get("webViewLink")
+        or f"https://drive.google.com/drive/folders/{folder_id}",
+        "drive_id": item.get("driveId") or drive_id,
+        "owner_type": "org_shared_drive",
+    }
+
+
+async def _list_shared_drive_child_folders(
+    client: httpx.AsyncClient, headers: dict, drive_id: str
+) -> list[dict]:
+    """List folders at the root of an org Shared Drive, not a user's My Drive."""
+    folders: list[dict] = []
+    page_token = None
+    query = (
+        "mimeType='application/vnd.google-apps.folder' "
+        f"and '{drive_id}' in parents and trashed=false"
+    )
+    while True:
+        params = {
+            "q": query,
+            "fields": "nextPageToken,files(id,name,webViewLink,driveId,createdTime)",
+            "pageSize": "200",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+            "corpora": "drive",
+            "driveId": drive_id,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        resp = await client.get(
+            f"{GOOGLE_DRIVE_BASE}/files", params=params, headers=headers
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Shared Drive folder listing failed ({resp.status_code}); "
+                "no folder was created"
+            )
+        data = resp.json()
+        folders.extend(data.get("files", []))
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            return folders
+
+
+async def _ensure_gdrive_org_root(
+    drive_id: str, folder_name: str, *, fallback_token: str | None = None
+) -> dict:
+    """Create or reuse the tenant root inside an org-owned Shared Drive.
+
+    Prefers the domain-wide-delegation service account so the firm's storage
+    does not depend on the admin who connected the account. ``fallback_token``
+    lets a caller use the connecting admin's delegated token until the service
+    account has been added to the drive; the drive is org-owned either way.
+    """
+    from app.services import google_service_account
+
+    token = await google_service_account.get_access_token(
+        google_service_account.DRIVE_SCOPES
+    )
+    if not token:
+        token = fallback_token
+    if not token:
+        raise RuntimeError(
+            "Google Shared Drive is configured but no service account is available"
+        )
+    folder_name = _validate_folder_name(folder_name)
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        existing = _choose_existing_folder(
+            await _list_shared_drive_child_folders(client, headers, drive_id),
+            folder_name,
+        )
+        if existing:
+            return _gdrive_binding_from_item(existing, folder_name, drive_id)
+
+        resp = await client.post(
+            f"{GOOGLE_DRIVE_BASE}/files",
+            params={"supportsAllDrives": "true", "driveId": drive_id},
+            json={
+                "name": folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [drive_id],
+            },
+            headers=headers,
+        )
+        if resp.status_code in (200, 201):
+            return _gdrive_binding_from_item(resp.json(), folder_name, drive_id)
+        if resp.status_code == 409:
+            existing = _choose_existing_folder(
+                await _list_shared_drive_child_folders(client, headers, drive_id),
+                folder_name,
+            )
+            if existing:
+                return _gdrive_binding_from_item(existing, folder_name, drive_id)
+        raise RuntimeError(
+            f"Failed to create Google Shared Drive folder '{folder_name}': "
+            f"{resp.status_code} {resp.text[:200]}"
+        )
+
+
+ORG_SHARED_DRIVE_MEMBER_ROLE = "fileOrganizer"
+
+
+async def _google_account_type(db: AsyncSession | None, tenant_id: str) -> str | None:
+    """Return the connected Google account type ("workspace"/"personal")."""
+    if db is None:
+        return None
+    try:
+        from app.models.tenant_credential import TenantCredential
+
+        result = await db.execute(
+            select(TenantCredential.account_type).where(
+                TenantCredential.tenant_id == uuid.UUID(str(tenant_id)),
+                TenantCredential.provider == "google",
+                TenantCredential.is_active.is_(True),
+            )
+        )
+        return result.scalar_one_or_none()
+    except Exception:
+        logger.warning("Could not read Google account type", exc_info=True)
+        return None
+
+
+async def _create_gdrive_shared_drive(token: str, name: str) -> str:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{GOOGLE_DRIVE_BASE}/drives",
+            params={"requestId": uuid.uuid4().hex},
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": name},
+        )
+    if resp.status_code in (200, 201):
+        drive_id = resp.json().get("id")
+        if drive_id:
+            return drive_id
+    raise RuntimeError(
+        f"Failed to create Google Shared Drive '{name}': "
+        f"{resp.status_code} {resp.text[:200]}"
+    )
+
+
+async def _add_gdrive_shared_drive_member(
+    token: str, drive_id: str, email: str, role: str = ORG_SHARED_DRIVE_MEMBER_ROLE
+) -> None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{GOOGLE_DRIVE_BASE}/drives/{drive_id}/permissions",
+            params={"sendNotificationEmail": "false", "supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {token}"},
+            json={"type": "user", "role": role, "emailAddress": email},
+        )
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(
+            f"Failed to add {email} to Google Shared Drive: "
+            f"{resp.status_code} {resp.text[:200]}"
+        )
+
+
+async def _provision_org_shared_drive(
+    db: AsyncSession | None, tenant_id: str, token: str
+) -> str:
+    """Create an org Shared Drive for a Workspace tenant and register LawHand's
+    central service account as a member, so the firm configures nothing.
+
+    Returns the new drive id. The caller treats failure as non-fatal and falls
+    back to the connecting admin's My Drive.
+    """
+    from app.services import google_service_account
+
+    drive_id = await _create_gdrive_shared_drive(
+        token, settings.GOOGLE_ORG_SHARED_DRIVE_NAME
+    )
+    service_email = google_service_account.service_account_email()
+    if service_email:
+        try:
+            await _add_gdrive_shared_drive_member(token, drive_id, service_email)
+        except Exception:
+            logger.warning(
+                "Created Shared Drive %s but could not add the LawHand service "
+                "account; storage will rely on the connecting admin's token",
+                drive_id,
+                exc_info=True,
+            )
+    logger.info(
+        "Auto-provisioned Google Shared Drive for tenant %s: %s", tenant_id, drive_id
+    )
+    return drive_id
 
 
 async def _rename_gdrive_folder(token: str, folder_id: str, new_name: str) -> dict:

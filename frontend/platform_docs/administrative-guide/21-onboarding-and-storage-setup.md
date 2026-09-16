@@ -19,7 +19,7 @@ The wizard is reachable at `/onboarding` for administrators. Users are redirecte
 | --- | --- | --- | --- |
 | 1 | Welcome | Explains the setup. | — |
 | 2 | Connect | Accept the tenant agreements, then connect Microsoft 365 or Google Workspace with **administrator consent**. | At least one provider connected and agreements accepted. |
-| 3 | Storage | Choose the provider for matter documents and create the root folder. LawHand shows the folder it created and links to it. | A root folder exists for the chosen provider. |
+| 3 | Storage | Choose the provider for matter documents and create the root folder. LawHand shows the folder it created and links to it. On Google Workspace it first creates an organisation-owned Shared Drive so the root survives staff turnover. | A root folder exists for the chosen provider. |
 | 4 | Sync Users | Import the directory into LawHand. | — (personal accounts have no directory; invite users later instead). |
 | 5 | Review | Shows imported user counts and confirms storage is set. | Storage confirmed. |
 | 6 | Complete | Marks the firm live and links to the Administration portal. | — |
@@ -37,6 +37,16 @@ The firm's connected cloud account is the matter-document system of record. Setu
 
 SharePoint is chosen after setup: finish with OneDrive, then select the site and library under **Document storage**. The migration tooling (below) can rebind matters afterwards if needed.
 
+## Who owns the root folder
+
+The root should belong to the **organisation**, not to the administrator who happened to connect the account. If it does not, deactivating or losing that person breaks the firm's access to every matter document.
+
+- **Google Workspace.** When an administrator connects, LawHand creates an organisation-owned Shared Drive (`LawHand Firm Records`) and adds LawHand's own service account as a member, then creates `lawhand-records` inside it. Nothing is configured in the customer's Google Cloud; the account is only asked to sign in. The drive survives the connecting admin leaving.
+- **Microsoft.** The root belongs in a SharePoint site library rather than a personal OneDrive. Until an app-only identity is bound, access still uses the connecting administrator's delegated token; if that account is removed, reconnect another administrator from Integrations → Cloud.
+- **Personal Google.** There is no organisation and no Shared Drive, so the root lives in the individual's own Drive. It is reported `at_risk`: the owner should share the root with a second account, and it is important to export a handoff manifest (below) if the account changes.
+
+The onboarding status reports this as `root_ownership`: `durable` when every bound root is organisation-owned, `at_risk` when any root lives in one person's drive, and `unbound` when no root exists yet. LawHand never deletes or destructively renames a customer's cloud folders.
+
 ## What "Folder exists" means
 
 When the Storage step shows **Folder exists** next to a provider, the tenant already has a root binding for it — from an earlier run, a re-entered setup, or an administrator repair. LawHand keeps that folder and never recreates or repoints it: folder IDs are the authority for every matter folder underneath. Choose **Continue** to keep it.
@@ -50,7 +60,13 @@ A failure here is honest and retryable. The two common causes:
 - **The connected account cannot create the folder.** The consent may have been granted by an account without Drive or OneDrive access, or a required scope was declined. Re-authorize from Administration → Integrations → Cloud and try again.
 - **SharePoint chosen before a library is bound.** Choose OneDrive for now, or bind the site and library first.
 
+An organisation-owned Shared Drive can also be blocked by Workspace policy: Shared Drive creation may be limited to certain administrators, or sharing with LawHand's service account may be disabled. LawHand then falls back to the connecting administrator's My Drive and reports `root_ownership.status = at_risk` rather than claiming durability. A Google Workspace super-administrator can usually create the Shared Drive and add the service account directly under **Document storage**.
+
 A failed attempt records nothing: no half-created root, no primary provider change. **Try again** repeats the same request.
+
+## Handoff when a tenant leaves
+
+LawHand never deletes a customer's cloud folders, on churn or at any other time. Before LawHand-side cleanup, the firm should receive an XLSX manifest of its roots and matter folders (provider, folder name, ID, path, URL, and owning identity) so the folders can be located and kept after access is revoked. See [Cloud root ownership and tenant handoff](https://github.com/mattpainter701/lawhand/blob/main/docs/storage-root-ownership-and-handoff.md).
 
 ## Re-running setup
 
@@ -76,7 +92,7 @@ Re-entry with a target provider starts a storage migration instead of a plain re
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/admin/onboarding/status` | Step, connections, synced user counts, primary provider, saved root bindings, `storage_ready`. |
+| `GET /api/admin/onboarding/status` | Step, connections, synced user counts, primary provider, saved root bindings, `storage_ready`, and `root_ownership` (durable / at_risk / unbound). |
 | `POST /api/admin/onboarding/step/{n}` | Persist wizard progress (0–5). |
 | `POST /api/admin/onboarding/storage` | Choose a provider and create or confirm its root. Returns `ready`, `failed` or `repair_needed`. |
 | `POST /api/admin/onboarding/complete` | Finish setup. Rejected until a root exists. |
