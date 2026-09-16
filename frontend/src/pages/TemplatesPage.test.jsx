@@ -131,7 +131,13 @@ describe('document template workflow', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Test this draft' }))
     await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith('signing', expect.objectContaining({ variables: { event_date: '2026-10-12' } })))
   })
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // ``clearAllMocks`` keeps implementations, so a test that stubbed smart
+    // fill with a never-resolving promise would otherwise leak into later
+    // tests and leave auto-fill stuck on "Filling...".
+    discoverTemplateVariables.mockReset()
+  })
   afterEach(() => {
     cleanup()
     URL.createObjectURL = originalCreateObjectURL
@@ -1133,7 +1139,6 @@ describe('document template workflow', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
-    await user.click(screen.getByRole('button', { name: 'Smart Fill' }))
     await waitFor(() => expect(discoverTemplateVariables).toHaveBeenCalledTimes(1))
     const clientName = screen.getByPlaceholderText('Enter Client Name')
     await user.type(clientName, 'Manual Client')
@@ -1157,7 +1162,6 @@ describe('document template workflow', () => {
     render(<TemplatesPage />)
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
-    await user.click(screen.getByRole('button', { name: 'Smart Fill' }))
     expect(await screen.findByText('85% match confidence')).toBeInTheDocument()
     expect(screen.getByText(/50% complete/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Missing (1)' }))
@@ -1188,7 +1192,6 @@ describe('document template workflow', () => {
     const user = userEvent.setup()
     render(<TemplatesPage />)
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
-    await user.click(screen.getByRole('button', { name: 'Smart Fill' }))
     expect(await screen.findByText('Saved firm profile value')).toBeInTheDocument()
     expect(discoverTemplateVariables).toHaveBeenCalledWith('firm-template', { matter_id: null, published: true, variables: ['letterhead'] })
     expect(screen.getByRole('textbox', { name: 'Firm name' })).toHaveValue('Example Firm')
@@ -1200,20 +1203,30 @@ describe('document template workflow', () => {
     expect(screen.getByRole('textbox', { name: 'Firm name' })).toHaveValue('Updated Firm')
   })
 
+  it('fills from the matter automatically once a destination is chosen', async () => {
+    discoverTemplateVariables.mockResolvedValueOnce({ variables: { client_name: { suggested_value: 'Ada', confidence: 1 } } })
+    const user = userEvent.setup()
+    render(<TemplatesPage />)
+    await user.click(await screen.findByRole('button', { name: 'Generate' }))
+    expect(discoverTemplateVariables).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
+    await waitFor(() => expect(discoverTemplateVariables).toHaveBeenCalledTimes(1))
+    expect(await screen.findByPlaceholderText('Enter Client Name')).toHaveValue('Ada')
+  })
+
   it('clears matter-specific values and suggestions when changing the destination', async () => {
     discoverTemplateVariables.mockResolvedValueOnce({ variables: { client_name: { suggested_value: 'Ada', confidence: 1 } } })
     const user = userEvent.setup()
     render(<TemplatesPage />)
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
-    await user.click(screen.getByRole('button', { name: 'Smart Fill' }))
     expect(await screen.findByText('100% match confidence')).toBeInTheDocument()
     await user.click(screen.getByText('Find a matter by ID'))
     fireEvent.change(screen.getByLabelText('Matter UUID fallback'), { target: { value: 'matter-2' } })
     expect(screen.getByPlaceholderText('Enter Client Name')).toHaveValue('')
     expect(screen.queryByText('100% match confidence')).not.toBeInTheDocument()
     expect(screen.getByText(/0% complete/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Smart Fill' })).toBeEnabled()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Smart Fill' })).toBeEnabled())
   })
 
   it('surfaces an actionable PDF render error', async () => {

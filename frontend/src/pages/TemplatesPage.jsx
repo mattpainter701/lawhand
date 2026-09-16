@@ -1270,6 +1270,8 @@ export function RenderModal({ template, matters = [], matterLoading = false, onC
   const previewRequestGenerationRef = useRef(0)
   const smartFillRequestGenerationRef = useRef(0)
   const formRevisionRef = useRef(0)
+  const smartFillRef = useRef(null)
+  const smartFillAutoKeyRef = useRef('')
 
   const names = useMemo(() => getTemplateVariables(template), [template])
   const fieldDefinitions = useMemo(() => Object.fromEntries(
@@ -1462,6 +1464,28 @@ export function RenderModal({ template, matters = [], matterLoading = false, onC
       }
     }
   }
+
+  // Keep the latest closure for the auto-fill effect without making it a
+  // dependency that would re-run it on every keystroke.
+  useEffect(() => { smartFillRef.current = handleSmartFill })
+
+  // Auto-fill the moment there is a record to fill from: a template opened
+  // from inside a matter (fixedMatterId) arrives already populated, and
+  // choosing a matter in this dialog fills it without a second click. The
+  // manual button stays as the explicit refresh. One pass per matter keeps a
+  // late response from clobbering edits the reviewer has since typed.
+  useEffect(() => {
+    if (saving || !fillableNames.length) return
+    const hasMatter = Boolean(matterId.trim())
+    if (!hasMatter && !hasFirmFields) {
+      smartFillAutoKeyRef.current = ''
+      return
+    }
+    const key = `${template?.id || ''}:${matterId.trim()}`
+    if (smartFillAutoKeyRef.current === key) return
+    smartFillAutoKeyRef.current = key
+    smartFillRef.current?.()
+  }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving])
 
   const handleRender = async (requestedPdfPurpose = null) => {
     const previewPurpose = requestedPdfPurpose || (canSaveToMatter ? 'generation' : 'draft')
