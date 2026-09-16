@@ -21,6 +21,7 @@ from app.services.platform_sms import (
     _provider_rejection,
     _validate_sender_number,
     _validate_sid,
+    _validate_status_callback_url,
 )
 
 ACCOUNT_SID = "AC" + "a" * 32
@@ -151,6 +152,28 @@ def test_a_non_e164_sender_number_is_rejected_at_save_time():
 
 def test_an_e164_sender_number_passes():
     _validate_sender_number("+15551234567")
+
+
+def test_a_non_https_status_callback_url_is_rejected():
+    with pytest.raises(PlatformSmsError) as exc_info:
+        _validate_status_callback_url("http://firm.example/sms-status")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "platform_sms_invalid_status_callback_url"
+    assert "https://" in str(exc_info.value)
+
+
+def test_a_relative_status_callback_url_is_rejected():
+    # Twilio needs an absolute URL it can reach; a path would silently never fire.
+    with pytest.raises(PlatformSmsError):
+        _validate_status_callback_url("/sms-status")
+
+
+def test_an_https_status_callback_url_passes():
+    _validate_status_callback_url("https://firm.example/sms-status")
+
+
+def test_an_absent_status_callback_url_is_allowed():
+    _validate_status_callback_url("")
 
 
 # ── Provider rejections are classified by whose fault they are ───────────────
