@@ -416,7 +416,7 @@ async def get_matter_provisioning_tokens(
             token = await get_fresh_token(db, tenant_id, auth_provider)
             if auth_provider == "google":
                 token = await google_service_account.prefer_service_account(
-                    db, tenant_id, token
+                    db, tenant_id, token, cloud_root=cloud_root
                 )
             tokens[auth_provider] = token
     return tokens

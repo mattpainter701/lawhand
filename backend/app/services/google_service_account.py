@@ -158,28 +158,33 @@ async def get_access_token(
     return token
 
 
-async def _tenant_uses_org_shared_drive(db, tenant_id: object | None) -> bool:
+async def _tenant_uses_org_shared_drive(
+    db, tenant_id: object | None, cloud_root: object | None = None
+) -> bool:
     """True when the tenant's Google root is an org-owned Shared Drive.
 
     Matches on the persisted ``owner_type`` rather than a bare ``drive_id``,
-    because My Drive files also carry a drive id.
+    because My Drive files also carry a drive id. Callers that already hold the
+    tenant root pass it in to avoid a second read.
     """
-    if db is None or tenant_id is None:
-        return False
-    try:
-        from app.models.tenant import Tenant
+    if cloud_root is None:
+        if db is None or tenant_id is None:
+            return False
+        try:
+            from app.models.tenant import Tenant
 
-        result = await db.execute(
-            select(Tenant.cloud_root_folder).where(
-                Tenant.id == uuid.UUID(str(tenant_id))
+            result = await db.execute(
+                select(Tenant.cloud_root_folder).where(
+                    Tenant.id == uuid.UUID(str(tenant_id))
+                )
             )
-        )
-        cloud_root = result.scalar_one_or_none()
-    except Exception:
-        logger.warning(
-            "Could not determine Google storage ownership for tenant", exc_info=True
-        )
-        return False
+            cloud_root = result.scalar_one_or_none()
+        except Exception:
+            logger.warning(
+                "Could not determine Google storage ownership for tenant",
+                exc_info=True,
+            )
+            return False
     if not isinstance(cloud_root, dict):
         return False
     binding = cloud_root.get("google_drive")
@@ -189,18 +194,25 @@ async def _tenant_uses_org_shared_drive(db, tenant_id: object | None) -> bool:
     )
 
 
-async def prefer_service_account(db, tenant_id: object | None, delegated: str | None):
+async def prefer_service_account(
+    db,
+    tenant_id: object | None,
+    delegated: str | None,
+    *,
+    cloud_root: object | None = None,
+):
     """Prefer the service-account token for an org Shared Drive tenant.
 
     Root creation is not enough on its own: matter-folder provisioning,
     uploads, reads, search, sharing, rename, and repair must all use an
     identity that survives the connecting administrator. Falls back to the
     supplied delegated token when the tenant is not on an org drive, the
-    service account is not configured, or minting fails.
+    service account is not configured, or minting fails. Pass ``cloud_root``
+    when the caller already holds it to avoid a second tenant read.
     """
     if not delegated and not is_configured():
         return delegated
-    if not await _tenant_uses_org_shared_drive(db, tenant_id):
+    if not await _tenant_uses_org_shared_drive(db, tenant_id, cloud_root):
         return delegated
     service_token = await get_access_token(DRIVE_SCOPES)
     return service_token or delegated
