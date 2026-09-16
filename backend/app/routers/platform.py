@@ -11,6 +11,7 @@ Endpoints:
   GET  /api/platform/tenants         — list all tenants with 30-day usage summary
   GET  /api/platform/tenants/{id}    — tenant detail + users + usage
   PUT  /api/platform/tenants/{id}    — update billing_tier / is_active / seat_count
+  POST /api/platform/tenants/{id}/revoke — revoke a trial and release its login
   GET  /api/platform/usage           — aggregate usage across all tenants
   GET  /api/platform/health          — row counts and index info
 
@@ -80,6 +81,10 @@ from app.services.corpus_revision import advance_rag_corpus_revision
 from app.services.demo_purge import (
     DemoPurgeRefused,
     terminate_demo_tenant as terminate_demo_workspace,
+)
+from app.services.trial_revocation import (
+    TrialRevocationRefused,
+    revoke_trial_tenant,
 )
 from app.services.platform_auth import (
     PLATFORM_SCOPES,
@@ -449,6 +454,14 @@ class PlatformDocumentReindexRequest(BaseModel):
 
 class DemoWorkspaceTerminateRequest(BaseModel):
     session_id: uuid.UUID
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class TrialRevocationRequest(BaseModel):
+    # The operator must name the login they intend to release. This is the
+    # confirmation token that prevents a stale console from revoking a tenant
+    # other than the one on screen.
+    confirm_email: str = Field(min_length=3, max_length=320)
     reason: str | None = Field(default=None, max_length=300)
 
 
@@ -992,6 +1005,59 @@ async def terminate_platform_demo_workspace(
         "session_id": str(body.session_id),
         "deleted_rows": sum(deleted.values()),
     }
+
+
+@router.post("/tenants/{tenant_id}/revoke")
+async def revoke_trial_tenant_endpoint(
+    tenant_id: str,
+    body: TrialRevocationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Deactivate a trial tenant and release its login address.
+
+    Restores a clean onboarding path for a test or abandoned trial without
+    deleting the tenant: the append-only agreement ledger and any provider
+    Drive/OneDrive content are deliberately preserved. Every human login is
+    deactivated and its address moved to a non-deliverable tombstone so the
+    original address can register again.
+    """
+
+    principal = require_platform_token(request, scopes={"platform:write"})
+    parsed_tenant_id = _parse_uuid(tenant_id, "tenant")
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == parsed_tenant_id))
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    try:
+        async with _platform_tenant_scope(db, tenant.id):
+            result = await revoke_trial_tenant(
+                db,
+                tenant,
+                confirm_email=body.confirm_email,
+                actor_id=principal.actor_id,
+                reason=body.reason,
+            )
+    except TrialRevocationRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    await record_operator_audit(
+        db,
+        request,
+        action="trial.revoked",
+        resource_type="tenant",
+        resource_id=str(tenant.id),
+        metadata={
+            "tenant_id": str(tenant.id),
+            "released_emails": result["released_emails"],
+            "users_revoked": result["users_revoked"],
+            "credentials_revoked": result["credentials_revoked"],
+            "reason": body.reason,
+        },
+        actor_id=principal.actor_id,
+    )
+    await db.commit()
+    return {"status": "revoked", **result}
 
 
 @router.post("/documents/reindex")
