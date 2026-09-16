@@ -39,7 +39,7 @@ describe('PlatformAgreementsPanel', () => {
   it('reports list failures', async () => {
     getPlatformAgreementDefinitions.mockRejectedValueOnce(new Error('offline'))
     render(<PlatformAgreementsPanel platformKey="key" />)
-    expect(await screen.findByRole('alert')).toHaveTextContent(/offline/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load agreement definitions/i)
   })
 
   it('requires counsel approval before publishing', async () => {

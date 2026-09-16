@@ -307,7 +307,7 @@ export default function OnboardingWizard() {
             </div>
           )}
           {error && (
-            <div className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
+            <div role="alert" className="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">
               {error}
               <button
                 onClick={() => setError(null)}
