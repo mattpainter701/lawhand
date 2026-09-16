@@ -4567,7 +4567,7 @@ async def _force_legacy_signing_schema(db_session, template_id, signature_fields
     """
     from app.models.document_template import DocumentTemplate
     from app.models.document_template_version import DocumentTemplateVersion
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
     template = await db_session.get(DocumentTemplate, uuid.UUID(template_id))
     # Generation reads the published version snapshot, not the live row, so
@@ -4579,11 +4579,29 @@ async def _force_legacy_signing_schema(db_session, template_id, signature_fields
         )
     )
     assert version is not None, "template was never published"
-    for row in (template, version):
-        schema = dict(row.variable_schema or {})
-        schema["fields"] = [*schema["fields"], *signature_fields]
-        row.variable_schema = schema
-    await db_session.commit()
+    # The published version is append-only (migration 156) because it is the
+    # evidence for documents that may already be filed or signed. This helper
+    # deliberately seeds the very shape that guard exists to forbid -- a legacy
+    # field map the publish API would now reject -- so the guard is lifted
+    # before the rows are touched and restored immediately after. Each xdist
+    # worker has its own database, so this cannot race another worker's
+    # append-only assertions.
+    await db_session.execute(
+        text("ALTER TABLE document_template_versions DISABLE TRIGGER USER")
+    )
+    try:
+        for row in (template, version):
+            schema = dict(row.variable_schema or {})
+            schema["fields"] = [*schema["fields"], *signature_fields]
+            row.variable_schema = schema
+        await db_session.commit()
+    finally:
+        if db_session.in_transaction():
+            await db_session.rollback()
+        await db_session.execute(
+            text("ALTER TABLE document_template_versions ENABLE TRIGGER USER")
+        )
+        await db_session.commit()
 
 
 async def _generate_into_matter(*, client, template_id, matter, values):
