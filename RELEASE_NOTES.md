@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.16.03 — Cloud setup stays accurate when you revisit it
+
+Released September 16, 2026.
+
+Administrators can revisit every onboarding step without being sent back to the completed screen, and an existing Personal Google connection is identified correctly throughout setup.
+
+- **Review remains reachable.** Restarting setup now keeps the full wizard open through Review, including after a browser refresh, while the existing workspace and cloud root remain live.
+- **Personal Google stays personal.** A connected Gmail or Google One account is labeled Personal Google and describes Gmail, Drive, and Calendar access without implying Workspace directory sync.
+
 ## 2026.09.16.02 — Cloud storage setup carries the LawHand name
 
 Released September 16, 2026.

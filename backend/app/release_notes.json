@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.16.03",
+      "version": "2026.09.16.03",
+      "title": "Cloud setup stays accurate when you revisit it",
+      "published_at": "2026-09-16",
+      "summary": "Administrators can revisit every onboarding step without being sent back to the completed screen, and an existing Personal Google connection is identified correctly throughout setup.",
+      "highlights": [
+        {
+          "title": "Review remains reachable",
+          "description": "Restarting setup now keeps the full wizard open through Review, including after a browser refresh, while the existing workspace and cloud root remain live."
+        },
+        {
+          "title": "Personal Google stays personal",
+          "description": "A connected Gmail or Google One account is labeled Personal Google and describes Gmail, Drive, and Calendar access without implying Workspace directory sync."
+        }
+      ]
+    },
+    {
       "id": "2026.09.16.02",
       "version": "2026.09.16.02",
       "title": "Cloud storage setup carries the LawHand name",

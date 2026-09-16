@@ -192,6 +192,9 @@ async def get_onboarding_status(
         setup_deferred=bool(
             (settings_record.custom_config or {}).get("onboarding_setup_deferred")
         ),
+        setup_reentry_active=bool(
+            (settings_record.custom_config or {}).get("onboarding_reentry_active")
+        ),
     )
 
 
@@ -244,6 +247,7 @@ async def reenter_onboarding(
     settings_record = await _load_or_create_settings(db, admin.tenant_id)
     config = dict(getattr(settings_record, "custom_config", None) or {})
     config.pop("onboarding_setup_deferred", None)
+    config["onboarding_reentry_active"] = True
     settings_record.custom_config = config
     # Keep completed true so existing writes remain available during setup.
     if body.target_provider:
@@ -450,6 +454,7 @@ async def complete_onboarding(
     settings_record = await _load_or_create_settings(db, user.tenant_id)
     config = dict(getattr(settings_record, "custom_config", None) or {})
     config.pop("onboarding_setup_deferred", None)
+    config.pop("onboarding_reentry_active", None)
     settings_record.custom_config = config
     await db.commit()
 
@@ -477,6 +482,7 @@ async def skip_onboarding(
     tenant.onboarding_step = STEP_WELCOME
     settings_record = await _load_or_create_settings(db, user.tenant_id)
     config = dict(getattr(settings_record, "custom_config", None) or {})
+    config.pop("onboarding_reentry_active", None)
     config["onboarding_setup_deferred"] = True
     settings_record.custom_config = config
     await db.commit()

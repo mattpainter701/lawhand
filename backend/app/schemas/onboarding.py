@@ -25,6 +25,7 @@ class OnboardingStatusResponse(BaseModel):
     agreements_configured: bool = False
     agreements_blocking: bool = False
     setup_deferred: bool = False
+    setup_reentry_active: bool = False
 
 
 class OnboardingCompleteResponse(BaseModel):
