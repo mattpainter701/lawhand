@@ -226,9 +226,104 @@ async def test_revoke_refuses_an_active_paid_tenant(client, db_session):
     )
 
     assert response.status_code == 409
-    assert "not an active trial" in response.json()["detail"]
+    assert "not a trial" in response.json()["detail"]
     await db_session.refresh(user)
     assert user.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_revoke_refuses_inactive_non_trial_tenant(client, db_session):
+    """A suspended paying tenant also looks 'inactive with an expiry'."""
+
+    tenant = Tenant(
+        id=uuid.uuid4(),
+        name="Suspended Firm",
+        domain="suspendedfirm.com",
+        billing_tier="payg",
+        is_active=False,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    user = User(
+        id=uuid.uuid4(),
+        tenant_id=tenant.id,
+        email="owner@suspendedfirm.com",
+        role="admin",
+        is_active=True,
+        license_active=True,
+        principal_type="human",
+    )
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/platform/tenants/{tenant.id}/revoke",
+        json={"confirm_email": "owner@suspendedfirm.com"},
+        headers=platform_headers(["platform:write"]),
+    )
+
+    assert response.status_code == 409
+    assert "not a trial" in response.json()["detail"]
+    await db_session.refresh(user)
+    assert user.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_revoke_refuses_trial_that_has_a_subscription(client, db_session):
+    tenant = _trial_tenant(tenant_id=uuid.uuid4())
+    tenant.stripe_subscription_id = "sub_live_123"
+    tenant.stripe_subscription_status = "active"
+    user = _human_user(tenant_id=tenant.id)
+    db_session.add_all([tenant, _trial_settings(tenant.id), user])
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/platform/tenants/{tenant.id}/revoke",
+        json={"confirm_email": "getlawhand@gmail.com"},
+        headers=platform_headers(["platform:write"]),
+    )
+
+    assert response.status_code == 409
+    assert "billing relationship" in response.json()["detail"]
+    await db_session.refresh(user)
+    assert user.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_revoke_allows_trial_window_keys_without_tier(client, db_session):
+    now = datetime.now(timezone.utc)
+    tenant = Tenant(
+        id=uuid.uuid4(),
+        name="Config Marked Trial",
+        domain="config-trial",
+        billing_tier="payg",
+        is_active=True,
+        expires_at=now + timedelta(days=7),
+    )
+    user = _human_user(tenant_id=tenant.id)
+    db_session.add_all(
+        [
+            tenant,
+            TenantSettings(
+                tenant_id=tenant.id,
+                custom_config={
+                    "trial_started_at": now.isoformat(),
+                    "trial_ends_at": (now + timedelta(days=7)).isoformat(),
+                },
+            ),
+            user,
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/platform/tenants/{tenant.id}/revoke",
+        json={"confirm_email": "getlawhand@gmail.com"},
+        headers=platform_headers(["platform:write"]),
+    )
+
+    assert response.status_code == 200
+    await db_session.refresh(user)
+    assert user.is_active is False
 
 
 @pytest.mark.asyncio

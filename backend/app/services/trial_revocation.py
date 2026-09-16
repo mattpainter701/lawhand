@@ -35,7 +35,12 @@ from app.database import Base
 from app.models.tenant import Tenant, TenantSettings
 from app.models.tenant_credential import TenantCredential
 from app.models.user import User
-from app.services.trials import TRIAL_MARKER, config_marks_trial
+from app.services.trials import (
+    TRIAL_ENDS_KEY,
+    TRIAL_MARKER,
+    TRIAL_STARTED_KEY,
+    config_marks_trial,
+)
 
 # Any row in these tables means the tenant is doing — or is set up to do — real
 # customer work. Revocation is fail-closed: refuse and let a human decide,
@@ -111,6 +116,15 @@ async def revoke_trial_tenant(
     responsible for committing and for recording the operator audit entry.
     """
 
+    # Serialise concurrent revokes and re-read the row under lock so the
+    # eligibility checks below cannot race a billing-tier or subscription
+    # change made after the endpoint's initial lookup.
+    locked = await db.scalar(
+        select(Tenant).where(Tenant.id == tenant.id).with_for_update()
+    )
+    if locked is not None:
+        tenant = locked
+
     if _is_disposable_demo(tenant):
         raise TrialRevocationRefused(
             "Disposable demo workspaces are terminated from the demo panel"
@@ -121,11 +135,34 @@ async def revoke_trial_tenant(
             TenantSettings.tenant_id == tenant.id
         )
     )
-    on_trial = config_marks_trial(config) or tenant.billing_tier in _TRIAL_TIERS
-    already_revoked = tenant.is_active is False and tenant.expires_at is not None
-    if not on_trial and not already_revoked:
+    # A tenant is revocable only when it is still a trial: the explicit marker,
+    # the trial billing tier, or the trial window keys the signup path writes.
+    # "Inactive with an expiry" alone is not enough — a suspended paying tenant
+    # also matches that shape and must not be deactivated behind the operator's
+    # billing controls.
+    has_trial_keys = isinstance(config, dict) and (
+        TRIAL_STARTED_KEY in config or TRIAL_ENDS_KEY in config
+    )
+    on_trial = (
+        config_marks_trial(config)
+        or tenant.billing_tier in _TRIAL_TIERS
+        or has_trial_keys
+    )
+    if not on_trial:
         raise TrialRevocationRefused(
-            "Tenant is not an active trial or an already-revoked trial"
+            "Tenant is not a trial and must be handled through billing controls"
+        )
+
+    # Refuse any tenant that has a billing relationship, even if it still
+    # carries a trial marker. Revoking a converted customer is never this
+    # shortcut's job.
+    if tenant.stripe_subscription_id or tenant.platform_subscription_status not in (
+        None,
+        "",
+        "none",
+    ):
+        raise TrialRevocationRefused(
+            "Tenant has a billing relationship; revoke is refused"
         )
 
     substantive = await _substantive_counts(db, tenant.id)
