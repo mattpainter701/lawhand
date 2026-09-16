@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.16.02 — Cloud storage setup carries the LawHand name
+
+Released September 16, 2026.
+
+Cloud onboarding now names the actual lawhand-records folder. Google-only health and Personal Google reviews also accurately reflect the connected account without implying Workspace directory access.
+
+- **The setup instructions match your cloud.** The storage step now names lawhand-records before creation and confirms that same folder afterward. Existing legacy folders remain supported through the controlled migration path.
+- **Google-only setup no longer looks broken.** A healthy Google connection stays healthy when Microsoft 365 is not connected, and Personal Google no longer claims that a Workspace directory was synchronized or required.
+
 ## 2026.09.16.01 — Onboarding tells the truth about setup and account access
 
 Released September 16, 2026.

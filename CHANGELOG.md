@@ -1,3 +1,9 @@
+## 2026.09.16.02 — LawHand cloud-root copy
+
+- Replace the stale customer-facing `claritylegal-records` name in Google Drive and Microsoft OneDrive onboarding with the actual `lawhand-records` root created for new tenants. Keep the backend legacy identifier and rename path intact for existing customer-owned folders.
+- Keep healthy Google-only tenants green when Microsoft 365 is intentionally disconnected, and present Personal Google setup without a false Workspace-directory sync or required scope.
+- Pin the LawHand folder name in onboarding tests and correct the administrator guide and onboarding review record so documentation matches production behavior.
+
 ## 2026.09.16.01 — Proposed Core, AI, and add-on commercial catalog
 
 - Add an operator-only, non-checkout commercial catalog and deterministic quote API. Core stays inexpensive at $49/$39 annual-equivalent per attorney and $19/$15 per staff user. AI access is $299/$249 per attorney and $149/$129 per staff user, includes no model usage, and requires a separate prepaid usage wallet with a hard stop.

@@ -213,3 +213,45 @@ def test_personal_and_consumer_required_scopes_exclude_directory_consent():
     assert capabilities.effective_required_scopes("google", google, "personal") == ["openid", "https://www.googleapis.com/auth/drive"]
     assert capabilities.effective_required_scopes("microsoft", microsoft, "consumer") == ["User.Read"]
     assert capabilities.effective_required_scopes("google", google, "workspace") == google
+
+
+@pytest.mark.asyncio
+async def test_permissions_audit_treats_healthy_google_only_setup_as_healthy():
+    tenant_id = uuid.uuid4()
+    credential = SimpleNamespace(
+        provider="google",
+        account_type="personal",
+        account_domain=None,
+        scopes=" ".join(
+            scope
+            for scope in admin.SCOPES_REQUIRED_GOOGLE
+            if scope != capabilities.GOOGLE_DIRECTORY_SCOPE
+        ),
+        last_user_sync_status="not_applicable",
+        last_user_sync_at=None,
+        last_user_sync_total=0,
+        last_user_sync_error=None,
+        health="healthy",
+        last_refresh_at=None,
+        last_refresh_error=None,
+        scopes_version=1,
+    )
+    db = AsyncMock()
+    db.execute.side_effect = [
+        SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [credential])),
+        SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+        SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+    ]
+    db.scalar.side_effect = [0, 1]
+    request = SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id))
+
+    with patch("app.routers.admin._require_admin", AsyncMock()), patch(
+        "app.routers.admin.set_tenant_context", AsyncMock()
+    ):
+        result = await admin.get_permissions_audit(request, db)
+
+    assert result["overall_health"] == "healthy"
+    assert result["microsoft"]["health"] == "disconnected"
+    assert result["google"]["health"] == "healthy"
+    assert capabilities.GOOGLE_DIRECTORY_SCOPE not in result["google"]["required_scopes"]
+    assert result["google"]["missing_required"] == []

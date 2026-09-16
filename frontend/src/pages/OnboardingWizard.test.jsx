@@ -109,6 +109,8 @@ describe('OnboardingWizard', () => {
     expect(await screen.findByText('Where Should Documents Live?')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Google Drive/ })).toBeChecked()
     expect(screen.queryByRole('radio', { name: /OneDrive/ })).toBeNull()
+    expect(screen.getByText(/A "lawhand-records" folder is created/)).toBeInTheDocument()
+    expect(screen.queryByText(/claritylegal-records/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create folder' })).toBeEnabled()
   })
 
@@ -117,14 +119,14 @@ describe('OnboardingWizard', () => {
       .mockResolvedValueOnce(statusAt(STEP.STORAGE))
       .mockResolvedValue(statusAt(STEP.SYNC, {
         primary_cloud_provider: 'google_drive',
-        cloud_root: { google_drive: { id: 'root-1', folder_name: 'claritylegal-records', url: 'https://drive.google.com/x' } },
+        cloud_root: { google_drive: { id: 'root-1', folder_name: 'lawhand-records', url: 'https://drive.google.com/x' } },
         storage_ready: true,
       }))
     confirmOnboardingStorage.mockResolvedValue({
       status: 'ready',
       provider: 'google_drive',
       created: true,
-      root: { id: 'root-1', folder_name: 'claritylegal-records', url: 'https://drive.google.com/x' },
+      root: { id: 'root-1', folder_name: 'lawhand-records', url: 'https://drive.google.com/x' },
     })
     const user = userEvent.setup()
 
@@ -135,7 +137,7 @@ describe('OnboardingWizard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Create folder' }))
     expect(confirmOnboardingStorage).toHaveBeenCalledWith('google_drive')
-    expect(await screen.findByText('Folder created: claritylegal-records')).toBeInTheDocument()
+    expect(await screen.findByText('Folder created: lawhand-records')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open in Google Drive' })).toHaveAttribute('href', 'https://drive.google.com/x')
 
     await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -161,13 +163,13 @@ describe('OnboardingWizard', () => {
     getOnboardingStatus.mockResolvedValue(statusAt(STEP.STORAGE, {
       onboarding_completed: true,
       primary_cloud_provider: 'google_drive',
-      cloud_root: { google_drive: { id: 'root-1', folder_name: 'claritylegal-records', url: 'https://drive.google.com/x' } },
+      cloud_root: { google_drive: { id: 'root-1', folder_name: 'lawhand-records', url: 'https://drive.google.com/x' } },
       storage_ready: true,
     }))
 
     render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
 
-    expect(await screen.findByText('Folder confirmed: claritylegal-records')).toBeInTheDocument()
+    expect(await screen.findByText('Folder confirmed: lawhand-records')).toBeInTheDocument()
     expect(screen.getByText('Folder exists')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create folder' })).toBeNull()
@@ -199,5 +201,24 @@ describe('OnboardingWizard', () => {
     expect(screen.getByText('Confirmed')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Complete Setup' }))
     expect(completeOnboarding).toHaveBeenCalledOnce()
+  })
+
+  it('describes a personal Google connection without claiming a Workspace directory sync', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.REVIEW, {
+      integrations: {
+        google: { connected: true, account_type: 'personal' },
+        microsoft: { connected: false },
+      },
+      synced_users: { google: 1, microsoft: 0 },
+      storage_ready: true,
+      cloud_root: { google_drive: { id: 'root-1' } },
+    }))
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    expect(await screen.findByText('Review Google Setup')).toBeInTheDocument()
+    expect(screen.getByText('Personal Google account')).toBeInTheDocument()
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+    expect(screen.queryByText('Google Workspace users synced')).toBeNull()
   })
 })

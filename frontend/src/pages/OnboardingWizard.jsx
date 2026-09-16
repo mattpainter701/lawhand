@@ -43,13 +43,13 @@ const STORAGE_OPTIONS = [
     id: 'google_drive',
     label: 'Google Drive',
     credential: 'google',
-    detail: 'A "claritylegal-records" folder is created in the connected Google account. Every matter gets its own folder inside it.',
+    detail: 'A "lawhand-records" folder is created in the connected Google account. Every matter gets its own folder inside it.',
   },
   {
     id: 'onedrive',
     label: 'Microsoft OneDrive',
     credential: 'microsoft',
-    detail: 'A "claritylegal-records" folder is created in the connected Microsoft account. Every matter gets its own folder inside it.',
+    detail: 'A "lawhand-records" folder is created in the connected Microsoft account. Every matter gets its own folder inside it.',
   },
 ]
 
@@ -529,7 +529,7 @@ export default function OnboardingWizard() {
               {confirmedRoot?.id && (
                 <div className="mb-6 px-4 py-3 rounded-xl border border-green-200 bg-green-50 text-xs font-sans" data-testid="storage-root">
                   <p className="text-green-800 font-semibold">
-                    {storageResult?.created ? 'Folder created' : 'Folder confirmed'}: {confirmedRoot.folder_name || 'claritylegal-records'}
+                    {storageResult?.created ? 'Folder created' : 'Folder confirmed'}: {confirmedRoot.folder_name || 'lawhand-records'}
                   </p>
                   {confirmedRoot.url && (
                     <a href={confirmedRoot.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-green-800 underline break-all">
@@ -618,10 +618,16 @@ export default function OnboardingWizard() {
                     <span className="text-brand-ink font-sans text-sm font-bold">{syncedUsers.microsoft || 0}</span>
                   </div>
                 )}
-                {googleConnected && (
+                {googleConnected && status?.integrations?.google?.account_type !== 'personal' && (
                   <div className="flex items-center justify-between px-4 py-3 bg-brand-bg rounded-xl">
                     <span className="text-brand-ink font-sans text-sm">Google Workspace users synced</span>
                     <span className="text-brand-ink font-sans text-sm font-bold">{syncedUsers.google || 0}</span>
+                  </div>
+                )}
+                {googleConnected && status?.integrations?.google?.account_type === 'personal' && (
+                  <div className="flex items-center justify-between px-4 py-3 bg-brand-bg rounded-xl">
+                    <span className="text-brand-ink font-sans text-sm">Personal Google account</span>
+                    <span className="text-green-700 font-sans text-sm font-bold">Connected</span>
                   </div>
                 )}
                 {status?.storage_ready ? (
