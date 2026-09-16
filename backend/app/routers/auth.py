@@ -1052,24 +1052,21 @@ async def _resolve_oauth_tenant_and_user(
 
     tenant_result = await db.execute(select(Tenant).where(Tenant.domain == domain))
     tenant = tenant_result.scalar_one_or_none()
-    tenant_existed = tenant is not None
     if tenant is None:
+        # OAuth is sign-in, never self-serve provisioning. A domain with no
+        # workspace cannot be created by completing a provider flow; plan
+        # registration plus Platform approval is the only path to a new firm.
+        # Keep the flag check so a disabled flag still reports signup_disabled.
         _require_public_signup_enabled()
-        tenant = Tenant(
-            id=uuid.uuid4(),
-            name=tenant_name,
-            domain=domain,
-            company_name=company_name,
-            address=address,
-            phone=phone,
-            staff_size=staff_size,
-            billing_tier="payg",
-            is_active=True,
+        raise AuthRefusal(
+            code="not_invited",
+            status_code=403,
+            detail=(
+                "No LawHand workspace exists for this account yet. Register "
+                "your firm for review; access begins after approval."
+            ),
         )
-        db.add(tenant)
-        await db.flush()
-    else:
-        require_active_tenant(tenant)
+    require_active_tenant(tenant)
 
     user = await _get_or_create_user(
         db,
@@ -1078,9 +1075,9 @@ async def _resolve_oauth_tenant_and_user(
         full_name,
         provider,
         subject,
-        allow_create=not tenant_existed,
+        allow_create=False,
     )
-    return tenant, user, tenant_existed
+    return tenant, user, True
 
 
 # ── Browser sign-in refusals ───────────────────────────────────────────────────
@@ -1854,75 +1851,17 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ):
     _require_public_signup_enabled()
-    body.email = body.email.lower().strip()
-
-    # Cross-tenant email-exists check with no tenant context: allow RLS bypass.
-    await enable_rls_bypass(db)
-    result = await db.execute(select(User).where(User.email == body.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    domain = body.email.split("@")[-1]
-    tenant_name = body.company_name or domain.split(".")[0].capitalize()
-
-    tenant_result = await db.execute(select(Tenant).where(Tenant.domain == domain))
-    tenant = tenant_result.scalar_one_or_none()
-
-    if tenant is None:
-        tenant = Tenant(
-            id=uuid.uuid4(),
-            name=tenant_name,
-            domain=domain,
-            company_name=body.company_name,
-            staff_size=body.staff_size,
-            address=body.address,
-            phone=body.phone,
-            billing_tier="payg",
-            is_active=True,
-        )
-        db.add(tenant)
-        await db.flush()
-        role = "admin"
-    else:
-        raise HTTPException(
-            status_code=403,
-            detail="An administrator must invite this account before it can join the tenant",
-        )
-
-    password_hash = _hash_password(body.password)
-
-    user = User(
-        id=uuid.uuid4(),
-        tenant_id=tenant.id,
-        email=body.email,
-        full_name=body.full_name or "",
-        password_hash=password_hash,
-        role=role,
-        is_active=True,
-    )
-    db.add(user)
-    await ensure_stripe_customer(tenant, db)
-    await db.commit()
-    await enable_rls_bypass(db)
-    await db.refresh(user)
-    await db.refresh(tenant)
-
-    # New firm: seed system roles + assign the founding admin the Administrator
-    # system role so the minted JWT carries manage_roles/admin_settings caps.
-    from app.services.rbac_service import provision_tenant_rbac
-
-    await provision_tenant_rbac(db, tenant.id, user.id)
-    await db.commit()
-
-    jwt_token = await _issue_access_token(db, user, tenant)
-    refresh_token = await _create_refresh_token(request, user)
-    _set_auth_cookies(response, jwt_token, refresh_token)
-    return TokenResponse(
-        user_id=str(user.id),
-        tenant_id=str(tenant.id),
-        role=user.role,
-        email=user.email,
-        full_name=user.full_name,
+    # Self-registration is a request, not an account. Creating a firm, starting
+    # its trial clock, and minting a session all happen only at Platform
+    # approval through POST /api/auth/signup/plan. A JSON refusal preserves the
+    # contract clients already expect from this endpoint.
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Account creation is handled by the plan signup "
+            "(POST /api/auth/signup/plan); access begins only after operator "
+            "approval"
+        ),
     )
 
 
@@ -1933,10 +1872,13 @@ async def signup_with_plan(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Self-serve provisioning for a public plan (e.g. standalone Call Intake).
+    """Self-serve registration for a public plan.
 
-    Creates a tenant on the plan's billing tier, an admin user, and a trial
-    window. Only plans flagged ``public_signup`` may be requested here.
+    By default registration starts a bounded trial immediately with Premium AI
+    off, so a new firm can use the product without operator involvement.
+    Deployments that set ``PUBLIC_SIGNUP_REQUIRES_APPROVAL`` instead record an
+    inactive pending firm and create no session; the operator approval route is
+    then the only boundary that starts access.
     """
     _require_public_signup_enabled()
 
@@ -1945,7 +1887,11 @@ async def signup_with_plan(
     from app.models.tenant import TenantSettings
     from app.services.plans import get_plan
     from app.services.trials import (
+        SIGNUP_APPROVED,
+        SIGNUP_PENDING,
+        SIGNUP_STATUS_KEY,
         new_trial_window,
+        notify_operator_signup_requested,
         notify_operator_trial_started,
         trial_config,
     )
@@ -1965,7 +1911,9 @@ async def signup_with_plan(
     slug = re.sub(r"[^a-z0-9]+", "-", body.firm_name.lower()).strip("-") or "firm"
     domain = f"{slug}-{uuid.uuid4().hex[:8]}"
 
+    requires_approval = bool(settings.PUBLIC_SIGNUP_REQUIRES_APPROVAL)
     trial_start, trial_end = new_trial_window()
+
     tenant = Tenant(
         id=uuid.uuid4(),
         name=body.firm_name,
@@ -1975,20 +1923,23 @@ async def signup_with_plan(
         address=body.address,
         phone=body.phone,
         billing_tier=plan.billing_tier,
-        is_active=True,
-        # Expiry is the enforced trial boundary; a lapsed trial fails closed in
-        # services/tenant_state.require_active_tenant on every request path.
-        expires_at=trial_end,
+        # A started trial is live with an enforcement expiry; a pending
+        # registration has neither access nor a clock until Platform approves.
+        is_active=not requires_approval,
+        expires_at=None if requires_approval else trial_end,
     )
     db.add(tenant)
     await db.flush()
 
-    db.add(
-        TenantSettings(
-            tenant_id=tenant.id,
-            custom_config={"plan": plan.id, **trial_config(trial_start, trial_end)},
-        )
-    )
+    if requires_approval:
+        config = {"plan": plan.id, SIGNUP_STATUS_KEY: SIGNUP_PENDING}
+    else:
+        config = {
+            "plan": plan.id,
+            SIGNUP_STATUS_KEY: SIGNUP_APPROVED,
+            **trial_config(trial_start, trial_end),
+        }
+    db.add(TenantSettings(tenant_id=tenant.id, custom_config=config))
 
     user = User(
         id=uuid.uuid4(),
@@ -1997,9 +1948,9 @@ async def signup_with_plan(
         full_name=body.full_name or "",
         password_hash=_hash_password(body.password),
         role="admin",
-        is_active=True,
+        is_active=not requires_approval,
         license_active=True,
-        # Premium AI is held back for the whole trial window.
+        # Premium AI is held back for the whole trial, whoever starts it.
         premium_ai_enabled=False,
     )
     db.add(user)
@@ -2007,8 +1958,6 @@ async def signup_with_plan(
     await enable_rls_bypass(db)
     await db.refresh(user)
     await db.refresh(tenant)
-    await ensure_stripe_customer(tenant, db)
-    await db.commit()
 
     # New firm: seed system roles + assign the founding admin the Administrator
     # system role so the minted JWT carries manage_roles/admin_settings caps.
@@ -2017,14 +1966,30 @@ async def signup_with_plan(
     await provision_tenant_rbac(db, tenant.id, user.id)
     await db.commit()
 
-    # Best-effort operator alert; never blocks signup.
+    if requires_approval:
+        # Best-effort operator alert; never activates the applicant or starts spend.
+        await notify_operator_signup_requested(
+            tenant_name=tenant.name,
+            tenant_id=tenant.id,
+            admin_email=user.email,
+            requested_plan=plan.id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "pending_approval",
+                "tenant_id": str(tenant.id),
+                "message": "Registration received. LawHand will email you after approval.",
+            },
+        )
+
+    # Best-effort operator alert; never blocks the started trial.
     await notify_operator_trial_started(
         tenant_name=tenant.name,
         tenant_id=tenant.id,
         admin_email=user.email,
         trial_ends_at=trial_end,
     )
-
     jwt_token = await _issue_access_token(db, user, tenant)
     refresh_token = await _create_refresh_token(request, user)
     _set_auth_cookies(response, jwt_token, refresh_token)

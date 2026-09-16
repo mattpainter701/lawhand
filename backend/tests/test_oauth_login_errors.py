@@ -233,3 +233,32 @@ async def test_json_signup_endpoint_keeps_json_refusal(client, monkeypatch):
     assert response.status_code == 403
     assert "location" not in response.headers
     assert "public signup is not enabled" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_oauth_cannot_provision_a_new_firm_when_signup_is_enabled(
+    client, db_session, monkeypatch
+):
+    """OAuth is sign-in, not sign-up, even with public signup turned on.
+
+    A brand-new domain must not be provisioned by completing a provider flow;
+    that would create an active tenant and a session without Platform approval.
+    """
+    monkeypatch.setattr(auth_router.settings, "FRONTEND_URL", "http://localhost:3000")
+    _mock_google_callback(monkeypatch, _google_claims("founder@brand-new.example"))
+    # _mock_google_callback forced the flag off; turn it on to prove the closure
+    # is the OAuth path itself, not the flag.
+    monkeypatch.setattr(auth_router.settings, "PUBLIC_SIGNUP_ENABLED", True)
+    tenants_before = await db_session.scalar(select(func.count()).select_from(Tenant))
+    users_before = await db_session.scalar(select(func.count()).select_from(User))
+    await db_session.commit()
+
+    response = await _google_callback(client)
+
+    _assert_login_redirect(response, "not_invited")
+    assert await db_session.scalar(select(func.count()).select_from(Tenant)) == (
+        tenants_before
+    )
+    assert await db_session.scalar(select(func.count()).select_from(User)) == (
+        users_before
+    )

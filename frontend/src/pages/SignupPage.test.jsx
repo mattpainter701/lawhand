@@ -3,25 +3,40 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SignupPage from './SignupPage'
-import { register, signupWithPlan } from '../api'
+import { signupWithPlan } from '../api'
 
-const authLogin = vi.fn().mockResolvedValue({ default_route: '/intake/dashboard' })
+const { login } = vi.hoisted(() => ({ login: vi.fn() }))
 
-vi.mock('../App', () => ({ useAuth: () => ({ login: authLogin }) }))
 vi.mock('../api', () => ({
-  register: vi.fn(),
-  signupWithPlan: vi.fn().mockResolvedValue({}),
+  signupWithPlan: vi.fn(),
 }))
+
+vi.mock('../App', () => ({
+  useAuth: () => ({ login }),
+}))
+
+async function fillAndSubmit(buttonName) {
+  const user = userEvent.setup()
+  await user.type(screen.getByLabelText('Firm / Company Name'), 'Launch Firm')
+  await user.type(screen.getByLabelText('Email *'), 'owner@launchfirm.com')
+  await user.type(screen.getByLabelText('Password *'), 'LaunchReadyPass123!')
+  await user.type(screen.getByLabelText('Your Name'), 'Owner One')
+  await user.click(screen.getByRole('button', { name: buttonName }))
+}
 
 describe('plan signup', () => {
   afterEach(() => {
     cleanup()
     vi.unstubAllEnvs()
+    vi.clearAllMocks()
   })
 
-  it('provisions the selected intake plan and does not offer generic OAuth signup', async () => {
+  it('auto-starts a trial when the deployment opts in', async () => {
     vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true')
-    const user = userEvent.setup()
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL', 'false')
+    login.mockResolvedValue({ default_route: '/matters' })
+    signupWithPlan.mockResolvedValue({ user_id: 'u-1', tenant_id: 't-1' })
+
     render(
       <MemoryRouter initialEntries={['/signup?plan=intake-only']}>
         <SignupPage />
@@ -31,19 +46,33 @@ describe('plan signup', () => {
     expect(screen.getByText('Call Intake + Tasks')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /sign up with google/i })).not.toBeInTheDocument()
 
-    await user.type(screen.getByLabelText('Firm / Company Name'), 'Launch Firm')
-    await user.type(screen.getByLabelText('Email *'), 'owner@launchfirm.com')
-    await user.type(screen.getByLabelText('Password *'), 'LaunchReadyPass123!')
-    await user.type(screen.getByLabelText('Your Name'), 'Owner One')
-    await user.click(screen.getByRole('button', { name: 'Create Account with Email' }))
+    await fillAndSubmit('Start free trial')
 
     expect(signupWithPlan).toHaveBeenCalledWith(expect.objectContaining({
       plan: 'intake-only',
       firm_name: 'Launch Firm',
       email: 'owner@launchfirm.com',
     }))
-    expect(register).not.toHaveBeenCalled()
-    expect(authLogin).toHaveBeenCalled()
+    expect(login).toHaveBeenCalled()
+    expect(screen.queryByText(/Registration received/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the pending screen in approval-gated mode', async () => {
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true')
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL', 'true')
+    signupWithPlan.mockResolvedValue({ status: 'pending_approval' })
+
+    render(
+      <MemoryRouter initialEntries={['/signup?plan=intake-only']}>
+        <SignupPage />
+      </MemoryRouter>
+    )
+
+    await fillAndSubmit('Request LawHand access')
+
+    expect(login).not.toHaveBeenCalled()
+    expect(await screen.findByRole('heading', { name: 'Registration received' })).toBeInTheDocument()
+    expect(screen.getByText(/pending approval/i)).toBeInTheDocument()
   })
 
   it('routes launch visitors to operator-assisted provisioning', () => {
@@ -59,6 +88,6 @@ describe('plan signup', () => {
       'href',
       '/request-demo?source=signup',
     )
-    expect(screen.queryByRole('button', { name: 'Create Account with Email' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start free trial' })).not.toBeInTheDocument()
   })
 })

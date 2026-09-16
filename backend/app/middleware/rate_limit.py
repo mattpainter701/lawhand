@@ -31,6 +31,10 @@ AUTH_LIMITS = {
     "/api/demo/session": (5, 900),
     "/api/auth/login": (10, 600),
     "/api/auth/register": (5, 600),
+    # Self-serve registration writes a pending tenant and emails the operator
+    # from an unauthenticated request; keep it behind the same source-IP ceiling
+    # as the marketing lead form rather than the tighter login budget.
+    "/api/auth/signup/plan": (5, 3600),
     "/api/auth/forgot-password": (5, 900),
     "/api/auth/reset-password": (5, 900),
     # Invitation tokens carry 256 bits, so these limits guard load rather than

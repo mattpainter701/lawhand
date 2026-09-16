@@ -25,7 +25,7 @@ get_env() {
 errors=()
 warnings=()
 required=(
-  DOMAIN BACKEND_URL FRONTEND_URL VITE_PUBLIC_SITE_URL VITE_CONTACT_URL DEV_MODE PUBLIC_SIGNUP_ENABLED VITE_PUBLIC_SIGNUP_ENABLED SECRET_KEY MCP_PRODUCT_ENABLED PLATFORM_LEGACY_BOOTSTRAP_ENABLED
+  DOMAIN BACKEND_URL FRONTEND_URL VITE_PUBLIC_SITE_URL VITE_CONTACT_URL DEV_MODE PUBLIC_SIGNUP_ENABLED VITE_PUBLIC_SIGNUP_ENABLED PUBLIC_SIGNUP_REQUIRES_APPROVAL VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL SECRET_KEY MCP_PRODUCT_ENABLED PLATFORM_LEGACY_BOOTSTRAP_ENABLED
   POSTGRES_PASSWORD CLARITY_APP_PASSWORD REDIS_PASSWORD REDIS_URL
   MIGRATOR_DATABASE_URL APP_DATABASE_URL LITELLM_API_KEY LITELLM_SALT_KEY LITELLM_DB_PASSWORD WORKSPACE_MCP_ENABLED
   LITELLM_DATABASE_URL UPLOADS_HOST_DIR HOST_STATUS_HOST_DIR HOST_DISK_STATUS_FILE HEALTH_HOST_DISK_MAX_AGE_SECONDS BACKUP_STATUS_FILE HEALTH_BACKUP_MAX_AGE_SECONDS OFFSITE_BACKUP_REQUIRED
@@ -106,6 +106,8 @@ fi
 
 public_signup_enabled="$(get_env PUBLIC_SIGNUP_ENABLED)"
 vite_public_signup_enabled="$(get_env VITE_PUBLIC_SIGNUP_ENABLED)"
+public_signup_requires_approval="$(get_env PUBLIC_SIGNUP_REQUIRES_APPROVAL)"
+vite_public_signup_requires_approval="$(get_env VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL)"
 mcp_product_enabled="$(get_env MCP_PRODUCT_ENABLED)"
 studio_render_enabled="$(get_env TEMPLATE_STUDIO_RENDER_ENABLED)"
 
@@ -113,6 +115,9 @@ studio_render_enabled="$(get_env TEMPLATE_STUDIO_RENDER_ENABLED)"
 [[ "$public_signup_enabled" == "true" || "$public_signup_enabled" == "false" ]] || errors+=("PUBLIC_SIGNUP_ENABLED must be explicitly true or false")
 [[ "$vite_public_signup_enabled" == "true" || "$vite_public_signup_enabled" == "false" ]] || errors+=("VITE_PUBLIC_SIGNUP_ENABLED must be explicitly true or false")
 [[ "$public_signup_enabled" == "$vite_public_signup_enabled" ]] || errors+=("PUBLIC_SIGNUP_ENABLED and VITE_PUBLIC_SIGNUP_ENABLED must match")
+[[ "$public_signup_requires_approval" == "true" || "$public_signup_requires_approval" == "false" ]] || errors+=("PUBLIC_SIGNUP_REQUIRES_APPROVAL must be explicitly true or false")
+[[ "$vite_public_signup_requires_approval" == "true" || "$vite_public_signup_requires_approval" == "false" ]] || errors+=("VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL must be explicitly true or false")
+[[ "$public_signup_requires_approval" == "$vite_public_signup_requires_approval" ]] || errors+=("PUBLIC_SIGNUP_REQUIRES_APPROVAL and VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL must match")
 [[ "$mcp_product_enabled" == "true" || "$mcp_product_enabled" == "false" ]] || errors+=("MCP_PRODUCT_ENABLED must be explicitly true or false")
 [[ "$studio_render_enabled" == "true" || "$studio_render_enabled" == "false" ]] || errors+=("TEMPLATE_STUDIO_RENDER_ENABLED must be explicitly true or false")
 [[ "$studio_render_enabled" != "true" ]] || errors+=("Studio rendering must remain production-disabled until CAS backup and restore rehearsal are release-gated")

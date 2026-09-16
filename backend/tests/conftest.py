@@ -253,6 +253,11 @@ async def client(db_session: AsyncSession, auth_token: str, test_redis):
     app.dependency_overrides[get_db] = override_get_db
     previous_redis = getattr(app.state, "redis", None)
     app.state.redis = test_redis
+    # The suite shares one session-scoped Redis and this fixture is
+    # production-like, so reset the unauthenticated signup source-IP counter;
+    # otherwise registration tests accumulate it across the session.
+    async for _key in test_redis.scan_iter("rate:auth:/api/auth/signup/plan:*"):
+        await test_redis.delete(_key)
 
     try:
         async with AsyncClient(

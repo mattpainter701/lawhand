@@ -298,6 +298,8 @@ def _production_env(**overrides: str) -> str:
         "DEV_MODE": "false",
         "PUBLIC_SIGNUP_ENABLED": "true",
         "VITE_PUBLIC_SIGNUP_ENABLED": "true",
+        "PUBLIC_SIGNUP_REQUIRES_APPROVAL": "true",
+        "VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL": "true",
         "SECRET_KEY": "ops-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz",
         "MCP_PRODUCT_ENABLED": "false",
         "TEMPLATE_STUDIO_RENDER_ENABLED": "false",
@@ -1878,9 +1880,18 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
         assert services["backend"]["environment"]["PUBLIC_SIGNUP_ENABLED"] == (
             "${PUBLIC_SIGNUP_ENABLED:-false}"
         )
+        assert services["backend"]["environment"][
+            "PUBLIC_SIGNUP_REQUIRES_APPROVAL"
+        ] == "${PUBLIC_SIGNUP_REQUIRES_APPROVAL:-true}"
         assert (
             services["frontend"]["build"]["args"]["VITE_PUBLIC_SIGNUP_ENABLED"]
             == "${VITE_PUBLIC_SIGNUP_ENABLED:-false}"
+        )
+        assert (
+            services["frontend"]["build"]["args"][
+                "VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL"
+            ]
+            == "${VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL:-true}"
         )
 
     production_models = [
@@ -1892,6 +1903,9 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
             assert prod_services[service]["environment"]["PUBLIC_SIGNUP_ENABLED"] == (
                 "${PUBLIC_SIGNUP_ENABLED:-false}"
             )
+            assert prod_services[service]["environment"][
+                "PUBLIC_SIGNUP_REQUIRES_APPROVAL"
+            ] == "${PUBLIC_SIGNUP_REQUIRES_APPROVAL:-true}"
             # Production intentionally ignores stale host SMB_ENABLED=false values.
             assert prod_services[service]["environment"]["SMB_ENABLED"] == "true"
     prod_services = production_models[-1]
@@ -1899,9 +1913,17 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
         prod_services["frontend"]["build"]["args"]["VITE_PUBLIC_SIGNUP_ENABLED"]
         == "${VITE_PUBLIC_SIGNUP_ENABLED:-false}"
     )
+    assert (
+        prod_services["frontend"]["build"]["args"][
+            "VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL"
+        ]
+        == "${VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL:-true}"
+    )
     env_example = (ROOT / ".env.prod.example").read_text(encoding="utf-8")
     assert "PUBLIC_SIGNUP_ENABLED=false" in env_example
     assert "VITE_PUBLIC_SIGNUP_ENABLED=false" in env_example
+    assert "PUBLIC_SIGNUP_REQUIRES_APPROVAL=true" in env_example
+    assert "VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL=true" in env_example
     assert "SMB_ENABLED=true" in env_example
     assert "TEMPLATE_STUDIO_RENDER_ENABLED=false" in env_example
 

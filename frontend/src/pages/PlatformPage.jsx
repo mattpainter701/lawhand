@@ -1,7 +1,7 @@
 import TenantPanelSettings from '../components/TenantPanelSettings'
 import TemplateAIProfilePanel from '../components/TemplateAIProfilePanel'
 import React, { useState, useEffect, useCallback } from 'react'
-import { createPlatformSession, getPlatformTenants, getPlatformUsage, getPlatformHealth, getPlatformIntegrationReadiness, getPlatformMcpOverview, getPlatformWorkspaceMcpDiagnostics, getPlatformTenant, updatePlatformTenant, getPlatformPlans, getPlatformLLMConfig, getPlatformLogs, getPlatformLogsSummary, getPlatformTenantLogs, getPlatformTenantLogsSummary, getPlatformAccessLogs, getPlatformAccessLogsSummary, getLLMProviderPresets, getLLMProviderKeys, addLLMProviderKey, deleteLLMProviderKey, syncEnvKeys, fetchProviderModels, getLLMModelCatalog, refreshLLMModelCatalog, getLLMRoutes, recommendLLMRoutes, saveLLMRoutes, getLLMGatewayStatus, reloadLLMRoutes, testLLMRoute, getLLMRoutingProfiles, createLLMRoutingProfile, updateLLMRoutingProfile, getBackgroundAssistantUsage, updateBackgroundAssistantQuota, getPlatformSmsProvider, updatePlatformSmsProvider, deletePlatformSmsProvider, sendPlatformSmsTest } from '../api'
+import { createPlatformSession, getPlatformTenants, provisionPlatformTenant, approvePlatformTenantTrial, getPlatformUsage, getPlatformHealth, getPlatformIntegrationReadiness, getPlatformMcpOverview, getPlatformWorkspaceMcpDiagnostics, getPlatformTenant, updatePlatformTenant, getPlatformPlans, getPlatformLLMConfig, getPlatformLogs, getPlatformLogsSummary, getPlatformTenantLogs, getPlatformTenantLogsSummary, getPlatformAccessLogs, getPlatformAccessLogsSummary, getLLMProviderPresets, getLLMProviderKeys, addLLMProviderKey, deleteLLMProviderKey, syncEnvKeys, fetchProviderModels, getLLMModelCatalog, refreshLLMModelCatalog, getLLMRoutes, recommendLLMRoutes, saveLLMRoutes, getLLMGatewayStatus, reloadLLMRoutes, testLLMRoute, getLLMRoutingProfiles, createLLMRoutingProfile, updateLLMRoutingProfile, getBackgroundAssistantUsage, updateBackgroundAssistantQuota, getPlatformSmsProvider, updatePlatformSmsProvider, deletePlatformSmsProvider, sendPlatformSmsTest } from '../api'
 import { Activity, AlertTriangle, Database, Server, Shield, Users, Zap, Search, ChevronDown, ChevronRight, BarChart3, FileText, Globe, Key, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Cpu, ArrowDown, ArrowUp, Save, Settings2, PhoneCall, Video } from 'lucide-react'
 import { useConfirm } from '../components/dialog/ConfirmProvider'
 import { getPlatformDemoWorkspaces, terminatePlatformDemoWorkspace } from '../api'
@@ -87,6 +87,7 @@ const extensionMonthInstant = (currentValue, months) => {
 
 export function TrialAccessControls({ tenant, onPatch }) {
   const [endDate, setEndDate] = useState(() => trialDateInputValue(tenant.expires_at))
+  const [extendDays, setExtendDays] = useState(14)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [localError, setLocalError] = useState('')
@@ -151,6 +152,21 @@ export function TrialAccessControls({ tenant, onPatch }) {
         <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: extensionMonthInstant(tenant.expires_at, 6) }, 'Trial extended by 6 months.')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
           Extend 6 months
         </button>
+        <label className="block">
+          <span className="block text-xs font-medium text-brand-muted">Extend by (days)</span>
+          <input
+            aria-label="Extend by days"
+            type="number"
+            min="1"
+            max="365"
+            value={extendDays}
+            onChange={(event) => setExtendDays(event.target.value)}
+            className="mt-1 w-24 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink"
+          />
+        </label>
+        <button type="button" disabled={saving || !extendDays} onClick={() => patch({ trial_ends_at: extensionInstant(tenant.expires_at, Number(extendDays)) }, `Trial extended by ${extendDays} days.`)} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
+          Extend by days
+        </button>
       </form>
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -170,6 +186,154 @@ export function TrialAccessControls({ tenant, onPatch }) {
           className={`rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50 ${tenant.premium_ai_trial_enabled ? 'border-brand-rose/30 text-brand-rose' : 'border-brand-amber/30 text-brand-amber'}`}
         >
           {tenant.premium_ai_trial_enabled ? 'Disable Premium AI' : 'Enable Premium AI'}
+        </button>
+      </div>
+      {notice && <p role="status" className="mt-3 text-xs text-brand-accent">{notice}</p>}
+      {localError && <p role="alert" className="mt-3 text-xs text-brand-rose">{localError}</p>}
+    </div>
+  )
+}
+
+export function ProvisionTrialTenantForm({ onProvision }) {
+  const [form, setForm] = useState({
+    firm_name: '',
+    admin_email: '',
+    admin_name: '',
+    trial_days: 30,
+    plan: 'full-trial',
+    premium_ai_trial_enabled: false,
+  })
+  const [saving, setSaving] = useState(false)
+  const [result, setResult] = useState(null)
+  const [localError, setLocalError] = useState('')
+
+  const setField = (field) => (event) => {
+    const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setSaving(true)
+    setResult(null)
+    setLocalError('')
+    try {
+      const created = await onProvision({
+        ...form,
+        trial_days: Number(form.trial_days),
+        admin_name: form.admin_name.trim() || null,
+      })
+      setResult(created)
+      setForm((current) => ({ ...current, firm_name: '', admin_email: '', admin_name: '' }))
+    } catch (error) {
+      setLocalError(error?.response?.data?.detail || 'Could not provision the customer.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="mb-6 rounded-xl border border-brand-line bg-brand-surface p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-serif font-bold text-brand-ink">Register a customer</h2>
+          <p className="mt-1 max-w-3xl text-sm text-brand-muted">
+            Creates a private trial and emails the founding administrator a secure account-setup link. Public self-registration remains off.
+          </p>
+        </div>
+        <span className="rounded-full bg-brand-accent/10 px-3 py-1 text-xs font-medium text-brand-accent">Operator-only</span>
+      </div>
+      <form onSubmit={submit} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <label className="block">
+          <span className="text-xs font-medium text-brand-muted">Firm name</span>
+          <input required value={form.firm_name} onChange={setField('firm_name')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-brand-muted">Attorney email</span>
+          <input required type="email" value={form.admin_email} onChange={setField('admin_email')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-brand-muted">Attorney name</span>
+          <input value={form.admin_name} onChange={setField('admin_name')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-brand-muted">Trial days</span>
+          <input required type="number" min="1" max="365" value={form.trial_days} onChange={setField('trial_days')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-brand-muted">Workspace access</span>
+          <select value={form.plan} onChange={setField('plan')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm">
+            <option value="full-trial">Full workspace trial</option>
+            <option value="intake-only">Intake + tasks trial</option>
+            <option value="full-platform">Full platform trial</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 self-end rounded-lg border border-brand-line px-3 py-2 text-sm text-brand-ink-2">
+          <input type="checkbox" checked={form.premium_ai_trial_enabled} onChange={setField('premium_ai_trial_enabled')} />
+          Sponsor Premium AI
+        </label>
+        <div className="md:col-span-3 flex flex-wrap items-center gap-3">
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-brand-ink px-4 py-2 text-sm font-medium text-brand-surface disabled:opacity-50">
+            <Plus size={15} /> {saving ? 'Registering…' : 'Create trial and send invite'}
+          </button>
+          <button type="button" onClick={() => setForm((current) => ({ ...current, trial_days: 180 }))} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2">
+            Use 6 months
+          </button>
+        </div>
+      </form>
+      {result && (
+        <div role="status" className="mt-4 rounded-lg border border-brand-accent/20 bg-brand-accent/5 px-4 py-3 text-sm text-brand-ink-2">
+          Customer created. Email status: <strong>{result.email_status}</strong>.{' '}
+          <a href={result.invitation_url} className="font-medium text-brand-accent underline">Open backup invitation link</a>
+        </div>
+      )}
+      {localError && <p role="alert" className="mt-3 text-sm text-brand-rose">{localError}</p>}
+    </section>
+  )
+}
+
+export function PendingTrialApproval({ tenant, onApprove }) {
+  const [trialDays, setTrialDays] = useState(30)
+  const [premium, setPremium] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [localError, setLocalError] = useState('')
+
+  const approve = async () => {
+    setSaving(true)
+    setNotice('')
+    setLocalError('')
+    try {
+      const result = await onApprove({
+        trial_days: Number(trialDays),
+        premium_ai_trial_enabled: premium,
+      })
+      setNotice(`Trial approved. Customer email status: ${result.email_status}.`)
+    } catch (error) {
+      setLocalError(error?.response?.data?.detail || 'Could not approve the registration.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-brand-amber/30 bg-brand-amber/5 p-4">
+      <h4 className="text-sm font-bold text-brand-ink">Pending registration</h4>
+      <p className="mt-1 text-xs leading-5 text-brand-muted">
+        This firm has no workspace access, trial clock, or AI spend until approval.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label>
+          <span className="block text-xs font-medium text-brand-muted">Trial days</span>
+          <input aria-label="Approval trial days" type="number" min="1" max="365" value={trialDays} onChange={(event) => setTrialDays(event.target.value)} className="mt-1 w-28 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
+        </label>
+        <button type="button" onClick={() => setTrialDays(180)} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2">Use 6 months</button>
+        <label className="flex items-center gap-2 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-xs text-brand-ink-2">
+          <input type="checkbox" checked={premium} onChange={(event) => setPremium(event.target.checked)} />
+          Sponsor Premium AI
+        </label>
+        <button type="button" disabled={saving} onClick={approve} className="rounded-lg bg-brand-ink px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
+          {saving ? 'Approving…' : `Approve ${tenant.name}`}
         </button>
       </div>
       {notice && <p role="status" className="mt-3 text-xs text-brand-accent">{notice}</p>}
@@ -3406,6 +3570,7 @@ export function DemoWorkspacesTab({ platformKey, onAuthError }) {
 
 export function PlatformTenantRow({ tenant: t, expanded, onToggle }) {
   const toggle = () => onToggle?.(t.id)
+  const pending = t.signup_status === 'pending'
 
   return (
     <tr
@@ -3423,9 +3588,9 @@ export function PlatformTenantRow({ tenant: t, expanded, onToggle }) {
       <td className="px-5 py-3 text-right text-sm text-brand-ink-2 font-mono">${t.cost_usd_30d?.toFixed(2)}</td>
       <td className="px-5 py-3 text-xs text-brand-muted"><TenantExpiry tenant={t} /></td>
       <td className="px-5 py-3 text-center">
-        <span className={`inline-flex items-center gap-1.5 text-xs font-medium font-sans ${t.is_active ? 'text-brand-accent' : 'text-brand-rose'}`}>
-          <span className={`w-2 h-2 rounded-full ${t.is_active ? 'bg-brand-accent' : 'bg-brand-rose'}`} />
-          {t.is_active ? 'Active' : 'Inactive'}
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium font-sans ${pending ? 'text-brand-amber' : t.is_active ? 'text-brand-accent' : 'text-brand-rose'}`}>
+          <span className={`w-2 h-2 rounded-full ${pending ? 'bg-brand-amber' : t.is_active ? 'bg-brand-accent' : 'bg-brand-rose'}`} />
+          {pending ? 'Pending approval' : t.is_active ? 'Active' : 'Inactive'}
         </span>
       </td>
       <td className="px-5 py-3 text-center">
@@ -3718,6 +3883,25 @@ export default function PlatformPage() {
     finally { setLoadingDetail(false) }
   }
 
+  const handleProvisionTenant = async (payload) => {
+    setError(null)
+    const created = await provisionPlatformTenant(platformKey, payload)
+    await loadData()
+    return created
+  }
+
+  const handleApproveTenant = async (tenant, payload) => {
+    setError(null)
+    const approved = await approvePlatformTenantTrial(platformKey, tenant.id, payload)
+    const refreshed = await getPlatformTenant(platformKey, tenant.id)
+    const refreshedTenant = { ...refreshed, ...(refreshed.tenant || {}) }
+    setTenants((previous) => previous.map((item) => (
+      item.id === tenant.id ? { ...item, ...(refreshed.tenant || {}) } : item
+    )))
+    setTenantDetail(refreshedTenant)
+    return approved
+  }
+
   const filtered = tenants.filter((t) =>
     (tenantTypeFilter === 'all' || tenantType(t) === tenantTypeFilter) &&
     (!search || t.name.toLowerCase().includes(search.toLowerCase()) || t.domain.toLowerCase().includes(search.toLowerCase()))
@@ -3834,6 +4018,7 @@ export default function PlatformPage() {
         {/* ── Tenants Tab ── */}
         {tab === 'tenants' && (
           <div>
+            <ProvisionTrialTenantForm onProvision={handleProvisionTenant} />
             {/* Search + actions */}
             <div className="flex items-center gap-4 mb-6">
               <div className="relative flex-1 max-w-sm">
@@ -3896,8 +4081,11 @@ export default function PlatformPage() {
                                       <dl className="space-y-2 text-sm">
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Company</dt><dd className="text-brand-ink font-sans">{tenantDetail.company_name || '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Domain</dt><dd className="text-brand-ink font-sans">{tenantDetail.domain}</dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Tenant ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.id}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Type</dt><dd><TenantTypeBadge type={tenantType(tenantDetail)} /></dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Access expiration</dt><dd className="text-brand-ink font-sans"><TenantExpiry tenant={tenantDetail} /></dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial started</dt><dd className="text-brand-ink font-sans">{tenantDetail.trial_started_at ? new Date(tenantDetail.trial_started_at).toLocaleString() : '—'}</dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Signup email</dt><dd className="text-brand-ink font-sans">{tenantDetail.signup_email || '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial</dt><dd className="text-brand-ink font-sans">{tenantDetail.on_trial ? 'Yes' : 'No'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Premium during trial</dt><dd className={tenantDetail.premium_ai_trial_enabled ? 'text-brand-amber font-sans' : 'text-brand-muted font-sans'}>{tenantDetail.premium_ai_trial_enabled ? 'Sponsored' : 'Off'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Stripe ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.stripe_customer_id ? '✓' : '—'}</dd></div>
@@ -3926,7 +4114,11 @@ export default function PlatformPage() {
                                     </div>
                                     <div>
                                       <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">Actions</h4>
-                                      {tenantType(t) === 'demo' ? (
+                                      {tenantDetail.signup_status === 'pending' ? (
+                                        <p className="rounded-lg border border-brand-amber/30 bg-brand-amber/5 px-3 py-2 text-xs leading-5 text-brand-ink-2">
+                                          Use the approval panel below. It activates the founder and starts the trial together.
+                                        </p>
+                                      ) : tenantType(t) === 'demo' ? (
                                         <p className="rounded-lg border border-brand-line bg-brand-bg px-3 py-2 text-xs leading-5 text-brand-muted">
                                           Use the Demos tab to terminate this disposable workspace. Generic tenant controls are disabled so an ongoing demo cannot be interrupted accidentally.
                                         </p>
@@ -3947,7 +4139,12 @@ export default function PlatformPage() {
                                       )}
                                     </div>
                                   </div>
-                                  {tenantType(t) !== 'demo' && (
+                                  {tenantDetail.signup_status === 'pending' ? (
+                                    <PendingTrialApproval
+                                      tenant={tenantDetail}
+                                      onApprove={(payload) => handleApproveTenant(t, payload)}
+                                    />
+                                  ) : tenantType(t) !== 'demo' && (
                                     <TrialAccessControls
                                       tenant={tenantDetail}
                                       onPatch={(payload) => handleTenantPatch(t, payload)}

@@ -7,12 +7,145 @@ from unittest.mock import AsyncMock
 from app.models.mcp_product import MCPProductKey, MCPUsageEvent
 from app.models.llm_routing_profile import LLMRoutingProfile
 from app.models.operator_audit import OperatorAuditLog
-from app.models.tenant import TenantSettings
+from app.models.tenant import Tenant, TenantSettings
+from app.models.user import User
+from app.models.user_invitation import UserInvitation
+from app.routers import auth as auth_router
 from app.services.email import EmailDeliveryResult, email_service
 from app.services.mcp_product import hash_key
 from tests.platform_auth_helpers import platform_headers
 
 TEST_PLATFORM_KEY = "test-platform-key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+
+@pytest.mark.asyncio
+async def test_operator_provisions_private_trial_and_emails_founder(
+    client: AsyncClient, db_session, monkeypatch
+):
+    send = AsyncMock(return_value=EmailDeliveryResult.SENT)
+    monkeypatch.setattr(email_service, "send_email", send)
+
+    response = await client.post(
+        "/api/platform/tenants",
+        json={
+            "firm_name": "Founding Law PLLC",
+            "admin_email": "founder@example.com",
+            "admin_name": "Founding Attorney",
+            "trial_days": 180,
+            "plan": "full-trial",
+            "premium_ai_trial_enabled": True,
+        },
+        headers=platform_headers(),
+    )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["status"] == "invited"
+    assert payload["email_status"] == "sent"
+    assert payload["premium_ai_trial_enabled"] is True
+    assert "/accept-invite?token=" in payload["invitation_url"]
+
+    tenant = await db_session.get(Tenant, payload["tenant_id"])
+    assert tenant is not None
+    assert tenant.billing_tier == "trial"
+    assert tenant.flat_seat_count == 1
+    assert tenant.premium_ai_trial_enabled is True
+    assert 179 <= (tenant.expires_at - datetime.now(timezone.utc)).days <= 180
+
+    settings = await db_session.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant.id)
+    )
+    assert settings.custom_config["plan"] == "full-trial"
+    assert settings.custom_config["trial"] is True
+    admin = await db_session.scalar(select(User).where(User.tenant_id == tenant.id))
+    assert admin.email == "founder@example.com"
+    assert admin.is_active is False
+    assert admin.password_hash is None
+    assert admin.premium_ai_enabled is True
+    invitation = await db_session.scalar(
+        select(UserInvitation).where(UserInvitation.user_id == admin.id)
+    )
+    assert invitation is not None
+    assert invitation.token_hash not in payload["invitation_url"]
+    send.assert_awaited_once()
+    assert send.await_args.args[0] == ["founder@example.com"]
+    assert "workspace is ready" in send.await_args.args[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_operator_provisioning_rejects_an_existing_account(
+    client: AsyncClient, test_user
+):
+    response = await client.post(
+        "/api/platform/tenants",
+        json={
+            "firm_name": "Duplicate Firm",
+            "admin_email": test_user.email.upper(),
+        },
+        headers=platform_headers(),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Email already registered"
+
+
+@pytest.mark.asyncio
+async def test_operator_approval_is_the_trial_and_spend_boundary(
+    client: AsyncClient, db_session, monkeypatch
+):
+    monkeypatch.setattr(auth_router.settings, "PUBLIC_SIGNUP_ENABLED", True)
+    monkeypatch.setattr(
+        auth_router.settings, "PUBLIC_SIGNUP_REQUIRES_APPROVAL", True
+    )
+    send = AsyncMock(return_value=EmailDeliveryResult.SENT)
+    monkeypatch.setattr(email_service, "send_email", send)
+    signup = await client.post(
+        "/api/auth/signup/plan",
+        json={
+            "plan": "full-trial",
+            "firm_name": "Approval Gate LLP",
+            "email": "founder@approval.example",
+            "password": "long-enough-password-123",
+            "full_name": "Pending Founder",
+        },
+    )
+    assert signup.status_code == 202, signup.text
+    tenant_id = signup.json()["tenant_id"]
+    tenant = await db_session.get(Tenant, tenant_id)
+    user = await db_session.scalar(select(User).where(User.tenant_id == tenant.id))
+    assert tenant.is_active is False
+    assert tenant.expires_at is None
+    assert user.is_active is False
+
+    bypass = await client.put(
+        f"/api/platform/tenants/{tenant_id}",
+        json={"is_active": True},
+        headers=platform_headers(),
+    )
+    assert bypass.status_code == 409
+
+    send.reset_mock()
+    approved = await client.post(
+        f"/api/platform/tenants/{tenant_id}/approve-trial",
+        json={"trial_days": 180, "premium_ai_trial_enabled": True},
+        headers=platform_headers(),
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["email_status"] == "sent"
+    await db_session.refresh(tenant)
+    await db_session.refresh(user)
+    assert tenant.is_active is True
+    assert tenant.premium_ai_trial_enabled is True
+    assert 179 <= (tenant.expires_at - datetime.now(timezone.utc)).days <= 180
+    assert user.is_active is True
+    assert user.premium_ai_enabled is True
+    settings = await db_session.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant.id)
+    )
+    assert settings.custom_config["signup_status"] == "approved"
+    assert settings.custom_config["trial"] is True
+    send.assert_awaited_once()
+    assert "approved" in send.await_args.args[1].lower()
 
 
 @pytest.mark.asyncio

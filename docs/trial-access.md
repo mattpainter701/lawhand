@@ -27,6 +27,29 @@ so the switch stays reversible.
   it for a trial firm; both the firm grant and the user's flag must then be on.
 - `/api/auth/me` reports `access_state: "trial"` and `trial_ends_at`.
 
+## Registration: approval by default, auto-trial on request
+
+- The only path that creates a firm is `POST /api/auth/signup/plan`.
+- **Default (fail closed):** with public signup on, a registration records an
+  inactive tenant and inactive founder with a `signup_status: pending` marker
+  and no session. Platform's Approve trial action is the only boundary that
+  activates access, so an anonymous form cannot start Standard-AI spend.
+- **Auto-trial** (`PUBLIC_SIGNUP_REQUIRES_APPROVAL=false`): a registration
+  provisions an active firm with an `expires_at` of `SIGNUP_TRIAL_DAYS` (30),
+  Premium AI off, and a session. Only use it where anti-abuse controls justify
+  an immediate bounded trial.
+- `POST /api/auth/register` is **closed** (`410`); it no longer provisions a
+  tenant or mints a session.
+- **Google and Microsoft OAuth are sign-in only.** Completing a provider flow
+  for a domain with no workspace is refused (`not_invited`) instead of
+  provisioning a tenant.
+- `POST /api/auth/signup/plan` is rate-limited by source IP (5 per hour),
+  matching the marketing lead form, because it writes a firm and emails the
+  operator from an unauthenticated request.
+- Production preflight requires `PUBLIC_SIGNUP_REQUIRES_APPROVAL` and
+  `VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL` to be explicit and to match, so the
+  backend and the registration screen cannot disagree about the mode.
+
 ## When the trial ends unpaid: billing only
 
 The firm is a hard stop except for paying. An active, non-synthetic firm whose
@@ -105,6 +128,16 @@ trials and demo workspaces. It becomes true for an explicitly sponsored trial.
 
 ## Operator notes
 
+- **A public registration is pending, not provisioned.** It creates an inactive
+  tenant and inactive founder with no `expires_at`, session, Stripe customer,
+  module access, or AI spend. Platform's Approve trial action atomically
+  activates both, starts the selected trial window, applies the optional
+  Premium AI sponsorship, and emails the founder. A generic tenant update is
+  refused for pending registrations so it cannot bypass that boundary.
+- **Register a customer privately** creates an active trial plus a single-use
+  founding-admin invitation. Platform reports delivery and returns the backup
+  acceptance URL once, so tomorrow's customer does not depend on opening the
+  public registration flag.
 - **Extending a trial** moves `expires_at`, keeps the firm on trial, and sends
   a branded email to its active administrators. An email failure is reported
   in Platform but does not roll back the access extension.
@@ -132,12 +165,11 @@ trials and demo workspaces. It becomes true for an explicitly sponsored trial.
   `/billing?reason=trial_expired`, which explains the hard stop. This mirrors
   the allowlist above. Without it each page fails with its own `403` and the
   firm never reaches the one screen that can end the lockout.
-- **Self-serve signup provisions the `full-trial` plan.** Signup previously
-  fell through to `register()`, which creates a tenant with no `expires_at`,
-  so turning on `PUBLIC_SIGNUP_ENABLED` as it stood would have handed out
-  unlimited free accounts with no trial window at all. `full-trial` carries
-  every module on the `trial` billing tier (1,000 requests/day) with premium
-  AI off, and upsells to `full-platform`.
+- **Self-serve signup is held for approval by default**, so the registration
+  confirmation says it is pending and the founder cannot sign in until Platform
+  approves. A deployment may set `PUBLIC_SIGNUP_REQUIRES_APPROVAL=false` to
+  start a bounded trial with Premium AI off immediately instead. Either way
+  Platform can extend, revoke, or convert the trial and sponsor Premium AI.
 - **Platform shows and controls the access date.** An operator can set an exact
   UTC date, extend from the later of now or the current expiry by 30 days or six
   calendar months, revoke immediately, or clear the trial into active access.

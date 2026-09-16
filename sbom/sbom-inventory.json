@@ -102,7 +102,7 @@
     },
     {
       "image": "legalapp-backend:${APP_COMMIT:-dev}",
-      "line": 194,
+      "line": 195,
       "pinned_by_digest": false,
       "source": "docker-compose.yml"
     },
@@ -162,7 +162,7 @@
     },
     {
       "image": "legalapp-backend:${APP_COMMIT:-dev}",
-      "line": 251,
+      "line": 252,
       "pinned_by_digest": false,
       "source": "docker-compose.hypervisor.yml"
     },
@@ -197,7 +197,7 @@
     },
     {
       "image": "node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293",
-      "line": 28,
+      "line": 30,
       "pinned_by_digest": true,
       "source": "frontend/Dockerfile",
       "stage_reference": false
