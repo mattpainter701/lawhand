@@ -1901,6 +1901,8 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
         == "${VITE_PUBLIC_SIGNUP_ENABLED:-true}"
     )
     env_example = (ROOT / ".env.prod.example").read_text(encoding="utf-8")
+    assert "PUBLIC_SIGNUP_ENABLED=true" in env_example
+    assert "VITE_PUBLIC_SIGNUP_ENABLED=true" in env_example
     assert "SMB_ENABLED=true" in env_example
     assert "TEMPLATE_STUDIO_RENDER_ENABLED=false" in env_example
 

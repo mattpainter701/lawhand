@@ -1,9 +1,9 @@
 # Trial access, paying, and premium AI
 
 How a firm on a free trial is treated while the trial runs, after it ends, and
-once it pays through Helcim. Public signup itself stays off
-(`PUBLIC_SIGNUP_ENABLED=false`) until the whole trial-to-paid path has been
-rehearsed.
+once it pays through Helcim. Public signup is enabled in production: the
+browser and API flags must both be `true`, and production preflight rejects a
+disabled or mismatched pair.
 
 ## Where trial state lives
 
@@ -21,8 +21,8 @@ rehearsed.
 ## While the trial runs
 
 - Full access to the firm's plan modules.
-- **No premium AI**, whatever a user's `premium_ai_enabled` flag says (see
-  below).
+- **No premium AI by default.** A platform operator can deliberately sponsor
+  it for a trial firm; both the firm grant and the user's flag must then be on.
 - `/api/auth/me` reports `access_state: "trial"` and `trial_ends_at`.
 
 ## When the trial ends unpaid: billing only
@@ -80,10 +80,11 @@ first charge would land around day 59.
 
 ## Premium AI
 
-Premium AI now needs **both** the user's `premium_ai_enabled` flag **and** a
-firm that is not on a trial and is not a demo or fixture workspace
-(`tenant_access.user_may_use_premium_ai`). This is enforced where premium AI
-actually runs, not only at the settings toggle:
+Premium AI needs the user's `premium_ai_enabled` flag and a non-synthetic firm.
+A paid firm passes the tenant gate normally. A trial firm passes it only when a
+platform operator has set `Tenant.premium_ai_trial_enabled`; the flag defaults
+false and Platform applies it to every licensed human user. This is enforced
+where premium AI actually runs, not only at the settings toggle:
 
 | Site | Behaviour when not allowed |
 |---|---|
@@ -97,13 +98,19 @@ actually runs, not only at the settings toggle:
 every user, including users whose premium flag was off and trial firms. It now
 follows the same rule as chat.
 
-`/api/auth/me` reports `premium_ai_available`, which is false on trials and
-demo workspaces regardless of the per-user flag.
+`/api/auth/me` reports `premium_ai_available`, which is false on ordinary
+trials and demo workspaces. It becomes true for an explicitly sponsored trial.
 
 ## Operator notes
 
-- **Extending a trial** moves `expires_at` and keeps the firm on trial, so
-  premium AI stays off.
+- **Extending a trial** moves `expires_at`, keeps the firm on trial, and sends
+  a branded email to its active administrators. An email failure is reported
+  in Platform but does not roll back the access extension.
+- **Revoking a trial** sets the expiry to the past, immediately leaving only
+  sign-in and billing available. Deactivating the tenant is a stronger,
+  separate control.
+- **Sponsored Premium AI** is an explicit Platform toggle. It is separate from
+  the trial date, updates licensed users, and remains off for every new trial.
 - **Clearing `trial_ends_at`** (setting it to null) ends the trial without
   payment. Premium AI becomes available to users whose flag is on.
 - **An expired firm that pays** regains full access on the next subscription
@@ -129,3 +136,6 @@ demo workspaces regardless of the per-user flag.
   unlimited free accounts with no trial window at all. `full-trial` carries
   every module on the `trial` billing tier (1,000 requests/day) with premium
   AI off, and upsells to `full-platform`.
+- **Platform shows and controls the access date.** An operator can set an exact
+  UTC date, extend from the later of now or the current expiry by 30 days or six
+  calendar months, revoke immediately, or clear the trial into active access.

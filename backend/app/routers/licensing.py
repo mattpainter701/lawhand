@@ -236,7 +236,10 @@ async def toggle_user_premium(
         if not await tenant_allows_premium_ai_by_id(db, tenant_id):
             raise HTTPException(
                 status_code=400,
-                detail="Premium AI is not available for this firm.",
+                detail=(
+                    "Premium AI is not available during the free trial "
+                    "unless a platform operator sponsors it."
+                ),
             )
 
     user.premium_ai_enabled = body.premium_ai_enabled
