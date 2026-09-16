@@ -237,6 +237,43 @@ async def test_unpaid_subscription_leaves_the_trial_running(
     assert settings_row.custom_config["trial"] is True
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {},
+        {"hasFailedPayments": "true"},
+        {"status": "cancelled"},
+        {"timesBilled": 0},
+    ],
+    ids=["paid", "failed-payment", "cancelled", "not-yet-billed"],
+)
+def test_every_subscription_state_stores_a_permitted_billing_status(
+    test_tenant, changes
+):
+    """ck_tenants_mcp_billing_status (migration 087) allows only these four.
+
+    The live-but-unbilled branch wrote "pending", which no migrated database
+    accepts, so a real subscription sync in that state raised
+    CheckViolationError. create_all test databases carry no check constraints,
+    which is why it survived locally until CI ran it.
+    """
+    row = PlatformSubscription(
+        tenant_id=test_tenant.id,
+        customer_code="firm",
+        subscription_id="9",
+        offer={"plan_id": 7, "seats": 1},
+    )
+
+    service.apply_subscription(test_tenant, row, _remote("firm", **changes))
+
+    assert test_tenant.mcp_billing_status in {
+        "disabled",
+        "active",
+        "past_due",
+        "suspended",
+    }
+
+
 @pytest.mark.asyncio
 async def test_paid_firm_that_never_had_a_trial_is_untouched(db_session, test_tenant):
     test_tenant.billing_tier = "flat"

@@ -332,7 +332,13 @@ def apply_subscription(tenant, row, subscription):
         tenant.billing_tier = "payg"
         tenant.mcp_billing_status = "suspended"
     else:
-        tenant.mcp_billing_status = "pending"
+        # Live but nothing billed yet. "pending" was never a storable value:
+        # ck_tenants_mcp_billing_status (migration 087) allows only disabled,
+        # active, past_due and suspended, so this raised a CheckViolationError
+        # on any migrated database and broke the whole subscription sync.
+        # MCP access stays denied until something is actually paid, which is
+        # what suspended already means to ensure_mcp_product_access.
+        tenant.mcp_billing_status = "suspended"
 
 
 async def end_trial_when_paid(db, tenant) -> bool:
