@@ -53,14 +53,128 @@ function TenantTypeBadge({ type }) {
 const tenantType = (tenant) => tenant.tenant_type || (tenant.billing_tier === 'demo' ? 'demo' : 'platform')
 
 function TenantExpiry({ tenant }) {
-  if (tenantType(tenant) !== 'demo') return <span className="text-brand-muted">—</span>
-  if (!tenant.expires_at) return <span className="text-brand-rose">Missing</span>
+  if (!tenant.expires_at) {
+    return <span className="text-brand-muted">No expiration</span>
+  }
   const expiresAt = new Date(tenant.expires_at)
   const expired = expiresAt.getTime() <= Date.now()
   return (
     <time dateTime={tenant.expires_at} className={expired ? 'text-brand-rose' : 'text-brand-ink-2'}>
       {expired ? 'Expired ' : ''}{expiresAt.toLocaleString()}
     </time>
+  )
+}
+
+const trialDateInputValue = (value) => {
+  if (!value) return ''
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10)
+}
+
+const extensionInstant = (currentValue, days) => {
+  const current = currentValue ? new Date(currentValue) : null
+  const base = current && current.getTime() > Date.now() ? current : new Date()
+  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
+}
+
+const extensionMonthInstant = (currentValue, months) => {
+  const current = currentValue ? new Date(currentValue) : null
+  const base = current && current.getTime() > Date.now() ? current : new Date()
+  const extended = new Date(base)
+  extended.setUTCMonth(extended.getUTCMonth() + months)
+  return extended.toISOString()
+}
+
+export function TrialAccessControls({ tenant, onPatch }) {
+  const [endDate, setEndDate] = useState(() => trialDateInputValue(tenant.expires_at))
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [localError, setLocalError] = useState('')
+
+  useEffect(() => {
+    setEndDate(trialDateInputValue(tenant.expires_at))
+  }, [tenant.expires_at])
+
+  const patch = async (payload, successMessage) => {
+    setSaving(true)
+    setNotice('')
+    setLocalError('')
+    try {
+      const result = await onPatch(payload)
+      let message = successMessage
+      if (result?.trial_email_status === 'sent') {
+        message += ' The firm administrators were emailed.'
+      } else if (result?.trial_email_status) {
+        message += ` Access changed, but email delivery was ${result.trial_email_status}.`
+      }
+      setNotice(message)
+    } catch (error) {
+      setLocalError(error?.response?.data?.detail || 'Could not update trial access.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveExactDate = (event) => {
+    event.preventDefault()
+    if (!endDate) return
+    patch(
+      { trial_ends_at: new Date(`${endDate}T23:59:59.000Z`).toISOString() },
+      `Trial access now ends ${endDate}.`,
+    )
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-brand-line">
+      <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider font-sans">Trial & Premium AI</h4>
+      <p className="mt-1 text-xs leading-5 text-brand-muted">
+        Trial access and sponsored Premium AI are separate. Premium is off for new trials unless you explicitly enable it here.
+      </p>
+
+      <form onSubmit={saveExactDate} className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="block text-xs font-medium text-brand-muted">Trial end date (UTC)</span>
+          <input
+            aria-label="Trial end date"
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            className="mt-1 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink"
+          />
+        </label>
+        <button type="submit" disabled={saving || !endDate} className="rounded-lg border border-brand-accent/30 px-3 py-2 text-xs font-medium text-brand-accent disabled:opacity-50">
+          Set date
+        </button>
+        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: extensionInstant(tenant.expires_at, 30) }, 'Trial extended by 30 days.')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
+          Extend 30 days
+        </button>
+        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: extensionMonthInstant(tenant.expires_at, 6) }, 'Trial extended by 6 months.')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
+          Extend 6 months
+        </button>
+      </form>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: new Date(Date.now() - 1000).toISOString() }, 'Trial access revoked immediately.')} className="rounded-lg border border-brand-rose/30 px-3 py-2 text-xs font-medium text-brand-rose disabled:opacity-50">
+          Revoke trial now
+        </button>
+        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: null }, 'Trial cleared; the firm now has active access without an expiration.')} className="rounded-lg border border-brand-accent/30 px-3 py-2 text-xs font-medium text-brand-accent disabled:opacity-50">
+          Convert to active
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => patch(
+            { premium_ai_trial_enabled: !tenant.premium_ai_trial_enabled },
+            tenant.premium_ai_trial_enabled ? 'Sponsored Premium AI disabled.' : 'Sponsored Premium AI enabled for licensed users.',
+          )}
+          className={`rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50 ${tenant.premium_ai_trial_enabled ? 'border-brand-rose/30 text-brand-rose' : 'border-brand-amber/30 text-brand-amber'}`}
+        >
+          {tenant.premium_ai_trial_enabled ? 'Disable Premium AI' : 'Enable Premium AI'}
+        </button>
+      </div>
+      {notice && <p role="status" className="mt-3 text-xs text-brand-accent">{notice}</p>}
+      {localError && <p role="alert" className="mt-3 text-xs text-brand-rose">{localError}</p>}
+    </div>
   )
 }
 
@@ -3579,10 +3693,17 @@ export default function PlatformPage() {
   const handleTenantPatch = async (tenant, payload) => {
     setError(null)
     try {
-      await updatePlatformTenant(platformKey, tenant.id, payload)
-      handleUpdate(tenant.id, payload)
+      const result = await updatePlatformTenant(platformKey, tenant.id, payload)
+      const refreshed = await getPlatformTenant(platformKey, tenant.id)
+      const refreshedTenant = { ...refreshed, ...(refreshed.tenant || {}) }
+      setTenants((previous) => previous.map((item) => (
+        item.id === tenant.id ? { ...item, ...(refreshed.tenant || {}) } : item
+      )))
+      setTenantDetail(refreshedTenant)
+      return result
     } catch (e) {
       setError(e?.response?.data?.detail || 'Failed to update tenant.')
+      throw e
     }
   }
 
@@ -3748,7 +3869,7 @@ export default function PlatformPage() {
                         <th className="text-center px-5 py-3">Users</th>
                         <th className="text-center px-5 py-3">Requests (30d)</th>
                         <th className="text-right px-5 py-3">Cost (30d)</th>
-                        <th className="text-left px-5 py-3">Demo expiration</th>
+                        <th className="text-left px-5 py-3">Access expiration</th>
                         <th className="text-center px-5 py-3">Status</th>
                         <th className="text-center px-5 py-3">Action</th>
                       </tr>
@@ -3776,7 +3897,9 @@ export default function PlatformPage() {
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Company</dt><dd className="text-brand-ink font-sans">{tenantDetail.company_name || '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Domain</dt><dd className="text-brand-ink font-sans">{tenantDetail.domain}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Type</dt><dd><TenantTypeBadge type={tenantType(tenantDetail)} /></dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Demo expiration</dt><dd className="text-brand-ink font-sans"><TenantExpiry tenant={tenantDetail} /></dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Access expiration</dt><dd className="text-brand-ink font-sans"><TenantExpiry tenant={tenantDetail} /></dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial</dt><dd className="text-brand-ink font-sans">{tenantDetail.on_trial ? 'Yes' : 'No'}</dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Premium during trial</dt><dd className={tenantDetail.premium_ai_trial_enabled ? 'text-brand-amber font-sans' : 'text-brand-muted font-sans'}>{tenantDetail.premium_ai_trial_enabled ? 'Sponsored' : 'Off'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Stripe ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.stripe_customer_id ? '✓' : '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Seats</dt><dd className="text-brand-ink font-sans">{tenantDetail.flat_seat_count || '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Created</dt><dd className="text-brand-ink font-sans">{new Date(tenantDetail.created_at).toLocaleDateString()}</dd></div>
@@ -3790,9 +3913,12 @@ export default function PlatformPage() {
                                             <div key={u.id} className="flex items-center justify-between text-sm py-1">
                                               <div>
                                                 <p className="text-brand-ink font-sans font-medium">{u.full_name || `User ${u.id.slice(0, 8)}`}</p>
-                                                <p className="text-xs text-brand-muted font-mono">{u.id.slice(0, 8)}&hellip;</p>
+                                                <p className="text-xs text-brand-muted">{u.email}</p>
                                               </div>
-                                              <span className={`text-xs px-1.5 py-0.5 rounded font-sans ${u.role === 'admin' ? 'bg-brand-ink/10 text-brand-ink' : 'bg-brand-muted/10 text-brand-muted'}`}>{u.role}</span>
+                                              <div className="text-right">
+                                                <span className={`text-xs px-1.5 py-0.5 rounded font-sans ${u.role === 'admin' ? 'bg-brand-ink/10 text-brand-ink' : 'bg-brand-muted/10 text-brand-muted'}`}>{u.role}</span>
+                                                <p className={`mt-1 text-[11px] ${u.premium_ai_enabled ? 'text-brand-amber' : 'text-brand-muted'}`}>{u.premium_ai_enabled ? 'Premium on' : 'Standard AI'}</p>
+                                              </div>
                                             </div>
                                           ))}
                                         </div>
@@ -3821,6 +3947,12 @@ export default function PlatformPage() {
                                       )}
                                     </div>
                                   </div>
+                                  {tenantType(t) !== 'demo' && (
+                                    <TrialAccessControls
+                                      tenant={tenantDetail}
+                                      onPatch={(payload) => handleTenantPatch(t, payload)}
+                                    />
+                                  )}
                                   {/* LLM Provider override — full-width row */}
                                   <div className="mt-4 pt-4 border-t border-brand-line">
                                     <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">AI Alias Override</h4>

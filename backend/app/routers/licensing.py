@@ -231,12 +231,12 @@ async def toggle_user_premium(
             detail="Premium AI requires an active standard license.",
         )
     if body.premium_ai_enabled:
-        from app.services.trials import tenant_on_trial
+        from app.services.tenant_access import tenant_allows_premium_ai_by_id
 
-        if await tenant_on_trial(db, tenant_id):
+        if not await tenant_allows_premium_ai_by_id(db, tenant_id):
             raise HTTPException(
                 status_code=400,
-                detail="Premium AI is not available during the free trial.",
+                detail="Premium AI is not available for this firm.",
             )
 
     user.premium_ai_enabled = body.premium_ai_enabled

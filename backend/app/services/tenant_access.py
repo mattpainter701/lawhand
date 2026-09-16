@@ -9,7 +9,8 @@ but are synthetic tenants and follow none of the trial rules below.
   in and reach ``/api/auth/me`` and the billing routes, and every other route
   keeps refusing it. Without this the only screen that could end the lockout
   was itself locked.
-* Premium AI needs a firm that is not on a trial and is not synthetic.
+* Premium AI needs a firm that is not synthetic. It is withheld during a
+  trial unless a platform operator explicitly sponsors it for that firm.
 """
 
 from datetime import datetime, timezone
@@ -79,10 +80,13 @@ def require_sign_in_tenant(tenant):
 
 
 def tenant_allows_premium_ai(tenant) -> bool:
-    """Fail closed: no firm, a synthetic firm, or any trial means no premium AI."""
+    """Fail closed unless the firm is paid or has an explicit trial grant."""
     if tenant is None or _is_synthetic(tenant):
         return False
-    return getattr(tenant, "expires_at", None) is None
+    return (
+        getattr(tenant, "expires_at", None) is None
+        or bool(getattr(tenant, "premium_ai_trial_enabled", False))
+    )
 
 
 def user_may_use_premium_ai(user) -> bool:

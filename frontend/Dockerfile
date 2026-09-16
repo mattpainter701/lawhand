@@ -6,7 +6,7 @@ COPY . .
 ARG VITE_API_URL=/api
 ARG VITE_PUBLIC_SITE_URL=
 ARG VITE_CONTACT_URL=
-ARG VITE_PUBLIC_SIGNUP_ENABLED=false
+ARG VITE_PUBLIC_SIGNUP_ENABLED=true
 # Public marketing identity and measurement. None of these are secrets: each one
 # ends up visible in the served HTML.
 ARG VITE_GA_MEASUREMENT_ID=
