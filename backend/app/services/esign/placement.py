@@ -66,8 +66,7 @@ REMEDIES = {
         "fields on. Re-review the template's placements."
     ),
     INVALID_GEOMETRY: (
-        "Re-review this field's position in the template so it sits inside the "
-        "page."
+        "Re-review this field's position in the template so it sits inside the " "page."
     ),
     NO_PDF_OUTPUT: (
         "Regenerate this document with Word-to-PDF conversion enabled: signing "
@@ -404,7 +403,9 @@ def template_placement_report(
     roles = signing_field_roles(variable_schema)
     signing_required = bool(fields)
     source_format = str(template_format or "").lower()
-    saved_format = str(output_format if output_format is not None else template_format or "").lower()
+    saved_format = str(
+        output_format if output_format is not None else template_format or ""
+    ).lower()
     output_is_pdf = saved_format == "pdf"
     if not signing_required:
         return PlacementReport([], roles, False, [], output_is_pdf)
@@ -488,9 +489,7 @@ def placement_block_detail(
             "Open the placement review and add a field for every signer."
         )
     if any(problem.code == NO_PDF_OUTPUT for problem in parsed):
-        blocking = next(
-            problem for problem in parsed if problem.code == NO_PDF_OUTPUT
-        )
+        blocking = next(problem for problem in parsed if problem.code == NO_PDF_OUTPUT)
         return f"{document} cannot be sent for signature: {blocking.detail}. {blocking.remedy}"
     # Repeat a page-level reason once, not once per field that tripped it.
     seen: set[tuple[str, str]] = set()
@@ -501,7 +500,9 @@ def placement_block_detail(
             continue
         seen.add(key)
         lines.append(problem.detail)
-    remedies = list(dict.fromkeys(problem.remedy for problem in parsed if problem.remedy))
+    remedies = list(
+        dict.fromkeys(problem.remedy for problem in parsed if problem.remedy)
+    )
     head = f"{document} has no reviewed signing positions."
     if output_is_pdf:
         head += (

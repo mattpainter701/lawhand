@@ -4584,6 +4584,13 @@ async def update_template(
         or (pdf_body_update_requested and updates["body"] != template.body)
     )
     requested_activation = updates.get("is_active") is True
+    if requested_activation:
+        # Activation is the other way a template becomes usable firm-wide, so
+        # it answers to the same bar as publish. A signing field that can never
+        # bind would otherwise surface for the first time on a live matter.
+        _ensure_signing_fields_placeable(
+            template, updates.get("variable_schema", template.variable_schema)
+        )
     if current_format == "docx" and requested_activation:
         await _ensure_word_source_review(
             template, updates.get("variable_schema", template.variable_schema)
@@ -4930,9 +4937,7 @@ async def restore_template_version(
     return _template_response(template)
 
 
-def _ensure_signing_fields_placeable(
-    template, variable_schema: dict | None
-) -> None:
+def _ensure_signing_fields_placeable(template, variable_schema: dict | None) -> None:
     """Refuse to publish a template whose signing fields can never bind.
 
     A signature field with no signer role, or a PDF field nobody positioned,
@@ -4965,9 +4970,7 @@ def _ensure_signing_fields_placeable(
         return
     parts = []
     if unroled:
-        parts.append(
-            "give a signer role to " + ", ".join(sorted(unroled)[:10])
-        )
+        parts.append("give a signer role to " + ", ".join(sorted(unroled)[:10]))
     if unplaced:
         parts.append(
             "position these signing fields on the PDF: "

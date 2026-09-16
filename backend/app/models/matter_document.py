@@ -183,9 +183,7 @@ class MatterDocument(Base):
     )
     # Why binding failed, as PlacementProblem dicts. Read back by the dispatch
     # gate so it can name the field instead of asking for a blind re-review.
-    signing_placement_problems: Mapped[list | None] = mapped_column(
-        JSON, nullable=True
-    )
+    signing_placement_problems: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

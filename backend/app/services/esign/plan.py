@@ -526,13 +526,14 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                     if label and not _SIGNATURE_WORD.search(label):
                         continue  # "Name: ______" is not a signature line
                     # "Signature: ____   Date: ____" puts two fields on one
-                    # baseline. Growing a short blank to the default width
-                    # would lay the signature box over the date label, so the
-                    # right edge stops short of whatever comes next instead.
+                    # baseline. Widening a short blank to the default box would
+                    # lay the signature over the date label, so the right edge
+                    # stops where the next text starts. A box that already fits
+                    # is left alone, and the printed blank is never narrowed.
                     right = start_x + max(run_width, SIGNATURE_BOX_WIDTH)
                     following = _next_content_x(line, text, match.end())
                     if following is not None:
-                        right = min(right, max(following - 4.0, start_x + run_width))
+                        right = min(right, max(following, start_x + run_width))
                     rect = (
                         start_x,
                         line.y - 4,
@@ -586,7 +587,7 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                 else:
                     right = segment_x + SIGNATURE_BOX_WIDTH
                     if next_segment_x is not None:
-                        right = min(right, max(next_segment_x - 4.0, segment_x + 60.0))
+                        right = min(right, max(next_segment_x, segment_x + 60.0))
                     rect = (
                         segment_x,
                         line.y - 4,
