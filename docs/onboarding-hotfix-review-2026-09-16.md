@@ -24,3 +24,19 @@ defer setup, and allowed direct re-entry.
    the production unverified-app interstitial remains an external launch blocker.
 2. If the root naming policy changes, add a migration/alias strategy first;
    never rename existing customer folders in place.
+
+## Operator sequence to make Terms available for onboarding
+
+1. Open Platform → **Agreements** and click **Load current LawHand Terms**.
+2. Confirm the preview is `terms_of_use`, title `LawHand Terms of Use`, version
+   `2026-07-27`, effective `2026-07-27T00:00:00.000Z`, URL `${window.location.origin}/terms`,
+   and review the complete SHA-256 hash with counsel.
+3. Check the explicit counsel-approval box. The panel re-fetches `/terms` with
+   `cache: no-store` and recomputes the hash immediately before publishing; if
+   the bytes changed, publishing is aborted.
+4. Click **Re-fetch, verify, and publish**. No placeholder text is seeded and
+   nothing is auto-published.
+5. For each tenant, open onboarding after publication. The tenant administrator
+   reviews the current definition and accepts it with legal name, title, and
+   authority attestation. Only then does enforced agreement gating permit a new
+   cloud connection.
