@@ -296,11 +296,13 @@ async def onboarding_cloud_connection_blocked(
     if not tenant:
         return False
     active_credential = await db.scalar(
-        select(TenantCredential.id).where(
+        select(TenantCredential.id)
+        .where(
             TenantCredential.tenant_id == tenant_id,
             TenantCredential.provider.in_(("google", "microsoft")),
             TenantCredential.is_active.is_(True),
-        ).limit(1)
+        )
+        .limit(1)
     )
     # Tenants with a real provider credential may reconnect during
     # an OAuth refresh. A completed row without one is not evidence of a valid

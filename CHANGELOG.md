@@ -3519,3 +3519,7 @@ Six divergences found by diffing `PrepareFormWorkspace` against `TemplateStudioE
 - Document upload with vector embedding
 - Plugin system: Litigation Matters, Commercial Renewals
 - Admin dashboard (tenant users, usage stats)
+
+## 2026-09-16 — Onboarding hotfix
+
+Added truthful setup deferment, fail-closed cloud agreement gating, runtime-honest trial recovery copy, and explicit Personal Google / Google One onboarding without directory sync claims.

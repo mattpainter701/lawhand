@@ -57,10 +57,11 @@ from app.services.zoom_phone import (
     zoom_phone_webhook_jobs,
     zoom_webhook_validation_response,
 )
-from app.services.compliance import agreement_status, onboarding_cloud_connection_blocked
+from app.services.compliance import onboarding_cloud_connection_blocked
 from app.utils.oauth_security import (
     generate_pkce_pair,
     is_oauth_client_configured,
+    verify_google_id_token,
 )
 
 settings = get_settings()
@@ -635,7 +636,9 @@ async def microsoft_callback(
 async def google_connect(
     request: Request,
     intent: str = Query("admin", description="admin=tenant-wide, user=per-user"),
-    account_mode: str = Query("workspace", description="workspace or personal for admin onboarding"),
+    account_mode: str = Query(
+        "workspace", description="workspace or personal for admin onboarding"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     if not is_oauth_client_configured(
@@ -656,8 +659,13 @@ async def google_connect(
         )
     if intent == "admin" and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    if account_mode not in {"workspace", "personal"} or (intent != "admin" and account_mode != "workspace"):
-        raise HTTPException(status_code=400, detail="Choose Google Workspace or Personal Google for admin onboarding")
+    if account_mode not in {"workspace", "personal"} or (
+        intent != "admin" and account_mode != "workspace"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Choose Google Workspace or Personal Google for admin onboarding",
+        )
 
     state = secrets.token_urlsafe(32)
     code_verifier, code_challenge = generate_pkce_pair()
@@ -677,8 +685,11 @@ async def google_connect(
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
     scopes = (
-        GOOGLE_SOLO_SCOPES if intent == "admin" and account_mode == "personal"
-        else GOOGLE_ADMIN_SCOPES if intent == "admin" else GOOGLE_USER_SCOPES
+        GOOGLE_SOLO_SCOPES
+        if intent == "admin" and account_mode == "personal"
+        else GOOGLE_ADMIN_SCOPES
+        if intent == "admin"
+        else GOOGLE_USER_SCOPES
     )
 
     authorize_url = (
@@ -715,8 +726,11 @@ async def google_callback(
     if intent == "admin" and account_mode not in {"workspace", "personal"}:
         return _error_redirect("google", "invalid_state")
     expected_scopes = (
-        GOOGLE_SOLO_SCOPES if intent == "admin" and account_mode == "personal"
-        else GOOGLE_ADMIN_SCOPES if intent == "admin" else GOOGLE_USER_SCOPES
+        GOOGLE_SOLO_SCOPES
+        if intent == "admin" and account_mode == "personal"
+        else GOOGLE_ADMIN_SCOPES
+        if intent == "admin"
+        else GOOGLE_USER_SCOPES
     )
     code_verifier = meta.get("pkce_verifier") if meta else None
 
@@ -747,24 +761,35 @@ async def google_callback(
         if not access_token:
             return _error_redirect("google", "no_access_token")
 
+        # Account mode is security-sensitive. Verify the signed Google identity
+        # before creating/updating the tenant credential; never classify a
+        # provider tier from an unverified JWT payload.
+        id_token = token_data.get("id_token")
+        if not id_token:
+            return _error_redirect("google", "identity_verification_failed")
+        try:
+            verified_claims = await verify_google_id_token(
+                id_token,
+                client_id=settings.GOOGLE_CLIENT_ID,
+                access_token=access_token,
+            )
+        except HTTPException:
+            return _error_redirect("google", "identity_verification_failed")
+
         if intent == "admin":
+            account_type, account_domain = account_detect.detect_google(verified_claims)
+            if account_mode == "personal" and account_type != "personal":
+                return _error_redirect("google", "account_mode_mismatch")
+            if account_mode == "workspace" and account_type != "workspace":
+                return _error_redirect("google", "account_mode_mismatch")
             _user_id, tenant_id = _require_state_user(meta, "admin")
             admin_user_id = _user_id
             await set_tenant_context(db, tenant_id)
 
             # Resolve service account email from Google id_token
             service_email = None
-            decoded = None
-            id_token = token_data.get("id_token")
-            if id_token:
-                try:
-                    payload = id_token.split(".")[1]
-                    # Add padding
-                    payload += "=" * (4 - len(payload) % 4)
-                    decoded = _json.loads(base64.urlsafe_b64decode(payload))
-                    service_email = decoded.get("email")
-                except Exception:
-                    pass
+            decoded = verified_claims
+            service_email = decoded.get("email")
 
             existing = await db.execute(
                 select(TenantCredential).where(
@@ -793,11 +818,6 @@ async def google_callback(
                 expires_in=expires_in,
                 scope_str=scope_str,
             )
-            account_type, account_domain = account_detect.detect_google(decoded)
-            if account_mode == "personal" and account_type != "personal":
-                raise HTTPException(status_code=400, detail="This consent is not a Personal Google account")
-            if account_mode == "workspace" and account_type != "workspace":
-                raise HTTPException(status_code=400, detail="Google Workspace administrator consent is required for this mode")
             apply_scope_audit(row, "google", expected_scopes, _scope_is_granted)
             account_detect.apply_detection(row, account_type, account_domain)
         else:

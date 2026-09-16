@@ -189,7 +189,9 @@ async def get_onboarding_status(
         storage_ready=_has_any_root(cloud_root),
         agreements_configured=agreements["configured"],
         agreements_blocking=agreements["blocking"],
-        setup_deferred=bool((settings_record.custom_config or {}).get("onboarding_setup_deferred")),
+        setup_deferred=bool(
+            (settings_record.custom_config or {}).get("onboarding_setup_deferred")
+        ),
     )
 
 

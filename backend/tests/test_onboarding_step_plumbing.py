@@ -170,7 +170,8 @@ async def test_status_reports_the_provider_and_root_the_storage_step_saved(monke
     monkeypatch.setattr(onboarding, "_load_tenant", load_tenant)
     monkeypatch.setattr(onboarding, "_get_integration_status", integration_status)
 
-    async def agreements(*_args): return {"configured": True, "blocking": False}
+    async def agreements(*_args):
+        return {"configured": True, "blocking": False}
     monkeypatch.setattr(onboarding, "agreement_status", agreements)
     db = _SeqDb(results=[_result("google_drive"), _result(SimpleNamespace(custom_config={}))], scalars=[0, 3, 4])
     response = await onboarding.get_onboarding_status(None, db)
@@ -199,7 +200,8 @@ async def test_status_reports_storage_not_ready_for_a_malformed_root(monkeypatch
     monkeypatch.setattr(onboarding, "_load_tenant", load_tenant)
     monkeypatch.setattr(onboarding, "_get_integration_status", integration_status)
 
-    async def agreements(*_args): return {"configured": True, "blocking": False}
+    async def agreements(*_args):
+        return {"configured": True, "blocking": False}
     monkeypatch.setattr(onboarding, "agreement_status", agreements)
     db = _SeqDb(results=[_result(None), _result(SimpleNamespace(custom_config={}))], scalars=[0, 0, 1])
     response = await onboarding.get_onboarding_status(None, db)
@@ -219,7 +221,8 @@ async def test_status_reports_agreement_configuration(monkeypatch):
             "microsoft": IntegrationConnectionStatus(connected=False),
             "google": IntegrationConnectionStatus(connected=False),
         }
-    async def agreements(*_args): return {"configured": False, "blocking": False}
+    async def agreements(*_args):
+        return {"configured": False, "blocking": False}
 
     monkeypatch.setattr(onboarding, "_load_tenant", load_tenant)
     monkeypatch.setattr(onboarding, "_get_integration_status", integration_status)
@@ -240,7 +243,9 @@ async def test_unconfigured_agreements_block_new_tenant_cloud_connection(monkeyp
         return {"configured": False, "complete": False, "blocking": False}
 
     class Db(_SeqDb):
-        def __init__(self): super().__init__(); self.values = [tenant, None]
+        def __init__(self):
+            super().__init__()
+            self.values = [tenant, None]
         async def scalar(self, _statement): return self.values.pop(0)
 
     monkeypatch.setattr(onboarding, "agreement_status", agreements)
@@ -260,7 +265,9 @@ async def test_configured_existing_tenant_is_not_blocked_by_rollout_flag(monkeyp
         return {"configured": False, "complete": False, "blocking": False}
 
     class Db(_SeqDb):
-        def __init__(self): super().__init__(); self.values = [tenant, "credential-id"]
+        def __init__(self):
+            super().__init__()
+            self.values = [tenant, "credential-id"]
         async def scalar(self, _statement): return self.values.pop(0)
 
     from app.services import compliance

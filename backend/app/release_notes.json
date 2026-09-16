@@ -18,7 +18,7 @@
         },
         {
           "title": "Cloud setup is fail-closed",
-          "description": "New cloud connections wait until current required agreements are published and accepted, and document setup confirms the connected cloud folder as the matter-document system of record."
+          "description": "New cloud connections wait for current required agreements, and document setup confirms the connected cloud folder as the matter-document system of record."
         }
       ]
     },
