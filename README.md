@@ -56,10 +56,21 @@ body text, replies, forwards, and model-only date guesses do not create work.
 
 For a cloud-bound tenant, durable matter-file bytes live in the tenant-selected
 OneDrive, SharePoint, or Google Drive. Auto binds an active Microsoft 365 tenant
-to OneDrive unless the administrator overrides the provider. Portal originals
-are stored under `{matter}/client_uploads`; reviewed derivatives become new
-documents in the appropriate matter folder. Provider failure is fail-closed and
-does not silently create a durable local copy.
+to OneDrive unless the administrator overrides the provider. On a Google
+Workspace connection LawHand creates an organisation-owned **Shared Drive**
+(`LawHand Firm Records`) and places `lawhand-records` inside it, adding its own
+service account as a member so the root survives the admin who connected the
+account leaving; Microsoft roots bind to a SharePoint site library. Personal
+Google accounts have no organisation, so their root stays in the individual's
+Drive and is reported `at_risk`. Portal originals are stored under
+`{matter}/client_uploads`; reviewed derivatives become new documents in the
+appropriate matter folder. Provider failure is fail-closed and does not silently
+create a durable local copy. LawHand never deletes or destructively renames a
+customer's cloud folders. A tenant **handoff manifest** (the roots and matter
+folders, as XLSX) is planned, not yet implemented; see the ownership and handoff
+design for the current guarantee and the
+[Cloud root ownership and tenant handoff](docs/storage-root-ownership-and-handoff.md)
+follow-ups.
 
 The SaaS still stores its control plane—matters, clients, tasks, assignments,
 cloud object IDs, hashes, indexing metadata, and audit history—so the accurate
@@ -322,6 +333,7 @@ customer release-note update is declared.
 - [Customer release notes](RELEASE_NOTES.md)
 - [Technical changelog](CHANGELOG.md)
 - [MCP documentation index and future wiki handoff](docs/mcp/README.md)
+- [Cloud root ownership and tenant handoff](docs/storage-root-ownership-and-handoff.md)
 - [Architecture and trust boundaries](docs/ARCHITECTURE.md)
 - [First-customer production runbook](docs/FIRST_CUSTOMER_PRODUCTION_RUNBOOK.md)
 - [Forward email to a matter — user guide](docs/inbound_email_user_guide.md)

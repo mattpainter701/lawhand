@@ -35,6 +35,7 @@ from app.models.cloud_metadata import CloudMetadata
 from app.services.matter_cloud_scope import load_matter_document_cloud_scope
 from app.models.storage_migration import StorageMigration
 from app.models.tenant import Tenant
+from app.services import google_service_account
 from app.services.token_vault import get_fresh_token, get_fresh_user_token
 
 settings = get_settings()
@@ -855,6 +856,10 @@ class CloudSyncService:
             token = await get_fresh_user_token(db, tenant_id, user_id, provider)
         if not token:
             token = await get_fresh_token(db, tenant_id, provider)
+        if provider == "google":
+            token = await google_service_account.prefer_service_account(
+                db, tenant_id, token
+            )
         await set_tenant_context(db, tenant_id)
         return token
 

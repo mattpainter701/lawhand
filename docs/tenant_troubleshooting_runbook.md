@@ -111,6 +111,38 @@ reach further back, or set it to `0` to retain that table indefinitely under a
 litigation hold. The sweep is age-based only: resolving an error does not
 shorten its life, and leaving one unresolved does not extend it.
 
+## 7. Retire an unused trial so its address can re-onboard
+
+An abandoned or test trial keeps its login address registered, so the same
+person cannot start a fresh onboarding with it. Revoke releases the address
+without deleting the tenant:
+
+```bash
+curl -sX POST "${auth[@]}" -H 'Content-Type: application/json' \
+  "$HOST/api/platform/tenants/$TENANT_ID/revoke" \
+  -d '{"confirm_email":"owner@firm.com","reason":"abandoned test trial"}' | jq
+```
+
+`confirm_email` must name a login in that tenant; it is the confirmation token
+that stops a stale console from revoking the wrong firm.
+
+What it does:
+
+- deactivates every human login and moves each address to a non-deliverable
+  tombstone (`revoked+<user-id>@revoked.invalid`) so the original can register
+  again;
+- removes the stored Google / Microsoft credential so the old grant cannot be
+  replayed;
+- marks the tenant inactive and clears the trial marker; and
+- records a `trial.revoked` operator audit entry.
+
+What it deliberately does **not** do: delete the tenant, its append-only
+agreement evidence, or any connected Drive/OneDrive content. Revocation is
+refused with `409` when the tenant holds work product (matters, documents,
+billing, imports, and similar), so it can only reach a genuinely unused trial.
+Hard deletion of an expired disposable **demo** is a different operation and
+belongs to the demo workspace panel.
+
 ## Performance note
 
 Postgres RLS stays on for operator reads: the registry is enumerated and each

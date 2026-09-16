@@ -33,9 +33,28 @@ from app.services.provider_http import (
     ProviderNotFound,
     ProviderThrottled,
 )
+from app.services import google_service_account
 from app.services.token_vault import get_fresh_token
 
 settings = get_settings()
+
+
+async def _storage_token(db, tenant_id, provider: str) -> str | None:
+    """Resolve the identity for tenant cloud storage operations.
+
+    An org-owned Google Shared Drive must be read and written with the
+    service account, not the connecting administrator's delegated token, or
+    the root stops working when that account is disabled. Microsoft paths keep
+    the delegated token.
+    """
+    token = await get_fresh_token(db, tenant_id, provider)
+    if provider == "google":
+        token = await google_service_account.prefer_service_account(
+            db, tenant_id, token
+        )
+    return token
+
+
 logger = logging.getLogger(__name__)
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
@@ -271,7 +290,7 @@ class MatterFileStore:
                     f"Unsupported document storage backend: {backend or 'unknown'}"
                 )
 
-            token = await get_fresh_token(db, str(tenant_id), token_provider)
+            token = await _storage_token(db, str(tenant_id), token_provider)
             if not token:
                 raise ProviderAuthError(f"{provider_label} credentials are unavailable")
             content = await self._download_provider_bytes(
@@ -340,7 +359,7 @@ class MatterFileStore:
                 "?$select=id,webUrl,eTag,cTag,lastModifiedDateTime,deleted"
             )
 
-        token = await get_fresh_token(db, str(tenant_id), token_provider)
+        token = await _storage_token(db, str(tenant_id), token_provider)
         if not token:
             raise ProviderAuthError(f"{provider_label} credentials are unavailable")
         try:
@@ -434,7 +453,7 @@ class MatterFileStore:
                 f"Unsupported staged storage backend: {backend or 'unknown'}"
             )
 
-        token = await get_fresh_token(db, tenant_id, token_provider)
+        token = await _storage_token(db, tenant_id, token_provider)
         if not token:
             raise MatterFileCleanupError(
                 f"{provider_label} credentials are unavailable for staged-file cleanup"
@@ -988,7 +1007,7 @@ class MatterFileStore:
     ) -> StorageResult | None:
         """Try to store in customer's Google Drive. Uses resumable upload for files > 5 MiB."""
         try:
-            token = await get_fresh_token(db, tenant_id, "google")
+            token = await _storage_token(db, tenant_id, "google")
             if not token:
                 return StorageResult(
                     provider="google",

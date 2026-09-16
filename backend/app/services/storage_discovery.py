@@ -9,6 +9,7 @@ from urllib.parse import quote, urlparse
 import httpx
 from dateutil import parser as dateutil_parser
 
+from app.services import google_service_account
 from app.services.token_vault import get_fresh_token
 
 MAX_PAGES = 10_000
@@ -60,6 +61,9 @@ class StorageDiscovery:
 
     async def _google(self, db, tenant_id: str, root: dict) -> list[dict[str, Any]]:
         token = await get_fresh_token(db, tenant_id, "google")
+        token = await google_service_account.prefer_service_account(
+            db, tenant_id, token
+        )
         if not token:
             raise ValueError("Google credentials are unavailable")
         root_id = root.get("id") or root.get("folder_id")

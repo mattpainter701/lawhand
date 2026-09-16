@@ -59,6 +59,8 @@ async def test_reenter_admin_preserves_completion_and_root(monkeypatch):
     )
 
     assert result["cloud_root"] == tenant.cloud_root_folder
+    assert result["root_ownership"]["status"] == "at_risk"
+    assert "Google Drive" in result["root_ownership"]["at_risk_providers"]
     assert tenant.onboarding_completed is True
     assert tenant.onboarding_step == 1
     assert tenant.custom_config["onboarding_reentry_active"] is True
@@ -100,6 +102,7 @@ async def test_reenter_target_starts_migration(monkeypatch):
     )
 
     assert result["migration_id"] == "migration-1"
+    assert result["root_ownership"]["status"] == "at_risk"
     assert tenant.onboarding_completed is True
     assert tenant.custom_config["onboarding_reentry_active"] is True
     assert tenant.cloud_root_folder["google_drive"]["id"] == "existing-root"

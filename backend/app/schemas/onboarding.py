@@ -22,6 +22,9 @@ class OnboardingStatusResponse(BaseModel):
     primary_cloud_provider: str | None = None
     cloud_root: dict | None = None
     storage_ready: bool = False
+    # Whether the bound document root is org-owned (survives staff turnover)
+    # or lives in one person's drive. Derived read-only from cloud_root.
+    root_ownership: dict | None = None
     agreements_configured: bool = False
     agreements_blocking: bool = False
     setup_deferred: bool = False
