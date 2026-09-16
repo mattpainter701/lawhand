@@ -12,7 +12,7 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["193_trial_premium_override"]
+    assert heads == ["194_signing_placement_problems"]
 
 
 def test_matter_engagement_migration_adds_open_date_and_engagement_columns():
