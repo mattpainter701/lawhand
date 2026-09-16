@@ -123,6 +123,14 @@ def test_demo_has_explicit_public_and_daily_limits_without_changing_unknown_fall
     assert TENANT_DAILY_LIMITS["payg"] == 10_000
 
 
+def test_a_trial_gets_a_subscription_allowance_not_the_payg_fallback():
+    # An unlisted tier falls through to the payg entry, which would hand a
+    # trial firm the highest allowance in the system. A trial is meant to be
+    # an honest preview of a paid subscription, so it matches flat.
+    assert TENANT_DAILY_LIMITS["trial"] == TENANT_DAILY_LIMITS["flat"] == 1_000
+    assert TENANT_DAILY_LIMITS["trial"] != TENANT_DAILY_LIMITS["payg"]
+
+
 @pytest.mark.asyncio
 async def test_platform_bootstrap_is_limited_by_source_ip(monkeypatch):
     redis_client = _FakeRedis()

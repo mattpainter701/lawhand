@@ -91,6 +91,19 @@ PLANS: dict[str, Plan] = {
         public_signup=False,
         upsell_target="full-platform",
     ),
+    "full-trial": Plan(
+        id="full-trial",
+        label="Full Platform Trial",
+        modules=list(FULL_PLATFORM_MODULES),
+        default_module="matters",
+        # Its own tier, not payg: payg carries the Research/premium usage
+        # markup and the highest daily allowance, neither of which belongs on
+        # a trial. Paying converts the firm to "flat"
+        # (platform_billing.end_trial_when_paid).
+        billing_tier="trial",
+        public_signup=True,
+        upsell_target="full-platform",
+    ),
     "full-platform": Plan(
         id="full-platform",
         label="Full Platform",

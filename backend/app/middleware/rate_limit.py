@@ -84,7 +84,11 @@ SKIP_PREFIXES = (
     "/openapi.json",
 )
 
-TENANT_DAILY_LIMITS = {"flat": 1_000, "payg": 10_000, "demo": 200}
+# A trial gets the same allowance as a paid subscription, so the trial is an
+# honest preview and converting changes nothing about capacity. Listing it
+# explicitly matters: an unlisted tier falls through to the payg entry below,
+# which would hand a trial firm the highest allowance in the system.
+TENANT_DAILY_LIMITS = {"flat": 1_000, "trial": 1_000, "payg": 10_000, "demo": 200}
 USER_HOURLY_LIMIT = 600
 
 # Cheap, high-frequency read endpoints that the SPA polls in the background.
