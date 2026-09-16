@@ -186,6 +186,7 @@ This inventory gathers the repository inputs that need SBOM, AI BOM, DLP, vulner
 |lawhand-standard-deepseek-flash-free|openai/deepseek-v4-flash-free|https://opencode.ai/zen/v1|os.environ/OPENCODE_ZEN_API_KEY|litellm_config.yaml|
 |lawhand-premium|openai/deepseek-v4-pro|https://opencode.ai/zen/go/v1|os.environ/OPENCODE_GO_API_KEY|litellm_config.yaml|
 |lawhand-premium-openrouter-gemma|openrouter/google/gemma-4-31b-it:free|default/provider|os.environ/OPENROUTER_API_KEY|litellm_config.yaml|
+|lawhand-intake-extraction|openrouter/deepseek/deepseek-v4.1-flash|default/provider|os.environ/OPENROUTER_API_KEY|litellm_config.yaml|
 |lawhand-background|openai/gpt-5.6-luna|https://opencode.ai/zen/go/v1|os.environ/OPENCODE_GO_API_KEY|litellm_config.yaml|
 |lawhand-background-zen|openai/gpt-5.6-luna|https://opencode.ai/zen/v1|os.environ/OPENCODE_ZEN_API_KEY|litellm_config.yaml|
 

@@ -818,18 +818,21 @@ async def propose_matter_document_facts(
     matter_id: str,
     doc_id: str,
     request: Request,
+    ai: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """Propose record values the source document itself supports.
 
     Read-only against the records: every candidate is returned for review and
-    nothing is written until a reviewer accepts a specific one.
+    nothing is written until a reviewer accepts a specific one. ``ai=true``
+    adds a bounded model pass for scans and drifted labels; it is opt-in, metered,
+    and fails soft to the deterministic result.
     """
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return await matter_fact_extraction.propose(
-        db, user, uuid.UUID(matter_id), uuid.UUID(doc_id)
+        db, user, uuid.UUID(matter_id), uuid.UUID(doc_id), use_ai=ai
     )
 
 

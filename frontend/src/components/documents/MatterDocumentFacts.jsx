@@ -22,6 +22,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
   const [done, setDone] = useState({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [useAi, setUseAi] = useState(false)
   const documents = providedDocuments || fetched
   const documentId = providedDocumentId || pickedId
 
@@ -55,7 +56,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
     setDone({})
     setMessage('')
     try {
-      const result = await proposeMatterDocumentFacts(matterId, documentId)
+      const result = await proposeMatterDocumentFacts(matterId, documentId, useAi)
       if (version !== requestVersion.current) return
       setProposal(result)
       setValues(Object.fromEntries((result.candidates || []).map(entry => [rowId(entry), entry.value == null ? '' : String(entry.value)])))
@@ -65,7 +66,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
     } finally {
       if (version === requestVersion.current) setBusy(false)
     }
-  }, [matterId, documentId])
+  }, [matterId, documentId, useAi])
 
   const accept = async entry => {
     const id = rowId(entry)
@@ -112,6 +113,15 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
           </select>
         </label>
       )}
+      <label className="mt-2 flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={useAi}
+          disabled={busy}
+          onChange={event => setUseAi(event.target.checked)}
+        />
+        Also read with AI for scans and prose (document text is sent to the AI provider)
+      </label>
       <button type="button" onClick={read} disabled={busy || !documentId} className="mt-2 border rounded p-2 text-sm">
         {busy ? 'Reading…' : 'Find details'}
       </button>

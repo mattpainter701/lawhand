@@ -66,3 +66,16 @@ it('does nothing without a matter', () => {
   expect(container).toBeEmptyDOMElement()
   expect(getMatterDocuments).not.toHaveBeenCalled()
 })
+
+it('asks the server for AI reading only when the reviewer opts in', async () => {
+  proposeMatterDocumentFacts.mockResolvedValue({ source_document_id: 'source', source_filename: 'intake.pdf', candidates: [], warnings: [] })
+  render(<MatterDocumentFacts matterId="matter" />)
+  fireEvent.click(screen.getByText('Read details from a document'))
+  await screen.findByText('intake.pdf')
+  fireEvent.change(screen.getByLabelText('Source document'), { target: { value: 'source' } })
+  fireEvent.click(screen.getByText('Find details'))
+  await waitFor(() => expect(proposeMatterDocumentFacts).toHaveBeenCalledWith('matter', 'source', false))
+  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(screen.getByText('Find details'))
+  await waitFor(() => expect(proposeMatterDocumentFacts).toHaveBeenLastCalledWith('matter', 'source', true))
+})

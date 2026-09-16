@@ -453,22 +453,59 @@ async def _custom_value_row(db, tenant_id, matter, target):
     )
 
 
-async def propose(db, user, matter_id, document_id):  # noqa: C901 - one review pass
-    """Build every reviewed proposal the source supports for this matter."""
+async def propose(db, user, matter_id, document_id, use_ai: bool = False):  # noqa: C901
+    """Build every reviewed proposal the source supports for this matter.
+
+    ``use_ai`` adds a bounded model pass for the cases the deterministic reader
+    cannot see — a scan, a drifted label, a fact stated in prose. It only adds
+    candidates for the same human review; an AI value is never accepted here,
+    and a failed or disabled model leaves the deterministic result intact.
+    """
 
     tenant_id = uuid.UUID(str(user.tenant_id))
     matter, document, content = await _load_source(db, user, matter_id, document_id)
     targets = await build_targets(db, tenant_id)
+    form_values = _form_values(document, content)
     text = _extract_text(document, content)
-    candidates = extract_candidates(
-        text=text, form_values=_form_values(document, content), targets=targets
-    )
+    candidates = extract_candidates(text=text, form_values=form_values, targets=targets)
 
     warnings: list[str] = []
     if not text.strip() and not candidates:
         warnings.append(
             "No text layer or form values were found. A scan needs OCR before its answers can be proposed."
         )
+
+    if use_ai:
+        from app.services import intake_extraction_ai
+
+        try:
+            ai_values = await intake_extraction_ai.extract_with_ai(
+                db=db,
+                user=user,
+                text=text,
+                targets=targets,
+                document_sha256=hashlib.sha256(content).hexdigest(),
+            )
+        except intake_extraction_ai.IntakeExtractionUnavailable as exc:
+            warnings.append(str(exc))
+            ai_values = {}
+        except Exception:
+            warnings.append(
+                "AI document extraction failed; the deterministic read stands."
+            )
+            ai_values = {}
+        for target_key, value in ai_values.items():
+            candidates.setdefault(target_key, []).append(
+                Candidate(str(value), "ai", "model", 0.7)
+            )
+        if ai_values:
+            warnings.append(
+                "AI proposed additional values for review. Verify each against the document before accepting."
+            )
+        # extract_with_ai commits the usage record, which clears the
+        # transaction-local tenant context RLS relies on; restore it before the
+        # custom-field lookups below.
+        await set_tenant_context(db, str(tenant_id))
 
     proposals = []
     for target in targets:
@@ -547,6 +584,28 @@ def _find_proposal(proposal, target_key):
     return None
 
 
+def _value_in_evidence(live, text, form_values) -> bool:
+    """Whether a reviewed value literally occurs in the source.
+
+    The deterministic candidates are exact label matches; an AI-proposed or
+    reviewer-corrected value has no deterministic candidate to match, so it is
+    grounded here instead. The value must still appear in the document text or
+    a form field — a reviewer cannot accept a value the document never stated —
+    which is the same rule as the candidate check, only wider.
+    """
+
+    needle = _normalize_evidence(live)
+    if not needle:
+        return False
+    haystacks = [_normalize_evidence(text)]
+    haystacks.extend(_normalize_evidence(entry.get("value")) for entry in form_values)
+    return any(needle in haystack for haystack in haystacks if haystack)
+
+
+def _normalize_evidence(value) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
 async def accept(db, user, matter_id, document_id, payload: FactDecision):
     """Apply one reviewed value after re-proving it against the live source.
 
@@ -565,14 +624,17 @@ async def accept(db, user, matter_id, document_id, payload: FactDecision):
         )
 
     text = _extract_text(document, content)
+    form_values = _form_values(document, content)
     candidates = extract_candidates(
-        text=text, form_values=_form_values(document, content), targets=targets
+        text=text, form_values=form_values, targets=targets
     ).get(target.key, [])
     live = target.normalize(payload.value)
     if live is None:
         raise HTTPException(status_code=422, detail="That value is not supported.")
     supported = {candidate.value.casefold() for candidate in candidates}
-    if str(live).casefold() not in supported:
+    if str(live).casefold() not in supported and not _value_in_evidence(
+        live, text, form_values
+    ):
         raise HTTPException(
             status_code=409,
             detail="The source no longer contains that value. Read the document again before accepting.",
@@ -753,6 +815,20 @@ async def tenant_enabled(db, tenant_id) -> bool:
     return extraction_enabled(row)
 
 
+def ai_extraction_enabled(settings_row) -> bool:
+    """Whether a tenant has additionally allowed the model to read documents.
+
+    Separate from ``extraction_enabled`` on purpose: a firm can review details
+    from a document it uploaded without sending that document to a model.
+    """
+
+    if settings_row is None:
+        return False
+    config = settings_row.custom_config or {}
+    section = config.get(FLAG_SECTION) or {}
+    return bool(section.get("ai_enabled"))
+
+
 TASK_KIND = "matter_fact_extraction"
 
 
@@ -768,8 +844,12 @@ async def extract_and_queue(
     """
 
     user = SimpleNamespace(id=actor_id, tenant_id=tenant_id)
+    settings_row = await db.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+    )
+    use_ai = ai_extraction_enabled(settings_row)
     try:
-        proposal = await propose(db, user, matter_id, document_id)
+        proposal = await propose(db, user, matter_id, document_id, use_ai=use_ai)
     except HTTPException as exc:
         return {"status": "skipped", "reason": exc.detail}
     if not proposal["candidates"]:
