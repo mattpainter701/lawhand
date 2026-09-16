@@ -3,14 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SignupPage from './SignupPage'
-import { register, signupWithPlan } from '../api'
+import { signupWithPlan } from '../api'
 
-const authLogin = vi.fn().mockResolvedValue({ default_route: '/intake/dashboard' })
-
-vi.mock('../App', () => ({ useAuth: () => ({ login: authLogin }) }))
 vi.mock('../api', () => ({
-  register: vi.fn(),
-  signupWithPlan: vi.fn().mockResolvedValue({}),
+  signupWithPlan: vi.fn().mockResolvedValue({ status: 'pending_approval' }),
 }))
 
 describe('plan signup', () => {
@@ -19,7 +15,7 @@ describe('plan signup', () => {
     vi.unstubAllEnvs()
   })
 
-  it('provisions the selected intake plan and does not offer generic OAuth signup', async () => {
+  it('requests the selected intake plan without opening a session', async () => {
     vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true')
     const user = userEvent.setup()
     render(
@@ -35,15 +31,15 @@ describe('plan signup', () => {
     await user.type(screen.getByLabelText('Email *'), 'owner@launchfirm.com')
     await user.type(screen.getByLabelText('Password *'), 'LaunchReadyPass123!')
     await user.type(screen.getByLabelText('Your Name'), 'Owner One')
-    await user.click(screen.getByRole('button', { name: 'Create Account with Email' }))
+    await user.click(screen.getByRole('button', { name: 'Request LawHand access' }))
 
     expect(signupWithPlan).toHaveBeenCalledWith(expect.objectContaining({
       plan: 'intake-only',
       firm_name: 'Launch Firm',
       email: 'owner@launchfirm.com',
     }))
-    expect(register).not.toHaveBeenCalled()
-    expect(authLogin).toHaveBeenCalled()
+    expect(await screen.findByRole('heading', { name: 'Registration received' })).toBeInTheDocument()
+    expect(screen.getByText(/No trial time has started yet/i)).toBeInTheDocument()
   })
 
   it('routes launch visitors to operator-assisted provisioning', () => {
@@ -59,6 +55,6 @@ describe('plan signup', () => {
       'href',
       '/request-demo?source=signup',
     )
-    expect(screen.queryByRole('button', { name: 'Create Account with Email' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Request LawHand access' })).not.toBeInTheDocument()
   })
 })

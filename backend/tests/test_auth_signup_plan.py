@@ -1,6 +1,5 @@
 import pytest
 import pytest_asyncio
-from datetime import datetime, timedelta, timezone
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -28,7 +27,7 @@ async def public_client(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_public_signup_provisions_intake_tenant(public_client, db_session):
+async def test_public_signup_records_pending_intake_tenant(public_client, db_session):
     resp = await public_client.post(
         "/api/auth/signup/plan",
         json={
@@ -42,36 +41,37 @@ async def test_public_signup_provisions_intake_tenant(public_client, db_session)
             "phone": "+1 701-555-0101",
         },
     )
-    assert resp.status_code == 201
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "pending_approval"
     user = (
         await db_session.execute(select(User).where(User.email == "owner@reception.co"))
     ).scalar_one()
     assert user.role == "admin"
+    assert user.is_active is False
     ts = (
         await db_session.execute(
             select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
         )
     ).scalar_one()
     assert ts.custom_config["plan"] == "intake-only"
+    assert ts.custom_config["signup_status"] == "pending"
+    assert ts.custom_config.get("trial") is None
     tenant = (
         await db_session.execute(select(Tenant).where(Tenant.id == user.tenant_id))
     ).scalar_one()
     assert tenant.billing_tier == "intake_trial"
+    assert tenant.is_active is False
+    assert tenant.expires_at is None
     assert tenant.staff_size == 4
     assert tenant.address == "100 First Customer Way"
     assert tenant.phone == "+1 701-555-0101"
 
 
 @pytest.mark.asyncio
-async def test_full_trial_signup_provisions_the_whole_platform_on_the_trial_tier(
+async def test_full_trial_signup_waits_for_operator_before_starting_access(
     public_client, db_session
 ):
-    """The self-serve trial is the full product minus premium AI.
-
-    Its own billing tier matters: payg carries the Research/premium usage
-    markup and the highest daily allowance, and an unlisted tier falls back to
-    payg. Paying converts the firm to "flat".
-    """
+    """An anonymous registration creates no usable product or trial clock."""
     resp = await public_client.post(
         "/api/auth/signup/plan",
         json={
@@ -83,21 +83,22 @@ async def test_full_trial_signup_provisions_the_whole_platform_on_the_trial_tier
         },
     )
 
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 202, resp.text
     user = (
         await db_session.execute(
             select(User).where(User.email == "owner@wholeplatform.co")
         )
     ).scalar_one()
     assert user.role == "admin"
+    assert user.is_active is False
     assert user.premium_ai_enabled is False
 
     tenant = (
         await db_session.execute(select(Tenant).where(Tenant.id == user.tenant_id))
     ).scalar_one()
     assert tenant.billing_tier == "trial"
-    remaining = tenant.expires_at.astimezone(timezone.utc) - datetime.now(timezone.utc)
-    assert timedelta(days=29, hours=23) < remaining <= timedelta(days=30, minutes=5)
+    assert tenant.is_active is False
+    assert tenant.expires_at is None
 
     settings_row = (
         await db_session.execute(
@@ -105,11 +106,12 @@ async def test_full_trial_signup_provisions_the_whole_platform_on_the_trial_tier
         )
     ).scalar_one()
     assert settings_row.custom_config["plan"] == "full-trial"
-    assert settings_row.custom_config["trial"] is True
+    assert settings_row.custom_config["signup_status"] == "pending"
+    assert settings_row.custom_config.get("trial") is None
 
 
 @pytest.mark.asyncio
-async def test_public_signup_sets_thirty_day_trial_and_no_premium(
+async def test_public_signup_starts_no_trial_and_grants_no_premium(
     public_client, db_session
 ):
     resp = await public_client.post(
@@ -122,7 +124,7 @@ async def test_public_signup_sets_thirty_day_trial_and_no_premium(
             "full_name": "Trial Owner",
         },
     )
-    assert resp.status_code == 201
+    assert resp.status_code == 202
 
     user = (
         await db_session.execute(select(User).where(User.email == "owner@trial.co"))
@@ -136,14 +138,13 @@ async def test_public_signup_sets_thirty_day_trial_and_no_premium(
         )
     ).scalar_one()
 
-    # Premium AI is held back for the whole trial.
+    # No entitlement or trial clock exists before Platform approval.
     assert user.premium_ai_enabled is False
-    # The trial is explicit in config and enforced through expires_at.
-    assert ts.custom_config["trial"] is True
-    assert "trial_ends_at" in ts.custom_config
-    assert tenant.expires_at is not None
-    remaining = tenant.expires_at.astimezone(timezone.utc) - datetime.now(timezone.utc)
-    assert timedelta(days=29, hours=23) < remaining <= timedelta(days=30, minutes=5)
+    assert user.is_active is False
+    assert ts.custom_config["signup_status"] == "pending"
+    assert "trial_ends_at" not in ts.custom_config
+    assert tenant.is_active is False
+    assert tenant.expires_at is None
 
 
 @pytest.mark.asyncio
@@ -167,9 +168,9 @@ async def test_public_signup_notifies_operator(public_client, db_session, monkey
             "full_name": "Notify Owner",
         },
     )
-    assert resp.status_code == 201
+    assert resp.status_code == 202
     assert captured.get("to")
-    assert "trial" in captured["subject"].lower()
+    assert "awaiting approval" in captured["subject"].lower()
 
 
 @pytest.mark.asyncio
@@ -192,7 +193,7 @@ async def test_public_signup_survives_notification_failure(
         },
     )
     # A notification failure must never fail the signup itself.
-    assert resp.status_code == 201
+    assert resp.status_code == 202
 
 
 @pytest.mark.asyncio

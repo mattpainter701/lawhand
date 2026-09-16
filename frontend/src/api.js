@@ -1478,6 +1478,12 @@ export const executeRetention = (dryRun = true) => api.post('/compliance/retenti
 export const getPlatformTenants = (key, page = 1) =>
   platformApi(key).get(`/platform/tenants?page=${page}`).then((r) => r.data)
 
+export const provisionPlatformTenant = (key, data) =>
+  platformApi(key).post('/platform/tenants', data).then((r) => r.data)
+
+export const approvePlatformTenantTrial = (key, id, data) =>
+  platformApi(key).post(`/platform/tenants/${id}/approve-trial`, data).then((r) => r.data)
+
 export const getPlatformTenant = (key, id) =>
   platformApi(key).get(`/platform/tenants/${id}`).then((r) => r.data)
 export const getPlatformTenantCompliance = (key, id) =>

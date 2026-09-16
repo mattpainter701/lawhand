@@ -66,6 +66,9 @@ from app.services.llm_routing import (
 )
 from app.services.module_visibility import KNOWN_MODULES, normalize_module_name
 from app.services.trials import (
+    SIGNUP_APPROVED,
+    SIGNUP_PENDING,
+    SIGNUP_STATUS_KEY,
     TRIAL_ENDS_KEY,
     TRIAL_MARKER,
     TRIAL_STARTED_KEY,
@@ -345,6 +348,7 @@ class TenantSummary(BaseModel):
     # expiry so operators can distinguish a trial from a paid tenant that
     # happens to carry an expiry.
     on_trial: bool = False
+    signup_status: str = "active"
     premium_ai_trial_enabled: bool = False
     flat_seat_count: int
     is_active: bool
@@ -383,6 +387,20 @@ class TenantUpdate(BaseModel):
     # Firm-wide sponsored Premium AI grant during a trial. This updates the
     # tenant gate and every licensed human user; ordinary trials default off.
     premium_ai_trial_enabled: Optional[bool] = None
+
+
+class TenantProvisionRequest(BaseModel):
+    firm_name: str = Field(min_length=2, max_length=255)
+    admin_email: str = Field(min_length=3, max_length=255)
+    admin_name: Optional[str] = Field(default=None, max_length=255)
+    trial_days: int = Field(default=30, ge=1, le=365)
+    plan: str = "full-trial"
+    premium_ai_trial_enabled: bool = False
+
+
+class TenantApprovalRequest(BaseModel):
+    trial_days: int = Field(default=30, ge=1, le=365)
+    premium_ai_trial_enabled: bool = False
 
 
 class PlatformLLMConfigUpdate(BaseModel):
@@ -548,6 +566,7 @@ async def list_tenants(
     user_counts: dict[str, int] = {}
     usage: dict[str, tuple[int, float]] = {}
     on_trial: dict[str, bool] = {}
+    signup_status: dict[str, str] = {}
     for tenant in tenants:
         async with _platform_tenant_scope(db, tenant.id):
             user_counts[str(tenant.id)] = int(
@@ -556,12 +575,16 @@ async def list_tenants(
                 )
                 or 0
             )
-            on_trial[str(tenant.id)] = config_marks_trial(
-                await db.scalar(
-                    select(TenantSettings.custom_config).where(
-                        TenantSettings.tenant_id == tenant.id
-                    )
+            tenant_config = await db.scalar(
+                select(TenantSettings.custom_config).where(
+                    TenantSettings.tenant_id == tenant.id
                 )
+            )
+            on_trial[str(tenant.id)] = config_marks_trial(tenant_config)
+            signup_status[str(tenant.id)] = (
+                tenant_config.get(SIGNUP_STATUS_KEY, "active")
+                if isinstance(tenant_config, dict)
+                else "active"
             )
             usage_row = (
                 await db.execute(
@@ -593,6 +616,7 @@ async def list_tenants(
                 tenant_type=_tenant_type(t),
                 expires_at=t.expires_at,
                 on_trial=on_trial.get(str(t.id), False),
+                signup_status=signup_status.get(str(t.id), "active"),
                 premium_ai_trial_enabled=t.premium_ai_trial_enabled,
                 flat_seat_count=t.flat_seat_count,
                 is_active=t.is_active,
@@ -611,6 +635,235 @@ async def list_tenants(
         "total": total,
         "page": page,
         "limit": limit,
+    }
+
+
+@router.post("/tenants", status_code=201)
+async def provision_trial_tenant(
+    body: TenantProvisionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Provision one invited trial firm without opening public registration."""
+
+    import re
+
+    from app.services.email import EmailDeliveryResult
+    from app.services.plans import get_plan
+    from app.services.rbac_service import provision_tenant_rbac
+    from app.services.trials import notify_trial_invited, trial_config
+    from app.services.user_invitations import create_invitation, invitation_url
+
+    principal = _require_platform_key(request)
+    firm_name = body.firm_name.strip()
+    admin_email = body.admin_email.strip().lower()
+    admin_name = (body.admin_name or "").strip() or None
+    if len(firm_name) < 2:
+        raise HTTPException(status_code=400, detail="Firm name is required")
+    if (
+        "@" not in admin_email
+        or admin_email.startswith("@")
+        or admin_email.endswith("@")
+    ):
+        raise HTTPException(
+            status_code=400, detail="A valid administrator email is required"
+        )
+
+    plan = get_plan(body.plan)
+    if plan is None or plan.id not in {"intake-only", "full-trial", "full-platform"}:
+        raise HTTPException(status_code=400, detail="Unsupported provisioning plan")
+
+    for existing_tenant_id in await _platform_tenant_ids(db):
+        async with _platform_tenant_scope(db, existing_tenant_id):
+            existing_user = await db.scalar(
+                select(User.id).where(func.lower(User.email) == admin_email)
+            )
+        if existing_user is not None:
+            raise HTTPException(status_code=409, detail="Email already registered")
+
+    slug = re.sub(r"[^a-z0-9]+", "-", firm_name.lower()).strip("-") or "firm"
+    tenant = Tenant(
+        id=uuid.uuid4(),
+        name=firm_name,
+        domain=f"{slug}-{uuid.uuid4().hex[:8]}",
+        company_name=firm_name,
+        billing_tier=plan.billing_tier,
+        flat_seat_count=1,
+        is_active=True,
+        premium_ai_trial_enabled=body.premium_ai_trial_enabled,
+    )
+    trial_start = datetime.now(timezone.utc)
+    trial_end = trial_start + timedelta(days=body.trial_days)
+    tenant.expires_at = trial_end
+    db.add(tenant)
+    await db.flush()
+
+    async with _platform_tenant_scope(db, tenant.id):
+        db.add(
+            TenantSettings(
+                tenant_id=tenant.id,
+                custom_config={
+                    "plan": plan.id,
+                    SIGNUP_STATUS_KEY: SIGNUP_APPROVED,
+                    **trial_config(trial_start, trial_end),
+                },
+            )
+        )
+        admin = User(
+            id=uuid.uuid4(),
+            tenant_id=tenant.id,
+            email=admin_email,
+            full_name=admin_name,
+            role="admin",
+            is_active=False,
+            license_active=True,
+            premium_ai_enabled=body.premium_ai_trial_enabled,
+            password_hash=None,
+        )
+        db.add(admin)
+        await db.flush()
+        raw_invitation = await create_invitation(
+            db,
+            tenant_id=tenant.id,
+            user_id=admin.id,
+            created_by_user_id=None,
+        )
+        await provision_tenant_rbac(db, tenant.id, admin.id)
+        await db.flush()
+
+    await record_operator_audit(
+        db,
+        request,
+        action="tenant.provisioned",
+        resource_type="tenant",
+        resource_id=str(tenant.id),
+        actor_id=principal.actor_id,
+        metadata={
+            "firm_name": firm_name,
+            "admin_email": admin_email,
+            "plan": plan.id,
+            "trial_days": body.trial_days,
+            "premium_ai_trial_enabled": body.premium_ai_trial_enabled,
+        },
+    )
+    await db.commit()
+
+    accept_url = invitation_url(raw_invitation)
+    try:
+        delivery = await notify_trial_invited(
+            tenant_name=firm_name,
+            admin_email=admin_email,
+            admin_name=admin_name,
+            invitation_url=accept_url,
+            trial_ends_at=trial_end,
+        )
+    except Exception:
+        delivery = EmailDeliveryResult.FAILED
+
+    return {
+        "status": "invited",
+        "tenant_id": str(tenant.id),
+        "user_id": str(admin.id),
+        "trial_ends_at": trial_end,
+        "premium_ai_trial_enabled": body.premium_ai_trial_enabled,
+        "email_status": delivery.value,
+        "invitation_url": accept_url,
+    }
+
+
+@router.post("/tenants/{tenant_id}/approve-trial")
+async def approve_trial_tenant(
+    tenant_id: str,
+    body: TenantApprovalRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Activate one pending registration and start its bounded trial."""
+
+    from app.services.email import EmailDeliveryResult
+    from app.services.plans import get_plan
+    from app.services.trials import notify_trial_approved, trial_config
+
+    principal = _require_platform_key(request)
+    parsed_tenant_id = _parse_uuid(tenant_id, "tenant")
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == parsed_tenant_id))
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    trial_start = datetime.now(timezone.utc)
+    trial_end = trial_start + timedelta(days=body.trial_days)
+    recipients: list[str] = []
+    async with _platform_tenant_scope(db, tenant.id):
+        tenant_settings = await db.scalar(
+            select(TenantSettings).where(TenantSettings.tenant_id == tenant.id)
+        )
+        config = dict((tenant_settings.custom_config or {}) if tenant_settings else {})
+        if config.get(SIGNUP_STATUS_KEY) != SIGNUP_PENDING or tenant.is_active:
+            raise HTTPException(
+                status_code=409,
+                detail="Only a pending registration can be approved",
+            )
+        plan = get_plan(config.get("plan"))
+        if plan is None:
+            raise HTTPException(
+                status_code=409, detail="Pending registration has no valid plan"
+            )
+
+        tenant.is_active = True
+        tenant.expires_at = trial_end
+        tenant.billing_tier = plan.billing_tier
+        tenant.premium_ai_trial_enabled = body.premium_ai_trial_enabled
+        users = list(
+            (
+                await db.scalars(
+                    select(User).where(
+                        User.tenant_id == tenant.id,
+                        User.principal_type == "human",
+                    )
+                )
+            ).all()
+        )
+        for user in users:
+            if user.role == "admin":
+                user.is_active = True
+                recipients.append(user.email)
+            user.premium_ai_enabled = bool(
+                body.premium_ai_trial_enabled and user.license_active
+            )
+        config.update(trial_config(trial_start, trial_end))
+        config[SIGNUP_STATUS_KEY] = SIGNUP_APPROVED
+        tenant_settings.custom_config = config
+        await db.flush()
+
+    await record_operator_audit(
+        db,
+        request,
+        action="tenant.trial_approved",
+        resource_type="tenant",
+        resource_id=str(tenant.id),
+        actor_id=principal.actor_id,
+        metadata={
+            "trial_days": body.trial_days,
+            "premium_ai_trial_enabled": body.premium_ai_trial_enabled,
+            "activated_admins": len(recipients),
+        },
+    )
+    await db.commit()
+    try:
+        delivery = await notify_trial_approved(
+            tenant_name=tenant.name,
+            recipients=recipients,
+            trial_ends_at=trial_end,
+            premium_ai_enabled=body.premium_ai_trial_enabled,
+        )
+    except Exception:
+        delivery = EmailDeliveryResult.FAILED
+    return {
+        "status": "approved",
+        "tenant_id": str(tenant.id),
+        "trial_ends_at": trial_end,
+        "premium_ai_trial_enabled": body.premium_ai_trial_enabled,
+        "email_status": delivery.value,
     }
 
 
@@ -900,6 +1153,9 @@ async def get_tenant_detail(
             tenant_type=_tenant_type(tenant),
             expires_at=tenant.expires_at,
             on_trial=config_marks_trial((ts.custom_config or {}) if ts else None),
+            signup_status=(ts.custom_config or {}).get(SIGNUP_STATUS_KEY, "active")
+            if ts
+            else "active",
             premium_ai_trial_enabled=tenant.premium_ai_trial_enabled,
             flat_seat_count=tenant.flat_seat_count,
             is_active=tenant.is_active,
@@ -1020,6 +1276,29 @@ async def update_tenant(
         raise HTTPException(
             status_code=409,
             detail="Use the demo workspace panel to terminate disposable demos",
+        )
+
+    async with _platform_tenant_scope(db, tenant.id):
+        current_config = await db.scalar(
+            select(TenantSettings.custom_config).where(
+                TenantSettings.tenant_id == tenant.id
+            )
+        )
+    if (
+        isinstance(current_config, dict)
+        and current_config.get(SIGNUP_STATUS_KEY) == SIGNUP_PENDING
+        and any(
+            _field_was_sent(body, field)
+            for field in (
+                "is_active",
+                "trial_ends_at",
+                "premium_ai_trial_enabled",
+            )
+        )
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Use Approve trial to activate a pending registration",
         )
 
     trial_extension_end: datetime | None = None

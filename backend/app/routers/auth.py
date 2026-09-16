@@ -1926,17 +1926,15 @@ async def register(
     )
 
 
-@router.post("/signup/plan", status_code=201)
+@router.post("/signup/plan", status_code=202)
 async def signup_with_plan(
     body: PlanSignupRequest,
-    request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Self-serve provisioning for a public plan (e.g. standalone Call Intake).
+    """Record a self-serve registration for explicit Platform approval.
 
-    Creates a tenant on the plan's billing tier, an admin user, and a trial
-    window. Only plans flagged ``public_signup`` may be requested here.
+    Registration creates no active access, trial clock, session, or provider
+    customer. The operator approval route is the only spend boundary.
     """
     _require_public_signup_enabled()
 
@@ -1945,9 +1943,9 @@ async def signup_with_plan(
     from app.models.tenant import TenantSettings
     from app.services.plans import get_plan
     from app.services.trials import (
-        new_trial_window,
-        notify_operator_trial_started,
-        trial_config,
+        SIGNUP_PENDING,
+        SIGNUP_STATUS_KEY,
+        notify_operator_signup_requested,
     )
 
     plan = get_plan(body.plan)
@@ -1965,7 +1963,6 @@ async def signup_with_plan(
     slug = re.sub(r"[^a-z0-9]+", "-", body.firm_name.lower()).strip("-") or "firm"
     domain = f"{slug}-{uuid.uuid4().hex[:8]}"
 
-    trial_start, trial_end = new_trial_window()
     tenant = Tenant(
         id=uuid.uuid4(),
         name=body.firm_name,
@@ -1975,10 +1972,8 @@ async def signup_with_plan(
         address=body.address,
         phone=body.phone,
         billing_tier=plan.billing_tier,
-        is_active=True,
-        # Expiry is the enforced trial boundary; a lapsed trial fails closed in
-        # services/tenant_state.require_active_tenant on every request path.
-        expires_at=trial_end,
+        is_active=False,
+        expires_at=None,
     )
     db.add(tenant)
     await db.flush()
@@ -1986,7 +1981,7 @@ async def signup_with_plan(
     db.add(
         TenantSettings(
             tenant_id=tenant.id,
-            custom_config={"plan": plan.id, **trial_config(trial_start, trial_end)},
+            custom_config={"plan": plan.id, SIGNUP_STATUS_KEY: SIGNUP_PENDING},
         )
     )
 
@@ -1997,9 +1992,8 @@ async def signup_with_plan(
         full_name=body.full_name or "",
         password_hash=_hash_password(body.password),
         role="admin",
-        is_active=True,
+        is_active=False,
         license_active=True,
-        # Premium AI is held back for the whole trial window.
         premium_ai_enabled=False,
     )
     db.add(user)
@@ -2007,8 +2001,6 @@ async def signup_with_plan(
     await enable_rls_bypass(db)
     await db.refresh(user)
     await db.refresh(tenant)
-    await ensure_stripe_customer(tenant, db)
-    await db.commit()
 
     # New firm: seed system roles + assign the founding admin the Administrator
     # system role so the minted JWT carries manage_roles/admin_settings caps.
@@ -2017,24 +2009,18 @@ async def signup_with_plan(
     await provision_tenant_rbac(db, tenant.id, user.id)
     await db.commit()
 
-    # Best-effort operator alert; never blocks signup.
-    await notify_operator_trial_started(
+    # Best-effort operator alert; never activates the applicant or starts spend.
+    await notify_operator_signup_requested(
         tenant_name=tenant.name,
         tenant_id=tenant.id,
         admin_email=user.email,
-        trial_ends_at=trial_end,
+        requested_plan=plan.id,
     )
-
-    jwt_token = await _issue_access_token(db, user, tenant)
-    refresh_token = await _create_refresh_token(request, user)
-    _set_auth_cookies(response, jwt_token, refresh_token)
-    return TokenResponse(
-        user_id=str(user.id),
-        tenant_id=str(tenant.id),
-        role=user.role,
-        email=user.email,
-        full_name=user.full_name,
-    )
+    return {
+        "status": "pending_approval",
+        "tenant_id": str(tenant.id),
+        "message": "Registration received. LawHand will email you after approval.",
+    }
 
 
 @router.post("/login")
