@@ -350,6 +350,10 @@ class TenantSummary(BaseModel):
     on_trial: bool = False
     signup_status: str = "active"
     premium_ai_trial_enabled: bool = False
+    # Operator visibility for the registration lifecycle: when the trial clock
+    # started and which address signed the firm up.
+    trial_started_at: datetime | None = None
+    signup_email: Optional[str] = None
     flat_seat_count: int
     is_active: bool
     stripe_customer_id: Optional[str]
@@ -480,12 +484,26 @@ def _tenant_type(tenant: Tenant) -> str:
     """Return the lifecycle classification presented to platform operators.
 
     ``billing_tier`` remains the authoritative legacy marker for disposable
-    demos and is deliberately not changed by this presentation field.  Keeping
+    demos and is deliberately not changed by this presentation field. Keeping
     the conversion here makes every platform tenant response classify the same
     way while existing demo safety checks continue to work unchanged.
     """
 
     return "demo" if tenant.billing_tier == "demo" else "platform"
+
+
+def _trial_started_at(config: object) -> datetime | None:
+    """Read the trial-start marker from a tenant config, tolerating legacy rows."""
+
+    if not isinstance(config, dict):
+        return None
+    raw = config.get(TRIAL_STARTED_KEY)
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 def _validate_modules(values: list[str] | None) -> list[str] | None:
@@ -567,6 +585,8 @@ async def list_tenants(
     usage: dict[str, tuple[int, float]] = {}
     on_trial: dict[str, bool] = {}
     signup_status: dict[str, str] = {}
+    trial_started: dict[str, datetime | None] = {}
+    signup_emails: dict[str, str] = {}
     for tenant in tenants:
         async with _platform_tenant_scope(db, tenant.id):
             user_counts[str(tenant.id)] = int(
@@ -585,6 +605,13 @@ async def list_tenants(
                 tenant_config.get(SIGNUP_STATUS_KEY, "active")
                 if isinstance(tenant_config, dict)
                 else "active"
+            )
+            trial_started[str(tenant.id)] = _trial_started_at(tenant_config)
+            signup_emails[str(tenant.id)] = await db.scalar(
+                select(User.email)
+                .where(User.tenant_id == tenant.id, User.role == "admin")
+                .order_by(User.created_at.asc())
+                .limit(1)
             )
             usage_row = (
                 await db.execute(
@@ -618,6 +645,8 @@ async def list_tenants(
                 on_trial=on_trial.get(str(t.id), False),
                 signup_status=signup_status.get(str(t.id), "active"),
                 premium_ai_trial_enabled=t.premium_ai_trial_enabled,
+                trial_started_at=trial_started.get(str(t.id)),
+                signup_email=signup_emails.get(str(t.id)),
                 flat_seat_count=t.flat_seat_count,
                 is_active=t.is_active,
                 stripe_customer_id=_mask(t.stripe_customer_id),
@@ -1157,6 +1186,8 @@ async def get_tenant_detail(
             if ts
             else "active",
             premium_ai_trial_enabled=tenant.premium_ai_trial_enabled,
+            trial_started_at=_trial_started_at(ts.custom_config if ts else None),
+            signup_email=next((u.email for u in users if u.role == "admin"), None),
             flat_seat_count=tenant.flat_seat_count,
             is_active=tenant.is_active,
             stripe_customer_id=_mask(tenant.stripe_customer_id),

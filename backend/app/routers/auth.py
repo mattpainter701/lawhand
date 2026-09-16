@@ -1865,15 +1865,20 @@ async def register(
     )
 
 
-@router.post("/signup/plan", status_code=202)
+@router.post("/signup/plan", status_code=201)
 async def signup_with_plan(
     body: PlanSignupRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Record a self-serve registration for explicit Platform approval.
+    """Self-serve registration for a public plan.
 
-    Registration creates no active access, trial clock, session, or provider
-    customer. The operator approval route is the only spend boundary.
+    By default registration starts a bounded trial immediately with Premium AI
+    off, so a new firm can use the product without operator involvement.
+    Deployments that set ``PUBLIC_SIGNUP_REQUIRES_APPROVAL`` instead record an
+    inactive pending firm and create no session; the operator approval route is
+    then the only boundary that starts access.
     """
     _require_public_signup_enabled()
 
@@ -1882,9 +1887,13 @@ async def signup_with_plan(
     from app.models.tenant import TenantSettings
     from app.services.plans import get_plan
     from app.services.trials import (
+        SIGNUP_APPROVED,
         SIGNUP_PENDING,
         SIGNUP_STATUS_KEY,
+        new_trial_window,
         notify_operator_signup_requested,
+        notify_operator_trial_started,
+        trial_config,
     )
 
     plan = get_plan(body.plan)
@@ -1902,6 +1911,9 @@ async def signup_with_plan(
     slug = re.sub(r"[^a-z0-9]+", "-", body.firm_name.lower()).strip("-") or "firm"
     domain = f"{slug}-{uuid.uuid4().hex[:8]}"
 
+    requires_approval = bool(settings.PUBLIC_SIGNUP_REQUIRES_APPROVAL)
+    trial_start, trial_end = new_trial_window()
+
     tenant = Tenant(
         id=uuid.uuid4(),
         name=body.firm_name,
@@ -1911,18 +1923,23 @@ async def signup_with_plan(
         address=body.address,
         phone=body.phone,
         billing_tier=plan.billing_tier,
-        is_active=False,
-        expires_at=None,
+        # A started trial is live with an enforcement expiry; a pending
+        # registration has neither access nor a clock until Platform approves.
+        is_active=not requires_approval,
+        expires_at=None if requires_approval else trial_end,
     )
     db.add(tenant)
     await db.flush()
 
-    db.add(
-        TenantSettings(
-            tenant_id=tenant.id,
-            custom_config={"plan": plan.id, SIGNUP_STATUS_KEY: SIGNUP_PENDING},
-        )
-    )
+    if requires_approval:
+        config = {"plan": plan.id, SIGNUP_STATUS_KEY: SIGNUP_PENDING}
+    else:
+        config = {
+            "plan": plan.id,
+            SIGNUP_STATUS_KEY: SIGNUP_APPROVED,
+            **trial_config(trial_start, trial_end),
+        }
+    db.add(TenantSettings(tenant_id=tenant.id, custom_config=config))
 
     user = User(
         id=uuid.uuid4(),
@@ -1931,8 +1948,9 @@ async def signup_with_plan(
         full_name=body.full_name or "",
         password_hash=_hash_password(body.password),
         role="admin",
-        is_active=False,
+        is_active=not requires_approval,
         license_active=True,
+        # Premium AI is held back for the whole trial, whoever starts it.
         premium_ai_enabled=False,
     )
     db.add(user)
@@ -1948,18 +1966,40 @@ async def signup_with_plan(
     await provision_tenant_rbac(db, tenant.id, user.id)
     await db.commit()
 
-    # Best-effort operator alert; never activates the applicant or starts spend.
-    await notify_operator_signup_requested(
+    if requires_approval:
+        # Best-effort operator alert; never activates the applicant or starts spend.
+        await notify_operator_signup_requested(
+            tenant_name=tenant.name,
+            tenant_id=tenant.id,
+            admin_email=user.email,
+            requested_plan=plan.id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "pending_approval",
+                "tenant_id": str(tenant.id),
+                "message": "Registration received. LawHand will email you after approval.",
+            },
+        )
+
+    # Best-effort operator alert; never blocks the started trial.
+    await notify_operator_trial_started(
         tenant_name=tenant.name,
         tenant_id=tenant.id,
         admin_email=user.email,
-        requested_plan=plan.id,
+        trial_ends_at=trial_end,
     )
-    return {
-        "status": "pending_approval",
-        "tenant_id": str(tenant.id),
-        "message": "Registration received. LawHand will email you after approval.",
-    }
+    jwt_token = await _issue_access_token(db, user, tenant)
+    refresh_token = await _create_refresh_token(request, user)
+    _set_auth_cookies(response, jwt_token, refresh_token)
+    return TokenResponse(
+        user_id=str(user.id),
+        tenant_id=str(tenant.id),
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+    )
 
 
 @router.post("/login")

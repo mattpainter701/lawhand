@@ -1,5 +1,6 @@
 import pytest
 import pytest_asyncio
+from datetime import datetime, timedelta, timezone
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -34,9 +35,70 @@ async def public_client(db_session, test_redis, monkeypatch):
     app.state.redis = previous_redis
 
 
+@pytest_asyncio.fixture
+async def approval_client(public_client, monkeypatch):
+    """Same public client, but in the opt-in approval-gated registration mode."""
+    monkeypatch.setattr(
+        auth_router.settings, "PUBLIC_SIGNUP_REQUIRES_APPROVAL", True
+    )
+    return public_client
+
+
 @pytest.mark.asyncio
-async def test_public_signup_records_pending_intake_tenant(public_client, db_session):
+async def test_public_signup_starts_a_trial_without_premium(
+    public_client, db_session
+):
+    """The default public registration starts a bounded trial immediately.
+
+    Premium AI stays off for the whole trial, so no anonymous signup can spend
+    the metered model tier; Standard AI is available on the trial tier.
+    """
     resp = await public_client.post(
+        "/api/auth/signup/plan",
+        json={
+            "plan": "full-trial",
+            "firm_name": "Auto Trial Co",
+            "email": "owner@autotrial.co",
+            "password": "longenoughpw123",
+            "full_name": "Auto Owner",
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["tenant_id"]
+    assert "access_token" in resp.cookies
+
+    user = (
+        await db_session.execute(select(User).where(User.email == "owner@autotrial.co"))
+    ).scalar_one()
+    assert user.role == "admin"
+    assert user.is_active is True
+    assert user.premium_ai_enabled is False
+
+    tenant = (
+        await db_session.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
+    assert tenant.is_active is True
+    remaining = tenant.expires_at.astimezone(timezone.utc) - datetime.now(timezone.utc)
+    assert timedelta(days=29, hours=23) < remaining <= timedelta(days=30, minutes=5)
+
+    settings_row = (
+        await db_session.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+        )
+    ).scalar_one()
+    assert settings_row.custom_config["plan"] == "full-trial"
+    assert settings_row.custom_config["signup_status"] == "approved"
+    assert settings_row.custom_config["trial"] is True
+    assert "trial_ends_at" in settings_row.custom_config
+
+
+@pytest.mark.asyncio
+async def test_approval_gated_signup_records_pending_intake_tenant(
+    approval_client, db_session
+):
+    resp = await approval_client.post(
         "/api/auth/signup/plan",
         json={
             "plan": "intake-only",
@@ -77,10 +139,10 @@ async def test_public_signup_records_pending_intake_tenant(public_client, db_ses
 
 @pytest.mark.asyncio
 async def test_full_trial_signup_waits_for_operator_before_starting_access(
-    public_client, db_session
+    approval_client, db_session
 ):
     """An anonymous registration creates no usable product or trial clock."""
-    resp = await public_client.post(
+    resp = await approval_client.post(
         "/api/auth/signup/plan",
         json={
             "plan": "full-trial",
@@ -120,9 +182,9 @@ async def test_full_trial_signup_waits_for_operator_before_starting_access(
 
 @pytest.mark.asyncio
 async def test_public_signup_starts_no_trial_and_grants_no_premium(
-    public_client, db_session
+    approval_client, db_session
 ):
-    resp = await public_client.post(
+    resp = await approval_client.post(
         "/api/auth/signup/plan",
         json={
             "plan": "intake-only",
@@ -156,7 +218,9 @@ async def test_public_signup_starts_no_trial_and_grants_no_premium(
 
 
 @pytest.mark.asyncio
-async def test_public_signup_notifies_operator(public_client, db_session, monkeypatch):
+async def test_public_signup_notifies_operator(
+    approval_client, db_session, monkeypatch
+):
     captured: dict = {}
 
     async def fake_send(to, subject, html_body, text_body="", **kwargs):
@@ -166,7 +230,7 @@ async def test_public_signup_notifies_operator(public_client, db_session, monkey
 
     monkeypatch.setattr(email_service, "send_email", fake_send)
 
-    resp = await public_client.post(
+    resp = await approval_client.post(
         "/api/auth/signup/plan",
         json={
             "plan": "intake-only",
@@ -183,14 +247,14 @@ async def test_public_signup_notifies_operator(public_client, db_session, monkey
 
 @pytest.mark.asyncio
 async def test_public_signup_survives_notification_failure(
-    public_client, db_session, monkeypatch
+    approval_client, db_session, monkeypatch
 ):
     async def boom(*args, **kwargs):
         raise RuntimeError("smtp down")
 
     monkeypatch.setattr(email_service, "send_email", boom)
 
-    resp = await public_client.post(
+    resp = await approval_client.post(
         "/api/auth/signup/plan",
         json={
             "plan": "intake-only",
@@ -286,9 +350,9 @@ async def test_register_is_closed_even_with_public_signup_enabled(
 ):
     """The legacy account endpoint must not provision when signup is on.
 
-    Only the plan signup, which records a pending firm for operator approval,
-    may create a workspace. `/api/auth/register` is closed so it cannot mint an
-    active tenant and session that bypass the approval boundary.
+    Only the plan signup, which starts a bounded trial (or records a pending
+    firm for operator approval), may create a workspace. `/api/auth/register`
+    is closed so it cannot mint an active tenant and session on its own.
     """
     resp = await public_client.post(
         "/api/auth/register",

@@ -27,20 +27,25 @@ so the switch stays reversible.
   it for a trial firm; both the firm grant and the user's flag must then be on.
 - `/api/auth/me` reports `access_state: "trial"` and `trial_ends_at`.
 
-## Registration is a request, never a session
+## Registration: auto-trial or approval
 
-- The only path that creates a firm is `POST /api/auth/signup/plan`. It records
-  an inactive tenant and inactive founder with a `signup_status: pending`
-  marker, then emails the operator. No trial clock, session, Stripe customer,
-  module access, or AI spend exists until Platform approval.
+- The only path that creates a firm is `POST /api/auth/signup/plan`.
+- **Default:** it provisions an active firm on the chosen plan with an
+  `expires_at` of `SIGNUP_TRIAL_DAYS` (30), Premium AI off, and a session, so
+  the founder lands in the workspace immediately. Standard AI runs on the trial
+  tier.
+- **Approval-gated** (`PUBLIC_SIGNUP_REQUIRES_APPROVAL=true`): it instead
+  records an inactive tenant and inactive founder with a `signup_status:
+  pending` marker and no session. Platform's Approve trial action is then the
+  only boundary that activates access.
 - `POST /api/auth/register` is **closed** (`410`); it no longer provisions a
   tenant or mints a session.
 - **Google and Microsoft OAuth are sign-in only.** Completing a provider flow
   for a domain with no workspace is refused (`not_invited`) instead of
-  provisioning a tenant, so OAuth cannot bypass approval.
+  provisioning a tenant.
 - `POST /api/auth/signup/plan` is rate-limited by source IP (5 per hour),
-  matching the marketing lead form, because it writes a pending tenant and
-  emails the operator from an unauthenticated request.
+  matching the marketing lead form, because it writes a firm and emails the
+  operator from an unauthenticated request.
 
 ## When the trial ends unpaid: billing only
 
@@ -157,11 +162,10 @@ trials and demo workspaces. It becomes true for an explicitly sponsored trial.
   `/billing?reason=trial_expired`, which explains the hard stop. This mirrors
   the allowlist above. Without it each page fails with its own `403` and the
   firm never reaches the one screen that can end the lockout.
-- **Self-serve signup requests the `full-trial` plan.** It does not provision
-  access or start the 30-day clock. The registration confirmation explicitly
-  says it is awaiting approval; the founder cannot sign in until Platform
-  approves the firm. This keeps an optional public form from becoming an
-  anonymous inference-spend switch.
+- **Self-serve signup starts a bounded trial by default**, with Premium AI off;
+  a deployment that sets `PUBLIC_SIGNUP_REQUIRES_APPROVAL` holds registrations
+  inactive for explicit approval instead. Either way Platform can extend,
+  revoke, or convert the trial and sponsor Premium AI.
 - **Platform shows and controls the access date.** An operator can set an exact
   UTC date, extend from the later of now or the current expiry by 30 days or six
   calendar months, revoke immediately, or clear the trial into active access.

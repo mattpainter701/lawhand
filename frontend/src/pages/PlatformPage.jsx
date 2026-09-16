@@ -87,6 +87,7 @@ const extensionMonthInstant = (currentValue, months) => {
 
 export function TrialAccessControls({ tenant, onPatch }) {
   const [endDate, setEndDate] = useState(() => trialDateInputValue(tenant.expires_at))
+  const [extendDays, setExtendDays] = useState(14)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [localError, setLocalError] = useState('')
@@ -150,6 +151,21 @@ export function TrialAccessControls({ tenant, onPatch }) {
         </button>
         <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: extensionMonthInstant(tenant.expires_at, 6) }, 'Trial extended by 6 months.')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
           Extend 6 months
+        </button>
+        <label className="block">
+          <span className="block text-xs font-medium text-brand-muted">Extend by (days)</span>
+          <input
+            aria-label="Extend by days"
+            type="number"
+            min="1"
+            max="365"
+            value={extendDays}
+            onChange={(event) => setExtendDays(event.target.value)}
+            className="mt-1 w-24 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink"
+          />
+        </label>
+        <button type="button" disabled={saving || !extendDays} onClick={() => patch({ trial_ends_at: extensionInstant(tenant.expires_at, Number(extendDays)) }, `Trial extended by ${extendDays} days.`)} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
+          Extend by days
         </button>
       </form>
 
@@ -4065,8 +4081,11 @@ export default function PlatformPage() {
                                       <dl className="space-y-2 text-sm">
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Company</dt><dd className="text-brand-ink font-sans">{tenantDetail.company_name || '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Domain</dt><dd className="text-brand-ink font-sans">{tenantDetail.domain}</dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Tenant ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.id}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Type</dt><dd><TenantTypeBadge type={tenantType(tenantDetail)} /></dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Access expiration</dt><dd className="text-brand-ink font-sans"><TenantExpiry tenant={tenantDetail} /></dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial started</dt><dd className="text-brand-ink font-sans">{tenantDetail.trial_started_at ? new Date(tenantDetail.trial_started_at).toLocaleString() : '—'}</dd></div>
+                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Signup email</dt><dd className="text-brand-ink font-sans">{tenantDetail.signup_email || '—'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial</dt><dd className="text-brand-ink font-sans">{tenantDetail.on_trial ? 'Yes' : 'No'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Premium during trial</dt><dd className={tenantDetail.premium_ai_trial_enabled ? 'text-brand-amber font-sans' : 'text-brand-muted font-sans'}>{tenantDetail.premium_ai_trial_enabled ? 'Sponsored' : 'Off'}</dd></div>
                                         <div className="flex justify-between"><dt className="text-brand-muted font-sans">Stripe ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.stripe_customer_id ? '✓' : '—'}</dd></div>

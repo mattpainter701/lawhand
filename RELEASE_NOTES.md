@@ -5,13 +5,13 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.15.10 — Trial access starts only after approval
+## 2026.09.15.10 — A real 30-day trial, managed from LawHand
 
 Released September 15, 2026.
 
-A firm can request access without starting a trial or AI spend; the LawHand team approves the workspace, controls its end date, and keeps expensive Premium AI under a separate switch.
+A firm can register and start a bounded 30-day trial right away, with Premium AI off; the LawHand team can extend, revoke, or convert the trial and keeps expensive Premium AI under a separate switch.
 
-- **Register, then wait for approval.** A registration starts no trial clock and grants no workspace access. LawHand emails the firm after an operator approves its bounded trial.
+- **Register and start your trial.** Registering starts a bounded 30-day trial with its own workspace, so a new firm can use the product immediately. Premium AI stays off.
 - **An extension arrives by email.** When the LawHand team extends a trial, firm administrators receive a branded email with the new end date.
 - **Premium AI stays a deliberate exception.** A trial extension does not turn on Premium AI. If LawHand sponsors it for a trial, that grant is explicit and can be withdrawn separately.
 

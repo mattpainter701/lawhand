@@ -94,6 +94,9 @@ async def test_operator_approval_is_the_trial_and_spend_boundary(
     client: AsyncClient, db_session, monkeypatch
 ):
     monkeypatch.setattr(auth_router.settings, "PUBLIC_SIGNUP_ENABLED", True)
+    monkeypatch.setattr(
+        auth_router.settings, "PUBLIC_SIGNUP_REQUIRES_APPROVAL", True
+    )
     send = AsyncMock(return_value=EmailDeliveryResult.SENT)
     monkeypatch.setattr(email_service, "send_email", send)
     signup = await client.post(
