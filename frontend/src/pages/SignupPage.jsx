@@ -31,9 +31,10 @@ export default function SignupPage() {
   const [searchParams] = useSearchParams()
   const plan = searchParams.get('plan')
   const publicSignupEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED === 'true'
-  // Display-only mirror of the backend mode. Unset means auto-trial, which is
-  // the default; an approval-gated deployment sets the build arg to true.
-  const requiresApproval = import.meta.env.VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL === 'true'
+  // Mirror of the backend mode. The backend defaults to approval-gated, so an
+  // unset build arg means approval too; only an explicit 'false' opts a
+  // deployment into instant trials.
+  const requiresApproval = import.meta.env.VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL !== 'false'
   // Every self-serve signup provisions a plan. Without an explicit choice that
   // is the 30-day full-platform trial; register() would otherwise create a
   // firm with no trial window and no expiry at all.

@@ -31,8 +31,9 @@ describe('plan signup', () => {
     vi.clearAllMocks()
   })
 
-  it('auto-starts a trial by default and opens the session', async () => {
+  it('auto-starts a trial when the deployment opts in', async () => {
     vi.stubEnv('VITE_PUBLIC_SIGNUP_ENABLED', 'true')
+    vi.stubEnv('VITE_PUBLIC_SIGNUP_REQUIRES_APPROVAL', 'false')
     login.mockResolvedValue({ default_route: '/matters' })
     signupWithPlan.mockResolvedValue({ user_id: 'u-1', tenant_id: 't-1' })
 

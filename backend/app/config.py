@@ -61,10 +61,11 @@ class Settings(BaseSettings):
     # Public self-registration is OFF by default. A deployment turns it on
     # explicitly, and it stays a reversible incident-response kill switch.
     PUBLIC_SIGNUP_ENABLED: bool = False
-    # With signup on, a registration starts a bounded trial immediately (Premium
-    # AI off). Set this to true to hold registrations inactive for explicit
-    # Platform approval instead, e.g. before billing and anti-abuse controls.
-    PUBLIC_SIGNUP_REQUIRES_APPROVAL: bool = False
+    # Fail closed: with signup on, a registration is held inactive for explicit
+    # Platform approval, so an anonymous form cannot start Standard-AI spend.
+    # Set this to false only where anti-abuse controls already justify an
+    # immediate bounded trial.
+    PUBLIC_SIGNUP_REQUIRES_APPROVAL: bool = True
 
     # Guided sales demo. Settings are cached at process startup, so rotating the
     # access code requires an API restart (but no code change).

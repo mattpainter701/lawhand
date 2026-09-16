@@ -44,16 +44,25 @@ async def approval_client(public_client, monkeypatch):
     return public_client
 
 
+@pytest_asyncio.fixture
+async def auto_trial_client(public_client, monkeypatch):
+    """Signup that starts a bounded trial immediately instead of pending."""
+    monkeypatch.setattr(
+        auth_router.settings, "PUBLIC_SIGNUP_REQUIRES_APPROVAL", False
+    )
+    return public_client
+
+
 @pytest.mark.asyncio
 async def test_public_signup_starts_a_trial_without_premium(
-    public_client, db_session
+    auto_trial_client, db_session
 ):
     """The default public registration starts a bounded trial immediately.
 
     Premium AI stays off for the whole trial, so no anonymous signup can spend
     the metered model tier; Standard AI is available on the trial tier.
     """
-    resp = await public_client.post(
+    resp = await auto_trial_client.post(
         "/api/auth/signup/plan",
         json={
             "plan": "full-trial",

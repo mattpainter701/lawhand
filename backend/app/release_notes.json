@@ -4,13 +4,13 @@
     {
       "id": "2026.09.15.10",
       "version": "2026.09.15.10",
-      "title": "A real 30-day trial, managed from LawHand",
+      "title": "Trial access starts only after approval",
       "published_at": "2026-09-15",
-      "summary": "A firm can register and start a bounded 30-day trial right away, with Premium AI off; the LawHand team can extend, revoke, or convert the trial and keeps expensive Premium AI under a separate switch.",
+      "summary": "A firm can request access without starting a trial or AI spend; the LawHand team approves the workspace, controls its end date, and keeps expensive Premium AI under a separate switch.",
       "highlights": [
         {
-          "title": "Register and start your trial",
-          "description": "Registering starts a bounded 30-day trial with its own workspace, so a new firm can use the product immediately. Premium AI stays off."
+          "title": "Register, then wait for approval",
+          "description": "A registration starts no trial clock and grants no workspace access. LawHand emails the firm after an operator approves its bounded trial."
         },
         {
           "title": "An extension arrives by email",
