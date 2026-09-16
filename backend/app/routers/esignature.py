@@ -68,7 +68,7 @@ from app.services.esign.notifications import (
     notify_requester_signed,
     notify_signer,
 )
-from app.services.esign.placement import PlacementError
+from app.services.esign.placement import PlacementError, placement_block_detail
 from app.services.esign.plan import (
     FieldValueError,
     build_plan,
@@ -411,6 +411,18 @@ async def _get_matter(db: AsyncSession, matter_id: str, tenant_id) -> Matter:
     return matter
 
 
+def _is_pdf_document(doc: MatterDocument) -> bool:
+    """Whether staff could place signing fields on this artifact by hand.
+
+    The placement review renders the document with pdf.js, so anything that is
+    not a PDF offers no recovery path and the block has to say so.
+    """
+    return bool(
+        str(doc.content_type or "").lower() == "application/pdf"
+        or str(doc.filename or "").lower().endswith(".pdf")
+    )
+
+
 async def _read_source_for_create(db: AsyncSession, tenant_id, doc: MatterDocument):
     try:
         return await matter_file_store.read_matter_file_bytes(
@@ -504,9 +516,17 @@ async def create_signature_request(
 
     placements = body.positioned_fields or doc.positioned_fields or []
     if doc.signing_placement_required and not placements:
+        # Generation recorded why each signing field went unbound. Replay it
+        # here: a gate that only says "review positions" cannot be acted on
+        # when the fault is in the template, or when the saved artifact is a
+        # Word file no placement screen can open.
         raise HTTPException(
             status_code=422,
-            detail="Review signing field positions on the final generated PDF before sending.",
+            detail=placement_block_detail(
+                doc.signing_placement_problems or [],
+                filename=doc.filename,
+                output_is_pdf=_is_pdf_document(doc),
+            ),
         )
     source_bytes = await _read_source_for_create(db, user.tenant_id, doc)
 

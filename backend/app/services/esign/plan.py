@@ -455,6 +455,15 @@ def _ruled_lines(page, reader: PdfReader) -> list[tuple[float, float, float]]:
     return segments
 
 
+def _next_content_x(line: _TextLine, text: str, after: int) -> float | None:
+    """Page x of the next non-space character after ``after`` on this line."""
+    remainder = text[after:]
+    stripped = remainder.lstrip()
+    if not stripped:
+        return None
+    return line.x_at(after + (len(remainder) - len(stripped)))
+
+
 def _nearest_rule(
     rules: list[tuple[float, float, float]], x: float, y: float
 ) -> tuple[float, float, float] | None:
@@ -516,10 +525,18 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                         continue
                     if label and not _SIGNATURE_WORD.search(label):
                         continue  # "Name: ______" is not a signature line
+                    # "Signature: ____   Date: ____" puts two fields on one
+                    # baseline. Growing a short blank to the default width
+                    # would lay the signature box over the date label, so the
+                    # right edge stops short of whatever comes next instead.
+                    right = start_x + max(run_width, SIGNATURE_BOX_WIDTH)
+                    following = _next_content_x(line, text, match.end())
+                    if following is not None:
+                        right = min(right, max(following - 4.0, start_x + run_width))
                     rect = (
                         start_x,
                         line.y - 4,
-                        start_x + max(run_width, SIGNATURE_BOX_WIDTH),
+                        right,
                         line.y - 4 + SIGNATURE_BOX_HEIGHT,
                     )
                     signatures.append(
@@ -535,7 +552,11 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
             # A short label with no blank of its own: "Client signature",
             # "Signed by:", "Date". The rule it belongs to may be printed just
             # above the label (the firm's forms) or just below it.
-            for segment_text, segment_x in _label_segments(line):
+            segments = _label_segments(line)
+            for position, (segment_text, segment_x) in enumerate(segments):
+                next_segment_x = (
+                    segments[position + 1][1] if position + 1 < len(segments) else None
+                )
                 if _DATE_LABEL.match(segment_text):
                     rule = _nearest_rule(rules, segment_x, line.y)
                     rect = (
@@ -563,10 +584,13 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                         height=SIGNATURE_BOX_HEIGHT,
                     )
                 else:
+                    right = segment_x + SIGNATURE_BOX_WIDTH
+                    if next_segment_x is not None:
+                        right = min(right, max(next_segment_x - 4.0, segment_x + 60.0))
                     rect = (
                         segment_x,
                         line.y - 4,
-                        segment_x + SIGNATURE_BOX_WIDTH,
+                        right,
                         line.y - 4 + SIGNATURE_BOX_HEIGHT,
                     )
                 signatures.append(

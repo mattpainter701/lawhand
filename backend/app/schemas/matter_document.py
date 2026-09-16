@@ -57,8 +57,14 @@ class MatterDocumentResponse(BaseModel):
     positioned_fields: list[dict] = Field(default_factory=list)
     signing_placement_required: bool = False
     signing_roles: list[str] = Field(default_factory=list)
+    signing_placement_problems: list[dict] = Field(default_factory=list)
 
-    @field_validator("positioned_fields", "signing_roles", mode="before")
+    @field_validator(
+        "positioned_fields",
+        "signing_roles",
+        "signing_placement_problems",
+        mode="before",
+    )
     @classmethod
     def normalize_positioned_fields(cls, value):
         return value or []

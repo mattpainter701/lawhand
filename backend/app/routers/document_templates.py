@@ -160,7 +160,11 @@ from app.services.template_fill_coverage import (
 from app.services.template_labels import unusable_labels
 from app.services.template_ocr import TemplateOcrError, image_to_pdf
 from app.services.matter_file_store import MatterFileStore
-from app.services.esign.placement import generated_signing_metadata
+from app.services.esign.placement import (
+    log_placement_report,
+    signing_template_fields,
+    template_placement_report,
+)
 from app.services.access_control import require_capability, require_capabilities
 from app.utils.text_processing import extract_text
 from app.utils.sql_filters import escape_like
@@ -4926,6 +4930,59 @@ async def restore_template_version(
     return _template_response(template)
 
 
+def _ensure_signing_fields_placeable(
+    template, variable_schema: dict | None
+) -> None:
+    """Refuse to publish a template whose signing fields can never bind.
+
+    A signature field with no signer role, or a PDF field nobody positioned,
+    binds to nothing at generation time. That used to surface for the first
+    time on a live matter, as a dispatch block naming no field -- the template
+    looked fine right up until a client was waiting on it. The same defect is
+    cheap to fix in the editor and free to catch here, so this is the gate.
+
+    Word templates carry no PDF geometry, so only the signer role is required
+    of them; their positions are placed on the generated PDF instead.
+    """
+
+    fields = signing_template_fields(variable_schema)
+    if not fields:
+        return
+    is_pdf = str(getattr(template, "format", "") or "").lower() == "pdf"
+    unroled: list[str] = []
+    unplaced: list[str] = []
+    for index, field in enumerate(fields):
+        label = (
+            str(field.get("name") or "").strip()
+            or str(field.get("label") or "").strip()
+            or f"field {index + 1}"
+        )
+        if not str(field.get("signer_role") or "").strip():
+            unroled.append(label)
+        elif is_pdf and not (field.get("pdf_overlays") or field.get("pdf_overlay")):
+            unplaced.append(label)
+    if not unroled and not unplaced:
+        return
+    parts = []
+    if unroled:
+        parts.append(
+            "give a signer role to " + ", ".join(sorted(unroled)[:10])
+        )
+    if unplaced:
+        parts.append(
+            "position these signing fields on the PDF: "
+            + ", ".join(sorted(unplaced)[:10])
+        )
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "This template's signing fields would not bind to a generated "
+            "document, so it could not be sent for signature. Before "
+            "publishing, " + "; and ".join(parts) + "."
+        ),
+    )
+
+
 def _ensure_usable_labels(variable_schema: dict | None) -> None:
     """Refuse to publish a template whose blanks cannot be identified.
 
@@ -4995,6 +5052,7 @@ async def publish_template(
     await _ensure_word_source_review(template, template.variable_schema)
     _ensure_pdf_source_review(template, template.variable_schema)
     _ensure_usable_labels(template.variable_schema)
+    _ensure_signing_fields_placeable(template, template.variable_schema)
     _validate_approval_ready(
         template=template,
         variable_schema=getattr(template, "variable_schema", None),
@@ -5304,6 +5362,7 @@ async def render_template_endpoint(
     positioned_fields = []
     signing_required = False
     signing_roles = []
+    placement_report = None
     if matter is not None:
         suppressed = suppressed_fields(template.variable_schema, payload.variables)
         signing_schema = {
@@ -5314,8 +5373,23 @@ async def render_template_endpoint(
                 if field.get("name") not in suppressed
             ],
         }
-        positioned_fields, signing_roles, signing_required = generated_signing_metadata(
-            signing_schema, source=output_bytes, template_format=template_format
+        placement_report = template_placement_report(
+            signing_schema,
+            source=output_bytes,
+            template_format=template_format,
+            output_format=output_format,
+        )
+        positioned_fields = placement_report.placements
+        signing_roles = placement_report.roles
+        signing_required = placement_report.signing_required
+        # A signing field that could not be bound used to vanish here. It is
+        # the reason a matter reached dispatch with nothing to sign and no way
+        # to find out why, so it is logged and carried on the document.
+        log_placement_report(
+            placement_report,
+            template_id=str(template.id),
+            matter_id=str(matter.id),
+            output_format=output_format,
         )
     if (
         matter is None
@@ -5535,6 +5609,9 @@ async def render_template_endpoint(
         doc.positioned_fields = positioned_fields
         doc.signing_placement_required = signing_required
         doc.signing_roles = signing_roles
+        doc.signing_placement_problems = (
+            placement_report.as_dicts() if placement_report else []
+        )
         event = MatterEvent(
             tenant_id=parsed_tenant_id,
             matter_id=parsed_matter_id,
