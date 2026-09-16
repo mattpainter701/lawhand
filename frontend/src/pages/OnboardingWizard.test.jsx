@@ -202,4 +202,23 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByRole('button', { name: 'Complete Setup' }))
     expect(completeOnboarding).toHaveBeenCalledOnce()
   })
+
+  it('describes a personal Google connection without claiming a Workspace directory sync', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.REVIEW, {
+      integrations: {
+        google: { connected: true, account_type: 'personal' },
+        microsoft: { connected: false },
+      },
+      synced_users: { google: 1, microsoft: 0 },
+      storage_ready: true,
+      cloud_root: { google_drive: { id: 'root-1' } },
+    }))
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    expect(await screen.findByText('Review Google Setup')).toBeInTheDocument()
+    expect(screen.getByText('Personal Google account')).toBeInTheDocument()
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+    expect(screen.queryByText('Google Workspace users synced')).toBeNull()
+  })
 })

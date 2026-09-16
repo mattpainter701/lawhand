@@ -1767,7 +1767,7 @@ async def get_permissions_audit(
             effective_health = "missing_scopes"
         return {
             "connected": True,
-            "required_scopes": required,
+            "required_scopes": effective_required,
             "granted_scopes": granted,
             "missing_required": missing,
             "extra_scopes": extra,
@@ -1781,14 +1781,15 @@ async def get_permissions_audit(
     ms_audit = audit_provider("microsoft", SCOPES_REQUIRED_MS, ms_count)
     google_audit = audit_provider("google", SCOPES_REQUIRED_GOOGLE, google_count)
 
-    overall = "healthy"
-    if (
-        ms_audit["health"] == "disconnected"
-        and google_audit["health"] == "disconnected"
-    ):
+    connected_audits = [
+        audit for audit in (ms_audit, google_audit) if audit["connected"]
+    ]
+    if not connected_audits:
         overall = "disconnected"
-    elif ms_audit["health"] != "healthy" or google_audit["health"] != "healthy":
+    elif any(audit["health"] != "healthy" for audit in connected_audits):
         overall = "attention_needed"
+    else:
+        overall = "healthy"
 
     return {
         "microsoft": ms_audit,

@@ -17,7 +17,7 @@ def test_release_catalog_returns_latest_release_and_history():
     assert latest["id"] == LATEST_RELEASE_ID
     assert latest["version"] == LATEST_RELEASE_ID
     assert latest["is_recent"] is True
-    assert len(latest["highlights"]) == 1
+    assert len(latest["highlights"]) == 2
     assert latest["highlights"][0]["title"] == (
         "The setup instructions match your cloud"
     )

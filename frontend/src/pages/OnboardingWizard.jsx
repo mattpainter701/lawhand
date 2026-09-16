@@ -618,10 +618,16 @@ export default function OnboardingWizard() {
                     <span className="text-brand-ink font-sans text-sm font-bold">{syncedUsers.microsoft || 0}</span>
                   </div>
                 )}
-                {googleConnected && (
+                {googleConnected && status?.integrations?.google?.account_type !== 'personal' && (
                   <div className="flex items-center justify-between px-4 py-3 bg-brand-bg rounded-xl">
                     <span className="text-brand-ink font-sans text-sm">Google Workspace users synced</span>
                     <span className="text-brand-ink font-sans text-sm font-bold">{syncedUsers.google || 0}</span>
+                  </div>
+                )}
+                {googleConnected && status?.integrations?.google?.account_type === 'personal' && (
+                  <div className="flex items-center justify-between px-4 py-3 bg-brand-bg rounded-xl">
+                    <span className="text-brand-ink font-sans text-sm">Personal Google account</span>
+                    <span className="text-green-700 font-sans text-sm font-bold">Connected</span>
                   </div>
                 )}
                 {status?.storage_ready ? (
