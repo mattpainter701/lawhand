@@ -309,10 +309,11 @@ async def onboarding_cloud_connection_blocked(
     # prior setup and remains fail-closed.
     if active_credential is not None:
         return False
-    # A completed row without one is not evidence of a valid prior setup and
-    # remains fail-closed. New tenants also need a complete current agreement
-    # set, even while the legacy rollout flag is off.
-    return not status["complete"]
+    # Respect the deployment rollout flag. During controlled rollout, an
+    # unpublished agreement set is visible but does not block first-run OAuth.
+    # Once enforcement is enabled, incomplete or unpublished agreements fail
+    # closed for tenants without an existing credential.
+    return bool(status["enforced"] and not status["complete"])
 
 
 async def chat_attachment_ttl_days(db: AsyncSession, tenant_id: uuid.UUID) -> int:

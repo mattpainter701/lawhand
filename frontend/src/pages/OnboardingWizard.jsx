@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import {
   getOnboardingStatus,
@@ -59,6 +59,7 @@ export function normalizeStep(status) {
 export default function OnboardingWizard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [step, setStep] = useState(STEP.WELCOME)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -75,6 +76,18 @@ export default function OnboardingWizard() {
   useEffect(() => {
     loadStatus()
   }, [])
+
+  useEffect(() => {
+    const code = searchParams.get('error')
+    if (!code) return
+    const messages = {
+      account_mode_mismatch: 'The selected Google account type did not match the consented account. Choose Google Workspace or Personal Google and try again.',
+      identity_verification_failed: 'Google identity verification failed. No connection was saved; try again or contact LawHand support.',
+      token_exchange_failed: 'Google authorization could not be completed. No connection was saved; try again.',
+    }
+    setError(messages[code] || 'The cloud connection could not be completed. No connection was saved; try again.')
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const loadStatus = async () => {
     try {
@@ -206,7 +219,7 @@ export default function OnboardingWizard() {
   const googleConnected = status?.integrations?.google?.connected
   const hasIntegration = msConnected || googleConnected
   const agreementsConfigured = agreementStatus?.configured ?? status?.agreements_configured
-  const agreementReady = agreementStatus !== null && !agreementStatus.blocking && agreementsConfigured
+  const agreementReady = agreementStatus !== null && !agreementStatus.blocking && (agreementsConfigured || !agreementStatus.enforced)
   const syncedUsers = status?.synced_users || {}
   const totalSynced = (syncedUsers.microsoft || 0) + (syncedUsers.google || 0)
   const cloudRoot = status?.cloud_root || {}
@@ -358,11 +371,18 @@ export default function OnboardingWizard() {
 
               <div className="mb-8 rounded-xl border border-brand-line bg-brand-bg-soft p-4">
                 <AgreementAcceptancePanel compact onStatusChange={setAgreementStatus} />
-                {agreementStatus && !agreementStatus.configured && (
+                {agreementStatus && !agreementStatus.configured && agreementStatus.enforced && (
                   <p className="mt-3 text-xs leading-relaxed text-amber-800" role="alert">
                     Cloud connections are paused until the required counsel-owned
                     agreements are published and current. You can use the core
                     workspace and choose Set up later.
+                  </p>
+                )}
+                {agreementStatus && !agreementStatus.configured && !agreementStatus.enforced && (
+                  <p className="mt-3 text-xs leading-relaxed text-brand-muted" role="status">
+                    No required agreements are published yet. Agreement enforcement
+                    is in controlled rollout mode, so you may continue; acceptance
+                    has not been recorded.
                   </p>
                 )}
               </div>

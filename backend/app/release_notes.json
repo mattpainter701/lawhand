@@ -6,7 +6,7 @@
       "version": "2026.09.16.01",
       "title": "Onboarding tells the truth about setup and account access",
       "published_at": "2026-09-16",
-      "summary": "Firms can defer setup without being shown false completion evidence, cloud connections wait for current agreements, and solo Google accounts can connect Gmail, Drive, and Calendar without pretending to sync a Workspace directory.",
+      "summary": "Firms can defer setup without false completion evidence, cloud agreement gating follows the controlled rollout setting, and solo Google accounts can connect Gmail, Drive, and Calendar without pretending to sync a Workspace directory.",
       "highlights": [
         {
           "title": "Set up later is honest",
@@ -18,7 +18,7 @@
         },
         {
           "title": "Cloud setup is fail-closed",
-          "description": "New cloud connections wait for current required agreements, and document setup confirms the connected cloud folder as the matter-document system of record."
+          "description": "When agreement enforcement is enabled, new cloud connections wait for current agreements; controlled rollout remains visibly non-blocking."
         }
       ]
     },

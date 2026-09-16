@@ -9,11 +9,11 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 Released September 16, 2026.
 
-Firms can defer setup without being shown false completion evidence, cloud connections wait for current agreements, and solo Google accounts can connect Gmail, Drive, and Calendar without pretending to sync a Workspace directory.
+Firms can defer setup without false completion evidence, cloud agreement gating follows the controlled rollout setting, and solo Google accounts can connect Gmail, Drive, and Calendar without pretending to sync a Workspace directory.
 
 - **Set up later is honest.** Deferring setup keeps your core workspace available and leaves onboarding ready to re-enter; it does not claim that integrations, storage, or team import are complete.
 - **Choose the right Google account.** Google Workspace administrators can enable directory sync, while Personal Google / Google One connects Gmail, Drive, and Calendar without requesting directory access.
-- **Cloud setup is fail-closed.** New cloud connections wait for current required agreements, and document setup confirms the connected cloud folder as the matter-document system of record.
+- **Cloud setup is fail-closed.** When agreement enforcement is enabled, new cloud connections wait for current agreements; controlled rollout remains visibly non-blocking.
 
 ## 2026.09.15.12 — Scans and prose can be read too, when you ask
 

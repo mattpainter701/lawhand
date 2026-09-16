@@ -240,7 +240,7 @@ async def test_unconfigured_agreements_block_new_tenant_cloud_connection(monkeyp
     tenant = _tenant(onboarding_completed=False)
 
     async def agreements(*_args):
-        return {"configured": False, "complete": False, "blocking": False}
+        return {"configured": False, "complete": False, "enforced": False, "blocking": False}
 
     class Db(_SeqDb):
         def __init__(self):
@@ -254,6 +254,12 @@ async def test_unconfigured_agreements_block_new_tenant_cloud_connection(monkeyp
     from app.services import compliance
     monkeypatch.setattr(compliance, "agreement_status", agreements)
 
+    assert not await compliance.onboarding_cloud_connection_blocked(Db(), TENANT_ID)
+
+    async def enforced(*_args):
+        return {"configured": False, "complete": False, "enforced": True, "blocking": True}
+
+    monkeypatch.setattr(compliance, "agreement_status", enforced)
     assert await compliance.onboarding_cloud_connection_blocked(Db(), TENANT_ID)
 
 
@@ -262,7 +268,7 @@ async def test_configured_existing_tenant_is_not_blocked_by_rollout_flag(monkeyp
     tenant = _tenant(onboarding_completed=True)
 
     async def agreements(*_args):
-        return {"configured": False, "complete": False, "blocking": False}
+        return {"configured": False, "complete": False, "enforced": False, "blocking": False}
 
     class Db(_SeqDb):
         def __init__(self):

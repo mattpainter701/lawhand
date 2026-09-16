@@ -82,6 +82,12 @@ describe('OnboardingWizard', () => {
     expect(getOnboardingStatus).toHaveBeenCalledTimes(2)
   })
 
+  it('surfaces a safe OAuth failure returned by the provider', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT))
+    render(<MemoryRouter initialEntries={['/onboarding?error=account_mode_mismatch&provider=google']}><OnboardingWizard /></MemoryRouter>)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/selected Google account type did not match/i)
+  })
+
   it('treats a tenant completed before the storage step existed as complete', () => {
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 4 })).toBe(STEP.COMPLETE)
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 5 })).toBe(STEP.COMPLETE)

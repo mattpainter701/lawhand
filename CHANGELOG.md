@@ -3522,4 +3522,4 @@ Six divergences found by diffing `PrepareFormWorkspace` against `TemplateStudioE
 
 ## 2026-09-16 — Onboarding hotfix
 
-Added truthful setup deferment, fail-closed cloud agreement gating, runtime-honest trial recovery copy, and explicit Personal Google / Google One onboarding without directory sync claims.
+Added truthful setup deferment, rollout-aware cloud agreement gating, runtime-honest trial recovery copy, and explicit Personal Google / Google One onboarding without directory sync claims.
