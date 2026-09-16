@@ -1,3 +1,9 @@
+## 2026.09.16.03 — Accurate onboarding re-entry and Google account copy
+
+- Persist an explicit onboarding re-entry marker in tenant settings so a completed firm can revisit Connect, Storage, Sync, and Review without legacy step normalization jumping back to Complete. Clear the marker on completion or deferral while preserving the live workspace and existing cloud root.
+- Derive the connected Google label and explanatory copy from the credential account type, so Personal Google / Google One never appears as Google Workspace after OAuth returns.
+- Cover the reload-safe re-entry state and connected Personal Google presentation in focused backend and frontend tests.
+
 ## 2026.09.16.02 — LawHand cloud-root copy
 
 - Replace the stale customer-facing `claritylegal-records` name in Google Drive and Microsoft OneDrive onboarding with the actual `lawhand-records` root created for new tenants. Keep the backend legacy identifier and rename path intact for existing customer-owned folders.

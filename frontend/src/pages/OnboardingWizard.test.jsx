@@ -92,6 +92,7 @@ describe('OnboardingWizard', () => {
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 4 })).toBe(STEP.COMPLETE)
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 5 })).toBe(STEP.COMPLETE)
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 1 })).toBe(STEP.CONNECT)
+    expect(normalizeStep({ onboarding_completed: true, onboarding_step: 4, setup_reentry_active: true })).toBe(STEP.REVIEW)
     expect(normalizeStep({ onboarding_completed: false, onboarding_step: 4 })).toBe(STEP.REVIEW)
   })
 
@@ -220,5 +221,20 @@ describe('OnboardingWizard', () => {
     expect(screen.getByText('Personal Google account')).toBeInTheDocument()
     expect(screen.getByText('Connected')).toBeInTheDocument()
     expect(screen.queryByText('Google Workspace users synced')).toBeNull()
+  })
+
+  it('labels an existing personal Google connection correctly on the connect step', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT, {
+      integrations: {
+        google: { connected: true, account_type: 'personal' },
+        microsoft: { connected: false },
+      },
+    }))
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    expect(await screen.findByText('Personal Google / Google One')).toBeInTheDocument()
+    expect(screen.getByText(/connects your Gmail, Drive, and Calendar without directory access/i)).toBeInTheDocument()
+    expect(screen.queryByText(/^Google Workspace$/)).toBeNull()
   })
 })

@@ -58,7 +58,11 @@ const STORAGE_OPTIONS = [
 // the completed screen rather than the review screen.
 export function normalizeStep(status) {
   if (!status) return STEP.WELCOME
-  if (status.onboarding_completed && status.onboarding_step >= STEP.REVIEW) return STEP.COMPLETE
+  if (
+    status.onboarding_completed &&
+    !status.setup_reentry_active &&
+    status.onboarding_step >= STEP.REVIEW
+  ) return STEP.COMPLETE
   return status.onboarding_step ?? STEP.WELCOME
 }
 
@@ -94,6 +98,10 @@ export default function OnboardingWizard() {
     try {
       const data = await getOnboardingStatus()
       setStatus(data)
+      const connectedGoogleType = data?.integrations?.google?.account_type
+      if (connectedGoogleType === 'personal' || connectedGoogleType === 'workspace') {
+        setGoogleAccountMode(connectedGoogleType)
+      }
       setStep(normalizeStep(data))
       return data
     } catch (err) {
@@ -416,7 +424,9 @@ export default function OnboardingWizard() {
                 {/* Google */}
                 <div className={`p-5 rounded-xl border transition-colors ${googleConnected ? 'border-green-300 bg-green-50' : 'border-brand-line bg-brand-bg'}`}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-brand-ink font-sans text-sm font-semibold">Google Workspace</span>
+                    <span className="text-brand-ink font-sans text-sm font-semibold">
+                      {googleAccountMode === 'personal' ? 'Personal Google / Google One' : 'Google Workspace'}
+                    </span>
                     {googleConnected ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-bold">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
