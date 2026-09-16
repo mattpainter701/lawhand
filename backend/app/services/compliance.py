@@ -293,7 +293,7 @@ async def onboarding_cloud_connection_blocked(
     if status["blocking"]:
         return True
     tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
-    if not tenant or status["configured"]:
+    if not tenant:
         return False
     active_credential = await db.scalar(
         select(TenantCredential.id).where(
@@ -302,10 +302,15 @@ async def onboarding_cloud_connection_blocked(
             TenantCredential.is_active.is_(True),
         ).limit(1)
     )
-    # Completed tenants with a real provider credential may reconnect during
+    # Tenants with a real provider credential may reconnect during
     # an OAuth refresh. A completed row without one is not evidence of a valid
     # prior setup and remains fail-closed.
-    return active_credential is None
+    if active_credential is not None:
+        return False
+    # A completed row without one is not evidence of a valid prior setup and
+    # remains fail-closed. New tenants also need a complete current agreement
+    # set, even while the legacy rollout flag is off.
+    return not status["complete"]
 
 
 async def chat_attachment_ttl_days(db: AsyncSession, tenant_id: uuid.UUID) -> int:

@@ -237,7 +237,7 @@ async def test_unconfigured_agreements_block_new_tenant_cloud_connection(monkeyp
     tenant = _tenant(onboarding_completed=False)
 
     async def agreements(*_args):
-        return {"configured": False, "blocking": False}
+        return {"configured": False, "complete": False, "blocking": False}
 
     class Db(_SeqDb):
         def __init__(self): super().__init__(); self.values = [tenant, None]
@@ -257,7 +257,7 @@ async def test_configured_existing_tenant_is_not_blocked_by_rollout_flag(monkeyp
     tenant = _tenant(onboarding_completed=True)
 
     async def agreements(*_args):
-        return {"configured": False, "blocking": False}
+        return {"configured": False, "complete": False, "blocking": False}
 
     class Db(_SeqDb):
         def __init__(self): super().__init__(); self.values = [tenant, "credential-id"]
