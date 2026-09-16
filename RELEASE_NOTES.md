@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.16.05 — A document that cannot be signed now tells you why
+
+Released September 16, 2026.
+
+A document generated from a template that has no signing positions now names the field that is wrong and what to change. Templates whose signing fields could never bind are refused at publish.
+
+- **The blocked document names the field.** Sending for signature used to ask only for a position review. It now names the signing field that did not bind and the change that clears it.
+- **One bad field no longer discards the good ones.** A single misconfigured signing field used to throw away every other placement in the template. Only the broken one is reported now.
+- **Word documents say to regenerate as PDF.** Signing positions can only be placed on a PDF, so a Word document that needs them now points to Word-to-PDF conversion instead.
+- **Unsignable templates are caught at publish.** A template whose signature fields have no signer role, or were never positioned, is refused with those fields named.
+
 ## 2026.09.16.04 — Your cloud folders stay yours through staff changes
 
 Released September 16, 2026.
