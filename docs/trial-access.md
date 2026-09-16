@@ -1,9 +1,11 @@
 # Trial access, paying, and premium AI
 
 How a firm on a free trial is treated while the trial runs, after it ends, and
-once it pays through Helcim. Public signup is enabled in production: the
-browser and API flags must both be `true`, and production preflight rejects a
-disabled or mismatched pair.
+once it pays through Helcim. Public signup is **off by default**
+(`PUBLIC_SIGNUP_ENABLED=false`); a deployment turns it on deliberately and may
+turn it back off as an incident-response kill switch. Production preflight
+requires both flags to be set explicitly and to match, but accepts either value
+so the switch stays reversible.
 
 ## Where trial state lives
 
