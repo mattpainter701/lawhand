@@ -481,7 +481,12 @@ async def propose(db, user, matter_id, document_id):  # noqa: C901 - one review 
             if target.kind.startswith("custom_")
             else _standard_current(matter, target)
         )
-        current_display = _custom_display(current) if current is not None else current
+        # Only a custom-field row needs unwrapping; a standard target already
+        # resolves to the display string the reviewer compares against.
+        if target.kind.startswith("custom_"):
+            current_display = _custom_display(current)
+        else:
+            current_display = current
         if len(distinct) > 1:
             status = "conflicting_sources"
         else:
