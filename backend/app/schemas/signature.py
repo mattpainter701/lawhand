@@ -38,6 +38,12 @@ class SignatureRequestVoid(BaseModel):
     reason: str | None = None
 
 
+class SignatureRequestSend(BaseModel):
+    """A plan the server had to guess at is sent only once staff have looked."""
+
+    acknowledge_review: bool = False
+
+
 # ── Responses ───────────────────────────────────────────────────────────────
 
 
@@ -97,6 +103,11 @@ class SignatureRequestResponse(BaseModel):
     fill_supported: bool = True
     signature_fields_count: int = 0
     placement_source: str | None = None
+    # What staff should look at before sending: see ``SigningPlan.review``.
+    # ``plan_review_required`` is true when a finding is a warning, and the
+    # send endpoint then insists on ``acknowledge_review``.
+    plan_review: list[dict] = Field(default_factory=list)
+    plan_review_required: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

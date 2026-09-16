@@ -118,6 +118,25 @@ def test_a_dated_line_split_from_its_by_line_by_the_page_break_stays_unpaired():
     assert [f.role for f in dates(plan)] == ["client"]
 
 
+SIGNER = SignerRef("s-signer", "Cal Example", "signer", 0)
+
+
+def test_the_one_portal_signer_case_setup_sends_to_is_the_client():
+    """Intake addresses its signer as "signer"; that person is the client."""
+    plan = build_plan(referral_fee_agreement_pdf(), signers=[SIGNER])
+
+    assert [(f.role, f.page, f.label, f.source) for f in signatures(plan)] == [
+        ("signer", 2, "Client", "detected")
+    ]
+    assert plan.review_required is False
+
+
+def test_a_generic_signer_still_never_takes_another_partys_line():
+    plan = build_plan(stipulation_pdf(), signers=[SIGNER])
+
+    assert plan.placement_source == "fallback"
+
+
 # ── The shared parenting plan ───────────────────────────────────────────────
 
 

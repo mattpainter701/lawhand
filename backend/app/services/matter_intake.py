@@ -171,7 +171,9 @@ def plan_signing_placements(
         {**item, "role": "signer"} for item in placements if isinstance(item, dict)
     ]
     try:
-        plan_request_placements(signature, content, signers=signers, placements=usable)
+        return plan_request_placements(
+            signature, content, signers=signers, placements=usable
+        )
     except PlacementError as exc:
         if strict:
             raise HTTPException(
@@ -179,7 +181,18 @@ def plan_signing_placements(
                 f"The signing positions placed on {signature.source_document_filename or 'the document'} "
                 f"do not match the PDF being sent: {exc} Review them again before sending.",
             ) from exc
-        plan_request_placements(signature, content, signers=signers, placements=[])
+        return plan_request_placements(
+            signature, content, signers=signers, placements=[]
+        )
+
+
+def review_notes(plan, filename):
+    """The plan's warnings, worded for the matter timeline."""
+    return [
+        f"{filename or 'Document'}: {item['detail']}"
+        for item in plan.review()
+        if item.get("level") == "warn"
+    ]
 
 
 def requirement_label(key, requirement):
@@ -437,6 +450,7 @@ async def start_packet(db, user, matter, body, filename, content):
             contact.sms_opt_in_at = consent.consented_at
     document = None
     signature = None
+    plan_warnings: list[str] = []
     # An agreement is optional: a packet may carry only the questionnaire, the
     # intake form, or requested uploads. The portal invite below is created
     # either way, so the client can always reach that paperwork.
@@ -499,7 +513,7 @@ async def start_packet(db, user, matter, body, filename, content):
             expires_at=now() + timedelta(days=30),
             reminders={},
         )
-        plan_signing_placements(
+        agreement_plan = plan_signing_placements(
             signature,
             content,
             signer_name=contact.display_name or str(body.email),
@@ -508,6 +522,7 @@ async def start_packet(db, user, matter, body, filename, content):
             or [],
             strict=bool(body.agreement_positioned_fields),
         )
+        plan_warnings.extend(review_notes(agreement_plan, document.filename))
         db.add(signature)
         await db.flush()
         db.add(
@@ -621,7 +636,7 @@ async def start_packet(db, user, matter, body, filename, content):
                 expires_at=now() + timedelta(days=30),
                 reminders={},
             )
-            plan_signing_placements(
+            extra_plan = plan_signing_placements(
                 extra,
                 attachment.content,
                 signer_name=contact.display_name or str(body.email),
@@ -630,6 +645,7 @@ async def start_packet(db, user, matter, body, filename, content):
                 or [],
                 strict=bool(selection.positioned_fields),
             )
+            plan_warnings.extend(review_notes(extra_plan, attachment.filename))
             db.add(extra)
             await db.flush()
             db.add(
@@ -666,6 +682,16 @@ async def start_packet(db, user, matter, body, filename, content):
         "Intake started",
         "Client paperwork requested; portal delivery queued.",
     )
+    if plan_warnings:
+        # Intake sends without a staff step, so a guessed plan cannot wait for
+        # acknowledgement. It is put on the timeline instead, where the firm
+        # sees it before the client does anything with it.
+        event(
+            db,
+            packet,
+            "Signature plan needs review",
+            " ".join(plan_warnings),
+        )
     await db.commit()
     return packet
 

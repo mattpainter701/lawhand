@@ -14,7 +14,7 @@ import {
   setAssignmentActive, getMatterTimeEntries, getConversations, createConversation,
   getTasks, updateTask, getMatterDashboard, getMatterCloudFiles,
   createMatterPortalInvite, listMatterPortalInvites, revokeMatterPortalInvite,
-  getMatterDocuments, createSignatureRequest, listSignatureRequests,
+  getMatterDocuments, createSignatureRequest, getSignatureRequestFields, listSignatureRequests,
   sendSignatureRequest, resendSignatureRequest, voidSignatureRequest, getMatterDocumentDownloadUrl, getMatterDocumentSigningSource,
   acceptSignatureSubmission, rejectSignatureSubmission, uploadMatterDocument,
   syncMatterCloudFolder, listTrustAccounts,
@@ -2600,6 +2600,18 @@ const SIGNER_ROLE_OPTIONS = [
 
 const newSignerRow = () => ({ name: '', email: '', role: 'client' })
 
+const signingFieldKind = (kind) => ({ signature: 'Signature', initials: 'Initials', date: 'Date signed' }[kind] || kind)
+
+// Where a field came from decides how much to trust it: a widget in the PDF
+// or a block staff placed is certain; a printed line the server read is a
+// good guess; a fallback block is the server admitting it found nothing.
+const signingFieldOrigin = (source) => ({
+  acroform: 'a field in the PDF form',
+  placed: 'placed by you',
+  detected: 'a signature line found on the page',
+  fallback: 'no line found — a block at the foot of the last page',
+}[source] || source || 'unknown')
+
 function formatSignerRole(role) {
   const match = SIGNER_ROLE_OPTIONS.find((option) => option.value === role)
   return match ? match.label : (role || 'Signer').replace(/_/g, ' ')
@@ -2654,6 +2666,9 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
   const [positionedFields, setPositionedFields] = useState(EMPTY_SIGNING_FIELDS)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [signingSource, setSigningSource] = useState(null)
+  // A created request waits here, with where each signer will sign, until
+  // staff have looked. A plan the server guessed at cannot be sent unread.
+  const [draft, setDraft] = useState(null)
   const [signers, setSigners] = useState([newSignerRow()])
   const [expiresOn, setExpiresOn] = useState('')
   const [dueOn, setDueOn] = useState('')
@@ -2812,7 +2827,34 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
         reminder_days: parsedReminderDays,
         enforce_signing_order: enforceSigningOrder,
       })
-      const sent = await sendSignatureRequest(matterId, req.id)
+      await openDraft(req)
+      load()
+    } catch (e2) {
+      setErr(e2?.response?.data?.detail || 'Failed to create signature request.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The request exists as a draft; show where the server put each signer
+  // before anything reaches the client.
+  const openDraft = async (request) => {
+    let manifest = null
+    try { manifest = await getSignatureRequestFields(matterId, request.id) } catch { manifest = null }
+    setDraft({ request, fields: Array.isArray(manifest?.fields) ? manifest.fields : [], acknowledged: false })
+  }
+
+  const sendDraft = async () => {
+    if (!draft) return
+    setErr('')
+    setNotice('')
+    setNoticeDelivered(true)
+    setBusy(true)
+    try {
+      const sent = draft.acknowledged
+        ? await sendSignatureRequest(matterId, draft.request.id, { acknowledge_review: true })
+        : await sendSignatureRequest(matterId, draft.request.id)
+      setDraft(null)
       setSigners([newSignerRow()])
       setDocId('')
       setReviewOpen(false); setSigningSource(null); setPositionedFields(EMPTY_SIGNING_FIELDS)
@@ -2825,7 +2867,22 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
       setNotice(outcome.text)
       load()
     } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Failed to create signature request.')
+      setErr(e2?.response?.data?.detail || 'Failed to send the signature request.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const discardDraft = async () => {
+    if (!draft) return
+    setErr('')
+    setBusy(true)
+    try {
+      await voidSignatureRequest(matterId, draft.request.id, { reason: 'Discarded before sending' })
+      setDraft(null)
+      load()
+    } catch (e2) {
+      setErr(e2?.response?.data?.detail || 'Failed to discard the draft.')
     } finally {
       setBusy(false)
     }
@@ -3014,9 +3071,55 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
             <p className="text-[11px] text-brand-muted">Each signer signs the fields placed for their role. Add the signer first, then place their blocks in the PDF review above.</p>
           </div>
           <button type="submit" disabled={busy || uploading} className="px-4 py-2 bg-brand-ink text-white text-sm font-sans font-semibold rounded-lg hover:bg-brand-ink-2 transition-all disabled:opacity-50">
-            {busy ? 'Sending…' : 'Send for signature'}
+            {busy ? 'Preparing…' : 'Prepare for signature'}
           </button>
         </form>
+          {draft && (() => {
+            const request = draft.request || {}
+            const roles = [...new Set((request.signers || []).map((signer) => signer.role || 'signer'))]
+            const signing = draft.fields.filter((item) => ['signature', 'initials', 'date'].includes(item.kind))
+            const review = Array.isArray(request.plan_review) ? request.plan_review : []
+            const mustAcknowledge = Boolean(request.plan_review_required)
+            return (
+              <section aria-label="Where each signer will sign" className="rounded-2xl border border-brand-line bg-white p-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-sans font-semibold text-brand-ink">Where each signer will sign</h3>
+                  <p className="text-xs text-brand-muted mt-0.5">{request.document_name || 'Document'} — check this before it reaches the client.</p>
+                </div>
+                <ul className="space-y-2">
+                  {roles.map((role) => {
+                    const mine = signing.filter((item) => (item.role || 'signer') === role)
+                    return (
+                      <li key={role} className="text-sm">
+                        <span className="font-semibold text-brand-ink">{formatSignerRole(role)}</span>
+                        <ul className="ml-4 mt-1 space-y-0.5 text-xs text-brand-muted">
+                          {mine.length === 0 && <li>No field</li>}
+                          {mine.map((item) => (
+                            <li key={item.field_id}>
+                              Page {item.page} · {signingFieldKind(item.kind)}{item.label && !['Signature', signingFieldKind(item.kind)].includes(item.label) ? ` “${item.label}”` : ''} · {signingFieldOrigin(item.source)}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {review.map((item, index) => (
+                  <p key={index} role={item.level === 'warn' ? 'alert' : 'status'} className={`text-xs ${item.level === 'warn' ? 'font-semibold text-brand-amber' : 'text-brand-muted'}`}>{item.detail}</p>
+                ))}
+                {mustAcknowledge && (
+                  <label className="inline-flex items-center gap-2 text-xs text-brand-ink">
+                    <input type="checkbox" checked={draft.acknowledged} onChange={(e) => setDraft({ ...draft, acknowledged: e.target.checked })} />
+                    <span>I have checked where each signer will sign</span>
+                  </label>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={sendDraft} disabled={busy || (mustAcknowledge && !draft.acknowledged)} className="rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Send for signature</button>
+                  <button type="button" onClick={discardDraft} disabled={busy} className="rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-rose disabled:opacity-50">Discard draft</button>
+                </div>
+              </section>
+            )
+          })()}
 
         {err && <p className="text-sm text-brand-rose">{err}</p>}
         {notice && <p role="status" className={`text-sm ${noticeDelivered ? 'text-brand-green' : 'text-brand-amber font-semibold'}`}>{notice}</p>}
@@ -3063,6 +3166,7 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
                         <a href={getMatterDocumentDownloadUrl(matterId, executedDocumentId)} className="text-xs font-semibold text-brand-accent hover:text-brand-ink">Signed copy filed</a>
                       )}
                       {['sent', 'partially_signed'].includes(r.status) && <button onClick={() => resendReq(r.id)} className="text-brand-accent hover:underline text-xs font-medium">Resend</button>}
+                      {r.status === 'draft' && <button onClick={() => openDraft(r)} className="text-brand-accent hover:underline text-xs font-medium">Review and send</button>}
                       {open && <button onClick={() => voidReq(r.id)} className="text-brand-rose hover:underline text-xs font-medium">Void</button>}
                     </div>
                   </div>
