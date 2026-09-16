@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TemplateStudioEditor, { mergedVariableSchema, schemaFields } from './TemplateStudioEditor'
 
@@ -8,19 +8,24 @@ vi.mock('./WordDocumentPreview', () => ({ default: ({ children, onCreateField, o
 // pdf.js cannot rasterize in jsdom, so the shared canvas module is stubbed with
 // deterministic page geometry. Everything under test here is placement state,
 // not rasterization.
+// pdf.js either loads the retained source or it does not, and the editor has
+// to behave differently in each case, so the stub is switchable.
+const LOADED_PDF = {
+  document: { numPages: 2 },
+  pages: [
+    { page: 1, width: 612, height: 792, rotation: 0 },
+    { page: 2, width: 612, height: 792, rotation: 0 },
+  ],
+  error: '',
+}
+const pdfLoad = vi.hoisted(() => ({ result: null }))
+
 vi.mock('./PdfDocumentCanvas', () => ({
   PdfPageCanvas: ({ pageNumber }) => <canvas aria-label={`PDF page ${pageNumber}`} />,
   PdfThumbnail: ({ pageNumber, onSelect }) => (
     <button type="button" onClick={onSelect}>{`Show page ${pageNumber}`}</button>
   ),
-  useTemplatePdfDocument: () => ({
-    document: { numPages: 2 },
-    pages: [
-      { page: 1, width: 612, height: 792, rotation: 0 },
-      { page: 2, width: 612, height: 792, rotation: 0 },
-    ],
-    error: '',
-  }),
+  useTemplatePdfDocument: () => pdfLoad.result,
 }))
 
 // The binding catalogue is static server-owned vocabulary; the editor only
@@ -65,6 +70,10 @@ vi.mock('../../api', () => ({
     ],
     collections: [],
     operators: ['present', 'absent'],
+    // Every field name Smart Fill can fill without a declared binding. Served
+    // rather than reimplemented on the client, so the editor and the fill
+    // cannot hold different ideas of which names resolve.
+    smart_fill_names: ['client_name', 'case_number'],
   }),
   getTemplateCards: () => Promise.resolve({
     cards: [
@@ -92,6 +101,10 @@ const templateWith = (fields, extra = {}) => ({
   variable_schema: { version: 2, pages: [{ page: 1, width: 612, height: 792 }], fields, ...extra },
 })
 
+beforeEach(() => {
+  pdfLoad.result = LOADED_PDF
+})
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -109,6 +122,218 @@ describe('TemplateStudioEditor', () => {
     expect(screen.getByText('1 reviewed')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ source_review: { synthetic: 'fixed' }, source_review_version: 1 })))
+  })
+
+  // Discovery coverage — fields found, fields needing review — was the only
+  // thing either editor reported. It never said how much of the template
+  // arrives filled, which is the number that decides whether it is worth
+  // having. A PDF template carried no field count at all.
+  it('reports how much of the template fills itself, for PDF as well as Word', async () => {
+    render(
+      <TemplateStudioEditor
+        template={templateWith([
+          { name: 'who', label: 'Who', binding: 'client.full_name' },
+          { name: 'client_name', label: 'Name' },
+          { name: 'injury', label: 'Injury' },
+        ])}
+        source={pdfSource()}
+        onSave={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByText('2 of 3 fill from the record')).toBeInTheDocument()
+    expect(screen.getByText('3 fields')).toBeInTheDocument()
+
+    // The rectangles carry no meaning until asked, so the legend is the proof
+    // the highlight switched rather than the colours themselves.
+    fireEvent.click(screen.getByRole('button', { name: 'Highlight fill source' }))
+    expect(screen.getByText('Fills from the record 1')).toBeInTheDocument()
+    expect(screen.getByText('Fills by field name 1')).toBeInTheDocument()
+    expect(screen.getByText('No source 1')).toBeInTheDocument()
+  })
+
+  it('warns that a field filling by name alone breaks on a rename', async () => {
+    render(<TemplateStudioEditor template={templateWith([{ name: 'client_name', label: 'Name' }])} source={pdfSource()} onSave={vi.fn()} />)
+
+    expect(await screen.findByText(/Rename it and the fill stops/)).toBeInTheDocument()
+  })
+
+  // Carried over from the intake editor, which used to guard this and has been
+  // retired into this one. A page that will not render is exactly the page an
+  // author must not place blind geometry on.
+  describe('when the page cannot be rendered', () => {
+    const broken = { ...templateWith([{ name: 'a', label: 'A' }]), variable_schema: { version: 2, fields: [{ name: 'a', label: 'A' }] } }
+
+    it('offers the original and refuses to place a field it cannot position', () => {
+      // No `pages` on the schema, so nothing says how big the page is; a
+      // rectangle placed here would be measured against a guessed 612x792 and
+      // stored as though it had been measured.
+      pdfLoad.result = { document: null, pages: [], error: 'The PDF could not be read.' }
+      render(<TemplateStudioEditor template={broken} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByRole('link', { name: 'Open the original in a new tab' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Text' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Draw field' })).toBeDisabled()
+    })
+
+    it('still places a field where the template records the page size', () => {
+      // A page that failed to *render* is still a page whose size we know,
+      // from the geometry the server signed at upload.
+      pdfLoad.result = { document: null, pages: [], error: 'The PDF could not be read.' }
+      render(<TemplateStudioEditor template={templateWith([])} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByRole('button', { name: 'Text' })).toBeEnabled()
+    })
+  })
+
+  // The scan's uncertain fields must be compared against the original before
+  // the template can publish. The wizard asked for this before a draft could
+  // be created and threw the answer away; it is asked here now, where a firm
+  // can fix what they find, and the server records and enforces it.
+  describe('source review', () => {
+    const uncertain = [{ name: 'signer', label: 'Signer', confidence: 0.4 }]
+
+    it('blocks nothing on a scan with nothing uncertain in it', () => {
+      render(<TemplateStudioEditor template={templateWith([{ name: 'signer', label: 'Signer', confidence: 1 }])} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.queryByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeInTheDocument()
+    })
+
+    it('records the confirmation with the saved schema', async () => {
+      const onSave = vi.fn().mockResolvedValue({})
+      render(<TemplateStudioEditor template={templateWith(uncertain)} source={pdfSource()} onSave={onSave} />)
+
+      expect(screen.getByText(/cannot be published until you confirm/)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Confirm source comparison' }))
+      fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      // The client says only that a person confirmed; the server decides what
+      // that covers, so no digest is sent.
+      expect(onSave.mock.calls[0][0].pdf_source_review).toEqual({ confirmed: true })
+    })
+
+    it('reopens as confirmed when the saved template carries an attestation', () => {
+      render(<TemplateStudioEditor template={templateWith(uncertain, { pdf_source_review: { confirmed_digest: 'abc' } })} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).toBeChecked()
+    })
+
+    it('asks again once the fields stop being the ones that were confirmed', () => {
+      render(<TemplateStudioEditor template={templateWith(uncertain, { pdf_source_review: { confirmed_digest: 'abc' } })} source={pdfSource()} onSave={vi.fn()} />)
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).toBeChecked()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+      fireEvent.click(screen.getByLabelText('Editable PDF page'), { clientX: 120, clientY: 160 })
+
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeChecked()
+    })
+
+    it('asks again when a confirmed field is excluded', () => {
+      render(<TemplateStudioEditor template={templateWith(uncertain, { pdf_source_review: { confirmed_digest: 'abc' } })} source={pdfSource()} onSave={vi.fn()} />)
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).toBeChecked()
+
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include in template/ }))
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include in template/ }))
+
+      expect(screen.getByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeChecked()
+    })
+
+    it('leaves a Word template to its own review', () => {
+      render(<TemplateStudioEditor template={{ ...templateWith(uncertain), format: 'docx' }} onSave={vi.fn()} />)
+
+      expect(screen.queryByRole('checkbox', { name: 'Confirm source comparison' })).not.toBeInTheDocument()
+    })
+  })
+
+  // Divergences found by diffing this editor against the intake one. Each is a
+  // silent failure: the editor accepts the edit and the product does something
+  // else.
+  describe('parity with the intake editor', () => {
+    it('stores a paragraph the way the renderer reads one', () => {
+      // The renderer wraps on the `multiline` boolean. This editor offered
+      // `multiline` as a field_type and never set the boolean, so a paragraph
+      // re-typed here stopped wrapping — and a paragraph authored at intake,
+      // which is `{ field_type: 'text', multiline: true }`, read back as text.
+      render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'story', label: 'Story', field_type: 'text', multiline: true }]), format: 'docx' }} onSave={vi.fn()} />)
+
+      const type = screen.getByLabelText('Field type')
+      expect(type).toHaveValue('multiline')
+
+      fireEvent.change(type, { target: { value: 'text' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Story' }))
+      expect(screen.getByLabelText('Field type')).toHaveValue('text')
+    })
+
+    it('does not offer edits the source PDF will overwrite on save', () => {
+      // `_reviewed_variable_schema` takes field_type and required for an
+      // AcroForm field from the live PDF, so both controls promised an edit
+      // that silently reverted.
+      render(<TemplateStudioEditor template={templateWith([{ name: 'signer', label: 'Signer', pdf_field_name: 'signer', source_required: true, required: true }])} source={pdfSource()} onSave={vi.fn()} />)
+
+      expect(screen.getByLabelText('Field type')).toBeDisabled()
+      expect(screen.getByRole('checkbox', { name: /Required/ })).toBeDisabled()
+      expect(screen.getByText(/source PDF marks this field required/)).toBeInTheDocument()
+    })
+
+    it('lets an excluded field back in', () => {
+      // Excluding hid the field from the canvas and the only control wrote
+      // `included: false`, so the exclude could not be undone through the UI.
+      render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'story', label: 'Story' }]), format: 'docx' }} onSave={vi.fn()} />)
+
+      const include = screen.getByRole('checkbox', { name: /Include in template/ })
+      expect(include).toBeChecked()
+      fireEvent.click(include)
+      expect(screen.getByRole('checkbox', { name: /Include in template/ })).not.toBeChecked()
+      fireEvent.click(screen.getByRole('checkbox', { name: /Include in template/ }))
+      expect(screen.getByRole('checkbox', { name: /Include in template/ })).toBeChecked()
+    })
+
+    it('does not lose cover regions to an undo that never touched one', async () => {
+      // Four of the six undo push sites snapshotted all the editor state and
+      // two snapshotted a subset, while undo restored `coverRegions || []`
+      // over the real ones and the next save persisted the empty list.
+      const onSave = vi.fn().mockResolvedValue({})
+      const covers = [{ page: 1, rect: [72, 600, 220, 624] }]
+      render(
+        <TemplateStudioEditor
+          template={{
+            ...templateWith([{ name: 'story', label: 'Story' }], {
+              regions: [{ kind: 'each', name: 'parties', from_ordinal: 4, to_ordinal: 6 }],
+              cover_regions: covers,
+            }),
+            format: 'docx',
+          }}
+          onSave={onSave}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Unmark' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+      fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      expect(onSave.mock.calls[0][0].cover_regions).toEqual(covers)
+    })
+
+    it('lets a keyboard move and remove a field on the page', async () => {
+      const onSave = vi.fn().mockResolvedValue({})
+      render(<TemplateStudioEditor template={templateWith([])} source={pdfSource()} onSave={onSave} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+      fireEvent.click(screen.getByLabelText('Editable PDF page'), { clientX: 120, clientY: 160 })
+
+      const placement = screen.getByRole('button', { name: 'Select New text field' })
+      fireEvent.keyDown(placement, { key: 'ArrowRight', shiftKey: true })
+      fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const moved = onSave.mock.calls[0][0].fields[0].pdf_overlay.rect
+
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Select New text field' }), { key: 'Delete' })
+      expect(screen.queryByRole('button', { name: 'Select New text field' })).not.toBeInTheDocument()
+
+      // The nudge moved it right, in PDF points, not merely re-rendered it.
+      expect(moved[0]).toBeGreaterThan(0)
+    })
   })
 
   it('keeps repeating item bindings out of single-value links', () => {

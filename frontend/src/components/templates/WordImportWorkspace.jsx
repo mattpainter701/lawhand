@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { previewWordUpload } from '../../api'
+import TemplateBindingPicker from './TemplateBindingPicker'
 import WordDocumentPreview from './WordDocumentPreview'
+import { FILL_STATE_COLORS, fillCoverage, fillStateHelp } from './fillCoverage'
 import { fieldIdentity } from './pdfFieldGeometry'
 
-export default function WordImportWorkspace({ file, analysis, fields, onFieldsChange, onAddField, reviewConfirmed = false }) {
+export default function WordImportWorkspace({ file, analysis, fields, onFieldsChange, onAddField, reviewConfirmed = false, catalogue = {} }) {
+  const { cards = [], bindings = [], smartFillNames = [], catalogueLoaded = false } = catalogue
   const [selected, setSelected] = useState('')
   const [selection, setSelection] = useState('')
   const [query, setQuery] = useState('')
@@ -24,6 +27,8 @@ export default function WordImportWorkspace({ file, analysis, fields, onFieldsCh
   const active = entries.find(entry => entry.identity === selected) || entries[0]
   const visibleEntries = entries.filter(({ field }) => (!reviewOnly || needsReview.includes(field))
     && `${field.label || ''} ${field.name || ''} ${field.source_text || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const coverage = fillCoverage(fields, { smartFillNames, bindings, cards })
+  const activeFillState = active ? coverage.states.get(active.field.name) : undefined
   const sourceParagraph = analysis?.source_paragraphs?.find(paragraph => paragraph.ordinal === active?.field.docx_anchor?.paragraph_ordinal)
   const selectField = identity => {
     setSelected(identity)
@@ -55,7 +60,7 @@ export default function WordImportWorkspace({ file, analysis, fields, onFieldsCh
   return <section aria-label="Review Word upload" className="rounded-xl border border-brand-line bg-brand-surface-2">
     <div className="border-b border-brand-line p-4">
       <h2 className="font-semibold">Review your document and fields</h2>
-      <p role="status" className="mt-1 text-sm text-brand-muted">{analysis ? `${included.length} detected or added fields · ${needsReview.length} need review` : 'Rendering the document and detecting fields…'}</p>
+      <p role="status" className="mt-1 text-sm text-brand-muted">{analysis ? `${included.length} detected or added fields · ${needsReview.length} need review${catalogueLoaded && coverage.total ? ` · ${coverage.fills} of ${coverage.total} fill from the record` : ''}` : 'Rendering the document and detecting fields…'}</p>
       <p className="mt-1 text-xs text-brand-muted">Click a named box to edit it. To add a field, drag across the words to replace on the document, then give the field a name. The list also includes fields on other pages or awaiting placement.</p>
       <button type="button" onClick={() => fieldsRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })} className="mt-2 rounded border border-brand-line px-3 py-2 text-xs font-semibold lg:hidden">Review detected fields ({fields.length})</button>
       {analysis && <div className="mt-3 rounded-lg border border-brand-line bg-brand-bg p-3">
@@ -110,6 +115,17 @@ export default function WordImportWorkspace({ file, analysis, fields, onFieldsCh
           </div>
           <label className="block text-sm">Field label<input aria-label="Imported field label" value={active.field.label ?? active.field.name} onChange={event => update({ label: event.target.value })} className="mt-1 w-full rounded border border-brand-line bg-brand-bg p-2" /></label>
           <label className="block text-sm">Field type<select aria-label="Imported field type" disabled={Boolean(active.field.docx_choice)} value={active.field.field_type || 'text'} onChange={event => update({ field_type: event.target.value })} className="mt-1 w-full rounded border border-brand-line bg-brand-bg p-2">{['text', 'date', 'number', 'currency', 'checkbox', 'signature'].map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+          {/* Where the value comes from, on the screen where the field is
+              first reviewed. This surface had the same gap the PDF intake flow
+              had: a firm could name a field here but never say what fills it
+              until they reopened the template in a different editor. */}
+          <div className="text-sm">Fills from
+            <TemplateBindingPicker value={active.field.binding || ''} cards={cards} bindings={bindings} onChange={binding => update({ binding })} />
+            {catalogueLoaded && activeFillState && <p className="mt-1 flex items-start gap-1.5 text-xs leading-4 text-brand-muted">
+              <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: FILL_STATE_COLORS[activeFillState] }} />
+              <span>{fillStateHelp(active.field, activeFillState)}</span>
+            </p>}
+          </div>
           <label className="flex gap-2 text-sm"><input type="checkbox" checked={active.field.included !== false} onChange={event => update({ included: event.target.checked })} />Include this field</label>
           <label className="flex gap-2 text-sm"><input type="checkbox" checked={Boolean(active.field.required)} onChange={event => update({ required: event.target.checked })} />Require a value</label>
           <p className="text-xs text-brand-muted">Replaces: {active.field.source_text || active.field.example}</p>

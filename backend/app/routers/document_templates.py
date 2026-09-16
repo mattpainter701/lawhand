@@ -71,6 +71,7 @@ from app.schemas.document_template import (
     DocumentTemplatePublishRequest,
     DocumentTemplateWordDeriveRequest,
     DocumentTemplateWordCleanupRequest,
+    DocumentTemplateFillCoverage,
     DocumentTemplateResponse,
     DocumentTemplateSmartFillRequest,
     DocumentTemplateSmartFillResponse,
@@ -145,12 +146,17 @@ from app.services.template_bindings import (
     alias_for_binding,
     catalogue as binding_catalogue,
     collections as binding_collections,
-    custom_binding,
     declared_bindings,
     is_item_binding,
 )
+from app.services import pdf_source_review
 from app.services import template_cards
 from app.services.template_cards import CardKind
+from app.services.template_fill_coverage import (
+    binding_is_resolvable as _binding_is_resolvable,
+    coverage as fill_coverage,
+    normalize_variable_name as _normalize_variable_name,
+)
 from app.services.template_labels import unusable_labels
 from app.services.template_ocr import TemplateOcrError, image_to_pdf
 from app.services.matter_file_store import MatterFileStore
@@ -506,7 +512,30 @@ def _template_response(template: DocumentTemplate) -> DocumentTemplateResponse:
         and template.source_file_size
         and template.source_file_size > 0
     )
-    return response.model_copy(update={"source_ready": source_ready})
+    return response.model_copy(
+        update={
+            "source_ready": source_ready,
+            "fill_coverage": _fill_coverage_response(template.variable_schema),
+        }
+    )
+
+
+def _fill_coverage_response(
+    variable_schema: dict | None,
+) -> DocumentTemplateFillCoverage:
+    """Summarise where a saved template's field values come from.
+
+    Served with every template read so a firm can tell a well-wired template
+    from a badly-wired one from the library list, without opening each one. The
+    editors recompute the same split live from the unsaved schema; this is the
+    saved truth, and the vocabulary both sides classify against is the one
+    ``/templates/bindings`` serves.
+    """
+
+    split = fill_coverage(variable_schema, vocabulary=_smart_fill_alias_vocabulary())
+    return DocumentTemplateFillCoverage(
+        total=split.total, fills=split.fills, **split.counts
+    )
 
 
 async def _load_generation_preview_evidence(
@@ -765,6 +794,23 @@ async def _verified_template_source(template: DocumentTemplate) -> bytes:
             status_code=409, detail="The original template failed its integrity check"
         )
     return content
+
+
+def _ensure_pdf_source_review(template, schema) -> None:
+    """Refuse to publish a scan nobody has checked against the original.
+
+    The Word half of the product has always had this. The PDF half asked for
+    the same attestation in the wizard and never sent it anywhere, so a
+    template full of OCR guesses could be published and used to generate real
+    documents with nothing having confirmed the boxes are where the scan
+    claimed.
+    """
+
+    if str(template.format or "").lower() not in {"pdf", "image"}:
+        return
+    reason = pdf_source_review.unresolved_reason(schema)
+    if reason:
+        raise HTTPException(status_code=422, detail=reason)
 
 
 async def _ensure_word_source_review(template, schema):
@@ -1642,7 +1688,33 @@ def _reviewed_variable_schema(raw: str | None, discovered: dict) -> dict:
     if discovered.get("source_review_version") == 1:
         schema["source_review_version"] = 1
         schema.pop("source_review", None)
+    _stamp_pdf_source_review(schema)
     return schema
+
+
+def _stamp_pdf_source_review(schema: dict) -> None:
+    """Record a source-review attestation against what is actually being saved.
+
+    The client says only whether the person confirmed; the server decides what
+    that confirmation covers. Letting a client supply the digest would let it
+    attest to a field set other than the one it is saving, which is the single
+    thing this record exists to prevent.
+
+    An unconfirmed save clears any previous attestation rather than leaving it
+    in place, so review state is never inherited by a field set nobody looked
+    at. It would re-arm at publish anyway — the digest would not match — but
+    leaving a stale confirmation on the row would make the editor show a
+    reviewed template that publish then refuses.
+    """
+
+    submitted = schema.pop("pdf_source_review", None)
+    confirmed = isinstance(submitted, dict) and submitted.get("confirmed") is True
+    if not confirmed:
+        return
+    schema["pdf_source_review"] = {
+        "confirmed_digest": pdf_source_review.review_digest(schema),
+        "confirmed_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _is_allowed_template_sample(filename: str | None, content_type: str | None) -> bool:
@@ -1775,10 +1847,6 @@ def extract_schema_variables(template: DocumentTemplate) -> list[str]:
             variables.append(variable)
             seen.add(variable)
     return variables
-
-
-def _normalize_variable_name(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
 
 
 def _stringify_suggestion(value: Any) -> str | None:
@@ -2319,23 +2387,6 @@ def _smart_fill_alias_vocabulary() -> frozenset[str]:
     return frozenset(candidates)
 
 
-def _binding_is_resolvable(binding: str) -> bool:
-    """Whether a declared binding path Smart Fill can resolve against a record.
-
-    Item bindings resolve per repeating-section iteration and custom bindings
-    through the custom-field service, so both fill without a catalogue alias.
-    Manual bindings and paths the catalogue no longer describes cannot.
-    """
-
-    if binding == MANUAL_BINDING:
-        return False
-    return (
-        is_item_binding(binding)
-        or custom_binding(binding) is not None
-        or alias_for_binding(binding) is not None
-    )
-
-
 def _validate_approval_ready(
     *,
     template: DocumentTemplate,
@@ -2842,6 +2893,7 @@ async def list_template_bindings(
             for entry in binding_collections()
         ],
         operators=sorted(LOGIC_OPERATORS),
+        smart_fill_names=sorted(_smart_fill_alias_vocabulary()),
     )
 
 
@@ -4941,6 +4993,7 @@ async def publish_template(
         )
 
     await _ensure_word_source_review(template, template.variable_schema)
+    _ensure_pdf_source_review(template, template.variable_schema)
     _ensure_usable_labels(template.variable_schema)
     _validate_approval_ready(
         template=template,

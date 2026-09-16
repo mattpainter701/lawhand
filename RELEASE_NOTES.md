@@ -5,6 +5,40 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.15.09 — One place to lay out a form, not two
+
+Released September 15, 2026.
+
+Uploading a form now scans it and hands you straight to the template editor, instead of asking you to lay the fields out twice in two screens that had quietly drifted apart.
+
+- **Upload, then edit — in one editor.** The upload step scans your document and shows what it found; laying out and naming the fields happens in the template editor, where you can also test, version and publish.
+- **A scan that found nothing is no longer a dead end.** A flat PDF with no detectable fields can be saved as a draft, so you can open it in the editor and place the fields yourself.
+- **The editor shows what needs checking.** Fields are coloured by whether they were read confidently, taken from the document's own form controls, or placed by hand — with an AI proposal marked as one.
+- **A page that will not display no longer hides it.** Where the document cannot be shown, the editor offers the original file and stops you placing a field whose position it cannot work out.
+
+## 2026.09.15.08 — A scanned form cannot be published unchecked
+
+Released September 15, 2026.
+
+Where a scan was unsure of a field, someone now has to compare it with the original document before the template can be published — and they do it on the screen where they can fix what they find.
+
+- **The source check is now enforced, not just asked for.** A PDF or image template with fields the scan was unsure of cannot be published until someone confirms they compared them with the original document.
+- **Check the form where you can correct it.** The confirmation moved from the upload step to the template editor, so a field that looks wrong can be fixed on the spot instead of only ticked off.
+- **Changing the fields asks again.** Adding, removing or moving a field withdraws the confirmation, because it no longer describes the form that was checked.
+- **A clean scan asks for nothing.** Where every field came straight from the document's own form fields, there is nothing uncertain to confirm and no extra step.
+
+## 2026.09.15.07 — Say what fills a form field, and see how much of it fills
+
+Released September 15, 2026.
+
+The upload flow can now say where each field's value comes from, and both editors report how many of a form's fields fill themselves from the matter instead of being retyped.
+
+- **Choose a data source while you review an uploaded form.** The Fills from control is now on the screen where a form's fields are first reviewed, for PDF and Word uploads alike, rather than only in Template Studio later.
+- **See how much of a form fills itself.** Every editor reports how many fields arrive filled from the matter, broken down into bound, filled by field name, typed by hand, signed and no source.
+- **Colour the page by where each value comes from.** A Fill source highlight recolours the fields on the document so a wired part of a form is distinguishable at a glance from a wall of retyping.
+- **A warning before a rename quietly breaks a fill.** A field filling only because its name matches a known record now says so, and says that renaming it stops the fill, which nothing previously told anyone.
+- **Publishing a card-bound template is no longer refused.** A required field bound with the card picker was refused at publish for having no data source, although it filled correctly. Approval now resolves it the same way the fill does.
+
 ## 2026.09.15.06 — Paying ends your trial, and billing stays reachable
 
 Released September 15, 2026.

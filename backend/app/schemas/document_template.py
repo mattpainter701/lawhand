@@ -88,6 +88,28 @@ class DocumentTemplateVersionListResponse(BaseModel):
     versions: list[DocumentTemplateVersionSummary]
 
 
+class DocumentTemplateFillCoverage(BaseModel):
+    """How much of a template arrives filled when a matter is named.
+
+    Both editors already report *discovery* coverage — fields found, fields
+    needing review. This is the number that decides whether a template is worth
+    having: ``fills`` of ``total`` boxes carry a value without anyone typing
+    it. The remaining buckets are reported separately because they fail
+    differently, and a firm has to be able to tell them apart:
+    ``name_matched`` works today and breaks silently on a rename,
+    ``unresolved`` is already broken, and ``manual`` is correct on purpose.
+    """
+
+    total: int
+    fills: int
+    bound: int
+    name_matched: int
+    manual: int
+    signature: int
+    unresolved: int
+    unbound: int
+
+
 class DocumentTemplateResponse(BaseModel):
     id: str
     title: str
@@ -103,6 +125,8 @@ class DocumentTemplateResponse(BaseModel):
     jurisdiction: Optional[str] = None
     kind: Optional[str] = None
     variable_schema: Optional[dict[str, Any]] = None
+    #: Derived on read, never accepted on write.
+    fill_coverage: Optional[DocumentTemplateFillCoverage] = None
     signer_roles: Optional[list[dict[str, Any]]] = None
     branding_profile: Optional[dict[str, Any]] = None
     source_filename: Optional[str] = None
@@ -366,6 +390,12 @@ class DocumentTemplateBindingCatalogue(BaseModel):
     bindings: list[DocumentTemplateBindingOption]
     collections: list[DocumentTemplateCollectionOption]
     operators: list[str]
+    #: Every normalised field name Smart Fill can fill without a declared
+    #: binding. The editor needs this to tell an author which fields are
+    #: relying on a name match — the state that works today and stops working
+    #: the moment the field is renamed. Served rather than reimplemented so
+    #: the client cannot hold a second, drifting copy of the rule.
+    smart_fill_names: list[str] = Field(default_factory=list)
 
 
 class DocumentTemplateOutlineRun(BaseModel):
