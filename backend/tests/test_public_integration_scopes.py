@@ -20,6 +20,8 @@ from app.routers.integrations import (
     MICROSOFT_ADMIN_SCOPES,
     MICROSOFT_USER_SCOPES,
     GOOGLE_SOLO_SCOPES,
+    _google_account_mode_matches,
+    _google_scopes_for_mode,
 )
 from app.services.teams import TEAMS_CONNECT_SCOPES
 
@@ -70,3 +72,17 @@ def test_personal_google_onboarding_scopes_are_least_privilege() -> None:
     assert "https://www.googleapis.com/auth/gmail.readonly" in GOOGLE_SOLO_SCOPES
     assert "https://www.googleapis.com/auth/drive" in GOOGLE_SOLO_SCOPES
     assert "https://www.googleapis.com/auth/calendar" in GOOGLE_SOLO_SCOPES
+
+
+def test_google_onboarding_mode_selects_exact_scope_bundle() -> None:
+    assert _google_scopes_for_mode("admin", "personal") == GOOGLE_SOLO_SCOPES
+    assert _google_scopes_for_mode("admin", "workspace") == GOOGLE_ADMIN_SCOPES
+    assert "admin.directory.user.readonly" in _google_scopes_for_mode("admin", "workspace")
+    assert "admin.directory.user.readonly" not in _google_scopes_for_mode("admin", "personal")
+
+
+def test_google_onboarding_mode_requires_matching_verified_account_tier() -> None:
+    assert _google_account_mode_matches("personal", "personal") is True
+    assert _google_account_mode_matches("workspace", "workspace") is True
+    assert _google_account_mode_matches("personal", "workspace") is False
+    assert _google_account_mode_matches("workspace", "personal") is False

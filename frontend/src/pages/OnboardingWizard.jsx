@@ -32,6 +32,12 @@ const STEPS = [
   { id: STEP.COMPLETE, label: 'Complete' },
 ]
 
+const OAUTH_ERROR_MESSAGES = {
+  account_mode_mismatch: 'The selected Google account type did not match the consented account. Choose Google Workspace or Personal Google and try again.',
+  identity_verification_failed: 'Google identity verification failed. No connection was saved; try again or contact LawHand support.',
+  token_exchange_failed: 'Google authorization could not be completed. No connection was saved; try again.',
+}
+
 const STORAGE_OPTIONS = [
   {
     id: 'google_drive',
@@ -60,10 +66,11 @@ export default function OnboardingWizard() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const initialOAuthError = searchParams.get('error')
   const [step, setStep] = useState(STEP.WELCOME)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState(() => initialOAuthError ? (OAUTH_ERROR_MESSAGES[initialOAuthError] || 'The cloud connection could not be completed. No connection was saved; try again.') : null)
   const [syncing, setSyncing] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -80,12 +87,6 @@ export default function OnboardingWizard() {
   useEffect(() => {
     const code = searchParams.get('error')
     if (!code) return
-    const messages = {
-      account_mode_mismatch: 'The selected Google account type did not match the consented account. Choose Google Workspace or Personal Google and try again.',
-      identity_verification_failed: 'Google identity verification failed. No connection was saved; try again or contact LawHand support.',
-      token_exchange_failed: 'Google authorization could not be completed. No connection was saved; try again.',
-    }
-    setError(messages[code] || 'The cloud connection could not be completed. No connection was saved; try again.')
     setSearchParams({}, { replace: true })
   }, [searchParams, setSearchParams])
 

@@ -36,7 +36,7 @@ describe('TrialBanner', () => {
   it('does not promise checkout when billing is unavailable', () => {
     renderBanner({ user: { access_state: 'trial_expired' }, canManageBilling: true })
     expect(screen.queryByRole('link', { name: /subscribe now/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/contact LawHand/i)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/contact LawHand/i)
   })
 
   it('tells a non-admin who to ask instead of offering a link they cannot use', () => {

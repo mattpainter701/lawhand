@@ -270,6 +270,22 @@ GOOGLE_SOLO_SCOPES = (
     "https://www.googleapis.com/auth/calendar "
     "https://www.googleapis.com/auth/drive"
 )
+
+
+def _google_scopes_for_mode(intent: str, account_mode: str) -> str:
+    if intent == "admin" and account_mode == "personal":
+        return GOOGLE_SOLO_SCOPES
+    if intent == "admin":
+        return GOOGLE_ADMIN_SCOPES
+    return GOOGLE_USER_SCOPES
+
+
+def _google_account_mode_matches(account_mode: str, account_type: str) -> bool:
+    return (account_mode == "personal" and account_type == "personal") or (
+        account_mode == "workspace" and account_type == "workspace"
+    )
+
+
 ZOOM_SCOPES = "meeting:write meeting:read user:read"
 
 SCOPE_ALIASES_GOOGLE = {
@@ -684,13 +700,7 @@ async def google_connect(
     )
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
-    scopes = (
-        GOOGLE_SOLO_SCOPES
-        if intent == "admin" and account_mode == "personal"
-        else GOOGLE_ADMIN_SCOPES
-        if intent == "admin"
-        else GOOGLE_USER_SCOPES
-    )
+    scopes = _google_scopes_for_mode(intent, account_mode)
 
     authorize_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
@@ -725,13 +735,7 @@ async def google_callback(
     account_mode = meta.get("account_mode", "workspace") if meta else "workspace"
     if intent == "admin" and account_mode not in {"workspace", "personal"}:
         return _error_redirect("google", "invalid_state")
-    expected_scopes = (
-        GOOGLE_SOLO_SCOPES
-        if intent == "admin" and account_mode == "personal"
-        else GOOGLE_ADMIN_SCOPES
-        if intent == "admin"
-        else GOOGLE_USER_SCOPES
-    )
+    expected_scopes = _google_scopes_for_mode(intent, account_mode)
     code_verifier = meta.get("pkce_verifier") if meta else None
 
     token_payload = {
@@ -778,9 +782,7 @@ async def google_callback(
 
         if intent == "admin":
             account_type, account_domain = account_detect.detect_google(verified_claims)
-            if account_mode == "personal" and account_type != "personal":
-                return _error_redirect("google", "account_mode_mismatch")
-            if account_mode == "workspace" and account_type != "workspace":
+            if not _google_account_mode_matches(account_mode, account_type):
                 return _error_redirect("google", "account_mode_mismatch")
             _user_id, tenant_id = _require_state_user(meta, "admin")
             admin_user_id = _user_id
