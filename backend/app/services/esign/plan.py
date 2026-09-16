@@ -67,8 +67,21 @@ _SIGNATURE_LABEL = re.compile(
     r"(?i)^[A-Za-z0-9'’()/&., -]{0,28}?\b(signature(?:\s+by)?|signed(?:\s+by)?|sign here)\b\s*:?\s*$"
 )
 _BARE_BY_LABEL = re.compile(r"(?i)^\s*by\s*:?\s*$")
-_DATE_LABEL = re.compile(r"(?i)^\s*date(?:\s+signed)?\s*:?\s*$")
-_DATE_WORD = re.compile(r"(?i)\bdate\b")
+_DATE_LABEL = re.compile(r"(?i)^\s*dated?(?:\s+signed)?\s*:?\s*$")
+_DATE_WORD = re.compile(r"(?i)\bdated?\b")
+#: Text ahead of a blank that is not its label: a margin line number or list
+#: marker that a court-form export prints before every line ("[94]", "12.").
+_MARGIN_MARKER = re.compile(r"^\s*(?:\[\d{1,4}\]|\d{1,3}[.)]?)?\s*$")
+#: A bracketed placeholder ("[PLAINTIFF'S FULL NAME]"), or the tail of one
+#: that wrapped onto the next line ("NAME]"), printed on a party's name line.
+_PLACEHOLDER = re.compile(r"\[[^\]]*\]|^[^\[\]]*\]")
+_PARTY_TAG_MAX_CHARS = 40
+#: How far under a bare rule its party caption may sit. A wrapped placeholder
+#: between them ("[PLAINTIFF'S FULL" / "NAME], Plaintiff") pushes it to ~41pt.
+_CAPTION_REACH = 45.0
+#: How near a "Dated:" blank a party-captioned blank ("Client: ____") must be
+#: to read as the signature line of an execution block rather than a name box.
+_EXECUTION_REACH = 60.0
 _LABEL_LINE_MAX_CHARS = 48
 _ACROFORM_DATE = re.compile(
     r"(?i)(date[_ -]?(of[_ -]?)?sign|sign(ature|ed)?[_ -]?date|date[_ -]?signed)"
@@ -98,6 +111,24 @@ _ROLE_SYNONYMS = {
     "firm": {"firm", "attorney", "lawyer", "counsel"},
     "witness": {"witness"},
     "notary": {"notary"},
+    # Court and family paperwork captions the party, not "client": a divorce
+    # stipulation is signed by "Plaintiff" and "Defendant", a parenting plan
+    # by "MOTHER" and "FATHER". A line printed for one of these must never be
+    # dealt to a signer who is somebody else.
+    "plaintiff": {"plaintiff", "petitioner"},
+    "defendant": {"defendant", "respondent"},
+    "petitioner": {"petitioner", "plaintiff"},
+    "respondent": {"respondent", "defendant"},
+    "mother": {"mother"},
+    "father": {"father"},
+    "husband": {"husband"},
+    "wife": {"wife"},
+    "landlord": {"landlord", "lessor"},
+    "tenant": {"tenant", "lessee"},
+    "seller": {"seller"},
+    "buyer": {"buyer", "purchaser"},
+    "borrower": {"borrower"},
+    "guarantor": {"guarantor"},
 }
 
 
@@ -496,6 +527,35 @@ def _role_hint(label: str) -> str:
     return re.sub(r"[^a-z ]+", " ", label.lower()).strip()
 
 
+def _content_x(line: _TextLine) -> float:
+    """Page x where a line's own text starts, past any margin line number."""
+    for run in line.runs:
+        if not run.text.strip():
+            continue
+        if _MARGIN_MARKER.match(run.text):
+            continue  # the marker is a run of its own; the text follows it
+        marker = re.match(r"^\s*(?:\[\d{1,4}\]|\d{1,3}[.)]?)\s+", run.text)
+        if marker:
+            return run.x + _text_width(run.text[: marker.end()], run.font_size)
+        return run.x
+    return line.runs[0].x
+
+
+def _party_tag(text: str) -> str | None:
+    """The party caption printed on or under a signature line, or ``None``.
+
+    "MOTHER", "Notary Public", "[PLAINTIFF'S FULL NAME], Plaintiff" and the
+    wrapped tail "NAME] , Plaintiff" all read as a caption; a sentence that
+    happens to mention a party does not.
+    """
+    cleaned = _PLACEHOLDER.sub(" ", text).strip(" ,_:\t")
+    if not cleaned or len(cleaned) > _PARTY_TAG_MAX_CHARS:
+        return None
+    if len(cleaned.split()) > 3:
+        return None
+    return cleaned if _party_words(cleaned) else None
+
+
 def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
     """Find printed signature lines: labels, underscore runs, ruled lines."""
     found: list[DetectedLine] = []
@@ -503,9 +563,15 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
         width = float(page.mediabox.width)
         height = float(page.mediabox.height)
         rules = _ruled_lines(page, reader)
+        text_lines = _text_lines(_text_runs(page))
         signatures: list[DetectedLine] = []
+        # "Client: ______" is a name box on an intake form and the signature
+        # line of a fee agreement's execution block. Only a nearby "Dated:"
+        # blank tells them apart, and it may be printed after the line, so
+        # these wait until the page has been read.
+        party_captioned: list[DetectedLine] = []
         dates: list[tuple[float, float, tuple[float, float, float, float]]] = []
-        for line in _text_lines(_text_runs(page)):
+        for line in text_lines:
             text = line.text
             if not text:
                 continue
@@ -515,6 +581,8 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                 for match in underscore_runs:
                     label = text[previous_end : match.start()].strip(" :")
                     previous_end = match.end()
+                    if _MARGIN_MARKER.match(label):
+                        label = ""
                     start_x = line.x_at(match.start())
                     run_width = max(_text_width(match.group(0), line.font_size), 60.0)
                     if _DATE_WORD.search(label) and not _SIGNATURE_WORD.search(label):
@@ -523,8 +591,25 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                             (start_x, line.y, _clamp_rect(rect, width, height))
                         )
                         continue
-                    if label and not _SIGNATURE_WORD.search(label):
+                    party_only = (
+                        bool(label)
+                        and not _SIGNATURE_WORD.search(label)
+                        and _party_tag(label) == label
+                    )
+                    if label and not party_only and not _SIGNATURE_WORD.search(label):
                         continue  # "Name: ______" is not a signature line
+                    caption = None
+                    if not label:
+                        # A blank that opens a wrapped line of prose is a
+                        # fill-in ("________ shall pay to ________ the amount
+                        # of $____"), not somewhere to sign; a 13-page
+                        # parenting plan has dozens. A short party caption
+                        # after it ("______________, MOTHER") is a name line.
+                        suffix = text[match.end() :]
+                        if suffix.strip():
+                            caption = _party_tag(suffix)
+                            if caption is None:
+                                continue
                     # "Signature: ____   Date: ____" puts two fields on one
                     # baseline. Widening a short blank to the default box would
                     # lay the signature over the date label, so the right edge
@@ -540,13 +625,12 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                         right,
                         line.y - 4 + SIGNATURE_BOX_HEIGHT,
                     )
-                    signatures.append(
-                        DetectedLine(
-                            page_number,
-                            _clamp_rect(rect, width, height),
-                            label or "Signature",
-                        )
+                    item = DetectedLine(
+                        page_number,
+                        _clamp_rect(rect, width, height),
+                        caption or label or "Signature",
                     )
+                    (party_captioned if party_only else signatures).append(item)
                 continue
             if len(text) > _LABEL_LINE_MAX_CHARS:
                 continue
@@ -601,25 +685,110 @@ def detect_signature_lines(reader: PdfReader) -> list[DetectedLine]:
                         segment_text.strip(" :"),
                     )
                 )
-        # Pair each date with the signature line on (or nearest) its baseline,
-        # to its left. An unpaired "Date" is some other date on the form.
+        # "Dated: ______" printed within reach of "Client: ______" is an
+        # execution block, and the party-captioned blank is where they sign.
+        # The same blank with no date near it stays a name box.
+        for item in party_captioned:
+            baseline = item.rect[1] + 4
+            if any(
+                abs(date_y - baseline) <= _EXECUTION_REACH for _, date_y, _ in dates
+            ):
+                signatures.append(item)
+        _caption_bare_rules(signatures, text_lines)
+        # Pair each date with the nearest signature line within a few lines
+        # of its baseline. The date may sit to the right ("Signature: ____
+        # Date: ____"), to the left ("Date: ____  ______, MOTHER"), or on the
+        # line above in a two-column block ("Dated: ____" over "Client:
+        # ____"). An unpaired "Date" is some other date on the form.
         for date_x, date_y, date_rect in dates:
             candidates = [
                 sig
                 for sig in signatures
-                if sig.date_rect is None
-                and abs(sig.rect[1] - date_rect[1]) <= 40
-                and sig.rect[0] < date_x
+                if sig.date_rect is None and abs(sig.rect[1] - date_rect[1]) <= 40
             ]
             if not candidates:
                 continue
             nearest = min(
                 candidates,
-                key=lambda sig: (abs(sig.rect[1] - date_rect[1]), date_x - sig.rect[0]),
+                key=lambda sig: (
+                    abs(sig.rect[1] - date_rect[1]),
+                    abs(sig.rect[0] - date_x),
+                ),
             )
             nearest.date_rect = date_rect
         found.extend(signatures)
     return found
+
+
+def _caption_bare_rules(
+    signatures: list[DetectedLine], text_lines: list[_TextLine]
+) -> None:
+    """Give an uncaptioned rule the party printed under it.
+
+    "______________________ / Notary Public" and "________ / [PLAINTIFF'S FULL
+    NAME], Plaintiff" caption the rule from the line beneath. When that line
+    is itself a blank carrying the caption ("______________, MOTHER" under the
+    long blank on the "Date:" line) it is the printed-name line: it labels the
+    rule above it and is withdrawn, so the signer is not offered their own
+    name line as a second place to sign.
+    """
+    withdrawn: list[DetectedLine] = []
+    for item in signatures:
+        if item.label != "Signature":
+            continue
+        baseline = item.rect[1] + 4
+        name_line = next(
+            (
+                other
+                for other in signatures
+                if other is not item
+                and other.label != "Signature"
+                and 6 <= baseline - (other.rect[1] + 4) <= _CAPTION_REACH
+                and abs(other.rect[0] - item.rect[0]) <= 40
+            ),
+            None,
+        )
+        if name_line is not None:
+            item.label = name_line.label
+            withdrawn.append(name_line)
+            continue
+        for line in sorted(text_lines, key=lambda candidate: -candidate.y):
+            drop = baseline - line.y
+            if drop < 6:
+                continue
+            if drop > _CAPTION_REACH:
+                break
+            if abs(_content_x(line) - item.rect[0]) > 40:
+                continue
+            caption = _party_tag(line.text)
+            if caption:
+                item.label = caption
+                break
+        if item.label != "Signature":
+            continue
+        # Still uncaptioned. A rule right under a line that ends in a colon
+        # is that line's answer blank ("...as follows:" / "________") or a
+        # name box ("Print name:" / "________"), not somewhere to sign --
+        # unless the line above is itself the signature or party caption.
+        above = next(
+            (
+                line
+                for line in sorted(text_lines, key=lambda candidate: candidate.y)
+                if 6 <= line.y - baseline <= 25
+                and abs(_content_x(line) - item.rect[0]) <= 60
+            ),
+            None,
+        )
+        if (
+            above is not None
+            and above.text.rstrip().endswith(":")
+            and not _SIGNATURE_WORD.search(above.text)
+            and _party_tag(above.text) is None
+        ):
+            withdrawn.append(item)
+    for item in withdrawn:
+        if item in signatures:
+            signatures.remove(item)
 
 
 def _label_segments(line: _TextLine) -> list[tuple[str, float]]:
@@ -846,8 +1015,7 @@ def build_plan(
         missing_signers = [s for s in signers if s.role in missing] or [
             SignerRef(id="", name="", role=missing[0])
         ]
-        detected_fields = _prune_foreign_lines(detected_fields, missing_signers)
-        assign_roles(detected_fields, missing_signers)
+        _deal_detected_lines(detected_fields, missing_signers)
         # A date detected beside a line belongs to that line's signer.
         by_index = {
             f.field_id.rsplit(":", 1)[-1]: f
@@ -879,28 +1047,39 @@ def _party_words(label: str) -> set[str]:
     return {word for synonyms in _ROLE_SYNONYMS.values() for word in synonyms} & words
 
 
-def _prune_foreign_lines(
-    fields: list[PlanField], signers: Sequence[SignerRef]
-) -> list[PlanField]:
-    """Drop lines printed for a party nobody in this request is.
+def _deal_detected_lines(
+    fields: Sequence[PlanField], signers: Sequence[SignerRef]
+) -> None:
+    """Give detected signature lines to signers, never to the wrong party.
 
-    A fee agreement usually has a line for the attorney as well as the client.
-    When only the client signs through the portal, the attorney's line must
-    stay blank rather than receive the client's signature too. A line whose
-    label names no party is kept: it might be the only one on the page.
+    A line whose caption names a party goes to that party and to nobody else.
+    A fee agreement's "By:" line is the firm's: a client sent the document on
+    their own must not be asked to sign it, and the attorney's line must stay
+    blank when only the client signs through the portal. Lines with no party
+    in their caption are dealt, in order, only to signers who still have no
+    line of their own; once every signer is covered they are left unassigned.
+    A signer left without any line gets the fallback block instead.
     """
-    known = set()
-    for signer in signers:
-        known |= _role_tokens(signer)
-    signatures = [f for f in fields if f.kind == "signature"]
-    keep_ids: set[str] = set()
-    for item in signatures:
-        party = _party_words(item.label)
-        if not party or party & known:
-            keep_ids.add(item.field_id.rsplit(":", 1)[-1])
-    if not keep_ids:
-        return fields
-    return [f for f in fields if f.field_id.rsplit(":", 1)[-1] in keep_ids]
+    tokens = {signer.role: _role_tokens(signer) for signer in signers}
+    covered: set[str] = set()
+    unlabelled: list[PlanField] = []
+    for item in fields:
+        if item.kind != "signature":
+            continue
+        words = set(re.findall(r"[a-z']+", item.label.lower()))
+        matches = {signer.role for signer in signers if words & tokens[signer.role]}
+        if len(matches) == 1:
+            item.role = next(iter(matches))
+            covered.add(item.role)
+        elif not matches and _party_words(item.label):
+            item.role = None  # printed for a party nobody in this request is
+        else:
+            unlabelled.append(item)
+    open_signers = [signer for signer in signers if signer.role not in covered]
+    for index, item in enumerate(unlabelled):
+        item.role = (
+            open_signers[index % len(open_signers)].role if open_signers else None
+        )
 
 
 def _next_auto_index(fields: Iterable[PlanField]) -> int:

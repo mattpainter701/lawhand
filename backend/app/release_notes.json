@@ -23,6 +23,10 @@
         {
           "title": "Unsignable templates are caught at publish",
           "description": "A template whose signature fields have no signer role, or were never positioned, is refused with those fields named."
+        },
+        {
+          "title": "Signature lines on outside paperwork are read correctly",
+          "description": "Lines captioned \"Client:\", \"By:\", \"MOTHER\" or \"Plaintiff\", dates printed left or above, and fill-in blanks are now told apart, so nobody signs another party's line."
         }
       ]
     },

@@ -15,6 +15,7 @@ A document generated from a template that has no signing positions now names the
 - **One bad field no longer discards the good ones.** A single misconfigured signing field used to throw away every other placement in the template. Only the broken one is reported now.
 - **Word documents say to regenerate as PDF.** Signing positions can only be placed on a PDF, so a Word document that needs them now points to Word-to-PDF conversion instead.
 - **Unsignable templates are caught at publish.** A template whose signature fields have no signer role, or were never positioned, is refused with those fields named.
+- **Signature lines on outside paperwork are read correctly.** Lines captioned "Client:", "By:", "MOTHER" or "Plaintiff", dates printed left or above, and fill-in blanks are now told apart, so nobody signs another party's line.
 
 ## 2026.09.16.04 — Your cloud folders stay yours through staff changes
 
