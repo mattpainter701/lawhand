@@ -110,8 +110,8 @@ mcp_product_enabled="$(get_env MCP_PRODUCT_ENABLED)"
 studio_render_enabled="$(get_env TEMPLATE_STUDIO_RENDER_ENABLED)"
 
 [[ "$(get_env DEV_MODE)" == "false" ]] || errors+=("DEV_MODE must be false")
-[[ "$public_signup_enabled" == "true" ]] || errors+=("PUBLIC_SIGNUP_ENABLED must be true for customer self-registration")
-[[ "$vite_public_signup_enabled" == "true" ]] || errors+=("VITE_PUBLIC_SIGNUP_ENABLED must be true for the public registration screen")
+[[ "$public_signup_enabled" == "true" || "$public_signup_enabled" == "false" ]] || errors+=("PUBLIC_SIGNUP_ENABLED must be explicitly true or false")
+[[ "$vite_public_signup_enabled" == "true" || "$vite_public_signup_enabled" == "false" ]] || errors+=("VITE_PUBLIC_SIGNUP_ENABLED must be explicitly true or false")
 [[ "$public_signup_enabled" == "$vite_public_signup_enabled" ]] || errors+=("PUBLIC_SIGNUP_ENABLED and VITE_PUBLIC_SIGNUP_ENABLED must match")
 [[ "$mcp_product_enabled" == "true" || "$mcp_product_enabled" == "false" ]] || errors+=("MCP_PRODUCT_ENABLED must be explicitly true or false")
 [[ "$studio_render_enabled" == "true" || "$studio_render_enabled" == "false" ]] || errors+=("TEMPLATE_STUDIO_RENDER_ENABLED must be explicitly true or false")

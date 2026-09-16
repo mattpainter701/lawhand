@@ -1428,7 +1428,6 @@ def test_production_preflight_rejects_public_signup_flag_drift(tmp_path: Path) -
     output = result.stdout + result.stderr
 
     assert result.returncode != 0
-    assert "PUBLIC_SIGNUP_ENABLED must be true" in output
     assert "PUBLIC_SIGNUP_ENABLED and VITE_PUBLIC_SIGNUP_ENABLED must match" in output
 
 
@@ -1877,11 +1876,11 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
             "services"
         ]
         assert services["backend"]["environment"]["PUBLIC_SIGNUP_ENABLED"] == (
-            "${PUBLIC_SIGNUP_ENABLED:-true}"
+            "${PUBLIC_SIGNUP_ENABLED:-false}"
         )
         assert (
             services["frontend"]["build"]["args"]["VITE_PUBLIC_SIGNUP_ENABLED"]
-            == "${VITE_PUBLIC_SIGNUP_ENABLED:-true}"
+            == "${VITE_PUBLIC_SIGNUP_ENABLED:-false}"
         )
 
     production_models = [
@@ -1891,18 +1890,18 @@ def test_production_feature_flags_are_explicitly_mapped_and_rollback_images_rema
     for prod_services in production_models:
         for service in ("backend", "scheduler"):
             assert prod_services[service]["environment"]["PUBLIC_SIGNUP_ENABLED"] == (
-                "${PUBLIC_SIGNUP_ENABLED:-true}"
+                "${PUBLIC_SIGNUP_ENABLED:-false}"
             )
             # Production intentionally ignores stale host SMB_ENABLED=false values.
             assert prod_services[service]["environment"]["SMB_ENABLED"] == "true"
     prod_services = production_models[-1]
     assert (
         prod_services["frontend"]["build"]["args"]["VITE_PUBLIC_SIGNUP_ENABLED"]
-        == "${VITE_PUBLIC_SIGNUP_ENABLED:-true}"
+        == "${VITE_PUBLIC_SIGNUP_ENABLED:-false}"
     )
     env_example = (ROOT / ".env.prod.example").read_text(encoding="utf-8")
-    assert "PUBLIC_SIGNUP_ENABLED=true" in env_example
-    assert "VITE_PUBLIC_SIGNUP_ENABLED=true" in env_example
+    assert "PUBLIC_SIGNUP_ENABLED=false" in env_example
+    assert "VITE_PUBLIC_SIGNUP_ENABLED=false" in env_example
     assert "SMB_ENABLED=true" in env_example
     assert "TEMPLATE_STUDIO_RENDER_ENABLED=false" in env_example
 
