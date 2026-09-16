@@ -43,13 +43,13 @@ const STORAGE_OPTIONS = [
     id: 'google_drive',
     label: 'Google Drive',
     credential: 'google',
-    detail: 'A "claritylegal-records" folder is created in the connected Google account. Every matter gets its own folder inside it.',
+    detail: 'A "lawhand-records" folder is created in the connected Google account. Every matter gets its own folder inside it.',
   },
   {
     id: 'onedrive',
     label: 'Microsoft OneDrive',
     credential: 'microsoft',
-    detail: 'A "claritylegal-records" folder is created in the connected Microsoft account. Every matter gets its own folder inside it.',
+    detail: 'A "lawhand-records" folder is created in the connected Microsoft account. Every matter gets its own folder inside it.',
   },
 ]
 
@@ -529,7 +529,7 @@ export default function OnboardingWizard() {
               {confirmedRoot?.id && (
                 <div className="mb-6 px-4 py-3 rounded-xl border border-green-200 bg-green-50 text-xs font-sans" data-testid="storage-root">
                   <p className="text-green-800 font-semibold">
-                    {storageResult?.created ? 'Folder created' : 'Folder confirmed'}: {confirmedRoot.folder_name || 'claritylegal-records'}
+                    {storageResult?.created ? 'Folder created' : 'Folder confirmed'}: {confirmedRoot.folder_name || 'lawhand-records'}
                   </p>
                   {confirmedRoot.url && (
                     <a href={confirmedRoot.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-green-800 underline break-all">

@@ -28,10 +28,10 @@ Behind each step the tenant record stores an `onboarding_step` number from 0 to 
 
 ## Why storage is its own step
 
-Matter documents are stored in the firm's own cloud account, never on LawHand infrastructure. If the folder is not there, document uploads, generation, e-signature and portal transfers fail closed rather than falling back to local storage. Previously the root folder was created quietly when setup completed, so a firm never chose the provider, never saw the folder, and could finish setup with no working storage. Now:
+The firm's connected cloud account is the matter-document system of record. Setup cannot complete until its root folder is confirmed; operational processing and configured reconciliation or fallback paths remain governed separately. Previously the root folder was created quietly when setup completed, so a firm never chose the provider, never saw the folder, and could finish setup with no working storage. Now:
 
 - the administrator chooses **Google Drive** or **Microsoft OneDrive** from the providers actually connected;
-- LawHand creates `claritylegal-records` in that account and shows its name and link;
+- LawHand creates `lawhand-records` in that account and shows its name and link;
 - the choice is saved as the firm's **primary provider** (the same setting shown under Administration → Integrations → Cloud → Document storage);
 - setup cannot complete until a root folder exists.
 

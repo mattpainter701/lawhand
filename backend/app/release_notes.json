@@ -2,6 +2,19 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.16.02",
+      "version": "2026.09.16.02",
+      "title": "Cloud storage setup carries the LawHand name",
+      "published_at": "2026-09-16",
+      "summary": "Google Drive and Microsoft OneDrive onboarding now identifies the folder LawHand actually creates as lawhand-records, with no stale pre-rebrand name in the setup instructions.",
+      "highlights": [
+        {
+          "title": "The setup instructions match your cloud",
+          "description": "The storage step now names lawhand-records before creation and confirms that same folder afterward. Existing legacy folders remain supported through the controlled migration path."
+        }
+      ]
+    },
+    {
       "id": "2026.09.16.01",
       "version": "2026.09.16.01",
       "title": "Onboarding tells the truth about setup and account access",
