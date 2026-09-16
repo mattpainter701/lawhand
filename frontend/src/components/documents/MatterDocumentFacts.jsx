@@ -1,0 +1,172 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  acceptMatterDocumentFact,
+  getMatterDocumentDownloadUrl,
+  getMatterDocuments,
+  proposeMatterDocumentFacts,
+} from '../../api'
+
+const READABLE = /\.(pdf|docx|txt)$/i
+
+function rowId(entry) {
+  return entry.target_key
+}
+
+export default function MatterDocumentFacts({ matterId, documentId: providedDocumentId, documents: providedDocuments, onAccepted }) {
+  const requestVersion = useRef(0)
+  const [fetched, setFetched] = useState([])
+  const [pickedId, setPickedId] = useState('')
+  const [proposal, setProposal] = useState(null)
+  const [values, setValues] = useState({})
+  const [replace, setReplace] = useState({})
+  const [done, setDone] = useState({})
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [useAi, setUseAi] = useState(false)
+  const documents = providedDocuments || fetched
+  const documentId = providedDocumentId || pickedId
+
+  useEffect(() => {
+    let current = true
+    requestVersion.current += 1
+    setFetched([])
+    setPickedId('')
+    setProposal(null)
+    setValues({})
+    setDone({})
+    setMessage('')
+    // When the parent already holds the matter's document list, reuse it rather
+    // than issuing a second read of the same documents.
+    if (matterId && !providedDocuments && !providedDocumentId) {
+      getMatterDocuments(matterId)
+        .then(result => {
+          if (current) setFetched((result.items || result.documents || result || []).filter(doc => READABLE.test(doc.filename)))
+        })
+        .catch(() => { if (current) setMessage('Matter source documents could not be loaded.') })
+    }
+    return () => { current = false; requestVersion.current += 1 }
+  }, [matterId, providedDocuments, providedDocumentId])
+
+  const read = useCallback(async () => {
+    const version = ++requestVersion.current
+    setBusy(true)
+    setProposal(null)
+    setValues({})
+    setReplace({})
+    setDone({})
+    setMessage('')
+    try {
+      const result = await proposeMatterDocumentFacts(matterId, documentId, useAi)
+      if (version !== requestVersion.current) return
+      setProposal(result)
+      setValues(Object.fromEntries((result.candidates || []).map(entry => [rowId(entry), entry.value == null ? '' : String(entry.value)])))
+      if (!(result.candidates || []).length) setMessage((result.warnings || [])[0] || 'No supported details were found in this document.')
+    } catch (error) {
+      if (version === requestVersion.current) setMessage(error?.response?.data?.detail || 'The source could not be read.')
+    } finally {
+      if (version === requestVersion.current) setBusy(false)
+    }
+  }, [matterId, documentId, useAi])
+
+  const accept = async entry => {
+    const id = rowId(entry)
+    setBusy(true)
+    setMessage('')
+    try {
+      await acceptMatterDocumentFact(matterId, documentId, {
+        target_key: entry.target_key,
+        value: values[id],
+        replace_existing: Boolean(replace[id]),
+      })
+      setDone(previous => ({ ...previous, [id]: true }))
+      setMessage(`${entry.label} saved to the matter.`)
+      onAccepted?.()
+    } catch (error) {
+      setMessage(error?.response?.data?.detail || 'The detail could not be saved.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!matterId) return null
+  const pending = (proposal?.candidates || []).filter(entry => !done[rowId(entry)])
+
+  return (
+    <details className="rounded border border-brand-line p-3">
+      <summary className="cursor-pointer font-semibold text-sm">Read details from a document</summary>
+      <p className="my-2 text-xs text-brand-muted">
+        Reads a filled PDF form or exact “Label: value” lines and proposes matter and client details.
+        Nothing is saved until you accept it.
+      </p>
+      {!providedDocumentId && (
+        <label className="block text-xs">
+          Source document
+          <select
+            aria-label="Source document"
+            value={pickedId}
+            disabled={busy}
+            onChange={event => { setPickedId(event.target.value); setProposal(null); setDone({}); setMessage('') }}
+            className="block w-full border rounded p-2 text-brand-ink bg-brand-bg"
+          >
+            <option value="">Choose a source</option>
+            {documents.map(doc => <option key={doc.id} value={doc.id}>{doc.filename}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="mt-2 flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={useAi}
+          disabled={busy}
+          onChange={event => setUseAi(event.target.checked)}
+        />
+        Also read with AI for scans and prose (document text is sent to the AI provider)
+      </label>
+      <button type="button" onClick={read} disabled={busy || !documentId} className="mt-2 border rounded p-2 text-sm">
+        {busy ? 'Reading…' : 'Find details'}
+      </button>
+      {proposal && pending.length > 0 && (
+        <ul className="mt-3 space-y-3 text-sm">
+          {pending.map(entry => (
+            <li key={rowId(entry)} className="rounded border border-brand-line p-2">
+              <div className="flex items-center justify-between gap-2">
+                <strong>{entry.label}</strong>
+                {entry.status === 'conflicting_sources'
+                  ? <span className="text-xs text-brand-danger">Conflicting values in the document</span>
+                  : <span className="text-xs text-brand-muted">From {entry.source_kind === 'acroform' ? 'the form' : entry.source_kind === 'regex' ? 'the text' : 'the document'}</span>}
+              </div>
+              <label className="block text-xs mt-1">
+                Value
+                <input
+                  aria-label={`${entry.label} value`}
+                  value={values[rowId(entry)] ?? ''}
+                  onChange={event => setValues(previous => ({ ...previous, [rowId(entry)]: event.target.value }))}
+                  className="block w-full border rounded p-2 text-brand-ink bg-brand-bg"
+                />
+              </label>
+              {entry.current_value != null && String(entry.current_value) !== '' && (
+                <label className="flex items-center gap-2 text-xs mt-1">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(replace[rowId(entry)])}
+                    onChange={event => setReplace(previous => ({ ...previous, [rowId(entry)]: event.target.checked }))}
+                  />
+                  Replace the current value “{String(entry.current_value)}”
+                </label>
+              )}
+              <button type="button" disabled={busy || !String(values[rowId(entry)] ?? '').trim()} onClick={() => accept(entry)} className="mt-2 border rounded p-2 text-sm font-semibold">
+                Accept {entry.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {proposal?.source_document_id && (
+        <a className="mt-2 inline-block text-xs underline" href={getMatterDocumentDownloadUrl(matterId, documentId)} target="_blank" rel="noreferrer">
+          Open {proposal.source_filename}
+        </a>
+      )}
+      {message && <p role="status" className="mt-2 text-sm">{message}</p>}
+    </details>
+  )
+}
