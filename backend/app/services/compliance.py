@@ -278,6 +278,23 @@ async def agreement_status(db: AsyncSession, tenant_id: uuid.UUID) -> dict[str, 
     }
 
 
+async def onboarding_cloud_connection_blocked(
+    db: AsyncSession, tenant_id: uuid.UUID
+) -> bool:
+    """Fail closed for first-run cloud OAuth when counsel has not configured agreements.
+
+    The rollout flag remains compatible with existing connected tenants. A new
+    tenant must have a configured, current agreement set before granting a
+    tenant-wide cloud credential; this prevents the UI's "Not published" state
+    from being bypassed by calling OAuth directly.
+    """
+    status = await agreement_status(db, tenant_id)
+    if status["blocking"]:
+        return True
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    return bool(tenant and not tenant.onboarding_completed and not status["configured"])
+
+
 async def chat_attachment_ttl_days(db: AsyncSession, tenant_id: uuid.UUID) -> int:
     policy = await db.scalar(
         select(RetentionPolicy).where(RetentionPolicy.tenant_id == tenant_id)

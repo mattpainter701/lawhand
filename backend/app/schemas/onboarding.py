@@ -21,6 +21,8 @@ class OnboardingStatusResponse(BaseModel):
     primary_cloud_provider: str | None = None
     cloud_root: dict | None = None
     storage_ready: bool = False
+    agreements_configured: bool = False
+    agreements_blocking: bool = False
 
 
 class OnboardingCompleteResponse(BaseModel):

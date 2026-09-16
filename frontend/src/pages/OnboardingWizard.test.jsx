@@ -21,7 +21,7 @@ vi.mock('../components/CompliancePanel', async () => {
     AgreementAcceptancePanel: ({ onStatusChange }) => {
       // Report once after mount; reporting during render would re-render the
       // wizard forever.
-      useEffect(() => { onStatusChange?.({ blocking: false }) }, [onStatusChange])
+      useEffect(() => { onStatusChange?.({ blocking: false, configured: true }) }, [onStatusChange])
       return null
     },
   }

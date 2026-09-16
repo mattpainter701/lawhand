@@ -57,7 +57,7 @@ from app.services.zoom_phone import (
     zoom_phone_webhook_jobs,
     zoom_webhook_validation_response,
 )
-from app.services.compliance import agreement_status
+from app.services.compliance import agreement_status, onboarding_cloud_connection_blocked
 from app.utils.oauth_security import (
     generate_pkce_pair,
     is_oauth_client_configured,
@@ -411,10 +411,14 @@ async def microsoft_connect(
 
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
-    if (await agreement_status(db, user.tenant_id))["blocking"]:
+    if await onboarding_cloud_connection_blocked(db, user.tenant_id):
         raise HTTPException(
             status_code=428,
-            detail="Accept the current tenant agreements before connecting an integration",
+            detail=(
+                "Cloud connections are unavailable until the current required tenant "
+                "agreements are published and accepted. Choose Set up later to use "
+                "the core workspace while an administrator completes this step."
+            ),
         )
     if intent == "admin" and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -633,10 +637,14 @@ async def google_connect(
 
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
-    if (await agreement_status(db, user.tenant_id))["blocking"]:
+    if await onboarding_cloud_connection_blocked(db, user.tenant_id):
         raise HTTPException(
             status_code=428,
-            detail="Accept the current tenant agreements before connecting an integration",
+            detail=(
+                "Cloud connections are unavailable until the current required tenant "
+                "agreements are published and accepted. Choose Set up later to use "
+                "the core workspace while an administrator completes this step."
+            ),
         )
     if intent == "admin" and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")

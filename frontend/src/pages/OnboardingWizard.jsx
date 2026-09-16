@@ -204,7 +204,8 @@ export default function OnboardingWizard() {
   const msConnected = status?.integrations?.microsoft?.connected
   const googleConnected = status?.integrations?.google?.connected
   const hasIntegration = msConnected || googleConnected
-  const agreementReady = agreementStatus !== null && !agreementStatus.blocking
+  const agreementsConfigured = agreementStatus?.configured ?? status?.agreements_configured
+  const agreementReady = agreementStatus !== null && !agreementStatus.blocking && agreementsConfigured
   const syncedUsers = status?.synced_users || {}
   const totalSynced = (syncedUsers.microsoft || 0) + (syncedUsers.google || 0)
   const cloudRoot = status?.cloud_root || {}
@@ -226,7 +227,7 @@ export default function OnboardingWizard() {
             onClick={handleSkip}
             className="text-brand-ink-2 hover:text-brand-ink font-sans text-xs transition-colors"
           >
-            Skip setup
+            Set up later
           </button>
         </div>
       </div>
@@ -343,12 +344,20 @@ export default function OnboardingWizard() {
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Connect Your Firm</h2>
               <p className="text-brand-ink-2 font-sans text-sm mb-8">
-                Grant LawHand access to your firm's directory so we can import users
-                and sync email. This requires admin consent.
+                Connect a supported work account to import users and sync email. A
+                Google Workspace administrator is required for directory sync; a
+                personal Gmail account does not provide a team directory.
               </p>
 
               <div className="mb-8 rounded-xl border border-brand-line bg-brand-bg-soft p-4">
                 <AgreementAcceptancePanel compact onStatusChange={setAgreementStatus} />
+                {agreementStatus && !agreementStatus.configured && (
+                  <p className="mt-3 text-xs leading-relaxed text-amber-800" role="alert">
+                    Cloud connections are paused until the required counsel-owned
+                    agreements are published and current. You can use the core
+                    workspace and choose Set up later.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-4 mb-8">
@@ -396,7 +405,9 @@ export default function OnboardingWizard() {
                     )}
                   </div>
                   <p className="text-brand-ink-2 font-sans text-xs leading-relaxed">
-                    Required: Read directory users, read Gmail, read Google Drive, read calendar.
+                    Google Workspace: administrator consent enables directory sync,
+                    Gmail, Drive, and Calendar. Personal Gmail is not a Workspace
+                    directory; do not expect team import.
                   </p>
                 </div>
               </div>
@@ -424,8 +435,9 @@ export default function OnboardingWizard() {
             <div className="bg-brand-surface border border-brand-line rounded-2xl p-8 shadow-sm">
               <h2 className="text-brand-ink font-sans text-lg font-bold mb-1">Where Should Documents Live?</h2>
               <p className="text-brand-ink-2 font-sans text-sm mb-6">
-                Matter documents are stored in your firm's own cloud account, never on LawHand infrastructure.
-                Choose the provider and confirm the folder before any matter is created.
+                Your connected cloud account is the matter-document system of record.
+                Confirm its folder before any matter is created; setup will stop if
+                the cloud root cannot be verified.
               </p>
 
               {storageOptions.length === 0 ? (

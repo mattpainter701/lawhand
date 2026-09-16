@@ -174,6 +174,7 @@ async def get_onboarding_status(
     cloud_root = (
         tenant.cloud_root_folder if isinstance(tenant.cloud_root_folder, dict) else None
     )
+    agreements = await agreement_status(db, user.tenant_id)
 
     return OnboardingStatusResponse(
         onboarding_completed=tenant.onboarding_completed,
@@ -184,6 +185,8 @@ async def get_onboarding_status(
         primary_cloud_provider=primary,
         cloud_root=cloud_root,
         storage_ready=_has_any_root(cloud_root),
+        agreements_configured=agreements["configured"],
+        agreements_blocking=agreements["blocking"],
     )
 
 
@@ -445,7 +448,7 @@ async def skip_onboarding(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Skip the integration setup — mark onboarding complete without connections."""
+    """Defer integration setup without claiming that onboarding is complete."""
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
 
@@ -454,16 +457,13 @@ async def skip_onboarding(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    agreement_gate = await agreement_status(db, user.tenant_id)
-    if agreement_gate["blocking"]:
-        raise HTTPException(
-            status_code=428,
-            detail="Current tenant agreements must be accepted before skipping onboarding.",
-        )
-    tenant.onboarding_completed = True
-    tenant.onboarding_step = STEP_COMPLETE
+    # Deferring setup is safe even while counsel-owned agreements are still
+    # being prepared: no cloud connection or matter-document root is created.
+    # Keep the tenant eligible for core workspace access and truthful re-entry.
+    tenant.onboarding_completed = False
+    tenant.onboarding_step = STEP_WELCOME
     await db.commit()
     return {
         "status": "ok",
-        "message": "Onboarding skipped — integrations can be set up later from Admin settings.",
+        "message": "Setup deferred — integrations can be set up later from Admin settings.",
     }
