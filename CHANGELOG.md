@@ -1,3 +1,10 @@
+## 2026.09.16.01 — Proposed Core, AI, and add-on commercial catalog
+
+- Add an operator-only, non-checkout commercial catalog and deterministic quote API. Core stays inexpensive at $49/$39 annual-equivalent per attorney and $19/$15 per staff user. AI access is $299/$249 per attorney and $149/$129 per staff user, includes no model usage, and requires a separate prepaid usage wallet with a hard stop.
+- Price every current practice plugin once per firm in $99 specialist, $199 workflow-workspace, or $299 portal-workspace bands, with lower annual equivalents. Combined quotes return exact seat and add-on line totals and remain `checkout_ready: false`.
+- Define the non-public Founding Attorney offer at exactly $199 monthly for one AI attorney and up to two Core staff users for 24 months. No Premium usage or practice module is included by default; its server-enforced usage cap is always operator-visible while customer meter visibility remains backend-controlled.
+- Document the existing add-on entitlement and Plugins-page gaps, the separation between commercial plan, payment state, access plan, license class, module entitlement, and AI wallet, plus the provider work required before activation.
+
 ## 2026.09.15.09 — One visual field editor
 
 - Retire `PrepareFormWorkspace.jsx` (723 lines) and its use in the upload wizard. It and `TemplateStudioEditor` were two hand-built copies of the same editor — 197 byte-identical lines, roughly two-thirds of the intake one already present in the other — and the six silent divergences fixed in 2026.09.15.07 are what that cost. `docs/template-studio-editor-diff.md` records the measurement and the decision. The wizard's job is now getting the file in and scanned; the editor's job is making it right. `handleUploadedTemplate` already redirected to `/templates/{id}/studio` after create, so the handoff needed no building.
