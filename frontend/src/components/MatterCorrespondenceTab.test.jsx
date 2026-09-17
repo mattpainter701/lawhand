@@ -103,6 +103,33 @@ describe('InboundEmailPanel subject-tag review', () => {
     expect(onFiled).toHaveBeenCalledOnce()
   })
 
+  it('sends a cleared due date as no date rather than an empty one', async () => {
+    getMatterInboundAlias.mockResolvedValue({
+      enabled: true,
+      alias: { address: 'm-example@intake.getlawhand.com' },
+    })
+    getMatterInboundEmail.mockResolvedValue({ items: [taggedEmail], total: 1 })
+    acceptMatterInboundEmail.mockResolvedValue({
+      id: taggedEmail.id, status: 'accepted', communication_log_id: 'communication-1', task_id: 'task-1',
+    })
+
+    render(
+      <ConfirmProvider>
+        <InboundEmailPanel matterId="matter-1" onFiled={vi.fn()} />
+      </ConfirmProvider>,
+    )
+
+    await userEvent.clear(await screen.findByLabelText('Due date (optional)'))
+    await userEvent.click(screen.getByRole('button', { name: /file \+ create task/i }))
+
+    // An emptied date input reads '', which the API rejects with a 422 and
+    // the email cannot be filed at all.
+    expect(acceptMatterInboundEmail).toHaveBeenCalledWith('matter-1', 'email-1', {
+      title: 'Nigel I need to meet with you',
+      due_date: null,
+    })
+  })
+
   it('does not file a deadline until its date is confirmed', async () => {
     getMatterInboundAlias.mockResolvedValue({
       enabled: true,

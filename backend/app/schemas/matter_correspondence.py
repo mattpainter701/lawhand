@@ -109,7 +109,11 @@ class InboundEmailListResponse(BaseModel):
 
 
 class InboundEmailAcceptRequest(BaseModel):
-    """Human-confirmed overrides for an explicit tagged task."""
+    """Human-confirmed overrides for an explicit tagged task.
+
+    ``min_length`` counts before stripping, so a title of spaces reaches the
+    route; it refuses one there rather than filing a task with no name.
+    """
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=500)
     due_date: Optional[date] = None

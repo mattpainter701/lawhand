@@ -353,9 +353,12 @@ export function InboundEmailPanel({ matterId, onFiled }) {
       if (action === 'accept') {
         const suggestion = item.task_suggestion
         const edits = taskEdits[item.id] || {}
+        // An emptied date input reads "", which the API rejects: a date the
+        // reviewer cleared has to travel as an explicit null.
+        const due = edits.due_date ?? suggestion?.due_date ?? ''
         const result = await acceptMatterInboundEmail(matterId, item.id, suggestion ? {
           title: edits.title ?? suggestion.title,
-          due_date: edits.due_date ?? suggestion.due_date ?? null,
+          due_date: due || null,
         } : null)
         setMessage(result?.task_id
           ? `Email filed and task created${result.task_due_date ? ` for ${fmtDateOnly(result.task_due_date)}` : ''}.`
@@ -518,11 +521,15 @@ export function InboundEmailPanel({ matterId, onFiled }) {
                       >
                         <Ban size={14} /> Reject
                       </button>
-                      <details className="relative text-xs">
+                      <details className="text-xs">
                         <summary className="cursor-pointer rounded-lg border border-brand-line px-3 py-2 font-medium text-brand-muted hover:text-brand-ink">
                           More
                         </summary>
-                        <div className="absolute right-0 z-10 mt-1 w-64 rounded-lg border border-brand-line bg-white p-2 shadow-lg">
+                        {/* In flow, not floating: the card sits inside a
+                            section that hides its overflow, which clipped an
+                            absolute panel on the last pending email -- and
+                            this is the only way to the expense draft. */}
+                        <div className="mt-1 w-64 max-w-full rounded-lg border border-brand-line bg-white p-2 shadow-lg">
                           <button
                             onClick={() => review(item, 'expense')}
                             disabled={busy === item.id}
