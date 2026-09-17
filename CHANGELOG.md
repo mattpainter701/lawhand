@@ -5,7 +5,11 @@
 - `template_placement_report` takes `word_anchors`; a Word template converted to PDF now binds like a PDF template instead of reporting `word_source_not_positionable`. The generate endpoint passes them for every Word-to-PDF generation.
 - Publish/activation gate: a Word signing field with a `pdf_anchor` that is present but empty is refused, naming the field. Absent anchors are derived, so existing templates publish unchanged.
 - Template Studio: a Word signing field gets "Anchor text" and where the field sits relative to it; a cleared anchor is dropped rather than saved empty.
-- Tests: `test_esign_anchors.py` (33) for the locator, the derivation, the printed rule and the report; the full Word lifecycle through the real endpoints in `test_document_templates.py`; two publish-gate cases; three Studio tests.
+- The caption is read from the *unfilled* template, so it may only contain text the generated PDF still prints: a sibling field's placeholder or reviewed span, and a rule drawn beside the field, are cut away, and a caption longer than a printed line is trimmed to the words nearest the field.
+- A signing field's printed rule is suppressed only by a rule drawn *beside* it — between it and its neighbouring fields. Read across the whole paragraph, another field's blank took this field's line away, and which field lost it depended on their order.
+- Dispatch blocks a partially bound document. A Word template binds one field at a time, so a field left unbound is an ordinary outcome rather than an authoring mistake the publish gate would have caught; the fields that did bind would otherwise have carried the request on their own. Staff who place the fields by hand on the generated PDF still pass.
+- `plan_request_placements` keeps the source a placement declares (`placed` or `anchored`) instead of reporting every one as `placed`, so the signing plan review names a template-bound field as such rather than as something staff checked. An anchored field with no signer role is named at generation, where the field can be fixed, instead of failing at dispatch with a message that names nothing.
+- Tests: `test_esign_anchors.py` (37) for the locator, the derivation, the printed rule and the report; the full Word lifecycle through the real endpoints in `test_document_templates.py`, and a partially bound one held at dispatch; two publish-gate cases; three Studio tests.
 
 ## 2026.09.16.06 — Signing plans are reviewed before they are sent
 

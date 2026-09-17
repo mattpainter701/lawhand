@@ -387,6 +387,46 @@ def test_plan_request_placements_persists_placements_and_summary():
         )
 
 
+def test_a_placement_keeps_the_source_it_declares_and_nothing_else():
+    """Where a field came from is what staff are shown before they send.
+
+    A Word template's fields are bound at generation, at the caption printed
+    beside each one; reported back as "placed by you" they would read as
+    something a person had checked. Anything else a caller asserts is not a
+    finding it is entitled to make, and reads as its own placement.
+    """
+    source = flat_agreement_pdf()
+    digest = hashlib.sha256(source).hexdigest()
+    request = SimpleNamespace(
+        source_document_sha256=digest, positioned_fields=None, signing_plan=None
+    )
+    signers = [SimpleNamespace(name="Jane Client", role="client", sign_order=0)]
+    box = {
+        "field_type": "signature",
+        "role": "client",
+        "page": 1,
+        "rect": [72, 180, 272, 216],
+        "page_width": 612,
+        "page_height": 792,
+        "source_sha256": digest,
+    }
+
+    plan_request_placements(
+        request,
+        source,
+        signers=signers,
+        placements=[
+            {**box, "field_id": "anchor-0", "source": "anchored"},
+            {**box, "field_id": "hand-0", "rect": [72, 120, 272, 156], "source": "acroform"},
+            {**box, "field_id": "hand-1", "rect": [72, 60, 272, 96]},
+        ],
+    )
+
+    assert {
+        item["field_id"]: item["source"] for item in request.positioned_fields
+    } == {"anchor-0": "anchored", "hand-0": "placed", "hand-1": "placed"}
+
+
 @pytest.mark.parametrize(
     ("name", "label", "expected"),
     [

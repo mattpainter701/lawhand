@@ -25,6 +25,7 @@ from app.services.esign.anchors import WordAnchor, locate_word_signing_fields
 from app.services.esign.placement import (
     ANCHOR_AMBIGUOUS,
     ANCHOR_NOT_FOUND,
+    MISSING_SIGNER_ROLE,
     WORD_SOURCE_NOT_POSITIONABLE,
     template_placement_report,
     validate_placements,
@@ -241,6 +242,67 @@ def test_a_placeholder_token_is_located_by_its_text():
     assert (anchor.text, anchor.placement) == ("By:", "after")
 
 
+def test_a_sibling_placeholder_is_not_part_of_the_caption():
+    # The caption is read from the unfilled template, where the value is still
+    # a token. Kept, it would never match the filled PDF's "I, Ada Lovelace,".
+    source = docx("I, {{client_name}}, sign here: ____")
+    [anchor] = word_signing_anchors(
+        source,
+        {
+            "fields": [
+                {"name": "client_name", "field_type": "text"},
+                field("sig", anchor={"paragraph_ordinal": 0, "start": 31, "end": 35}, source_text="____"),
+            ]
+        },
+    )
+
+    assert (anchor.text, anchor.placement) == ("sign here:", "after")
+
+
+def test_a_sibling_signing_field_is_not_part_of_the_caption():
+    # The signature field's own blank is rewritten as a rule when the document
+    # is generated, so the date field's caption must stop short of it.
+    source = docx("Signature: ____  Date: ____")
+    anchors = word_signing_anchors(
+        source,
+        {
+            "fields": [
+                field("sig", anchor={"paragraph_ordinal": 0, "start": 11, "end": 15}, source_text="____"),
+                field("signed_on", anchor={"paragraph_ordinal": 0, "start": 23, "end": 27}, source_text="____", field_type="date"),
+            ]
+        },
+    )
+
+    assert [(item.field, item.text) for item in anchors] == [
+        ("sig", "Signature:"),
+        ("signed_on", "Date:"),
+    ]
+
+
+def test_a_long_caption_is_trimmed_to_the_words_beside_the_field():
+    # A caption longer than a printed line can never match one extracted line,
+    # so the derivation keeps the end nearest the field.
+    lead = "The undersigned, having read and understood every term of this agreement, signs below: "
+    source = docx(lead + "____")
+    [anchor] = word_signing_anchors(
+        source,
+        {"fields": [field("sig", anchor={"paragraph_ordinal": 0, "start": len(lead), "end": len(lead) + 4}, source_text="____")]},
+    )
+
+    assert len(anchor.text) <= 60
+    assert anchor.text.endswith("signs below:") and lead.strip().endswith(anchor.text)
+
+
+def test_a_rule_printed_beside_the_field_is_not_part_of_the_caption():
+    source = docx("Name ________ Signature: ____")
+    [anchor] = word_signing_anchors(
+        source,
+        {"fields": [field("sig", anchor={"paragraph_ordinal": 0, "start": 25, "end": 29}, source_text="____")]},
+    )
+
+    assert anchor.text == "Signature:"
+
+
 def test_the_authors_anchor_wins_over_the_derived_one():
     source = docx("Client Signature: ____")
     [anchor] = word_signing_anchors(
@@ -329,6 +391,25 @@ def test_a_paragraph_that_already_draws_its_rule_is_left_blank_at_the_field():
     assert paragraph_texts(filled)[0] == "Client Signature:  ________"
 
 
+def test_another_fields_rule_does_not_take_this_fields_line_away():
+    # The check is for a rule already drawn *beside* this field. Read across
+    # the whole paragraph, a neighbour's blank left the signer nothing to
+    # sign on -- and which field lost it depended on their order.
+    source = docx("Name __________ Signature ________________")
+    filled = fill_docx_template(
+        source,
+        variable_schema={
+            "fields": [
+                {"name": "client_name", "field_type": "text", "docx_anchor": {"paragraph_ordinal": 0, "start": 5, "end": 15}, "source_text": "__________"},
+                field("sig", anchor={"paragraph_ordinal": 0, "start": 26, "end": 42}, source_text="_" * 16),
+            ]
+        },
+        variables={"client_name": "Ada Lovelace"},
+    )
+
+    assert paragraph_texts(filled)[0] == f"Name Ada Lovelace Signature {SIGNING_RULE}"
+
+
 def test_a_placeholder_token_signing_field_also_prints_as_a_rule():
     filled = fill_docx_template(
         docx("By: {{attorney_signature}}"),
@@ -378,6 +459,15 @@ def test_an_anchor_that_is_not_found_blocks_that_field_and_stays_recoverable():
 
     assert report.blocked is True and report.recoverable is True
     assert [item.code for item in report.problems] == [ANCHOR_NOT_FOUND]
+
+
+def test_an_anchored_field_without_a_signer_role_is_named_here_not_at_dispatch():
+    converted = pdf([(72, 600, f"Client Signature: {RULE}")])
+    placements, problems = locate(converted, sig("Client Signature:", role=""))
+
+    assert placements == []
+    assert [item.code for item in problems] == [MISSING_SIGNER_ROLE]
+    assert "requires a signer role" in problems[0].detail
 
 
 def test_without_anchors_a_word_template_reports_as_before():

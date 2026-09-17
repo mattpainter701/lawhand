@@ -695,13 +695,89 @@ def _open_docx(content: bytes) -> Document:
 #: for the signer, and the blank the anchor locator looks for in the PDF.
 SIGNING_RULE = "_" * 24
 _RULE = re.compile(r"_{8,}")
+_PLACEHOLDER = re.compile(r"\{\{[^{}]*\}\}")
+#: A caption is what is printed beside the field. Text longer than this wraps
+#: across lines in the converted PDF, where the locator reads one line at a
+#: time, so a longer derivation could never match and is trimmed to its end.
+_MAX_CAPTION = 60
 
 
-def _derived_word_anchor(field: dict, paragraphs: list[str]) -> tuple[str, str]:
+def _beside(
+    text: str, spans: list[tuple[int, int]], start: int, end: int
+) -> tuple[str, str]:
+    """The text either side of one field span, stopping at its neighbours.
+
+    Everything inside another field's span is rewritten when the document is
+    filled, so it is neither part of this field's caption nor a rule drawn
+    beside it.
+    """
+    low = max((e for s, e in spans if e <= start), default=0)
+    high = min((s for s, e in spans if s >= end), default=len(text))
+    return text[low:start], text[end:high]
+
+
+def _caption_before(text: str) -> str:
+    """The caption printed immediately before a field: the end of the text."""
+    for pattern in (_PLACEHOLDER, _RULE):
+        hits = list(pattern.finditer(text))
+        if hits:
+            text = text[hits[-1].end() :]
+    text = text.strip()
+    if len(text) > _MAX_CAPTION:
+        text = text[-_MAX_CAPTION:]
+        if " " in text:
+            text = text[text.index(" ") + 1 :]
+    # A trailing colon is part of the caption ("Client Signature:"); the
+    # punctuation left behind by whatever preceded the field is not.
+    return text.lstrip(" ,;:\t").strip()
+
+
+def _caption_after(text: str) -> str:
+    """The caption printed immediately after a field: the start of the text."""
+    for pattern in (_PLACEHOLDER, _RULE):
+        hit = pattern.search(text)
+        if hit:
+            text = text[: hit.start()]
+    text = text.strip(" ,;:_\t")
+    if len(text) > _MAX_CAPTION:
+        text = text[:_MAX_CAPTION]
+        if " " in text:
+            text = text[: text.rindex(" ")]
+    return text.strip(" ,;:_\t")
+
+
+def _paragraph_spans(fields: Any) -> dict[int, list[tuple[int, int]]]:
+    """Every field's reviewed span, by paragraph. Signing or not: all reflow."""
+    spans: dict[int, list[tuple[int, int]]] = {}
+    for field in fields or []:
+        anchor = field.get("docx_anchor") if isinstance(field, dict) else None
+        if not isinstance(anchor, dict):
+            continue
+        try:
+            ordinal, start, end = (
+                int(anchor["paragraph_ordinal"]),
+                int(anchor["start"]),
+                int(anchor["end"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        spans.setdefault(ordinal, []).append((start, end))
+    return spans
+
+
+def _derived_word_anchor(
+    field: dict,
+    paragraphs: list[str],
+    spans: dict[int, list[tuple[int, int]]] | None = None,
+) -> tuple[str, str]:
     """The caption around a signing field's span, and where the field sits.
 
     "Client Signature: ____" anchors after its caption; "____, MOTHER" before
     it; a placeholder alone on its line anchors below the line above it.
+
+    The caption is read from the *unfilled* template, so it may only contain
+    text the generated PDF still prints: a sibling field's placeholder or
+    span, and a rule drawn beside the field, are cut away.
     """
     anchor = field.get("docx_anchor")
     ordinal = start = end = None
@@ -727,15 +803,26 @@ def _derived_word_anchor(field: dict, paragraphs: list[str]) -> tuple[str, str]:
     if ordinal is None or not 0 <= ordinal < len(paragraphs):
         return "", "after"
     combined = paragraphs[ordinal]
-    before = combined[:start].strip()
-    after = combined[end:].strip(" ,;:_\t")
+    neighbours = [
+        span for span in (spans or {}).get(ordinal, []) if span != (start, end)
+    ]
+    head, tail = _beside(combined, neighbours, start, end)
+    before = _caption_before(head)
+    after = _caption_after(tail)
     if before:
         return before, "after"
     if after:
         return after, "before"
-    for text in reversed(paragraphs[:ordinal]):
-        if text.strip():
-            return text.strip(), "below"
+    for index in range(ordinal - 1, -1, -1):
+        text = paragraphs[index]
+        if not text.strip():
+            continue
+        above = _caption_before(
+            _beside(text, (spans or {}).get(index, []), len(text), len(text))[0]
+        )
+        if above:
+            return above, "below"
+        return "", "after"
     return "", "after"
 
 
@@ -752,6 +839,7 @@ def word_signing_anchors(content: bytes, variable_schema: dict | None) -> list:
         "".join(run.text for run in paragraph.runs)
         for _, paragraph in iter_docx_paragraphs_with_anchors(document)
     ]
+    spans = _paragraph_spans((variable_schema or {}).get("fields"))
     anchors = []
     for field in signing_template_fields(variable_schema):
         name = str(field.get("name") or "")
@@ -774,7 +862,7 @@ def word_signing_anchors(content: bytes, variable_schema: dict | None) -> list:
                 )
             )
             continue
-        text, placement = _derived_word_anchor(field, paragraphs)
+        text, placement = _derived_word_anchor(field, paragraphs, spans)
         anchors.append(WordAnchor(name, kind, role, text, placement))
     return anchors
 
@@ -888,9 +976,22 @@ def fill_docx_template(
     replacement_pattern, replacement_by_source = _compile_replacements(replacements)
     anchored_names: set[str] = set()
     for ordinal, paragraph in iter_docx_paragraphs_with_anchors(document):
-        for start, end, source_text, value, name in sorted(
-            anchored_replacements.get(ordinal, []), reverse=True
-        ):
+        entries = sorted(anchored_replacements.get(ordinal, []), reverse=True)
+        spans = [(entry[0], entry[1]) for entry in entries]
+        # Decided once, before anything is replaced: spans are applied
+        # right-to-left, so every index past the one in hand shifts as soon as
+        # the first replacement lands. "Beside" means the gap between this
+        # field and its neighbours -- a rule belonging to another field, or
+        # further down the line, is not this field's.
+        original = "".join(run.text for run in paragraph.runs) if entries else ""
+        draws_rule = {
+            span: any(
+                _RULE.search(side)
+                for side in _beside(original, spans, span[0], span[1])
+            )
+            for span in spans
+        }
+        for start, end, source_text, value, name in entries:
             combined = "".join(run.text for run in paragraph.runs)
             if combined[start:end] != source_text:
                 raise TemplateDocxError(
@@ -899,11 +1000,7 @@ def fill_docx_template(
             if name in signing_names:
                 # A signing field prints as a rule for the signer -- unless the
                 # paragraph already draws one beside it.
-                value = (
-                    ""
-                    if _RULE.search(combined[:start] + combined[end:])
-                    else SIGNING_RULE
-                )
+                value = "" if draws_rule[(start, end)] else SIGNING_RULE
             if _replace_at_span(paragraph, start, end, value):
                 replacement_count += 1
                 anchored_names.add(name)

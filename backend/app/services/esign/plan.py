@@ -46,6 +46,12 @@ def _pdf_templates():
 SIGNATURE_KINDS = frozenset({"signature", "initials", "date"})
 INPUT_KINDS = frozenset({"text", "checkbox", "radio", "choice"})
 
+#: Sources a placement may declare for itself before the plan is built: one
+#: staff positioned by hand, or one a template bound at its own caption. The
+#: rest ("acroform", "detected", "fallback") are the plan's own findings and
+#: are never taken from a caller.
+BOUND_SOURCES = ("placed", "anchored")
+
 #: Default detected/fallback box sizes in PDF points.
 SIGNATURE_BOX_WIDTH = 200.0
 SIGNATURE_BOX_HEIGHT = 28.0
@@ -1213,6 +1219,15 @@ def plan_request_placements(
             required_roles=required_roles or [],
         )
         validate_pdf_geometry(source_bytes, fields)
+        # Where a placement came from is what the review shows staff, so a
+        # template-anchored field must not be reported back as one they
+        # placed. Field IDs are unique and validated, and anything the caller
+        # invents reads as "placed" -- the one thing a caller can assert.
+        declared = {
+            str(raw.get("field_id") or ""): str(raw.get("source") or "")
+            for raw in placements
+            if isinstance(raw, dict)
+        }
         validated_placements = [
             {
                 "field_id": field.field_id,
@@ -1223,7 +1238,11 @@ def plan_request_placements(
                 "page_width": field.page_width,
                 "page_height": field.page_height,
                 "source_sha256": field.source_sha256,
-                "source": "placed",
+                "source": (
+                    declared.get(field.field_id)
+                    if declared.get(field.field_id) in BOUND_SOURCES
+                    else "placed"
+                ),
             }
             for field in fields
         ]

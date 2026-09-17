@@ -31,6 +31,7 @@ from app.services.esign.placement import (
     ANCHOR_AMBIGUOUS,
     ANCHOR_NOT_FOUND,
     INVALID_GEOMETRY,
+    MISSING_SIGNER_ROLE,
     UNREADABLE_PDF,
     PlacementError,
     PlacementProblem,
@@ -183,6 +184,19 @@ def locate_word_signing_fields(
     problems: list[PlacementProblem] = []
     for index, anchor in enumerate(anchors):
         label = anchor.field or f"field {index + 1}"
+        if not anchor.role.strip():
+            # ``validate_placements`` is given this field's own role as the
+            # signer set, so an empty one would validate against {""} here and
+            # fail at dispatch instead, where nothing names the field.
+            problems.append(
+                PlacementProblem(
+                    MISSING_SIGNER_ROLE,
+                    f"Signing field {label!r} requires a signer role before it "
+                    "can be positioned",
+                    field=label,
+                )
+            )
+            continue
         if not anchor.text.strip():
             problems.append(
                 PlacementProblem(
