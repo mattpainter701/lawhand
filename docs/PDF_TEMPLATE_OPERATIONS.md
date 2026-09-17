@@ -185,6 +185,7 @@ approval record.
 | `... position these signing fields on the PDF: ...` on publish or activate | A PDF template's signing field was never placed on the page | Place each named field in Prepare Form, then preview and activate again. Word templates are exempt: their positions are placed on the generated PDF. |
 | `... has no reviewed signing positions. ... Unbound: ...` when sending for signature | The document generated, but one or more signing fields could not be bound to the generated PDF | The message names each field and its remedy. Either fix the template and regenerate, or open the placement review and place the fields on this PDF by hand. |
 | `... cannot be sent for signature: This document was generated as DOCX ...` | Signing positions can only be placed on a PDF, and this document was saved as a Word file | Regenerate the document with Word-to-PDF conversion enabled. There is no placement review for a `.docx`, so the conversion is the only route. |
+| `... has a signing plan that needs a look before it is sent` when sending | No signature line was found for a signer (a block was placed at the foot of the last page), or one signer was offered more than three, or the file could not be read as a form | In the E-Signature panel, open the request, check "Where each signer will sign", tick that it has been checked, and send. If the block is in the wrong place, place the fields by hand in the placement review first. Case Setup records the same warning on the matter timeline instead of holding the send. |
 
 ## Operator triage
 

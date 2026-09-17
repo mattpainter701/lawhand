@@ -66,6 +66,8 @@ def test_acroform_widgets_become_the_manifest_and_the_sig_widget_takes_the_role(
         "signature_fields_count": 1,
         "placement_source": "acroform",
         "input_fields_count": 4,
+        "review": [],
+        "review_required": False,
     }
 
 

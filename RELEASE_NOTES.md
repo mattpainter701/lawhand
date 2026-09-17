@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.16.06 — Signature requests are checked before they are sent
+
+Released September 16, 2026.
+
+Before a signature request goes to a client, staff see where each signer will sign. A plan the system had to guess at is held until someone confirms it.
+
+- **See where each signer will sign before sending.** Preparing a request now shows every signer's fields by page, with where each came from, before anything reaches the client.
+- **A guessed plan waits for a look.** When no signature line was found for a signer, or too many were, sending is held until staff confirm they have checked it.
+- **Case Setup puts the same warning on the timeline.** Intake sends without a staff step, so a guessed signing plan is recorded on the matter timeline for the firm to see.
+
 ## 2026.09.16.05 — A document that cannot be signed now tells you why
 
 Released September 16, 2026.

@@ -1386,8 +1386,8 @@ export const listSignatureRequests = (matterId) =>
 export const getSignatureRequest = (matterId, requestId) =>
   api.get(`/matters/${matterId}/signatures/${requestId}`).then((r) => r.data)
 
-export const sendSignatureRequest = (matterId, requestId) =>
-  api.post(`/matters/${matterId}/signatures/${requestId}/send`).then((r) => r.data)
+export const sendSignatureRequest = (matterId, requestId, data) =>
+  api.post(`/matters/${matterId}/signatures/${requestId}/send`, data).then((r) => r.data)
 
 export const resendSignatureRequest = (matterId, requestId) =>
   api.post(`/matters/${matterId}/signatures/${requestId}/resend`).then((r) => r.data)

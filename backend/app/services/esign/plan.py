@@ -55,6 +55,10 @@ FALLBACK_BLOCK_HEIGHT = 64.0
 
 MAX_FIELD_VALUES = 200
 MAX_FIELD_VALUE_CHARS = 10_000
+#: More signature lines than this for one person is a plan that read fill-in
+#: blanks as places to sign: a parenting plan offered thirteen before the
+#: detector learned better. Staff must look before such a plan is sent.
+MAX_LINES_PER_SIGNER = 3
 
 _UNDERSCORES = re.compile(r"_{8,}")
 #: Words that mark signature blanks. Bare "by" only counts on its own ("By:"),
@@ -107,6 +111,10 @@ _NAME_CONTEXT = re.compile(r"(?i)\b(middle|first|last|given|maiden|name)\b")
 #: matches its everyday synonyms.
 _ROLE_SYNONYMS = {
     "client": {"client", "customer", "buyer", "tenant", "patient"},
+    # The one portal signer Case Setup addresses, and the default role on a
+    # request that names none, is the client. Without this a generic signer
+    # matched no captioned line at all and every fee agreement fell back.
+    "signer": {"client", "customer", "buyer", "tenant", "patient"},
     "attorney": {"attorney", "lawyer", "counsel", "firm"},
     "firm": {"firm", "attorney", "lawyer", "counsel"},
     "witness": {"witness"},
@@ -214,10 +222,83 @@ class SigningPlan:
     fields: list[PlanField]
     fill_supported: bool = True
     error: str | None = None
+    #: Captions of detected lines printed for parties nobody in this request
+    #: is ("Notary Public", "Defendant"). Left blank on purpose, and reported
+    #: so staff can see the document expected more signers than were sent.
+    left_for_others: list[str] = field(default_factory=list)
 
     @property
     def signature_fields(self) -> list[PlanField]:
         return [f for f in self.fields if f.is_signature_kind]
+
+    def review(self) -> list[dict[str, str]]:
+        """What staff should look at before this plan reaches a signer.
+
+        A ``warn`` finding means the plan guessed: nothing on the page said
+        where a role signs, or it found more places than one person should
+        sign, or the document could not be read as a form at all. Sending
+        such a plan unread is how a client comes to be asked to sign in the
+        wrong place, so dispatch requires these to be acknowledged. An
+        ``info`` finding only says what was deliberately left alone.
+        """
+        findings: list[dict[str, str]] = []
+        if not self.fill_supported:
+            findings.append(
+                {
+                    "level": "warn",
+                    "code": "unsupported",
+                    "role": "",
+                    "detail": self.error or "The document could not be read as a form.",
+                }
+            )
+        by_role: dict[str, list[PlanField]] = {}
+        for item in self.fields:
+            if item.kind == "signature":
+                by_role.setdefault(item.role or "signer", []).append(item)
+        for role, items in by_role.items():
+            if any(item.source == "fallback" for item in items):
+                findings.append(
+                    {
+                        "level": "warn",
+                        "code": "fallback",
+                        "role": role,
+                        "detail": (
+                            f"No signature line was found for {role}: a signature "
+                            "block was placed at the foot of the last page. Check "
+                            "that is where they should sign."
+                        ),
+                    }
+                )
+            if len(items) > MAX_LINES_PER_SIGNER:
+                findings.append(
+                    {
+                        "level": "warn",
+                        "code": "many_lines",
+                        "role": role,
+                        "detail": (
+                            f"{role} would be asked to sign in {len(items)} places "
+                            "on this document."
+                        ),
+                    }
+                )
+        if self.left_for_others:
+            names = ", ".join(dict.fromkeys(self.left_for_others))
+            findings.append(
+                {
+                    "level": "info",
+                    "code": "left_for_others",
+                    "role": "",
+                    "detail": (
+                        f"Lines captioned {names} were left blank: those parties "
+                        "are not among the signers."
+                    ),
+                }
+            )
+        return findings
+
+    @property
+    def review_required(self) -> bool:
+        return any(item["level"] == "warn" for item in self.review())
 
     @property
     def placement_source(self) -> str:
@@ -251,6 +332,8 @@ class SigningPlan:
             "input_fields_count": len(
                 [f for f in self.fields if f.kind in INPUT_KINDS]
             ),
+            "review": self.review(),
+            "review_required": self.review_required,
         }
 
 
@@ -983,6 +1066,7 @@ def build_plan(
     roles = [signer.role for signer in signers] or ["signer"]
     covered = {f.role for f in fields if f.kind == "signature"}
     missing = [role for role in dict.fromkeys(roles) if role not in covered]
+    left_for_others: list[str] = []
     if missing:
         detected = detect_signature_lines(reader)
         detected_fields: list[PlanField] = []
@@ -1016,6 +1100,11 @@ def build_plan(
             SignerRef(id="", name="", role=missing[0])
         ]
         _deal_detected_lines(detected_fields, missing_signers)
+        left_for_others = [
+            f.label
+            for f in detected_fields
+            if f.kind == "signature" and f.role is None and _party_words(f.label)
+        ]
         # A date detected beside a line belongs to that line's signer.
         by_index = {
             f.field_id.rsplit(":", 1)[-1]: f
@@ -1039,6 +1128,7 @@ def build_plan(
         fields=fields,
         fill_supported=True,
         error=acroform_error,
+        left_for_others=left_for_others,
     )
 
 

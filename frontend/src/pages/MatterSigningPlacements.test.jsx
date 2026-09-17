@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import * as api from '../api'
 import { SignatureRequestsPanel } from './MatterDetailPage'
@@ -37,6 +37,8 @@ it('always sends through the portal provider with the generated PDF descriptor',
   expect(screen.getByText(/Place a signature, initials, or date block per signer on the PDF \(optional/)).toBeInTheDocument()
   await fillSigner()
   fireEvent.submit(screen.getByPlaceholderText('Signer 1 full name').closest('form'))
+  // Nothing reaches the client until staff have seen where each signer signs.
+  fireEvent.click(within(await screen.findByRole('region', { name: 'Where each signer will sign' })).getByRole('button', { name: 'Send for signature' }))
   await waitFor(() => expect(api.sendSignatureRequest).toHaveBeenCalledWith('matter', 'request'))
   expect(api.createSignatureRequest).toHaveBeenCalledWith('matter', expect.objectContaining({ provider: 'internal', document_id: 'pdf', positioned_fields: fields }))
   expect(await screen.findByText(/Signature request sent\. Signers will see it/)).toBeInTheDocument()
@@ -54,6 +56,7 @@ it('requires final placement review for a reflowed Word document before sending'
   fireEvent.click(screen.getByRole('button', { name: 'Review PDF signing positions' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Confirm final PDF placement' }))
   fireEvent.submit(screen.getByPlaceholderText('Signer 1 full name').closest('form'))
+  fireEvent.click(within(await screen.findByRole('region', { name: 'Where each signer will sign' })).getByRole('button', { name: 'Send for signature' }))
   await waitFor(() => expect(api.sendSignatureRequest).toHaveBeenCalledOnce())
   expect(api.getMatterDocumentSigningSource).toHaveBeenCalledWith('matter', 'word-pdf')
   expect(api.createSignatureRequest.mock.calls[0][1].positioned_fields[0].source_sha256).toBe('verified-final')
@@ -87,6 +90,7 @@ it('says the invitation email was not delivered instead of reporting it sent', a
   fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'auth' } })
   await fillSigner()
   fireEvent.submit(screen.getByPlaceholderText('Signer 1 full name').closest('form'))
+  fireEvent.click(within(await screen.findByRole('region', { name: 'Where each signer will sign' })).getByRole('button', { name: 'Send for signature' }))
   const status = await screen.findByRole('status')
   expect(status).toHaveTextContent('the email invitation to client@example.test was not delivered')
   expect(status).toHaveTextContent('the outbound email settings are incomplete')
@@ -305,4 +309,121 @@ it('says nothing about placements for a document that needs none', async () => {
 
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Review PDF signing positions' })).toBeInTheDocument()
+})
+
+
+// ── The plan is looked at before it is sent ──────────────────────────────
+
+const plannedRequest = (overrides = {}) => ({
+  id: 'request',
+  status: 'draft',
+  document_name: 'Fee agreement.pdf',
+  signers: [{ id: 's1', name: 'Client Name', email: 'client@example.test', role: 'client', sign_order: 0, status: 'pending' }],
+  plan_review: [],
+  plan_review_required: false,
+  ...overrides,
+})
+
+const found = (overrides = {}) => ({
+  field_id: 'auto:sig:1', kind: 'signature', page: 2, label: 'Client', role: 'client', source: 'detected', ...overrides,
+})
+
+async function createDraft() {
+  api.getMatterDocuments.mockResolvedValue({ items: [{ id: 'pdf', filename: 'Fee agreement.pdf' }] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+  await screen.findByRole('option', { name: 'Fee agreement.pdf' })
+  fireEvent.change(screen.getByLabelText('Document to sign'), { target: { value: 'pdf' } })
+  await fillSigner()
+  fireEvent.submit(screen.getByPlaceholderText('Signer 1 full name').closest('form'))
+  return screen.findByRole('region', { name: 'Where each signer will sign' })
+}
+
+it('shows where each signer will sign before anything is sent', async () => {
+  api.createSignatureRequest.mockResolvedValue(plannedRequest())
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found(), found({ field_id: 'auto:date:1', kind: 'date', label: 'Date signed' })] })
+  const plan = await createDraft()
+
+  expect(plan).toHaveTextContent('Page 2 · Signature “Client” · a signature line found on the page')
+  expect(plan).toHaveTextContent('Page 2 · Date signed · a signature line found on the page')
+  expect(api.getSignatureRequestFields).toHaveBeenCalledWith('matter', 'request')
+  expect(api.sendSignatureRequest).not.toHaveBeenCalled()
+})
+
+it('sends a plan with nothing to review without an acknowledgement', async () => {
+  api.createSignatureRequest.mockResolvedValue(plannedRequest())
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found()] })
+  await createDraft()
+
+  const plan = screen.getByRole('region', { name: 'Where each signer will sign' })
+  expect(within(plan).queryByRole('checkbox', { name: /checked where each signer/ })).not.toBeInTheDocument()
+  fireEvent.click(within(plan).getByRole('button', { name: 'Send for signature' }))
+  await waitFor(() => expect(api.sendSignatureRequest).toHaveBeenCalledWith('matter', 'request'))
+  expect(await screen.findByText(/Signature request sent\./)).toBeInTheDocument()
+  expect(screen.queryByRole('region', { name: 'Where each signer will sign' })).not.toBeInTheDocument()
+})
+
+it('holds a guessed plan until staff tick that they have checked it', async () => {
+  // The server found no line for the client and invented a block: the case
+  // that used to reach the client first.
+  api.createSignatureRequest.mockResolvedValue(plannedRequest({
+    plan_review: [{ level: 'warn', code: 'fallback', role: 'client', detail: 'No signature line was found for client: a signature block was placed at the foot of the last page.' }],
+    plan_review_required: true,
+  }))
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found({ source: 'fallback', page: 3, label: 'Client signature' })] })
+  const plan = await createDraft()
+
+  expect(plan).toHaveTextContent('no line found — a block at the foot of the last page')
+  expect(within(plan).getByRole('alert')).toHaveTextContent('No signature line was found for client')
+  const send = within(plan).getByRole('button', { name: 'Send for signature' })
+  expect(send).toBeDisabled()
+  fireEvent.click(within(plan).getByRole('checkbox', { name: /checked where each signer/ }))
+  expect(send).toBeEnabled()
+  fireEvent.click(send)
+  await waitFor(() => expect(api.sendSignatureRequest).toHaveBeenCalledWith('matter', 'request', { acknowledge_review: true }))
+})
+
+it('shows what was left for parties who are not signers without holding up sending', async () => {
+  api.createSignatureRequest.mockResolvedValue(plannedRequest({
+    plan_review: [{ level: 'info', code: 'left_for_others', role: '', detail: 'Lines captioned Notary Public were left blank: those parties are not among the signers.' }],
+  }))
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found()] })
+  const plan = await createDraft()
+
+  expect(within(plan).getByRole('status')).toHaveTextContent('Notary Public')
+  expect(within(plan).getByRole('button', { name: 'Send for signature' })).toBeEnabled()
+})
+
+it('discards a draft by voiding it and clears the plan', async () => {
+  api.createSignatureRequest.mockResolvedValue(plannedRequest())
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found()] })
+  api.voidSignatureRequest.mockResolvedValue({})
+  const plan = await createDraft()
+
+  fireEvent.click(within(plan).getByRole('button', { name: 'Discard draft' }))
+  await waitFor(() => expect(api.voidSignatureRequest).toHaveBeenCalledWith('matter', 'request', { reason: 'Discarded before sending' }))
+  expect(screen.queryByRole('region', { name: 'Where each signer will sign' })).not.toBeInTheDocument()
+  expect(api.sendSignatureRequest).not.toHaveBeenCalled()
+})
+
+it('surfaces the server refusal when a guessed plan is sent unacknowledged', async () => {
+  api.createSignatureRequest.mockResolvedValue(plannedRequest())
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found()] })
+  api.sendSignatureRequest.mockRejectedValue({ response: { data: { detail: '"Fee agreement.pdf" has a signing plan that needs a look before it is sent' } } })
+  const plan = await createDraft()
+
+  fireEvent.click(within(plan).getByRole('button', { name: 'Send for signature' }))
+  expect(await screen.findByText(/needs a look before it is sent/)).toBeInTheDocument()
+  expect(screen.getByRole('region', { name: 'Where each signer will sign' })).toBeInTheDocument()
+})
+
+it('lets a draft left behind be reviewed and sent from the list', async () => {
+  api.listSignatureRequests.mockResolvedValue([plannedRequest({ id: 'old-draft', document_name: 'Old draft.pdf', created_at: '2026-09-10T11:00:00Z', sent_at: null, expires_at: null })])
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found({ page: 1 })] })
+  render(<MemoryRouter><SignatureRequestsPanel matterId="matter" /></MemoryRouter>)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Review and send' }))
+  const plan = await screen.findByRole('region', { name: 'Where each signer will sign' })
+  expect(plan).toHaveTextContent('Old draft.pdf')
+  expect(plan).toHaveTextContent('Page 1 · Signature “Client”')
+  expect(api.getSignatureRequestFields).toHaveBeenCalledWith('matter', 'old-draft')
 })
