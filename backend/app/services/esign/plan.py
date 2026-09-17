@@ -190,7 +190,7 @@ class PlanField:
     multiline: bool = False
     options: list[Any] = field(default_factory=list)
     role: str | None = None
-    # acroform | placed | detected | fallback
+    # acroform | placed | anchored | detected | fallback
     source: str = "acroform"
     pdf_field_name: str | None = None
     # Every widget of a same-named AcroForm field (radio groups, a name that

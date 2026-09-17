@@ -349,6 +349,16 @@ it('shows where each signer will sign before anything is sent', async () => {
   expect(api.sendSignatureRequest).not.toHaveBeenCalled()
 })
 
+it('names a Word template caption as where an anchored field came from', async () => {
+  // A Word template's signing field binds at the caption printed beside it, so
+  // the plan must read as certain rather than showing the bare source name.
+  api.createSignatureRequest.mockResolvedValue(plannedRequest())
+  api.getSignatureRequestFields.mockResolvedValue({ fields: [found({ source: 'anchored' })] })
+  const plan = await createDraft()
+
+  expect(plan).toHaveTextContent('Page 2 · Signature “Client” · the caption the template prints beside it')
+})
+
 it('sends a plan with nothing to review without an acknowledgement', async () => {
   api.createSignatureRequest.mockResolvedValue(plannedRequest())
   api.getSignatureRequestFields.mockResolvedValue({ fields: [found()] })
