@@ -47,6 +47,8 @@ The root should belong to the **organisation**, not to the administrator who hap
 
 The onboarding status reports this as `root_ownership`: `durable` when every bound root is organisation-owned, `at_risk` when any root lives in one person's drive, and `unbound` when no root exists yet. LawHand never deletes or destructively renames a customer's cloud folders.
 
+Tenants that connected Google **before** organisation-owned storage existed keep a My Drive root and stay `at_risk`. Support can relocate one into an organisation Shared Drive without breaking any matter: Google preserves folder IDs across the move, so the operator migration (platform API or `scripts/migrate_google_root_to_shared_drive.py --dry-run`) rebinds the root in place and records an audit entry.
+
 ## What "Folder exists" means
 
 When the Storage step shows **Folder exists** next to a provider, the tenant already has a root binding for it — from an earlier run, a re-entered setup, or an administrator repair. LawHand keeps that folder and never recreates or repoints it: folder IDs are the authority for every matter folder underneath. Choose **Continue** to keep it.

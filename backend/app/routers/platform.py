@@ -412,6 +412,10 @@ class TenantApprovalRequest(BaseModel):
     premium_ai_trial_enabled: bool = False
 
 
+class GoogleRootMigrationRequest(BaseModel):
+    dry_run: bool = True
+
+
 class PlatformLLMConfigUpdate(BaseModel):
     standard_provider: Optional[str] = None
     standard_model: Optional[str] = None
@@ -811,6 +815,50 @@ async def provision_trial_tenant(
         "email_status": delivery.value,
         "invitation_url": accept_url,
     }
+
+
+@router.post("/tenants/{tenant_id}/google-shared-drive/migrate")
+async def migrate_tenant_google_root_to_shared_drive(
+    tenant_id: uuid.UUID,
+    body: GoogleRootMigrationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a tenant's Google root from My Drive into an organisation Shared Drive.
+
+    Operator-only and non-destructive: Google preserves file and folder IDs
+    across a cross-drive move, so existing matter bindings keep working. The
+    move is idempotent, defaults to a dry run, and fails closed — the tenant
+    root is left unchanged unless the move is verified.
+    """
+    principal = _require_platform_key(request)
+    from app.services.google_root_migration import migrate_google_root_to_shared_drive
+
+    result = await migrate_google_root_to_shared_drive(
+        db,
+        tenant_id,
+        actor_id=getattr(principal, "actor_id", None),
+        dry_run=body.dry_run,
+    )
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if result["status"] == "refused":
+        raise HTTPException(status_code=409, detail=result)
+    if result["status"] == "migrated":
+        await record_operator_audit(
+            db,
+            request,
+            action="tenant.google_shared_drive_migrated",
+            resource_type="tenant",
+            resource_id=str(tenant_id),
+            actor_id=principal.actor_id,
+            metadata={
+                "drive_id": result.get("drive_id"),
+                "root_id": result.get("root_id"),
+            },
+        )
+        await db.commit()
+    return result
 
 
 @router.post("/tenants/{tenant_id}/approve-trial")
