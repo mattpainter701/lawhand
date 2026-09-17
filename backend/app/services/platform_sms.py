@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -181,6 +182,7 @@ async def upsert_platform_sms_provider(
         label="Messaging Service SID",
     )
     _validate_sender_number(_clean(config.get("from_number")))
+    _validate_status_callback_url(_clean(config.get("status_callback_url")))
 
     if not (_clean(config.get("account_sid")) and config.get("encrypted_auth_token")):
         raise PlatformSmsError(
@@ -263,6 +265,7 @@ async def resolve_platform_sms_credentials(
         label="Messaging Service SID",
     )
     _validate_sender_number(_clean(config.get("from_number")))
+    _validate_status_callback_url(_clean(config.get("status_callback_url")))
 
     return PlatformSmsCredentials(
         account_sid=_clean(config.get("account_sid")),
@@ -324,6 +327,26 @@ def _validate_sender_number(value: str) -> None:
             "Enter the From number in E.164 format, for example +15551234567.",
             status_code=400,
             code="platform_sms_invalid_from_number",
+        )
+
+
+def _validate_status_callback_url(value: str) -> None:
+    """Twilio posts delivery status here, so it must be absolute and https.
+
+    An http:// or relative value is stored happily and only fails later as an
+    opaque Twilio rejection; catching it at save time keeps the mistake next to
+    the field that made it.
+    """
+
+    if not value:
+        return
+    parts = urlsplit(value)
+    if parts.scheme != "https" or not parts.netloc:
+        raise PlatformSmsError(
+            "Enter the Status callback URL as an absolute https:// address, "
+            "for example https://your-firm.example/sms-status.",
+            status_code=400,
+            code="platform_sms_invalid_status_callback_url",
         )
 
 

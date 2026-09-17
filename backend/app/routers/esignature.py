@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -29,6 +29,7 @@ from app.models.plugin import Matter
 from app.models.signature import SignatureRequest, SignatureSigner
 from app.routers.client_portal import ClientPortalContext, get_client_portal_context
 from app.schemas.signature import (
+    SignatureRequestSend,
     PortalDeclineRequest,
     PortalSignRequest,
     SignatureFieldsResponse,
@@ -134,7 +135,28 @@ def _plan_summary(req: SignatureRequest) -> dict:
         "placement_source": stored.get(
             "placement_source", "placed" if positioned else None
         ),
+        # Requests planned before the review existed carry none, and are
+        # sent as they always were.
+        "plan_review": [
+            item for item in (stored.get("review") or []) if isinstance(item, dict)
+        ],
+        "plan_review_required": bool(stored.get("review_required", False)),
     }
+
+
+def _review_block_detail(review: list[dict], *, filename: str | None) -> str:
+    """The 422 for sending a guessed plan unread: what to look at, then how."""
+    document = f'"{filename}"' if filename else "This document"
+    warnings = [
+        str(item.get("detail") or "")
+        for item in review
+        if item.get("level") == "warn" and item.get("detail")
+    ]
+    return (
+        f"{document} has a signing plan that needs a look before it is sent: "
+        + " ".join(warnings)
+        + " Open the request, check where each signer will sign, and confirm."
+    )
 
 
 async def _to_response(
@@ -188,6 +210,8 @@ async def _to_response(
         fill_supported=summary["fill_supported"],
         signature_fields_count=summary["signature_fields_count"],
         placement_source=summary["placement_source"],
+        plan_review=summary["plan_review"],
+        plan_review_required=summary["plan_review_required"],
         signers=[
             SignerResponse(
                 id=str(s.id),
@@ -644,6 +668,7 @@ async def send_signature_request(
     request_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    body: SignatureRequestSend | None = Body(default=None),
 ):
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
@@ -652,6 +677,19 @@ async def send_signature_request(
     if req.status != "draft":
         raise HTTPException(
             status_code=409, detail=f"Cannot send from status '{req.status}'"
+        )
+    summary = _plan_summary(req)
+    # Called directly (tests, internal callers) the default is FastAPI's Body
+    # marker, not None; only a parsed model can acknowledge.
+    acknowledged = isinstance(body, SignatureRequestSend) and body.acknowledge_review
+    if summary["plan_review_required"] and not acknowledged:
+        # The plan guessed where somebody signs. A guess sent unread is how a
+        # client is asked to sign in the wrong place; staff look first.
+        raise HTTPException(
+            status_code=422,
+            detail=_review_block_detail(
+                summary["plan_review"], filename=req.source_document_filename
+            ),
         )
     if not await _source_document_is_unchanged(db, req):
         raise HTTPException(

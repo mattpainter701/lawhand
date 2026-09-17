@@ -23,6 +23,27 @@
       ]
     },
     {
+      "id": "2026.09.16.06",
+      "version": "2026.09.16.06",
+      "title": "Signature requests are checked before they are sent",
+      "published_at": "2026-09-16",
+      "summary": "Before a signature request goes to a client, staff see where each signer will sign. A plan the system had to guess at is held until someone confirms it.",
+      "highlights": [
+        {
+          "title": "See where each signer will sign before sending",
+          "description": "Preparing a request now shows every signer's fields by page, with where each came from, before anything reaches the client."
+        },
+        {
+          "title": "A guessed plan waits for a look",
+          "description": "When no signature line was found for a signer, or too many were, sending is held until staff confirm they have checked it."
+        },
+        {
+          "title": "Case Setup puts the same warning on the timeline",
+          "description": "Intake sends without a staff step, so a guessed signing plan is recorded on the matter timeline for the firm to see."
+        }
+      ]
+    },
+    {
       "id": "2026.09.16.05",
       "version": "2026.09.16.05",
       "title": "A document that cannot be signed now tells you why",
