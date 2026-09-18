@@ -143,23 +143,40 @@ def test_normalize_report_filters_risk_and_strips_html() -> None:
     finding = findings[0]
     assert finding.risk == "Low"
     assert finding.description == "Missing header & more"
-    assert finding.fingerprint == findings[0].fingerprint
+    assert set(finding.affected) == {"https://getlawhand.com/"}
+    assert finding.affected["https://getlawhand.com/"] == {"GET"}
 
     assert reconcile.normalize_report(_report("0"), min_risk=1) == []
     assert len(reconcile.normalize_report(_report("3"), min_risk=2)) == 1
 
 
-def test_fingerprint_is_stable_and_merges_instances() -> None:
-    report = _report("2")
-    report["site"][0]["alerts"][0]["instances"].append(
-        {"uri": "https://getlawhand.com/", "method": "POST", "param": ""}
-    )
-    findings = reconcile.normalize_report(report, min_risk=1)
-    assert len(findings) == 1
-    assert sorted(findings[0].methods) == ["GET", "POST"]
+def test_finding_is_rule_scoped_so_spider_variance_does_not_churn() -> None:
+    one = reconcile.normalize_report(_report("2"), min_risk=1)[0]
 
-    other = reconcile.normalize_report(_report("2", uri="https://getlawhand.com/x"))
-    assert other[0].fingerprint != findings[0].fingerprint
+    # A different URL set for the same rule is the same finding, so a baseline
+    # spider that discovers a slightly different page set cannot open and close
+    # issues on every run.
+    report = _report("2")
+    report["site"][0]["alerts"][0]["instances"] = [
+        {"uri": "https://getlawhand.com/", "method": "GET", "param": ""},
+        {"uri": "https://getlawhand.com/", "method": "POST", "param": ""},
+        {"uri": "https://getlawhand.com/other", "method": "GET", "param": ""},
+    ]
+    two = reconcile.normalize_report(report, min_risk=1)[0]
+    assert two.fingerprint == one.fingerprint
+    assert set(two.affected) == {
+        "https://getlawhand.com/",
+        "https://getlawhand.com/other",
+    }
+    assert two.affected["https://getlawhand.com/"] == {"GET", "POST"}
+
+    # A different rule is a different finding.
+    other_rule = _report("2", uri="https://getlawhand.com/x")
+    other_rule["site"][0]["alerts"][0]["pluginid"] = "99999"
+    assert (
+        reconcile.normalize_report(other_rule, min_risk=1)[0].fingerprint
+        != one.fingerprint
+    )
 
 
 class _FakeGitHub:

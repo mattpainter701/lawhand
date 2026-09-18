@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reconcile an OWASP ZAP baseline report into labeled GitHub issues.
 
-One issue per (plugin, URL, parameter) finding, deduplicated by a fingerprint
+One issue per (plugin, parameter) finding, deduplicated by a fingerprint
 buried in the issue body. New findings open an issue; still-present findings
 update only when their evidence changes; disappeared findings close. This is
 report-only: it never fails because of a finding, and it only ever reads or
@@ -31,6 +31,7 @@ SCAN_ALERT_TITLE = (
     "[dast-alert] Scheduled production DAST scan did not produce a report"
 )
 TARGET = "https://getlawhand.com"
+MAX_AFFECTED_URLS = 50
 
 _RISK_NAMES = {"0": "Informational", "1": "Low", "2": "Medium", "3": "High"}
 _MIN_RISK = {"informational": 0, "low": 1, "medium": 2, "high": 3}
@@ -55,17 +56,22 @@ class Finding:
     description: str
     solution: str
     reference: str
-    uri: str
     param: str
-    methods: list[str] = field(default_factory=list)
+    affected: dict[str, set[str]] = field(default_factory=dict)
 
     @property
     def fingerprint(self) -> str:
-        key = f"{self.plugin_id}|{self.uri}|{self.param}"
+        # Rule-scoped, not URL-scoped. The baseline spider discovers a slightly
+        # different URL set each run; a per-URL fingerprint turned that variance
+        # into a storm of opened and closed issues.
+        key = f"{self.plugin_id}|{self.param}"
         return hashlib.sha1(key.encode("utf-8")).hexdigest()
 
     @property
     def content_hash(self) -> str:
+        affected = {
+            uri: sorted(methods) for uri, methods in sorted(self.affected.items())
+        }
         key = json.dumps(
             [
                 self.name,
@@ -75,9 +81,8 @@ class Finding:
                 self.description,
                 self.solution,
                 self.reference,
-                self.uri,
                 self.param,
-                sorted(self.methods),
+                affected,
             ],
             sort_keys=True,
         )
@@ -92,44 +97,39 @@ def html_to_text(value: str) -> str:
 
 
 def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
-    findings: list[Finding] = []
-    seen: set[str] = set()
+    findings: dict[tuple[str, str], Finding] = {}
     for site in report.get("site", []) or []:
         default_uri = site.get("@name", "") or ""
         for alert in site.get("alerts", []) or []:
             risk = _RISK_NAMES.get(str(alert.get("riskcode", "0")), "Informational")
             if _MIN_RISK.get(risk.lower(), 0) < min_risk:
                 continue
-            instances = alert.get("instances") or [{}]
-            for instance in instances:
-                finding = Finding(
-                    plugin_id=str(alert.get("pluginid", "")),
-                    name=str(alert.get("alert") or alert.get("name") or "Unknown"),
-                    risk=risk,
-                    confidence=str(alert.get("confidence", "")),
-                    cwe=str(alert.get("cweid", "") or ""),
-                    description=html_to_text(str(alert.get("desc", ""))),
-                    solution=html_to_text(str(alert.get("solution", ""))),
-                    reference=html_to_text(str(alert.get("reference", ""))),
-                    uri=str(instance.get("uri") or default_uri),
-                    param=str(instance.get("param", "") or ""),
-                    methods=[str(instance.get("method", "GET") or "GET").upper()],
-                )
-                if finding.fingerprint in seen:
-                    existing = next(
-                        f for f in findings if f.fingerprint == finding.fingerprint
+            plugin_id = str(alert.get("pluginid", ""))
+            for instance in alert.get("instances") or [{}]:
+                param = str(instance.get("param", "") or "")
+                key = (plugin_id, param)
+                finding = findings.get(key)
+                if finding is None:
+                    finding = Finding(
+                        plugin_id=plugin_id,
+                        name=str(alert.get("alert") or alert.get("name") or "Unknown"),
+                        risk=risk,
+                        confidence=str(alert.get("confidence", "")),
+                        cwe=str(alert.get("cweid", "") or ""),
+                        description=html_to_text(str(alert.get("desc", ""))),
+                        solution=html_to_text(str(alert.get("solution", ""))),
+                        reference=html_to_text(str(alert.get("reference", ""))),
+                        param=param,
                     )
-                    for method in finding.methods:
-                        if method not in existing.methods:
-                            existing.methods.append(method)
-                    continue
-                seen.add(finding.fingerprint)
-                findings.append(finding)
-    return findings
+                    findings[key] = finding
+                uri = str(instance.get("uri") or default_uri)
+                method = str(instance.get("method", "GET") or "GET").upper()
+                finding.affected.setdefault(uri, set()).add(method)
+    return sorted(findings.values(), key=lambda finding: (finding.name, finding.param))
 
 
 def render_title(finding: Finding) -> str:
-    title = f"[dast] {finding.name} — {finding.uri}"
+    title = f"[dast] {finding.name} [{finding.plugin_id}]"
     if finding.param:
         title += f" ({finding.param})"
     return title[:200]
@@ -161,11 +161,12 @@ def render_body(finding: Finding, run_url: str) -> str:
         "**Affected URLs**",
         "",
     ]
-    for method in finding.methods:
-        line = f"- `{method} {finding.uri}`"
-        if finding.param:
-            line += f" (parameter `{finding.param}`)"
-        lines.append(line)
+    uris = sorted(finding.affected)
+    for uri in uris[:MAX_AFFECTED_URLS]:
+        methods = ", ".join(sorted(finding.affected[uri]))
+        lines.append(f"- `{methods} {uri}`")
+    if len(uris) > MAX_AFFECTED_URLS:
+        lines.append(f"- ...and {len(uris) - MAX_AFFECTED_URLS} more")
     lines += [
         "",
         "---",
