@@ -9,7 +9,7 @@ vi.mock('../api', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 const settings = { enabled: true, alias: { address: 'f-firm@intake.example.com' }, timezone: 'America/Chicago', pending_count: 1,
   staff: [{ id: 'jane', name: 'Jane Smith', email: 'jane@example.com' }] }
 const queued = { items: [{ id: 'email', subject: '[TASK] Jane, review this tomorrow', sender: 'owner@example.com', body_preview: 'Client email',
-  suggestion: { sender: 'owner@example.com', task: { title: 'review this', due_date: '2026-09-14', assigned_to_user_id: 'jane' }, matters: [{ id: 'matter', title: 'Smith case' }] } }],
+  suggestion: { sender: 'owner@example.com', task: { title: 'review this', due_date: '2026-09-14', assigned_to_user_id: 'jane', tag: 'task', task_type: 'review' }, matters: [{ id: 'matter', title: 'Smith case' }] } }],
   matters: [{ id: 'matter', title: 'Smith case' }] }
 const show = (props) => render(<MemoryRouter><FirmEmailIntake {...props} /></MemoryRouter>)
 afterEach(cleanup)
@@ -27,8 +27,8 @@ describe('firm email intake', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss tip' }))
     expect(screen.queryByText('f-firm@intake.example.com')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show forwarding tip' }))
-    expect(screen.getByRole('button', { name: 'Save LawHand contact' })).toBeVisible()
-    expect(contactFile('firm@example.com')).toContain('FN:LawHand\r\nN:LawHand;;;;\r\nEMAIL;TYPE=INTERNET:firm@example.com')
+    expect(screen.getByRole('button', { name: 'Save LawHand Tasks contact' })).toBeVisible()
+    expect(contactFile('firm@example.com')).toContain('FN:LawHand Tasks\r\nN:Tasks;LawHand;;;\r\nEMAIL;TYPE=INTERNET:firm@example.com')
   })
   it('reviews a suggested to-do before creating it', async () => {
     show()
@@ -37,22 +37,36 @@ describe('firm email intake', () => {
     expect(screen.getByLabelText('Matter')).toHaveValue('matter')
     expect(screen.getByLabelText('Assign to')).toHaveValue('jane')
     api.post.mockResolvedValue({ data: { task_id: 'todo', matter_id: 'matter' } })
-    await userEvent.click(screen.getByRole('button', { name: 'File + create to-do' }))
+    await userEvent.click(screen.getByRole('button', { name: 'File + create task' }))
     expect(api.post).toHaveBeenCalledWith('/firm-email-intake/queue/email/accept', {
       title: 'review this', matter_id: 'matter', assigned_to_user_id: 'jane', due_date: '2026-09-14',
     })
-    expect(await screen.findByRole('link', { name: 'Open to-do' })).toHaveAttribute('href', '/tasks/todo')
+    expect(await screen.findByRole('link', { name: 'Open task' })).toHaveAttribute('href', '/tasks/todo')
   })
   it('requires a choice for ambiguous matter and assignee, and permits an undated to-do', async () => {
     const unresolved = { ...queued, items: [{ ...queued.items[0], suggestion: { task: { title: 'Review', assignee_hint: 'Jane' }, matters: [] } }] }
     api.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/queue') ? unresolved : settings }))
     show()
     await userEvent.click(await screen.findByRole('button', { name: 'Needs review (1)' }))
-    expect(await screen.findByRole('button', { name: 'File + create to-do' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'File + create task' })).toBeDisabled()
     await userEvent.selectOptions(screen.getByLabelText('Matter'), 'matter')
     await userEvent.selectOptions(screen.getByLabelText('Assign to'), 'jane')
-    await userEvent.click(screen.getByRole('button', { name: 'File + create to-do' }))
+    await userEvent.click(screen.getByRole('button', { name: 'File + create task' }))
     expect(api.post.mock.calls[0][1].due_date).toBeNull()
+  })
+  it('requires a reviewer-confirmed date for a deadline', async () => {
+    const deadline = { ...queued, items: [{ ...queued.items[0], subject: '[DEADLINE] File response', suggestion: {
+      ...queued.items[0].suggestion,
+      task: { title: 'File response', assigned_to_user_id: 'jane', tag: 'deadline', task_type: 'deadline', priority: 'high' },
+    } }] }
+    api.get.mockImplementation(url => Promise.resolve({ data: url.endsWith('/queue') ? deadline : settings }))
+    show()
+    await userEvent.click(await screen.findByRole('button', { name: 'Needs review (1)' }))
+    const submit = await screen.findByRole('button', { name: 'File + create deadline' })
+    expect(submit).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Due date (required)'), '2026-09-30')
+    await userEvent.click(submit)
+    expect(api.post.mock.calls[0][1]).toMatchObject({ due_date: '2026-09-30' })
   })
   it('requires explicit confirmation before rejection', async () => {
     show()
@@ -77,9 +91,9 @@ describe('firm email intake', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Needs review (1)' }))
     await screen.findByLabelText('Matter')
     api.post.mockRejectedValue({ response: { data: { detail: 'Choose an active member of your firm' } } })
-    await userEvent.click(screen.getByRole('button', { name: 'File + create to-do' }))
+    await userEvent.click(screen.getByRole('button', { name: 'File + create task' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Choose an active member')
-    expect(screen.getByLabelText('To-do')).toHaveValue('review this')
+    expect(screen.getByLabelText('Task title')).toHaveValue('review this')
   })
   it('reports loading errors and allows retry', async () => {
     api.get.mockRejectedValueOnce(new Error('offline'))

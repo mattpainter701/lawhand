@@ -8,9 +8,9 @@ Firm addresses are managed in **Administration → Integrations → Email intake
 
 The backend verifies each firm forward's DKIM signature with dkimpy, requiring RSA-SHA256, an exact From-domain signing match, signed From and Subject, and a full-body signature without `l=`. It checks the registered active human staff address within the routed tenant; it never trusts caller-supplied Authentication-Results. DNS verification is bounded and runs off the event loop. Mail without supported signing is rejected with an SMTP explanation from the Worker. Configure custom-domain DKIM in Microsoft 365 or the sending provider and test before customer rollout.
 
-All firm requests wait for staff review. Matching uses original-sender hints in plain/HTML forward headers or attached `.eml` messages, plus case numbers; hints cannot grant access or execute instructions. Review revalidates the tenant's open matter and active staff assignee under a row lock. Filing uses the existing atomic correspondence/task path, retains the source, and creates an ordinary to-do. This path does not dispatch email or calendar notifications. Duplicate bytes per alias are ignored; edited resubmissions can produce another review request.
+All firm requests wait for staff review. Matching uses original-sender hints in plain/HTML forward headers or attached `.eml` messages, plus case numbers; hints cannot grant access or execute instructions. Review revalidates the tenant's open matter and active staff assignee under a row lock. `[TASK]`, `[DEADLINE]`, and `[REVIEW]` use the same parser and task semantics as matter-specific intake. Filing uses the existing atomic correspondence/task path, retains the source, and dispatches the normal assignment notification and due-date calendar projection only after creation is durable. A deadline requires a reviewer-confirmed date; LawHand never calculates a court deadline from email. Duplicate bytes per alias are ignored; edited resubmissions can produce another review request.
 
-Test: enable the firm address, save the vCard on a phone, forward `[TASK] Jane, review this tomorrow` from an authorized signed mailbox, confirm it appears in Needs review, then verify the created matter task, owner, and retained email. Also check unknown senders, ambiguous matches, and a rotated address. The [admin guide](../frontend/platform_docs/administrative-guide/20-email-intake.md) covers staff setup and troubleshooting.
+Test: enable the firm address, save the **LawHand Tasks** vCard on a phone, forward `[TASK] Jane, review this tomorrow` from an authorized signed mailbox, confirm it appears under **Tasks → Email tasks → Needs review**, then verify the created matter task, owner, retained email, assignment notice, and connected-calendar projection. Repeat with `[DEADLINE]` and `[REVIEW]`. Also check unknown senders, ambiguous matches, a missing deadline date, and a rotated address. The [admin guide](../frontend/platform_docs/administrative-guide/20-email-intake.md) covers staff setup and troubleshooting.
 
 LawHand accepts opaque per-matter addresses at `intake.getlawhand.com`. Incoming
 messages are quarantined for review; they are not matter correspondence until a
@@ -61,9 +61,15 @@ Deploy migration `124_inbound_email` before enabling delivery.
 
 ## Cloudflare Worker
 
-The Worker is in `ops/inbound-email-worker`. Confirm `BACKEND_INGEST_URL` in
-`wrangler.jsonc`, then install, type-check, provision the encrypted secret, and
-deploy:
+The Worker is in `ops/inbound-email-worker`. Production deploys the exact
+`main` source through `.github/workflows/deploy-inbound-email-worker.yml` when
+that source or workflow changes. The `production` GitHub environment must hold
+a dedicated `CLOUDFLARE_WORKERS_API_TOKEN`; grant only Workers Scripts edit/read
+for the LawHand account. `CLOUDFLARE_ACCOUNT_ID` remains a repository variable.
+Do not reuse a DNS token.
+
+For first-time provisioning, confirm `BACKEND_INGEST_URL` in `wrangler.jsonc`,
+then install, type-check, provision the encrypted delivery secret, and deploy:
 
 ```powershell
 cd ops/inbound-email-worker
@@ -127,13 +133,15 @@ MX records and the Cloudflare SPF TXT record.
 ## Verification
 
 1. Enable the backend setting and deploy the Worker.
-2. Open a matter's Correspondence tab and create its forwarding address.
-3. Send a small email with a harmless text attachment from an external account.
-4. Confirm it appears under **Emails awaiting review** and does not yet appear
+2. Confirm the deployed Worker accepts both `m-` and `f-` aliases; the source
+   matcher is `^[mf]-[a-z2-7]{26}$`.
+3. Open a matter's Correspondence tab and create its forwarding address.
+4. Send a small email with a harmless text attachment from an external account.
+5. Confirm it appears under **Emails awaiting review** and does not yet appear
    in official correspondence.
-5. Select **File to matter** and verify the `.eml` downloads from correspondence.
-6. Rotate the address and confirm the old address no longer adds queue items.
-7. Send an oversized test message and confirm it is rejected without creating a
+6. Select **File to matter** and verify the `.eml` downloads from correspondence.
+7. Rotate the address and confirm the old address no longer adds queue items.
+8. Send an oversized test message and confirm it is rejected without creating a
    database or quarantine record.
 
 Monitor Worker failures and backend 401/413/5xx responses during rollout. A 5xx
@@ -148,6 +156,7 @@ generic accepted response so the API does not reveal which matter aliases exist.
 | Worker topology says `Bindings 0` | Expected. Check **Settings > Variables and Secrets** for runtime configuration. |
 | Matter says inbound forwarding is not enabled | Confirm `INBOUND_EMAIL_ENABLED=true`, the domain and secret are present in the backend environment, and the deployed backend has restarted. |
 | No item appears and Worker has no invocation | Confirm public MX records, the active catch-all, the exact recipient address, and the 25 MiB limit. |
+| A firm (`f-`) address bounces as unrecognized while matter (`m-`) works | Production is running a stale Worker. Run **Deploy inbound email Worker** for current `main`, then verify the deployed source accepts `^[mf]-`. Do not rotate the customer alias to mask deployment drift. |
 | Worker invocation ends with backend `401` | The Worker/backend secrets differ, the signed bytes or envelope headers changed, or host time is outside the configured tolerance. Compare secret sources by name and rotate; never print the values. |
 | Worker invocation ends with backend `413` | The raw MIME message exceeded `INBOUND_EMAIL_MAX_BYTES`. Ask the sender to reduce attachments. |
 | Worker invocation ends with backend `5xx` | Check `/health/readiness`, application logs, database availability, and quarantine disk health. Keep the message available for retry. |

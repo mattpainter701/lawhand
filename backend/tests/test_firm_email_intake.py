@@ -57,13 +57,23 @@ def test_task_suggestions_are_plain_todos_and_timezone_aware():
     jane = staff()
     now = datetime(2026, 9, 13, 1, tzinfo=timezone.utc)
     task = service.todo_suggestion("[TASK] Jane, review this tomorrow", now, "America/Chicago", [jane], jane.id)
-    assert task == {"title": "review this", "due_date": "2026-09-13", "assigned_to_user_id": str(jane.id), "assignee_hint": "Jane"}
+    assert task == {
+        "title": "review this", "due_date": "2026-09-13",
+        "assigned_to_user_id": str(jane.id), "assignee_hint": "Jane",
+        "tag": "task", "task_type": "review", "priority": "medium",
+        "due_expression": "tomorrow",
+    }
     assert service.todo_suggestion("[task] Review documents", now, "UTC", [jane], jane.id)["due_date"] is None
     assert len(service.todo_suggestion("[TASK] " + "x" * 500, now, "UTC", [jane], jane.id)["title"]) == 300
     assert service.todo_suggestion("[TASK] Jane, review this", now, "UTC", [jane, staff()], jane.id)["assigned_to_user_id"] is None
     assert service.todo_suggestion("[TASK] Nobody, review this", now, "UTC", [jane], jane.id)["assigned_to_user_id"] is None
     assert service.todo_suggestion("[TASK] Jane Smith, review in two weeks", now, "UTC", [jane], jane.id)["due_date"] == "2026-09-27"
-    for subject in ["Fwd: [TASK] review this", "[DEADLINE] File tomorrow", "Review this", "[TASK] Jane, "]:
+    deadline = service.todo_suggestion("[DEADLINE] Jane, file response tomorrow", now, "UTC", [jane], jane.id)
+    assert deadline["tag"] == "deadline" and deadline["task_type"] == "deadline"
+    assert deadline["priority"] == "high"
+    review = service.todo_suggestion("[REVIEW] Jane, settlement draft", now, "UTC", [jane], jane.id)
+    assert review["tag"] == "review" and review["task_type"] == "review"
+    for subject in ["Fwd: [TASK] review this", "Review this", "[TASK] Jane, "]:
         assert service.todo_suggestion(subject, now, "UTC", [jane], jane.id) is None
 
 
@@ -149,17 +159,22 @@ async def test_staff_only_and_admin_enforcement(context, monkeypatch):
 @pytest.mark.asyncio
 async def test_review_revalidates_matter_assignee_and_duplicate(context, monkeypatch):
     matter = NS(id=uuid.uuid4(), is_closed=False)
-    row = NS(id=uuid.uuid4(), status="pending", matter_id=None)
+    row = NS(id=uuid.uuid4(), status="pending", matter_id=None,
+        authentication_results={"firm_intake": {"task": {
+            "tag": "review", "task_type": "review", "priority": "medium"}}})
     monkeypatch.setattr(routes, "_get_matter_or_404", AsyncMock(return_value=matter))
     monkeypatch.setattr(routes, "active_staff", AsyncMock(return_value=[context]))
-    filing = AsyncMock(return_value=NS(task=NS(id=uuid.uuid4())))
+    filing = AsyncMock(return_value=NS(task=NS(id=uuid.uuid4(), task_type="review")))
     monkeypatch.setattr(routes, "file_inbound_email", filing)
+    notify = AsyncMock()
+    monkeypatch.setattr(routes, "notify_task_created", notify)
     body = routes.ReviewTodo(matter_id=matter.id, assigned_to_user_id=context.id, title="Review this")
     db = FakeDB(FakeResult(row))
     result = await routes.accept(row.id, body, None, db)
     assert result["matter_id"] == matter.id and row.matter_id == matter.id
-    assert filing.call_args.kwargs["task_suggestion"].task_type == "general"
+    assert filing.call_args.kwargs["task_suggestion"].task_type == "review"
     assert filing.call_args.kwargs["assigned_to_user_id"] == context.id
+    notify.assert_awaited_once()
     sql = str(db.executed[0][0].compile(dialect=postgresql.dialect()))
     assert "tenant_id" in sql and "FOR UPDATE OF inbound_emails" in sql
     for value, code in [(None,404),(NS(status="accepted"),409)]:
@@ -172,6 +187,27 @@ async def test_review_revalidates_matter_assignee_and_duplicate(context, monkeyp
     with pytest.raises(HTTPException): await routes.accept(row.id, body, None, FakeDB(FakeResult(row)))
     matter.is_closed = True
     with pytest.raises(HTTPException): await routes.accept(row.id, body, None, FakeDB(FakeResult(row)))
+
+
+@pytest.mark.asyncio
+async def test_deadline_review_requires_date_and_preserves_priority(context, monkeypatch):
+    matter = NS(id=uuid.uuid4(), is_closed=False)
+    row = NS(id=uuid.uuid4(), status="pending", matter_id=None,
+        authentication_results={"firm_intake": {"task": {
+            "tag": "deadline", "task_type": "deadline", "priority": "high"}}})
+    monkeypatch.setattr(routes, "_get_matter_or_404", AsyncMock(return_value=matter))
+    monkeypatch.setattr(routes, "active_staff", AsyncMock(return_value=[context]))
+    body = routes.ReviewTodo(matter_id=matter.id, assigned_to_user_id=context.id, title="File response")
+    with pytest.raises(HTTPException) as error:
+        await routes.accept(row.id, body, None, FakeDB(FakeResult(row)))
+    assert error.value.status_code == 422
+    body.due_date = datetime(2026, 9, 20).date()
+    filing = AsyncMock(return_value=NS(task=NS(id=uuid.uuid4(), task_type="deadline", priority="high")))
+    monkeypatch.setattr(routes, "file_inbound_email", filing)
+    monkeypatch.setattr(routes, "notify_task_created", AsyncMock())
+    await routes.accept(row.id, body, None, FakeDB(FakeResult(row)))
+    suggestion = filing.call_args.kwargs["task_suggestion"]
+    assert suggestion.task_type == "deadline" and suggestion.priority == "high"
 
 
 @pytest.mark.asyncio

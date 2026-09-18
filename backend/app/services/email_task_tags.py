@@ -2,8 +2,8 @@
 
 Email bodies and model classifications are useful triage signals, but they are
 not a safe instruction channel for creating legal work.  This module keeps the
-automatic boundary explicit: only a subject that starts with ``[TASK]`` or
-``[DEADLINE]`` can create a task.
+automatic boundary explicit: only a subject that starts with ``[TASK]``,
+``[DEADLINE]``, or ``[REVIEW]`` can create a task.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from app.services.task_workflow import append_task_event
 
 
 _TAG_RE = re.compile(
-    r"^\s*\[(?P<tag>task|deadline)"
+    r"^\s*\[(?P<tag>task|deadline|review)"
     r"(?:\s+due\s*=\s*(?P<explicit_due>[^\]]+))?\]"
     r"\s*(?P<title>\S.*?)\s*$",
     re.IGNORECASE,
@@ -86,6 +86,8 @@ def _parse_explicit_date(value: str) -> date | None:
 def _task_type(tag: str, title: str) -> str:
     if tag == "deadline":
         return "deadline"
+    if tag == "review":
+        return "review"
     normalized = title.lower()
     if re.search(r"\bcall\b", normalized):
         return "call"
@@ -137,6 +139,7 @@ def parse_email_task_tag(
         [TASK] Nigel I need to meet with you in two weeks
         [TASK due=2026-09-09] Meet with Nigel
         [DEADLINE] File response by 09/15/2026
+        [REVIEW] Review the settlement draft tomorrow
 
     Replies and forwards do not match because the tag must be the first token.
     Ambiguous dates (for example, "next Friday") deliberately remain unset.

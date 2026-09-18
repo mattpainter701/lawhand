@@ -4,7 +4,7 @@ import { Link, MemoryRouter } from 'react-router-dom'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TasksPage from './TasksPage'
-import { createTask, getOverdueTasks, getTaskBoard, getTaskBoardConfig, getTasks, sendTaskReminder, updateTask } from '../api'
+import api, { createTask, getOverdueTasks, getTaskBoard, getTaskBoardConfig, getTasks, sendTaskReminder, updateTask } from '../api'
 
 vi.mock('../App', () => ({
   useAuth: () => ({
@@ -17,6 +17,7 @@ vi.mock('../App', () => ({
 }))
 
 vi.mock('../api', () => ({
+  default: { get: vi.fn(), post: vi.fn() },
   getTasks: vi.fn(),
   getTaskBoard: vi.fn(),
   getTaskBoardConfig: vi.fn(),
@@ -74,6 +75,7 @@ describe('TasksPage accessibility', () => {
         { status: 'completed', label: 'Done', total: 0, items: [], next_cursor: null },
       ],
     })
+    api.get.mockResolvedValue({ data: { enabled: true, alias: null, pending_count: 0, staff: [] } })
   })
 
   afterEach(() => cleanup())

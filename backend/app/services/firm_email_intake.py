@@ -78,11 +78,11 @@ async def authenticated_submitter(db, tenant_id, raw, sender):
 
 
 def todo_suggestion(subject, received_at, timezone_name, staff, submitter_id):
-    """Only leading [TASK]; comma-separated name is an optional assignee hint."""
+    """Parse a reviewed email intent; a leading name is an assignee hint."""
     suggestion = parse_email_task_tag(
         subject, received_at=received_at.astimezone(ZoneInfo(timezone_name)).date()
     )
-    if suggestion is None or suggestion.tag != "task":
+    if suggestion is None:
         return None
     title = suggestion.title
     assignee_id = submitter_id
@@ -103,12 +103,15 @@ def todo_suggestion(subject, received_at, timezone_name, staff, submitter_id):
         assignee_id = str(matches[0].id) if len(matches) == 1 else None
     if not title:
         return None
-    # These are ordinary to-dos, even when their title contains "file" or "call".
     return {
         "title": title[:300],
         "due_date": suggestion.due_date.isoformat() if suggestion.due_date else None,
         "assigned_to_user_id": str(assignee_id) if assignee_id else None,
         "assignee_hint": assignee_hint,
+        "tag": suggestion.tag,
+        "task_type": suggestion.task_type,
+        "priority": suggestion.priority,
+        "due_expression": suggestion.due_expression,
     }
 
 
