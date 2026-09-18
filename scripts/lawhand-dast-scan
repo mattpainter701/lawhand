@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Root-owned boundary between GitHub Actions and the container runtime for the
+# scheduled production DAST baseline. Install as
+# /usr/local/sbin/lawhand-dast-scan; the Skynet lawhand-runner may sudo only
+# this command.
+#
+# It is deliberately argument-free. The target, the scanner image (pinned by
+# digest), and the report location are fixed here so the runner's narrow sudo
+# rule can never be turned into a general-purpose network scanner. An operator
+# changes the target by editing this file, not by passing workflow input.
+set -Eeuo pipefail
+umask 077
+
+readonly TARGET="https://getlawhand.com"
+readonly RUNNER_USER="${LAWHAND_DAST_RUNNER_USER:-lawhand-runner}"
+# A root-owned parent the runner cannot rename or write, so a compromised runner
+# cannot swap this path or plant a symlink for the root scanner to follow.
+readonly REPORT_DIR="/var/lib/lawhand-dast"
+readonly IMAGE="zaproxy/zap-stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef"
+readonly LOCK_FILE="/run/lock/lawhand-dast-scan.lock"
+readonly SCAN_TIMEOUT="${LAWHAND_DAST_TIMEOUT_SECONDS:-1200}"
+
+[[ "$#" -eq 0 ]] || {
+  echo "ERROR: this entrypoint takes no arguments" >&2
+  exit 2
+}
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "ERROR: this entrypoint must run through its restricted sudo rule" >&2
+  exit 2
+}
+id -u "$RUNNER_USER" >/dev/null 2>&1 || {
+  echo "ERROR: runner account $RUNNER_USER does not exist" >&2
+  exit 2
+}
+command -v docker >/dev/null 2>&1 || {
+  echo "ERROR: docker is not available to this entrypoint" >&2
+  exit 2
+}
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "ERROR: another DAST scan is already running" >&2
+  exit 75
+fi
+
+# The report directory is root-owned and not writable by the runner. That keeps
+# a compromised runner from planting a symlink inside the bind mount that the
+# root container would then follow when it writes the report.
+install -d -m 0755 -o root -g root "$REPORT_DIR"
+[[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" ]] || {
+  echo "ERROR: report directory is not a real root-owned directory" >&2
+  exit 2
+}
+find "$REPORT_DIR" -maxdepth 1 -type f -delete
+
+json="$REPORT_DIR/zap-report.json"
+md="$REPORT_DIR/zap-report.md"
+html="$REPORT_DIR/zap-report.html"
+
+echo "==> Pulling pinned OWASP ZAP image"
+timeout "$SCAN_TIMEOUT" docker pull "$IMAGE"
+
+echo "==> Running OWASP ZAP baseline against $TARGET"
+set +e
+timeout "$SCAN_TIMEOUT" docker run --rm \
+  --user 0:0 \
+  --cap-drop ALL --cap-add DAC_OVERRIDE \
+  --security-opt no-new-privileges \
+  --memory 4g \
+  --pids-limit 1024 \
+  -e HOME=/tmp \
+  -v "$REPORT_DIR:/zap/wrk:rw" \
+  "$IMAGE" zap-baseline.py \
+  -t "$TARGET" \
+  -m 5 \
+  -J zap-report.json \
+  -w zap-report.md \
+  -r zap-report.html
+zap_rc=$?
+set -e
+
+# zap-baseline.py exits non-zero when it reports warnings or failures. On this
+# report-only job that is an expected outcome, not an error: the findings are
+# filed as issues. Only a missing report is a real failure.
+if [[ ! -s "$json" ]]; then
+  echo "ERROR: ZAP produced no JSON report (exit $zap_rc)" >&2
+  exit 3
+fi
+chmod 0644 "$json" 2>/dev/null || true
+[[ -s "$md" ]] && chmod 0644 "$md" 2>/dev/null || true
+[[ -s "$html" ]] && chmod 0644 "$html" 2>/dev/null || true
+
+echo "ZAP_SCAN_EXIT=$zap_rc"
+echo "ZAP_REPORT_JSON=$json"
+echo "ZAP_REPORT_MD=$md"
+echo "ZAP_REPORT_HTML=$html"
