@@ -13,8 +13,24 @@ from app.config import get_settings
 from app.models.plugin import Matter
 from app.models.signature import SignatureRequest, SignatureSigner
 from app.models.user import User
+from app.services.client_notifications import (
+    FirmIdentity,
+    client_portal_url,
+    firm_identity,
+    render_client_alert,
+)
 from app.services.connected_mail import send_client_email
-from app.services.email import EmailDeliveryResult, email_service
+from app.services.email import (
+    EmailDeliveryResult,
+    cta_button,
+    detail_row,
+    detail_table,
+    email_service,
+    labeled_line,
+    link_row,
+    render_branded_email,
+    text_lines,
+)
 from app.services.esign.service import next_pending_signers
 
 logger = logging.getLogger(__name__)
@@ -24,7 +40,43 @@ def _audit(signer: SignatureSigner) -> dict:
     return dict(signer.audit or {})
 
 
-async def notify_signer(db, signer, request, *, kind="invitation"):
+def _signature_deadline(request, *, now=None) -> tuple[str | None, str | None]:
+    """The expiry date and how it should be said, or ``(None, None)``.
+
+    A signature request that expires is the one client notification with a
+    real deadline in it, and "expires soon" is not a deadline. The date is
+    stated, and the countdown alongside it.
+    """
+    if not request.expires_at:
+        return None, None
+    now = now or datetime.now(timezone.utc)
+    expires_on = request.expires_at.strftime("%B %d, %Y")
+    days_left = (request.expires_at.date() - now.date()).days
+    if days_left < 0:
+        return expires_on, f"This request expired on {expires_on}."
+    if days_left == 0:
+        return expires_on, f"This request expires today, {expires_on}."
+    if days_left == 1:
+        return expires_on, f"This request expires tomorrow, {expires_on}."
+    return expires_on, f"Please sign by {expires_on} — {days_left} days from now."
+
+
+async def signer_alert_context(db, request) -> tuple[FirmIdentity, str | None]:
+    """The firm identity and matter name every signer notice for ``request`` needs.
+
+    Resolved once per request rather than per signer: a five-signer packet
+    should not re-read the same branding row five times.
+    """
+    firm = await firm_identity(db, request.tenant_id)
+    matter = await db.scalar(
+        select(Matter).where(
+            Matter.id == request.matter_id, Matter.tenant_id == request.tenant_id
+        )
+    )
+    return firm, (matter.matter_name if matter else None)
+
+
+async def notify_signer(db, signer, request, *, kind="invitation", context=None):
     """Email a signer from the requesting user's connected mailbox.
 
     Intake paperwork already leaves through the mailbox of the person who sent
@@ -33,27 +85,55 @@ async def notify_signer(db, signer, request, *, kind="invitation"):
     introduced it, and the firm's sent folder records who sent what. Platform
     SMTP is only the last resort; where it is switched off the invitation is
     reported undelivered rather than silently dropped.
+
+    The body is built through the shared client-alert framework so it names the
+    firm, the document, the matter and the date it is needed by. A bare
+    "signature requested" gives a client nothing to act on and nothing to
+    recognize as genuinely from their own lawyer.
     """
+    firm, matter_name = context or await signer_alert_context(db, request)
     document_name = request.source_document_filename or "a document"
-    url = f"{get_settings().FRONTEND_URL.rstrip('/')}/client-portal"
     action = {
-        "reminder": "Reminder: signature requested",
+        "reminder": "Reminder: your signature is still needed",
         # The firm returned an uploaded signed copy; the client signs again.
         "resubmit": "Please sign again",
     }.get(kind, "Signature requested")
-    instruction = (
-        "Your legal team could not accept the signed copy you uploaded. Please sign"
-        if kind == "resubmit"
-        else "Please review and sign"
+    headline = {
+        "reminder": (
+            f"{document_name} is still waiting for your signature in your secure "
+            "client portal."
+        ),
+        "resubmit": (
+            "Your legal team could not accept the signed copy you uploaded. Please "
+            f"sign {document_name} again in your secure client portal."
+        ),
+    }.get(
+        kind,
+        f"Please review and sign {document_name} in your secure client portal.",
+    )
+    expires_on, deadline_note = _signature_deadline(request)
+    html_body, text_body = render_client_alert(
+        firm=firm,
+        headline=headline,
+        matter_name=matter_name,
+        recipient_name=signer.name,
+        details=[
+            ("Document", document_name),
+            ("Signature needed from", signer.name),
+            ("Sign by", expires_on),
+        ],
+        deadline_note=deadline_note,
+        action_label="Review and sign in your portal",
+        action_url=client_portal_url(tab="signatures"),
     )
     delivery = await send_client_email(
         db,
         tenant_id=request.tenant_id,
         actor_user_id=request.created_by_user_id,
         to=[signer.email],
-        subject=f"{action}: {document_name}",
-        html_body=f'<p>Hello {escape(signer.name)},</p><p>{instruction} <strong>{escape(document_name)}</strong> in the secure client portal.</p><p><a href="{escape(url)}">Open the client portal</a></p>',
-        text_body=f"Hello {signer.name},\n\n{instruction} {document_name}:\n{url}\n",
+        subject=f"{firm.display_name}: {action} — {document_name}",
+        html_body=html_body,
+        text_body=text_body,
         smtp_service=email_service,
     )
     result = delivery.result
@@ -72,9 +152,13 @@ async def notify_signer(db, signer, request, *, kind="invitation"):
 
 
 async def notify_actionable_signers(db, request, *, kind="invitation"):
+    signers = next_pending_signers(request)
+    if not signers:
+        return []
+    context = await signer_alert_context(db, request)
     return [
-        await notify_signer(db, signer, request, kind=kind)
-        for signer in next_pending_signers(request)
+        await notify_signer(db, signer, request, kind=kind, context=context)
+        for signer in signers
     ]
 
 
@@ -119,13 +203,41 @@ async def notify_requester_signed(db, request):
     )
     url = f"{get_settings().FRONTEND_URL.rstrip('/')}/matters/{request.matter_id}"
     subject = f"Signed: {document_name} — {matter_name}"
-    html = (
-        f"<p>{escape(names)} signed <strong>{escape(document_name)}</strong> "
-        f"for {escape(matter_name)}.</p><p>{escape(filing_note)}</p>"
-        f'<p><a href="{escape(url)}">Open the matter</a></p>'
-    )
-    text = (
-        f"{names} signed {document_name} for {matter_name}.\n\n{filing_note}\n{url}\n"
+    signed_at = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M UTC")
+    content = f"""
+    <div class="header">
+      <h1>LawHand &mdash; Signature Complete</h1>
+      <p>{escape(matter_name)}</p>
+    </div>
+    <div class="body">
+      <p>{escape(names)} signed <strong>{escape(document_name)}</strong>.</p>
+      {
+        detail_table(
+            [
+                detail_row("Document", document_name, strong=True),
+                detail_row("Matter", matter_name),
+                detail_row("Signed by", names),
+                detail_row("Reported", signed_at),
+                detail_row("Filing", filing_note),
+                link_row("Matter link", url),
+            ]
+        )
+    }
+      {cta_button(url, "Open the matter in LawHand")}
+    </div>
+    """
+    html = render_branded_email(content)
+    text = text_lines(
+        f"{names} signed {document_name} for {matter_name}.",
+        "",
+        labeled_line("Document", document_name),
+        labeled_line("Matter", matter_name),
+        labeled_line("Signed by", names),
+        labeled_line("Reported", signed_at),
+        "",
+        filing_note,
+        "",
+        labeled_line("Open the matter", url),
     )
     delivery = await send_client_email(
         db,
@@ -174,10 +286,15 @@ async def process_due_reminders(db: AsyncSession, *, now=None) -> int:
         ):
             continue
         key = f"reminder_{days_left}_days_sent_at"
+        context = None
         for signer in next_pending_signers(request):
             if _audit(signer).get(key):
                 continue
-            result = await notify_signer(db, signer, request, kind="reminder")
+            if context is None:
+                context = await signer_alert_context(db, request)
+            result = await notify_signer(
+                db, signer, request, kind="reminder", context=context
+            )
             if result is EmailDeliveryResult.SENT:
                 audit = _audit(signer)
                 audit[key] = now.isoformat()
@@ -209,7 +326,7 @@ async def notify_signer_sms(db, signer, request, *, kind="invitation"):
         return None
 
     document_name = request.source_document_filename or "a document"
-    url = f"{get_settings().FRONTEND_URL.rstrip('/')}/client-portal"
+    url = client_portal_url(tab="signatures")
     lead = "Reminder" if kind == "reminder" else "Your legal team"
     body = (
         f"{lead}: {document_name} is ready for your signature in your secure "

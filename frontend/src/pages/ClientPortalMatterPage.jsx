@@ -1,5 +1,6 @@
 import ClientSignatureDocument from '../components/ClientSignatureDocument'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import PortalDocumentTransfer from '../components/PortalDocumentTransfer'
 import ClientIntakeChecklist from '../components/ClientIntakeChecklist'
 import ClientPortalEstateTab from '../components/portal/ClientPortalEstateTab'
@@ -39,6 +40,12 @@ const TABS = [
   { key: 'signatures', label: 'Signatures', icon: PenLine },
   { key: 'invoices', label: 'Invoices', icon: Receipt },
 ]
+
+// Notification emails link to the tab they are about (?tab=signatures for a
+// signature request), so a client who was told to sign lands on the signing
+// screen rather than on an overview they then have to navigate. Kept in step
+// with PORTAL_TABS in backend/app/services/client_notifications.py.
+const LINKABLE_TABS = new Set([...TABS.map(({ key }) => key), 'mediation'])
 
 // The client's own tab is refreshed while they sit on it — a portal is only
 // useful if a reply from the firm shows up without a manual reload.
@@ -130,7 +137,25 @@ export default function ClientPortalMatterPage() {
   const [session, setSession] = useState(null)
   const [matters, setMatters] = useState([])
   const [switching, setSwitching] = useState(false)
-  const [tab, setTab] = useState('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTabState] = useState(() => {
+    const requested = searchParams.get('tab')
+    return requested && LINKABLE_TABS.has(requested) ? requested : 'overview'
+  })
+  // Moving tabs rewrites ?tab= so the address bar stays shareable and the back
+  // button works, without stacking a history entry per click.
+  const setTab = useCallback((next) => {
+    setTabState(next)
+    setSearchParams(
+      (params) => {
+        const updated = new URLSearchParams(params)
+        if (next && next !== 'overview') updated.set('tab', next)
+        else updated.delete('tab')
+        return updated
+      },
+      { replace: true },
+    )
+  }, [setSearchParams])
   const [loadError, setLoadError] = useState('')
   const [expired, setExpired] = useState(false)
   const [signedOut, setSignedOut] = useState(false)
@@ -274,7 +299,12 @@ export default function ClientPortalMatterPage() {
         body={signedOut
           ? 'Your portal is closed on this device. Sign back in any time with your email and the code we send you.'
           : 'For your security we sign you out after a period of inactivity. Sign back in to continue, or use the link from your invitation email.'}
-        action={{ label: 'Sign in to the portal', href: '/portal/client/login' }}
+        action={{
+          label: 'Sign in to the portal',
+          // Carry the tab the client was sent to through the sign-in bounce,
+          // so a signature reminder still lands on Signatures afterwards.
+          href: `/portal/client/login${tab === 'overview' ? '' : `?tab=${tab}`}`,
+        }}
       />
     )
   }

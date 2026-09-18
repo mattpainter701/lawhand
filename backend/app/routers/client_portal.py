@@ -2962,6 +2962,9 @@ async def firm_create_portal_message(
         matter=matter,
         subject=f"New message about {matter.matter_name or 'your matter'}",
         headline=new_message_headline(matter),
+        details=[("Subject", msg.subject)],
+        portal_tab="messages",
+        action_label="Read the message in your portal",
     )
     return PortalMessageResponse(
         id=str(msg.id),
