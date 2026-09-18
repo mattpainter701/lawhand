@@ -107,7 +107,11 @@ from app.services.pdf_templates import (
     render_pdf_page_preview,
     validate_representative_pdf_variables,
 )
-from app.services.docx_templates import TemplateDocxError, fill_docx_template
+from app.services.docx_templates import (
+    TemplateDocxError,
+    fill_docx_template,
+    word_signing_anchors,
+)
 from app.services.docx_to_pdf import DocxToPdfError, docx_to_pdf_bytes
 from app.services.template_source_preview import source_preview_cache
 from app.services.docx_outline import docx_outline, validate_visual_field_map
@@ -4956,6 +4960,7 @@ def _ensure_signing_fields_placeable(template, variable_schema: dict | None) -> 
     is_pdf = str(getattr(template, "format", "") or "").lower() == "pdf"
     unroled: list[str] = []
     unplaced: list[str] = []
+    unanchored: list[str] = []
     for index, field in enumerate(fields):
         label = (
             str(field.get("name") or "").strip()
@@ -4966,7 +4971,16 @@ def _ensure_signing_fields_placeable(template, variable_schema: dict | None) -> 
             unroled.append(label)
         elif is_pdf and not (field.get("pdf_overlays") or field.get("pdf_overlay")):
             unplaced.append(label)
-    if not unroled and not unplaced:
+        elif not is_pdf and "pdf_anchor" in field:
+            # A Word field's anchor is derived when absent; one that is
+            # present but empty would bind to nothing.
+            anchor = field.get("pdf_anchor")
+            if (
+                not isinstance(anchor, dict)
+                or not str(anchor.get("text") or "").strip()
+            ):
+                unanchored.append(label)
+    if not unroled and not unplaced and not unanchored:
         return
     parts = []
     if unroled:
@@ -4975,6 +4989,11 @@ def _ensure_signing_fields_placeable(template, variable_schema: dict | None) -> 
         parts.append(
             "position these signing fields on the PDF: "
             + ", ".join(sorted(unplaced)[:10])
+        )
+    if unanchored:
+        parts.append(
+            "give an anchor text (the caption printed beside the signature line) "
+            "to " + ", ".join(sorted(unanchored)[:10])
         )
     raise HTTPException(
         status_code=422,
@@ -5376,11 +5395,19 @@ async def render_template_endpoint(
                 if field.get("name") not in suppressed
             ],
         }
+        word_anchors = None
+        if template_format == "docx" and output_format == "pdf":
+            # A Word template binds its signing fields by the caption printed
+            # beside each one, read from the retained document.
+            word_anchors = word_signing_anchors(
+                await _verified_template_source(template), signing_schema
+            )
         placement_report = template_placement_report(
             signing_schema,
             source=output_bytes,
             template_format=template_format,
             output_format=output_format,
+            word_anchors=word_anchors,
         )
         positioned_fields = placement_report.placements
         signing_roles = placement_report.roles

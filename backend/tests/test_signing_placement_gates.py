@@ -117,6 +117,39 @@ def test_a_word_template_needs_a_role_but_not_pdf_geometry():
         )
 
 
+def test_a_word_field_with_an_anchor_that_is_present_but_empty_is_refused():
+    """The anchor is derived when absent; one that is there and blank binds to nothing."""
+    with pytest.raises(HTTPException) as caught:
+        _ensure_signing_fields_placeable(
+            template("docx"),
+            schema(
+                {
+                    "name": "client_sig",
+                    "field_type": "signature",
+                    "signer_role": "client",
+                    "pdf_anchor": {"text": "   ", "placement": "after"},
+                }
+            ),
+        )
+
+    assert "client_sig" in caught.value.detail
+    assert "anchor text" in caught.value.detail
+
+
+def test_a_word_field_with_a_named_anchor_publishes():
+    _ensure_signing_fields_placeable(
+        template("docx"),
+        schema(
+            {
+                "name": "client_sig",
+                "field_type": "signature",
+                "signer_role": "client",
+                "pdf_anchor": {"text": "Client Signature:", "placement": "after"},
+            }
+        ),
+    )
+
+
 def test_every_offending_field_is_named_so_it_is_one_pass_through_the_editor():
     with pytest.raises(HTTPException) as caught:
         _ensure_signing_fields_placeable(

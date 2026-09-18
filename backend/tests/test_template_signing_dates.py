@@ -5,7 +5,11 @@ from docx import Document
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 
-from app.services.docx_templates import TemplateDocxError, fill_docx_template
+from app.services.docx_templates import (
+    SIGNING_RULE,
+    TemplateDocxError,
+    fill_docx_template,
+)
 from app.services.esign.placement import (
     generated_signing_metadata,
     is_signing_template_field,
@@ -145,9 +149,11 @@ def test_required_word_signatures_and_signing_dates_stay_blank_and_keep_signer_r
         variables=values,
         enforce_required=True,
     )
-    assert (
-        Document(BytesIO(output)).paragraphs[0].text
-        == "Signature:  Signed:  Event: 2026-10-12"
+    # No signer's value is filled in, and the blank the signer signs on is a
+    # printed rule: the anchor locator looks for it in the converted PDF, and
+    # a paper copy has a line to sign on. A date not a signer's is filled.
+    assert Document(BytesIO(output)).paragraphs[0].text == (
+        f"Signature: {SIGNING_RULE} Signed: {SIGNING_RULE} Event: 2026-10-12"
     )
     assert values == {"event_date": "2026-10-12"}
     assert generated_signing_metadata(

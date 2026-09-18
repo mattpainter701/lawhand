@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.16.08",
+      "version": "2026.09.16.08",
+      "title": "Word templates place their signature fields themselves",
+      "published_at": "2026-09-16",
+      "summary": "Word templates now place their signature fields on the generated PDF by the caption printed beside each one, so a document made from Word is ready to send like one made from a PDF template.",
+      "highlights": [
+        {
+          "title": "Word templates place their own signature fields",
+          "description": "A signing field in a Word template is placed at its caption in the generated PDF, so no one has to position it by hand."
+        },
+        {
+          "title": "The caption is read from the document, or set in Studio",
+          "description": "The text around the field in the Word document is the default; a Word signing field in Template Studio can name a different caption."
+        },
+        {
+          "title": "Signature lines print as rules",
+          "description": "A signing field in a generated Word document now prints as a ruled line for the signer instead of a blank gap."
+        }
+      ]
+    },
+    {
       "id": "2026.09.16.07",
       "version": "2026.09.16.07",
       "title": "Email LawHand to route tasks, reviews, and deadlines",

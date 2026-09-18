@@ -2602,12 +2602,14 @@ const newSignerRow = () => ({ name: '', email: '', role: 'client' })
 
 const signingFieldKind = (kind) => ({ signature: 'Signature', initials: 'Initials', date: 'Date signed' }[kind] || kind)
 
-// Where a field came from decides how much to trust it: a widget in the PDF
-// or a block staff placed is certain; a printed line the server read is a
-// good guess; a fallback block is the server admitting it found nothing.
+// Where a field came from decides how much to trust it: a widget in the PDF,
+// a block staff placed, or a Word template's declared caption is certain; a
+// printed line the server read is a good guess; a fallback block is the server
+// admitting it found nothing.
 const signingFieldOrigin = (source) => ({
   acroform: 'a field in the PDF form',
   placed: 'placed by you',
+  anchored: 'the caption the template prints beside it',
   detected: 'a signature line found on the page',
   fallback: 'no line found — a block at the foot of the last page',
 }[source] || source || 'unknown')
