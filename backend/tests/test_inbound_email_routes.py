@@ -495,6 +495,110 @@ async def test_tagged_accept_returns_durable_task_even_if_notification_fails(
 
 
 @pytest.mark.asyncio
+async def test_an_accept_body_keeps_the_date_the_subject_named(monkeypatch):
+    """A reviewer who only retitles the task does not lose "due=".
+
+    The route reads each override off the body, so a field the caller left
+    out used to read as None and quietly discard what the subject line said.
+    """
+    user, matter = user_and_matter()
+    alias = alias_row(user, matter)
+    item = inbound_row(user, matter, alias)
+    item.subject = "[TASK due=2026-10-01] Serve the answer"
+    filing = AsyncMock(
+        return_value=SimpleNamespace(
+            communication=SimpleNamespace(id=uuid.uuid4()), task=None
+        )
+    )
+
+    monkeypatch.setattr(routes, "get_current_user", AsyncMock(return_value=user))
+    monkeypatch.setattr(routes, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(routes, "_get_matter_or_404", AsyncMock(return_value=matter))
+    monkeypatch.setattr(routes, "_pending_inbound_or_404", AsyncMock(return_value=item))
+    monkeypatch.setattr(routes, "file_inbound_email", filing)
+
+    await routes.accept_matter_inbound_email(
+        matter.id,
+        item.id,
+        object(),
+        FakeDB(),
+        routes.InboundEmailAcceptRequest(title="Serve the answer today"),
+    )
+
+    kept = filing.await_args.kwargs["task_suggestion"]
+    assert kept.title == "Serve the answer today"
+    assert kept.due_date.isoformat() == "2026-10-01"
+
+    # And a date sent explicitly as null is a date the reviewer cleared.
+    filing.reset_mock()
+    await routes.accept_matter_inbound_email(
+        matter.id,
+        item.id,
+        object(),
+        FakeDB(),
+        routes.InboundEmailAcceptRequest(title="Serve the answer", due_date=None),
+    )
+
+    assert filing.await_args.kwargs["task_suggestion"].due_date is None
+
+
+@pytest.mark.asyncio
+async def test_a_title_of_spaces_is_refused_rather_than_filed(monkeypatch):
+    user, matter = user_and_matter()
+    alias = alias_row(user, matter)
+    item = inbound_row(user, matter, alias)
+    item.subject = "[TASK] Call the client"
+
+    monkeypatch.setattr(routes, "get_current_user", AsyncMock(return_value=user))
+    monkeypatch.setattr(routes, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(routes, "_get_matter_or_404", AsyncMock(return_value=matter))
+    monkeypatch.setattr(routes, "_pending_inbound_or_404", AsyncMock(return_value=item))
+    filing = AsyncMock()
+    monkeypatch.setattr(routes, "file_inbound_email", filing)
+
+    with pytest.raises(HTTPException) as error:
+        await routes.accept_matter_inbound_email(
+            matter.id,
+            item.id,
+            object(),
+            FakeDB(),
+            routes.InboundEmailAcceptRequest(title="   "),
+        )
+
+    assert error.value.status_code == 422
+    assert "title is required" in error.value.detail
+    filing.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_matter_deadline_requires_a_reviewed_date(monkeypatch):
+    user, matter = user_and_matter()
+    alias = alias_row(user, matter)
+    item = inbound_row(user, matter, alias)
+    item.subject = "[DEADLINE] File response"
+
+    monkeypatch.setattr(routes, "get_current_user", AsyncMock(return_value=user))
+    monkeypatch.setattr(routes, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(routes, "_get_matter_or_404", AsyncMock(return_value=matter))
+    monkeypatch.setattr(routes, "_pending_inbound_or_404", AsyncMock(return_value=item))
+    filing = AsyncMock()
+    monkeypatch.setattr(routes, "file_inbound_email", filing)
+
+    with pytest.raises(HTTPException) as error:
+        await routes.accept_matter_inbound_email(
+            matter.id,
+            item.id,
+            object(),
+            FakeDB(),
+            routes.InboundEmailAcceptRequest(title="File response"),
+        )
+
+    assert error.value.status_code == 422
+    assert "Confirm a due date" in error.value.detail
+    filing.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_inbound_receipt_creates_internal_review_draft(monkeypatch):
     user, matter = user_and_matter()
     alias = alias_row(user, matter)

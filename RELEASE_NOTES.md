@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.16.07 — Word templates place their signature fields themselves
+## 2026.09.16.08 — Word templates place their signature fields themselves
 
 Released September 16, 2026.
 
@@ -14,6 +14,16 @@ Word templates now place their signature fields on the generated PDF by the capt
 - **Word templates place their own signature fields.** A signing field in a Word template is placed at its caption in the generated PDF, so no one has to position it by hand.
 - **The caption is read from the document, or set in Studio.** The text around the field in the Word document is the default; a Word signing field in Template Studio can name a different caption.
 - **Signature lines print as rules.** A signing field in a generated Word document now prints as a ruled line for the signer instead of a blank gap.
+
+## 2026.09.16.07 — Email LawHand to route tasks, reviews, and deadlines
+
+Released September 16, 2026.
+
+Staff can save one LawHand Tasks contact and send firm-wide or matter-specific work with consistent TASK, REVIEW, and DEADLINE subjects. Every request remains reviewable before it becomes matter work.
+
+- **One vocabulary wherever you send.** TASK, REVIEW, and DEADLINE subjects behave consistently on the firm address and each matter address, including a required confirmed date for deadlines.
+- **Firm email work lives with Tasks.** The saved firm contact and Needs review queue now live on Tasks, where staff choose the matter, owner, title, and date before filing.
+- **Normal task follow-through.** Reviewed firm email work now uses the same assignment notice and connected-calendar projection as other LawHand tasks after the task is safely created.
 
 ## 2026.09.16.06 — Signature requests are checked before they are sent
 

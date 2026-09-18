@@ -1,5 +1,6 @@
-"""One firm address, authenticated staff submission, explicit to-do review."""
+"""One firm address, authenticated staff submission, explicit task review."""
 
+import logging
 import uuid
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -27,9 +28,11 @@ from app.services.inbound_email import (
     generate_alias_local_part,
     remove_quarantined_message,
 )
+from app.services.task_notifications import notify_task_created
 from app.services.token_vault import encrypt_token
 
 router = APIRouter(prefix="/api/firm-email-intake", tags=["firm-email-intake"])
+logger = logging.getLogger(__name__)
 
 
 async def staff_context(request, db):
@@ -244,12 +247,37 @@ async def accept(
     if not body.title.strip():
         raise HTTPException(422, "A to-do title is required")
     row.matter_id = matter.id
+    stored = (
+        (row.authentication_results or {}).get("firm_intake", {}).get("task")
+    ) or {}
+    tag = (
+        stored.get("tag")
+        if stored.get("tag") in {"task", "deadline", "review"}
+        else "task"
+    )
+    task_type = stored.get("task_type")
+    if task_type not in {
+        "general",
+        "deadline",
+        "filing",
+        "call",
+        "follow_up",
+        "review",
+    }:
+        task_type = "general"
+    if tag == "deadline":
+        task_type = "deadline"
+        if body.due_date is None:
+            raise HTTPException(422, "Confirm a due date before creating a deadline")
+    elif tag == "review":
+        task_type = "review"
     suggestion = EmailTaskSuggestion(
-        tag="task",
+        tag=tag,
         title=body.title.strip(),
-        task_type="general",
-        priority="medium",
+        task_type=task_type,
+        priority="high" if tag == "deadline" else "medium",
         due_date=body.due_date,
+        due_expression=stored.get("due_expression"),
     )
     result = await file_inbound_email(
         db,
@@ -259,7 +287,19 @@ async def accept(
         task_suggestion=suggestion,
         assigned_to_user_id=body.assigned_to_user_id,
     )
-    return {"task_id": result.task.id, "matter_id": matter.id}
+    try:
+        await set_tenant_context(db, str(user.tenant_id))
+        await notify_task_created(db, result.task, str(user.tenant_id))
+    except Exception:
+        logger.exception(
+            "Firm intake task %s was created but notification dispatch failed",
+            result.task.id,
+        )
+    return {
+        "task_id": result.task.id,
+        "matter_id": matter.id,
+        "task_type": result.task.task_type,
+    }
 
 
 @router.post("/queue/{item_id}/reject")

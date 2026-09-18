@@ -9,7 +9,7 @@ icon: checklist
 
 # Tasks, calendar & communications
 
-For a simple phone workflow, see [Email to-dos](/guide/email-intake): save one LawHand contact, forward with `[TASK]`, then confirm the matter and owner in Needs review.
+For a simple phone workflow, see [Email tasks](/guide/email-intake): save the LawHand Tasks contact, forward with `[TASK]`, `[REVIEW]`, or `[DEADLINE]`, then confirm the matter and owner in Needs review.
 
 Tasks answer **who owns the next action**. Calendar answers **when something happens**. Communications preserve **what was said**. Use all three deliberately rather than treating any one of them as a complete case history.
 
@@ -46,7 +46,7 @@ Open [Communications](/communications) for workspace message history. When integ
 
 Email that belongs to one file lives on that matter's **Correspondence** tab rather than here: open the matter from [My Matters](/matters) to capture mail from a connected mailbox, forward a message to the matter, and review what is waiting to be filed.
 
-To request a task from reviewed matter email, start the subject with `[TASK]` or `[DEADLINE]`. For example, `[TASK] Meet with Nigel in two weeks` previews a task and due date on the inbound review card. Filing the message creates the task and, when a due date is present, mirrors it to the reviewer's connected Outlook or Google calendar. Untagged text, replies, forwards, and AI-only date detection do not create work automatically. If a date is missing or ambiguous, open the created task and set the verified date in LawHand.
+To request work from reviewed matter email, start the subject with `[TASK]`, `[REVIEW]`, or `[DEADLINE]`. For example, `[TASK] Meet with Nigel in two weeks` previews a task and due date on the inbound review card. Confirm the title and date before filing. Filing the message creates the task and, when a due date is present, mirrors it to the reviewer's connected Outlook or Google calendar. Untagged text, replies, forwards, and AI-only date detection do not create work automatically. A deadline cannot be filed without a reviewer-confirmed date.
 
 Before sending any draft:
 

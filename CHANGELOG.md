@@ -1,4 +1,4 @@
-## 2026.09.16.07 — Word templates bind their signing fields by caption
+## 2026.09.16.08 — Word templates bind their signing fields by caption
 
 - `app/services/esign/anchors.py` (new): `locate_word_signing_fields` places each of a Word template's signing fields on the converted PDF at the caption printed beside it — after the caption ("Client Signature: ____"), before it ("____, MOTHER"), or on the line under it — over the printed rule when there is one. A missing caption is `anchor_not_found`; one printed more than once with no rule to tell the copies apart is `anchor_ambiguous`; both are reported for that field alone and stay recoverable by hand. Every placement is validated as a PDF template's would be.
 - `app/services/docx_templates.py`: `word_signing_anchors` reads the caption from around each signing field's span in the retained Word document (an author's `pdf_anchor: {text, placement}` on the field wins). A signing field now prints as a 24-character rule in the generated document unless its paragraph already draws one, so the PDF carries the blank the locator looks for and a printed copy has a line to sign on.
@@ -10,6 +10,15 @@
 - Dispatch blocks a partially bound document. A Word template binds one field at a time, so a field left unbound is an ordinary outcome rather than an authoring mistake the publish gate would have caught; the fields that did bind would otherwise have carried the request on their own. Staff who place the fields by hand on the generated PDF still pass.
 - `plan_request_placements` keeps the source a placement declares (`placed` or `anchored`) instead of reporting every one as `placed`, so the signing plan review names a template-bound field as such rather than as something staff checked. An anchored field with no signer role is named at generation, where the field can be fixed, instead of failing at dispatch with a message that names nothing.
 - Tests: `test_esign_anchors.py` (37) for the locator, the derivation, the printed rule and the report; the full Word lifecycle through the real endpoints in `test_document_templates.py`, and a partially bound one held at dispatch; two publish-gate cases; three Studio tests.
+
+## 2026.09.16.07 — Unified reviewed email tasks
+
+- Extend the deterministic leading subject grammar to `[TASK]`, `[REVIEW]`, and `[DEADLINE]` for both per-matter and firm-wide aliases. Preserve the selected task type and priority through firm review instead of flattening every request to a general, medium-priority to-do.
+- Move the staff firm-intake surface from Matters to Tasks, download the shared address as **LawHand Tasks**, and keep Administration as the address, sender, and time-zone control plane.
+- Require a human-confirmed date before either intake path can file a tagged deadline. Matter review now allows the reviewer to correct the title and date before filing; firm review continues to require an open matter and active human assignee.
+- Dispatch the ordinary task-assignment notice and connected Google/Outlook calendar projection after a firm-intake task is durable. Provider failure is logged and does not turn a successful filing into an unsafe retry.
+- Add a production GitHub workflow for the Cloudflare Email Worker so `m-` and `f-` alias support deploys from the exact `main` source. The workflow uses a dedicated least-privilege `CLOUDFLARE_WORKERS_API_TOKEN`, separate from DNS credentials.
+- Clarify that receipt extraction is a review action on a matter email, not a separate intake address.
 
 ## 2026.09.16.06 — Signing plans are reviewed before they are sent
 

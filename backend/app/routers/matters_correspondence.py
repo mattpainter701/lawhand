@@ -37,6 +37,7 @@ from app.schemas.matter_correspondence import (
     CorrespondenceScanRequest,
     CorrespondenceScanResponse,
     InboundEmailItem,
+    InboundEmailAcceptRequest,
     InboundEmailListResponse,
     InboundEmailReviewResponse,
     InboundTaskSuggestion,
@@ -60,7 +61,7 @@ from app.services.inbound_email import (
     verify_delivery_signature,
     write_quarantined_message,
 )
-from app.services.email_task_tags import parse_email_task_tag
+from app.services.email_task_tags import EmailTaskSuggestion, parse_email_task_tag
 from app.services.receipt_extraction import (
     ReceiptExtractionError,
     attachment_hash,
@@ -712,6 +713,7 @@ async def accept_matter_inbound_email(
     inbound_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    body: InboundEmailAcceptRequest | None = Body(default=None),
 ):
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
@@ -722,12 +724,44 @@ async def accept_matter_inbound_email(
         matter_id=matter.id,
         inbound_id=inbound_id,
     )
+    suggestion = parse_email_task_tag(item.subject, received_at=item.occurred_at)
+    if suggestion is not None and body is not None:
+        title = (body.title or suggestion.title).strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="A task title is required")
+        # A field the caller left out keeps what the subject line said; only a
+        # due date sent explicitly as null clears one, which a [DEADLINE] then
+        # refuses below. Without this an accept body that names a title alone
+        # silently dropped the date parsed from "due=".
+        due_date = (
+            body.due_date
+            if "due_date" in body.model_fields_set
+            else suggestion.due_date
+        )
+        suggestion = EmailTaskSuggestion(
+            tag=suggestion.tag,
+            title=title,
+            task_type=suggestion.task_type,
+            priority=suggestion.priority,
+            due_date=due_date,
+            due_expression=suggestion.due_expression,
+        )
+    if (
+        suggestion is not None
+        and suggestion.tag == "deadline"
+        and suggestion.due_date is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Confirm a due date before creating a deadline",
+        )
     try:
         filing = await file_inbound_email(
             db,
             item=item,
             matter=matter,
             reviewed_by_user_id=user.id,
+            task_suggestion=suggestion,
         )
     except (FileNotFoundError, PermissionError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))

@@ -148,6 +148,12 @@ test('chat citation leads to review proposal approval and matching task-board st
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path === '/api/auth/me' && request.method() === 'GET') return json(route, user)
+    // TasksPage now mounts the firm email intake panel. An unmocked 401 here
+    // would trigger the refresh interceptor and bounce this synthetic session
+    // to /login before the board can render.
+    if (path === '/api/firm-email-intake' && request.method() === 'GET') {
+      return json(route, { enabled: false, alias: null, pending_count: 0, staff: [] })
+    }
     if (path === '/api/conversations' && request.method() === 'GET') return json(route, [conversation])
     if (path === `/api/conversations/${conversationId}` && request.method() === 'GET') return json(route, { conversation, messages: [message] })
     if (path === '/api/documents' && request.method() === 'GET') return json(route, { documents: [] })

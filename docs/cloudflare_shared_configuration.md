@@ -56,7 +56,7 @@ with the generic web repository allowlist.
 
 | Resource | Canonical value | Purpose |
 | --- | --- | --- |
-| Email Routing subdomain | `intake.getlawhand.com` | Receives opaque per-matter addresses through isolated MX/SPF records. |
+| Email Routing subdomain | `intake.getlawhand.com` | Receives opaque per-matter and firm-wide addresses through isolated MX/SPF records. |
 | Email Worker | `lawhand-inbound-email` | Validates the envelope and size, signs the raw MIME bytes, and posts them to LawHand. |
 | Backend ingest path | `/api/inbound-email/cloudflare` | Accepts only timestamped HMAC-authenticated raw messages from the Worker. |
 | Delivery secret name | `INBOUND_EMAIL_WEBHOOK_SECRET` | Shared secret name in the GitHub production environment, production backend, and encrypted Worker settings. Values must never be documented or printed. |
@@ -76,6 +76,7 @@ Use these names only when the repository and workflow require the capability:
 | --- | --- |
 | `CLOUDFLARE_READ_API_TOKEN` | Read-only inventory, analytics, and health checks. |
 | `CLOUDFLARE_DNS_API_TOKEN` | DNS mutation with a token restricted to the required zone and permissions. |
+| `CLOUDFLARE_WORKERS_API_TOKEN` | LawHand production environment only; deploys `lawhand-inbound-email` through the dedicated Worker workflow. Grant only Workers Scripts edit/read for the LawHand account. Do not reuse the DNS token. |
 | `CLOUDFLARE_R2_ACCESS_KEY_ID` | R2 access for an approved storage consumer. |
 | `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 access for the same approved storage consumer. |
 | `LAWHAND_QA_ACCESS_CLIENT_ID` | `skynet-development` environment only; Cloudflare Access service-token client ID used by the QA health and acceptance workflows. |
