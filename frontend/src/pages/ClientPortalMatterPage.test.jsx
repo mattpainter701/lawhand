@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientPortalMatterPage, { MessagesTab, messageDraftKey } from './ClientPortalMatterPage'
 import {
@@ -122,13 +123,26 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
+// The page reads ?tab= so a notification can link straight to the screen it
+// is about, which means it needs the router it lives under in the app.
+function LocationProbe() {
+  return <span data-testid="portal-location">{useLocation().search}</span>
+}
+
+const renderPortal = (path = '/portal/client/matter') => render(
+  <MemoryRouter initialEntries={[path]}>
+    <ClientPortalMatterPage />
+    <LocationProbe />
+  </MemoryRouter>,
+)
+
 describe('ClientPortalMatterPage', () => {
   it('shows legal team contact details without internal assignment roles', async () => {
     getClientPortalMatter.mockResolvedValue({
       ...matterView,
       attorneys: [{ name: 'Dana Reyes', role: 'lead_attorney', email: 'dana@firm.example' }],
     })
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     const name = await screen.findByText('Dana Reyes')
     expect(name).toHaveTextContent(/^Dana Reyes$/)
@@ -160,7 +174,7 @@ describe('ClientPortalMatterPage', () => {
       proposals: [{ id: 'p1', title: 'Opening proposal', is_own: false, review_state: 'approved', release_state: 'released_to_you', released_at: '2026-08-20T00:00:00Z' }],
     })
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     const mediationTab = await screen.findByRole('tab', { name: 'Mediation' })
     await user.click(mediationTab)
@@ -171,9 +185,37 @@ describe('ClientPortalMatterPage', () => {
     expect(screen.getAllByText(/Released to you/)).toHaveLength(2)
   })
 
+  it('opens on the tab a notification linked to', async () => {
+    // A signature reminder links to ?tab=signatures; landing the client on the
+    // overview instead makes them hunt for the thing they were told to do.
+    renderPortal('/portal/client/matter?tab=signatures')
+
+    const signatures = await screen.findByRole('tab', { name: /^Signatures/ })
+    await waitFor(() => expect(signatures).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.getByRole('tab', { name: /^Overview/ })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('ignores a tab the portal does not have', async () => {
+    renderPortal('/portal/client/matter?tab=not-a-tab')
+
+    expect(await screen.findByText('Unread messages')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Overview/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('records the open tab in the url so the link stays shareable', async () => {
+    const user = userEvent.setup()
+    renderPortal()
+
+    await user.click(await screen.findByRole('tab', { name: /^Documents/ }))
+    await waitFor(() => expect(screen.getByTestId('portal-location').textContent).toBe('?tab=documents'))
+
+    await user.click(screen.getByRole('tab', { name: /^Overview/ }))
+    await waitFor(() => expect(screen.getByTestId('portal-location').textContent).toBe(''))
+  })
+
   it('keeps the base portal available when the mediation add-on is unavailable', async () => {
     getClientPortalMediation.mockRejectedValue({ response: { status: 404 } })
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     expect(await screen.findByText('Unread messages')).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Mediation' })).not.toBeInTheDocument()
@@ -184,7 +226,7 @@ describe('ClientPortalMatterPage', () => {
     // The restricted initial link is denied everything but its own paperwork.
     // Reading that denial as a sign-out stranded the client before signing.
     getClientPortalMediation.mockRejectedValue(Object.assign(new Error('denied'), { response: { status: 403 } }))
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     expect(await screen.findByText('Unread messages')).toBeInTheDocument()
     expect(screen.queryByText('Your secure session ended')).not.toBeInTheDocument()
@@ -192,13 +234,13 @@ describe('ClientPortalMatterPage', () => {
 
   it('does not hide an expired session as an unavailable mediation add-on', async () => {
     getClientPortalMediation.mockRejectedValue(sessionExpired())
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     expect(await screen.findByText('Your secure session ended')).toBeInTheDocument()
   })
 
   it('lands on a summary of what is waiting on the client', async () => {
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     expect(await screen.findByText('Rivera v. Northline Freight')).toBeInTheDocument()
     expect(screen.getByText('Unread messages')).toBeInTheDocument()
@@ -213,7 +255,7 @@ describe('ClientPortalMatterPage', () => {
   })
 
   it('badges the tabs that need attention', async () => {
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     const messagesTab = await screen.findByRole('tab', { name: /Messages/ })
     expect(within(messagesTab).getByText('2')).toBeInTheDocument()
@@ -244,7 +286,7 @@ describe('ClientPortalMatterPage', () => {
       has_more: false,
     })
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('tab', { name: /Messages/ }))
     expect(await screen.findByText('We filed the motion.')).toBeInTheDocument()
@@ -254,7 +296,7 @@ describe('ClientPortalMatterPage', () => {
   it('sends a trimmed message and refreshes the thread', async () => {
     sendClientPortalMessage.mockResolvedValue({ id: 'm2', direction: 'inbound' })
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('tab', { name: /Messages/ }))
     const box = await screen.findByLabelText('Message to your legal team')
@@ -268,7 +310,7 @@ describe('ClientPortalMatterPage', () => {
 
   it('does not send an empty message', async () => {
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('tab', { name: /Messages/ }))
     const send = await screen.findByRole('button', { name: /Send/ })
@@ -302,7 +344,7 @@ describe('ClientPortalMatterPage', () => {
       overdue_balance: '600.00',
     })
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('tab', { name: /Invoices/ }))
     expect(await screen.findByText('INV-001')).toBeInTheDocument()
@@ -321,7 +363,7 @@ describe('ClientPortalMatterPage', () => {
 
   it('shows manual payment instructions when online collection is unavailable', async () => {
     listClientPortalInvoices.mockResolvedValue({ invoices: [{ id: 'manual', invoice_number: 'INV-MANUAL', status: 'sent', issue_date: '2026-09-01', due_date: '2026-09-30', total: '100.00', amount_paid: '0', balance_due: '100.00', online_payment_available: false }], outstanding_balance: '100.00' })
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('tab', { name: /Invoices/ }))
     expect(await screen.findByText('Contact your firm for payment instructions.')).toBeInTheDocument()
@@ -335,7 +377,7 @@ describe('ClientPortalMatterPage', () => {
       { id: 'd2', filename: 'receipt.jpg', file_size: 1024, uploaded_by_client: true, created_at: '2026-08-02T00:00:00Z', description: 'Tow receipt' },
     ])
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('tab', { name: /Documents/ }))
     expect(await screen.findByText('Shared by your legal team')).toBeInTheDocument()
@@ -346,7 +388,7 @@ describe('ClientPortalMatterPage', () => {
   it('does not report an empty folder when loading documents failed, and can retry', async () => {
     listClientPortalDocuments.mockRejectedValueOnce(new Error('Hourly request limit exceeded'))
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     await user.click(await screen.findByRole('tab', { name: /Documents/ }))
     expect(await screen.findByText(/Unable to load documents/)).toBeInTheDocument()
     expect(screen.queryByText(/No shared documents yet/)).not.toBeInTheDocument()
@@ -358,7 +400,7 @@ describe('ClientPortalMatterPage', () => {
 
   it('explains what to do when the session has expired', async () => {
     getClientPortalMatter.mockRejectedValue(sessionExpired())
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     expect(await screen.findByText('Your secure session ended')).toBeInTheDocument()
     expect(screen.getByText(/invitation email/)).toBeInTheDocument()
@@ -367,7 +409,7 @@ describe('ClientPortalMatterPage', () => {
   it('escalates a tab-level expiry to the whole page', async () => {
     listClientPortalInvoices.mockRejectedValue(sessionExpired())
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('tab', { name: /Invoices/ }))
     expect(await screen.findByText('Your secure session ended')).toBeInTheDocument()
@@ -375,7 +417,7 @@ describe('ClientPortalMatterPage', () => {
 
   it('signs the client out and ends the session', async () => {
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Sign out/ }))
     await waitFor(() => expect(logoutClientPortal).toHaveBeenCalledTimes(1))
@@ -384,7 +426,7 @@ describe('ClientPortalMatterPage', () => {
 
   it('tells the client how to get back in without mentioning a password', async () => {
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Sign out/ }))
     const { message } = confirmAction.mock.calls[0][0]
@@ -398,7 +440,7 @@ describe('ClientPortalMatterPage', () => {
   it('keeps the client signed in when they cancel the sign-out prompt', async () => {
     confirmAction.mockResolvedValue(false)
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Sign out/ }))
     expect(logoutClientPortal).not.toHaveBeenCalled()
@@ -410,7 +452,7 @@ describe('ClientPortalMatterPage', () => {
     localStorage.setItem(messageDraftKey('matter-2'), 'Draft for another matter')
     localStorage.setItem('unrelated-preference', 'keep')
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Sign out/ }))
     expect(await screen.findByText("You've signed out")).toBeInTheDocument()
@@ -438,7 +480,7 @@ describe('ClientPortalMatterPage', () => {
     ])
     switchClientPortalMatter.mockResolvedValue({ matter_id: 'matter-2', matter_name: 'Alpha v. Beta' })
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     const switcher = await screen.findByRole('combobox', { name: /Switch matter/ })
     getClientPortalMatter.mockResolvedValue({ ...matterView, matter_id: 'matter-2', matter_name: 'Alpha v. Beta' })
@@ -450,7 +492,7 @@ describe('ClientPortalMatterPage', () => {
   it('still signs the client out when the logout call fails', async () => {
     logoutClientPortal.mockRejectedValue(new Error('network down'))
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Sign out/ }))
     expect(await screen.findByText("You've signed out")).toBeInTheDocument()
@@ -459,7 +501,7 @@ describe('ClientPortalMatterPage', () => {
   it('offers a retry when the matter fails to load for a non-auth reason', async () => {
     getClientPortalMatter.mockRejectedValueOnce(new Error('boom'))
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Try again' }))
@@ -473,7 +515,7 @@ describe('ClientPortalMatterPage', () => {
     ])
     switchClientPortalMatter.mockResolvedValue({ matter_id: 'matter-2', matter_name: 'Alpha v. Beta' })
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     const switcher = await screen.findByRole('combobox', { name: /Switch matter/ })
     await user.selectOptions(switcher, 'matter-2')
@@ -484,7 +526,7 @@ describe('ClientPortalMatterPage', () => {
     listClientPortalMatters.mockResolvedValue([
       { matter_id: 'matter-1', matter_name: 'Rivera v. Northline Freight', matter_number: 'RIV0001' },
     ])
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     expect(await screen.findByText('Unread messages')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: /Switch matter/ })).not.toBeInTheDocument()
   })
@@ -496,7 +538,7 @@ describe('SignaturesTab', () => {
     listClientPortalSignatures
       .mockResolvedValueOnce([signatureRequest()])
       .mockResolvedValueOnce([signatureRequest({ status: 'completed' })])
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     await user.click(await screen.findByRole('tab', { name: /Signatures/ }))
     expect(await screen.findByText('Signing form for Fee agreement')).toBeInTheDocument()
     expect(screen.getByText('Action required')).toBeInTheDocument()
@@ -512,7 +554,7 @@ describe('SignaturesTab', () => {
     listClientPortalSignatures
       .mockResolvedValueOnce([signatureRequest()])
       .mockResolvedValueOnce([signatureRequest({ status: 'partially_signed', completion_pending: true })])
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     await user.click(await screen.findByRole('tab', { name: /Signatures/ }))
     await user.click(await screen.findByRole('button', { name: 'Stub sign pending' }))
     expect(await screen.findByRole('status')).toHaveTextContent('Your signature is recorded. Your signed copy is being filed and your legal team will be notified.')
@@ -526,7 +568,7 @@ describe('SignaturesTab', () => {
     listClientPortalSignatures
       .mockResolvedValueOnce([signatureRequest()])
       .mockResolvedValueOnce([signatureRequest({ status: 'partially_signed', submitted_document_id: 'doc-9' })])
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     await user.click(await screen.findByRole('tab', { name: /Signatures/ }))
     await user.click(await screen.findByRole('button', { name: 'Stub upload' }))
     expect(await screen.findByRole('status')).toHaveTextContent(/Signed copy received/)
@@ -539,7 +581,7 @@ describe('SignaturesTab', () => {
       .mockResolvedValueOnce([signatureRequest()])
       .mockResolvedValueOnce([signatureRequest({ status: 'declined', decline_reason: 'Wrong fee schedule' })])
     declineClientPortalSignature.mockResolvedValue({})
-    render(<ClientPortalMatterPage />)
+    renderPortal()
     await user.click(await screen.findByRole('tab', { name: /Signatures/ }))
     await user.click(await screen.findByText('Not signing?'))
     await user.type(screen.getByLabelText('Tell your legal team why (optional)'), 'Wrong fee schedule')
@@ -571,7 +613,7 @@ describe('shared-document counts and labels (#489)', () => {
 
   it('counts what the client can open and says what makes up the total', async () => {
     getClientPortalMatter.mockResolvedValue(accessView)
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     const tile = (await screen.findByText('Documents available to you')).closest('button')
     expect(within(tile).getByText('4')).toBeInTheDocument()
@@ -584,7 +626,7 @@ describe('shared-document counts and labels (#489)', () => {
     getClientPortalMatter.mockResolvedValue(accessView)
     listClientPortalDocuments.mockResolvedValue(portalDocuments)
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Documents/ }))
 
@@ -607,7 +649,7 @@ describe('shared-document counts and labels (#489)', () => {
       { id: 'd-old-mine', filename: 'Legacy upload.pdf', uploaded_by_client: true, created_at: '2026-09-01T00:00:00Z' },
     ])
     const user = userEvent.setup()
-    render(<ClientPortalMatterPage />)
+    renderPortal()
 
     await user.click(await screen.findByRole('button', { name: /Documents/ }))
 

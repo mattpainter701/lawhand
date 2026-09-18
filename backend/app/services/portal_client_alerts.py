@@ -8,17 +8,18 @@ The nudge deliberately carries no content -- matter name and a link, never the
 message body or the document itself. The portal is where privileged material
 belongs; an email that reproduced it would quietly create a second, less
 protected copy in whatever mailbox the client happens to use.
+
+The message itself is built by ``client_notifications``, which is what makes
+it recognizable: the firm's name at the top, the matter it concerns, and one
+button into the right tab of the portal.
 """
 
 import logging
-from html import escape
 
 from sqlalchemy import select
 
-from app.config import get_settings
 from app.models.contact import Contact
-from app.services.connected_mail import send_client_email
-from app.services.email import email_service
+from app.services.client_notifications import client_portal_url, send_client_alert
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,16 @@ async def client_email_for_matter(db, tenant_id, matter):
 
 
 async def notify_client_portal_update(
-    db, *, tenant_id, actor_user_id, matter, subject, headline
+    db,
+    *,
+    tenant_id,
+    actor_user_id,
+    matter,
+    subject,
+    headline,
+    details=None,
+    portal_tab=None,
+    action_label="Open your client portal",
 ):
     """Best-effort heads-up that there is something new in the portal.
 
@@ -47,20 +57,18 @@ async def notify_client_portal_update(
     email = await client_email_for_matter(db, tenant_id, matter)
     if not email:
         return False
-    url = f"{get_settings().FRONTEND_URL.rstrip('/')}/portal/client/matter"
     try:
-        await send_client_email(
+        await send_client_alert(
             db,
             tenant_id=tenant_id,
             actor_user_id=actor_user_id,
             to=[email],
             subject=subject,
-            html_body=(
-                f"<p>{escape(headline)}</p>"
-                f'<p><a href="{escape(url, quote=True)}">Open your client portal</a></p>'
-            ),
-            text_body=f"{headline}\n\nOpen your client portal: {url}\n",
-            smtp_service=email_service,
+            headline=headline,
+            matter_name=matter.matter_name,
+            details=details,
+            action_label=action_label,
+            action_url=client_portal_url(tab=portal_tab),
         )
         return True
     except Exception:
