@@ -47,6 +47,7 @@ from app.services.integration_observability import (
     capture_integration_error,
     record_integration_sync_run,
 )
+from app.services.task_notifications import send_task_due_reminder
 
 
 settings = get_settings()
@@ -1540,16 +1541,9 @@ class LegalScheduler:
                         skipped_no_assignee += 1
                         continue
 
-                    due_str = task.due_date.isoformat() if task.due_date else "Unknown"
-
                     try:
-                        sent = await email_service.send_task_reminder(
-                            to_email=assignee.email,
-                            task_title=task.title,
-                            due_date=due_str,
-                            assignee_name=assignee.full_name
-                            if hasattr(assignee, "full_name")
-                            else None,
+                        sent = await send_task_due_reminder(
+                            session, task, assignee=assignee, today=today
                         )
                         if sent:
                             emails_sent += 1
@@ -1659,6 +1653,23 @@ class LegalScheduler:
                             )
                         recipients = admin_cache[dl.tenant_id]
 
+                    days_left = (dl.due_date - today).days
+                    if days_left < 0:
+                        overdue = abs(days_left)
+                        urgency = (
+                            f"Overdue by {overdue} day{'' if overdue == 1 else 's'}"
+                        )
+                    elif days_left == 0:
+                        urgency = "Due today"
+                    elif days_left == 1:
+                        urgency = "Due tomorrow"
+                    else:
+                        urgency = f"Due in {days_left} days"
+                    estate_url = (
+                        f"{settings.FRONTEND_URL.rstrip('/')}"
+                        f"/plugins/trust-estate/estates/{dl.estate_id}"
+                    )
+
                     sent_any = False
                     for recipient in recipients:
                         if not getattr(recipient, "email", None):
@@ -1666,9 +1677,20 @@ class LegalScheduler:
                         try:
                             sent = await email_service.send_task_reminder(
                                 to_email=recipient.email,
-                                task_title=f"{estate_label}: {dl.title} ({dl.deadline_type})",
+                                task_title=dl.title,
                                 due_date=due_str,
+                                record_label="Deadline",
+                                due_label=urgency,
+                                matter_name=estate_label,
                                 assignee_name=getattr(recipient, "full_name", None),
+                                status=(dl.status or "").replace("_", " ").capitalize()
+                                or None,
+                                task_type=(dl.deadline_type or "")
+                                .replace("_", " ")
+                                .capitalize()
+                                or None,
+                                description=dl.notes,
+                                task_url=estate_url,
                             )
                             if sent:
                                 emails_sent += 1

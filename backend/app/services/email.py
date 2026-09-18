@@ -186,6 +186,119 @@ def render_branded_email(content_html: str, *, timestamp: str | None = None) -> 
     return _BASE_HTML.format(content=content_html, timestamp=stamp)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Notification building blocks
+#
+# Every LawHand alert answers the same four questions: what is this about, who
+# is it for, by when, and where do I go to deal with it. These helpers are the
+# shared vocabulary for that, so a reminder and an assignment alert cannot
+# drift into looking like messages from two different products -- and so that
+# escaping is done in one place rather than re-derived per template.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SAFE_LINK_SCHEMES = ("https://", "http://")
+
+
+def safe_link(url: Optional[str]) -> Optional[str]:
+    """Return ``url`` when it is an http(s) link, otherwise ``None``.
+
+    Notification links are assembled from configuration and record ids, never
+    from user input -- but email is the one surface where a stray
+    ``javascript:`` or ``data:`` value would be rendered as a clickable control
+    to someone who has no way to inspect it first. One check here is cheaper
+    than trusting every call site forever.
+    """
+    candidate = (url or "").strip()
+    if not candidate.lower().startswith(_SAFE_LINK_SCHEMES):
+        return None
+    return candidate
+
+
+def detail_row(label: str, value: Optional[object], *, strong: bool = False) -> str:
+    """One escaped label/value row of a notification detail table.
+
+    An empty value yields an empty string so callers can list every field they
+    might have and let the absent ones fall out, rather than branching per row.
+    """
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    safe_value = escape(text).replace("\n", "<br>")
+    if strong:
+        safe_value = f"<strong>{safe_value}</strong>"
+    return f"<tr><td><strong>{escape(label)}</strong></td><td>{safe_value}</td></tr>"
+
+
+def link_row(label: str, url: Optional[str]) -> str:
+    """A detail row whose value is a clickable link, shown in full.
+
+    The URL is printed as its own text rather than hidden behind wording: a
+    recipient deciding whether to click a link to privileged material should be
+    able to see where it goes, and plain-text clients get the same thing.
+    """
+    href = safe_link(url)
+    if not href:
+        return ""
+    safe_href = escape(href, quote=True)
+    return (
+        f"<tr><td><strong>{escape(label)}</strong></td>"
+        f'<td><a href="{safe_href}" style="color:#0f2d5e;">{escape(href)}</a></td></tr>'
+    )
+
+
+def detail_table(rows: List[str]) -> str:
+    """Wrap non-empty ``detail_row`` output in the shared two-column table."""
+    body = "".join(row for row in rows if row)
+    if not body:
+        return ""
+    return (
+        "<table>"
+        "<thead><tr><th>Field</th><th>Details</th></tr></thead>"
+        f"<tbody>{body}</tbody>"
+        "</table>"
+    )
+
+
+def cta_button(url: Optional[str], label: str) -> str:
+    """The single primary action of a notification, as a button.
+
+    Styles are inline: the ``<style>`` block in the shared shell is stripped by
+    several mail clients, and the one control the message exists to offer must
+    not be the thing that loses its formatting.
+    """
+    href = safe_link(url)
+    if not href:
+        return ""
+    return (
+        '<p style="margin:24px 0 8px;">'
+        f'<a href="{escape(href, quote=True)}" '
+        'style="background:#0f2d5e;color:#ffffff;text-decoration:none;'
+        "padding:12px 24px;border-radius:6px;font-weight:bold;"
+        'display:inline-block;">'
+        f"{escape(label)}</a></p>"
+    )
+
+
+def text_lines(*lines: Optional[str]) -> str:
+    """Join the lines of a plain-text alternative.
+
+    ``None`` means "this field is not set, leave it out"; an empty string is a
+    deliberate blank line. Conflating the two -- which dropping everything
+    falsy does -- collapses the whole message into one unreadable block.
+    """
+    return "\n".join(line for line in lines if line is not None)
+
+
+def labeled_line(label: str, value: Optional[object]) -> Optional[str]:
+    """``Label: value`` for the plain-text body, or ``None`` when unset."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return f"{label}: {text}" if text else None
+
+
 def _urgency_class(days_until: int) -> str:
     if days_until <= 13:
         return "critical"
@@ -644,57 +757,126 @@ class EmailService:
         due_date: str,
         matter_name: Optional[str] = None,
         assignee_name: Optional[str] = None,
+        *,
+        record_label: str = "Task",
+        due_label: Optional[str] = None,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        task_type: Optional[str] = None,
+        description: Optional[str] = None,
+        client_name: Optional[str] = None,
+        attorney_name: Optional[str] = None,
+        created_at: Optional[str] = None,
+        created_by_name: Optional[str] = None,
+        source: Optional[str] = None,
+        task_url: Optional[str] = None,
+        details_withheld: bool = False,
     ) -> EmailDeliveryResult:
-        """Send a task due date reminder email."""
-        subject = f"Reminder: '{task_title}' is due {due_date}"
+        """Send a due-date reminder that identifies what it is reminding about.
 
-        matter_row = (
-            f"<tr><td><strong>Matter</strong></td><td>{matter_name}</td></tr>"
-            if matter_name
-            else ""
-        )
-        assignee_row = (
-            f"<tr><td><strong>Assigned To</strong></td><td>{assignee_name}</td></tr>"
-            if assignee_name
-            else ""
-        )
+        A reminder carrying only a title and a date is unreadable in an inbox:
+        the recipient cannot tell which client it concerns, who put it there,
+        or where to go. So this carries the same identifying context as the
+        assignment alert -- client, matter, responsible attorney, who created
+        it and when -- plus a link straight to the record.
 
+        ``details_withheld`` drops the client, matter, attorney and description
+        for a task whose body is client SMS content, which deliberately never
+        leaves LawHand. The recipient still gets the deadline and the link.
+        """
         now_str = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M UTC")
+        urgency = (due_label or f"Due {due_date}").strip()
+        link = safe_link(task_url)
+
+        # The subject is the whole notification for anyone triaging on a phone:
+        # urgency, what it is, and which client it belongs to.
+        subject_context = " · ".join(
+            part for part in (client_name, matter_name) if part
+        )
+        subject = f"{urgency}: {task_title}"
+        if subject_context:
+            subject = f"{subject} — {subject_context}"
+
+        # Same three facts under the header, so the message identifies itself
+        # before the recipient reads a single table row.
+        summary = " · ".join(
+            part
+            for part in (
+                urgency,
+                client_name,
+                matter_name,
+                f"for {assignee_name}" if assignee_name else None,
+            )
+            if part
+        )
+
+        table = detail_table(
+            [
+                detail_row(record_label, task_title, strong=True),
+                detail_row("Due", due_date, strong=True),
+                detail_row("Status", status),
+                detail_row("Priority", priority),
+                detail_row("Type", task_type),
+                detail_row("Client", client_name),
+                detail_row("Matter", matter_name),
+                detail_row("Attorney assigned", attorney_name),
+                detail_row("Assigned to", assignee_name),
+                detail_row("Created by", created_by_name),
+                detail_row("Created", created_at),
+                detail_row("Source", source),
+                detail_row("Reminder sent", now_str),
+                detail_row("Description", description),
+                link_row(f"{record_label} link", link),
+            ]
+        )
+
+        withheld_note = (
+            '<p style="font-size:13px;color:#555;">Client message content and '
+            "matter details are kept in LawHand for this item and are not "
+            "copied into email.</p>"
+            if details_withheld
+            else ""
+        )
         content = f"""
         <div class="header">
-          <h1>LawHand &mdash; Task Reminder</h1>
-          <p>This task is due soon &bull; {now_str}</p>
+          <h1>LawHand &mdash; {escape(record_label)} Reminder</h1>
+          <p>{escape(summary) if summary else escape(urgency)}</p>
         </div>
         <div class="body">
-          <p>The following task requires your attention:</p>
-          <table>
-            <thead><tr><th>Field</th><th>Details</th></tr></thead>
-            <tbody>
-              <tr><td><strong>Task</strong></td><td>{task_title}</td></tr>
-              <tr><td><strong>Due Date</strong></td><td><strong>{due_date}</strong></td></tr>
-              {matter_row}
-              {assignee_row}
-            </tbody>
-          </table>
-          <p style="margin-top:20px; font-size:13px; color:#555;">
-            Please log in to review and complete this task.
-          </p>
+          <p><strong>{escape(urgency)}.</strong> This reminder is for the
+             {escape(record_label.lower())} below.</p>
+          {table}
+          {cta_button(link, f"Open this {record_label.lower()} in LawHand")}
+          {withheld_note}
         </div>
         """
         html_body = _BASE_HTML.format(content=content, timestamp=now_str)
 
-        text_lines = [
-            "Task Reminder",
+        text_body = text_lines(
+            f"{record_label} reminder — {urgency}",
             "",
-            f"Task: {task_title}",
-            f"Due:  {due_date}",
-        ]
-        if matter_name:
-            text_lines.append(f"Matter: {matter_name}")
-        if assignee_name:
-            text_lines.append(f"Assigned to: {assignee_name}")
-        text_lines.append("\nPlease log in to review this task.")
-        text_body = "\n".join(text_lines)
+            labeled_line(record_label, task_title),
+            labeled_line("Due", due_date),
+            labeled_line("Status", status),
+            labeled_line("Priority", priority),
+            labeled_line("Type", task_type),
+            labeled_line("Client", client_name),
+            labeled_line("Matter", matter_name),
+            labeled_line("Attorney assigned", attorney_name),
+            labeled_line("Assigned to", assignee_name),
+            labeled_line("Created by", created_by_name),
+            labeled_line("Created", created_at),
+            labeled_line("Source", source),
+            labeled_line("Reminder sent", now_str),
+            "",
+            f"Description:\n{description}" if description else None,
+            "",
+            labeled_line("Open in LawHand", link),
+            "Client message content and matter details stay in LawHand for "
+            "this item and are not copied into email."
+            if details_withheld
+            else None,
+        )
 
         return await self.send_email([to_email], subject, html_body, text_body)
 
@@ -714,79 +896,83 @@ class EmailService:
         source: Optional[str] = None,
         assigner_note: Optional[str] = None,
         task_url: Optional[str] = None,
+        *,
+        attorney_name: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> EmailDeliveryResult:
         """Send an immediate alert when a task is assigned."""
         subject = f"New task assigned: {task_title}"
+        subject_context = " · ".join(
+            part for part in (customer_name, matter_name) if part
+        )
+        if subject_context:
+            subject = f"{subject} — {subject_context}"
         now_str = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M UTC")
+        link = safe_link(task_url)
+        summary = " · ".join(
+            part
+            for part in (
+                f"Due {due_date}" if due_date else None,
+                customer_name,
+                matter_name,
+            )
+            if part
+        )
 
-        def row(label: str, value: Optional[str], *, strong: bool = False) -> str:
-            if not value:
-                return ""
-            safe_value = escape(value).replace("\n", "<br>")
-            if strong:
-                safe_value = f"<strong>{safe_value}</strong>"
-            return f"<tr><td><strong>{escape(label)}</strong></td><td>{safe_value}</td></tr>"
-
+        table = detail_table(
+            [
+                detail_row("Task", task_title, strong=True),
+                detail_row("Priority", priority, strong=True),
+                detail_row("Due", due_date, strong=True),
+                detail_row("Status", status),
+                detail_row("Type", task_type),
+                detail_row("Client", customer_name),
+                detail_row("Matter", matter_name),
+                detail_row("Attorney assigned", attorney_name),
+                detail_row("Assigned To", assignee_name),
+                detail_row("Created By", created_by_name),
+                detail_row("Created At", created_at),
+                detail_row("Alert Sent", now_str),
+                detail_row("Source", source),
+                detail_row("Message from assigner", assigner_note, strong=True),
+                detail_row("Reason / Description", description),
+                link_row("Task link", link),
+            ]
+        )
         content = f"""
         <div class="header">
           <h1>LawHand &mdash; Task Assigned</h1>
-          <p>A task has been assigned to you &bull; {now_str}</p>
+          <p>{escape(summary) if summary else "A task has been assigned to you"}</p>
         </div>
         <div class="body">
-          <p>The following task requires your attention:</p>
-          <table>
-            <thead><tr><th>Field</th><th>Details</th></tr></thead>
-            <tbody>
-              {row("Task", task_title)}
-              {row("Priority", priority, strong=True)}
-              {row("Type", task_type)}
-              {row("Assigned To", assignee_name)}
-              {row("Created By", created_by_name)}
-              {row("Created At", created_at)}
-              {row("Alert Sent", now_str)}
-              {row("Due", due_date)}
-              {row("Customer", customer_name)}
-              {row("Matter", matter_name)}
-              {row("Source", source)}
-              {row("Task link", task_url)}
-              {row("Message from assigner", assigner_note, strong=True)}
-              {row("Reason / Description", description)}
-            </tbody>
-          </table>
-          <p style="margin-top:20px; font-size:13px; color:#555;">
-            Open LawHand to review and complete this task.
-          </p>
+          <p>The following task has been assigned to you and requires your
+             attention:</p>
+          {table}
+          {cta_button(link, "Open this task in LawHand")}
         </div>
         """
         html_body = _BASE_HTML.format(content=content, timestamp=now_str)
-        text_lines = [
+        text_body = text_lines(
             "New task assigned",
             "",
-            f"Task: {task_title}",
-            f"Priority: {priority}",
-            f"Type: {task_type}",
-            f"Due: {due_date}",
-            f"Alert sent: {now_str}",
-        ]
-        if assignee_name:
-            text_lines.append(f"Assigned to: {assignee_name}")
-        if created_by_name:
-            text_lines.append(f"Created by: {created_by_name}")
-        if created_at:
-            text_lines.append(f"Created at: {created_at}")
-        if customer_name:
-            text_lines.append(f"Customer: {customer_name}")
-        if matter_name:
-            text_lines.append(f"Matter: {matter_name}")
-        if source:
-            text_lines.append(f"Source: {source}")
-        if task_url:
-            text_lines.append(f"Task link: {task_url}")
-        if assigner_note:
-            text_lines.extend(["", "Message from assigner:", assigner_note])
-        if description:
-            text_lines.extend(["", "Reason / Description:", description])
-        text_body = "\n".join(text_lines)
+            labeled_line("Task", task_title),
+            labeled_line("Priority", priority),
+            labeled_line("Type", task_type),
+            labeled_line("Due", due_date),
+            labeled_line("Status", status),
+            labeled_line("Alert sent", now_str),
+            labeled_line("Assigned to", assignee_name),
+            labeled_line("Created by", created_by_name),
+            labeled_line("Created at", created_at),
+            labeled_line("Client", customer_name),
+            labeled_line("Matter", matter_name),
+            labeled_line("Attorney assigned", attorney_name),
+            labeled_line("Source", source),
+            labeled_line("Task link", link),
+            "",
+            f"Message from assigner:\n{assigner_note}" if assigner_note else None,
+            f"Reason / Description:\n{description}" if description else None,
+        )
         return await self.send_email([to_email], subject, html_body, text_body)
 
     async def send_slack_webhook(

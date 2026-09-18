@@ -41,7 +41,7 @@ from app.services.cloud_docx_snapshot import (
     inspect_cloud_docx_snapshot,
 )
 from app.services.document_accountability import append_document_integrity_event
-from app.services.email import email_delivery_http_error, email_service
+from app.services.email import email_delivery_http_error
 from app.services.generated_artifacts import (
     GeneratedArtifactError,
     create_generated_artifact_revision,
@@ -55,6 +55,7 @@ from app.services.task_notifications import (
     notify_task_created,
     notify_task_updated,
     remove_task_from_calendars,
+    send_task_due_reminder,
     task_calendar_user_id,
 )
 from app.services.task_automation import (
@@ -2620,13 +2621,7 @@ async def send_task_reminder(
             status_code=422, detail="Assigned user has no email address"
         )
 
-    due_str = task.due_date.isoformat() if task.due_date else "No due date"
-    sent = await email_service.send_task_reminder(
-        to_email=assignee.email,
-        task_title=task.title,
-        due_date=due_str,
-        assignee_name=getattr(assignee, "full_name", None),
-    )
+    sent = await send_task_due_reminder(db, task, assignee=assignee)
 
     if not sent:
         status_code, detail = email_delivery_http_error(

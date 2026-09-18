@@ -1,8 +1,10 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 
+from app.models.plugin import Matter
 from app.models.signature import SignatureRequest, SignatureSigner
 from app.services.connected_mail import ConnectedMailDelivery
 from app.services.email import EmailDeliveryResult
@@ -24,6 +26,8 @@ def _connected_mail(result, provider="google", detail=""):
 
 def _request(*, ordered=True):
     request = SignatureRequest(
+        tenant_id=uuid.uuid4(),
+        matter_id=uuid.uuid4(),
         status="sent",
         provider="internal",
         enforce_signing_order=ordered,
@@ -57,11 +61,31 @@ async def test_invitation_notifies_only_actionable_signer_and_records_delivery(
     request = _request()
     request.created_by_user_id = "user-1"
 
-    results = await notifications.notify_actionable_signers(None, request)
+    db = _Db(
+        branding=SimpleNamespace(
+            firm_name="Painter Law", firm_phone="701-555-0100", firm_email=None
+        ),
+        matter=SimpleNamespace(matter_name="Doe Estate Administration"),
+    )
+
+    results = await notifications.notify_actionable_signers(db, request)
 
     assert results == [EmailDeliveryResult.SENT]
     assert delivered[0][0] == ["first@example.com"]
-    assert "Engagement Letter.pdf" in delivered[0][1]
+    # The subject alone has to say who is asking, for what, on which matter.
+    assert delivered[0][1] == (
+        "Painter Law: Signature requested — Engagement Letter.pdf"
+    )
+    html, text = delivered[0][2], delivered[0][3]
+    assert "Painter Law" in html
+    assert "Doe Estate Administration" in html
+    assert "First Client" in html
+    assert "Engagement Letter.pdf" in html
+    # The link must reach a route that exists, on the signing tab.
+    assert "/portal/client/matter?tab=signatures" in html
+    assert "/portal/client/matter?tab=signatures" in text
+    assert "/client-portal" not in text
+    assert "701-555-0100" in text
     # Sent as the requesting user, so it leaves their own mailbox.
     assert delivered[0][4] == "user-1"
     assert request.signers[0].audit["invitation_delivery_status"] == "sent"
@@ -87,7 +111,7 @@ async def test_delivery_failure_is_visible_in_audit(monkeypatch):
     )
     monkeypatch.setattr(notifications, "send_client_email", send)
     request = _request()
-    await notifications.notify_actionable_signers(None, request)
+    await notifications.notify_actionable_signers(_Db(), request)
     audit = request.signers[0].audit
     assert audit["invitation_delivery_status"] == "reauthorization_required"
     assert audit["invitation_delivery_detail"] == "Reconnect Google Workspace mail"
@@ -110,14 +134,37 @@ class _Result:
     def scalars(self):
         return _Scalars(self.rows)
 
+    def first(self):
+        return self.rows[0] if self.rows else None
+
 
 class _Db:
-    def __init__(self, rows):
-        self.rows = rows
+    """The reminder sweep's request query, plus the per-request context reads.
+
+    A signer notice names the firm and the matter, so it reads the branding row
+    and the matter alongside the requests it is sweeping. ``rows`` answers the
+    sweep; ``branding`` and ``matter`` answer the context lookups, both absent
+    by default so the fallbacks stay exercised.
+    """
+
+    def __init__(self, rows=(), *, branding=None, matter=None):
+        self.rows = list(rows)
+        self.branding = branding
+        self.matter = matter
         self.commits = 0
 
     async def execute(self, statement):
-        return _Result(self.rows)
+        entity = statement.column_descriptions[0]["entity"]
+        if entity is SignatureRequest:
+            return _Result(self.rows)
+        return _Result([self.branding] if self.branding is not None else [])
+
+    async def scalar(self, statement):
+        entity = statement.column_descriptions[0]["entity"]
+        if entity is Matter:
+            return self.matter
+        # Tenant.name, behind the branding row's firm_name.
+        return self.branding.firm_name if self.branding is not None else None
 
     async def commit(self):
         self.commits += 1

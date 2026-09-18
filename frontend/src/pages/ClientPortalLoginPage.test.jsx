@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import ClientPortalLoginPage from './ClientPortalLoginPage'
 import { requestClientPortalCode, selectClientPortalMatter, verifyClientPortalCode } from '../api'
 
@@ -11,11 +11,15 @@ vi.mock('../api', () => ({
   selectClientPortalMatter: vi.fn(),
 }))
 
-const renderPage = () => render(
-  <MemoryRouter initialEntries={['/portal/client/login']}>
+function PortalHome() {
+  return <div>Portal home{useLocation().search}</div>
+}
+
+const renderPage = (entry = '/portal/client/login') => render(
+  <MemoryRouter initialEntries={[entry]}>
     <Routes>
       <Route path="/portal/client/login" element={<ClientPortalLoginPage />} />
-      <Route path="/portal/client/matter" element={<div>Portal home</div>} />
+      <Route path="/portal/client/matter" element={<PortalHome />} />
     </Routes>
   </MemoryRouter>,
 )
@@ -78,4 +82,18 @@ it('reports an incorrect code without signing in', async () => {
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/incorrect or has expired/i)
   expect(screen.queryByText('Portal home')).not.toBeInTheDocument()
+})
+
+it('keeps the tab a notification linked to across sign-in', async () => {
+  // A signature reminder points at ?tab=signatures. A client who happens to be
+  // signed out gets bounced here; dropping the tab would land them on the
+  // overview to hunt for the document they were just told to sign.
+  const user = userEvent.setup()
+  renderPage('/portal/client/login?tab=signatures')
+  await user.type(screen.getByLabelText('Email'), 'client@example.com')
+  await user.click(screen.getByRole('button', { name: 'Email me a sign-in code' }))
+  await user.type(await screen.findByLabelText(/Sign-in code/), '123456')
+  await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+  expect(await screen.findByText('Portal home?tab=signatures')).toBeInTheDocument()
 })

@@ -653,6 +653,9 @@ async def update_matter_document(
                 matter=matter,
                 subject=f"A new document is available on {matter.matter_name or 'your matter'}",
                 headline=shared_document_headline(matter, doc.filename),
+                details=[("Document", doc.filename)],
+                portal_tab="documents",
+                action_label="View the document in your portal",
             )
     return await serialize_document(db, tenant_id=user.tenant_id, document=doc)
 

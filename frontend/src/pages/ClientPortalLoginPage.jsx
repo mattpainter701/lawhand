@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   requestClientPortalCode,
   selectClientPortalMatter,
@@ -12,6 +12,7 @@ import { ShieldCheck, AlertTriangle, ArrowRight, KeyRound } from 'lucide-react'
 // choose which one to open.
 export default function ClientPortalLoginPage() {
   const navigate = useNavigate()
+  const { search } = useLocation()
   const [step, setStep] = useState('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -28,7 +29,10 @@ export default function ClientPortalLoginPage() {
     return () => clearInterval(timer)
   }, [resendIn])
 
-  const openMatter = () => navigate('/portal/client/matter', { replace: true })
+  // A notification links straight to the tab it is about (?tab=signatures for
+  // a signature request). Signing in must not drop it, or every client who is
+  // signed out lands on the overview and has to find the thing themselves.
+  const openMatter = () => navigate(`/portal/client/matter${search}`, { replace: true })
 
   const requestCode = async (event) => {
     if (event) event.preventDefault()

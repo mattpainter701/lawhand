@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date, datetime, timezone
 from typing import Coroutine
 
 from sqlalchemy import select
@@ -134,6 +135,118 @@ async def _load_task_context(
             )
         ).scalar_one_or_none()
     return creator, contact, matter
+
+
+def _humanize(value: str | None) -> str | None:
+    """``follow_up`` -> ``Follow up``: stored enum values are not inbox English."""
+    if not value:
+        return None
+    return str(value).replace("_", " ").strip().capitalize() or None
+
+
+def due_label(task: Task, *, today: date | None = None) -> str:
+    """How urgent this is, in the words a reader needs in a subject line.
+
+    "2026-09-18" tells a reader nothing without a calendar in the other hand.
+    "Due today" and "Overdue by 3 days" are the same fact, already triaged.
+    """
+    if not task.due_date:
+        return "No due date"
+    reference = today or datetime.now(timezone.utc).date()
+    days = (task.due_date - reference).days
+    if days < 0:
+        overdue = abs(days)
+        unit = "day" if overdue == 1 else "days"
+        return f"Overdue by {overdue} {unit}"
+    if days == 0:
+        return "Due today"
+    if days == 1:
+        return "Due tomorrow"
+    return f"Due in {days} days"
+
+
+async def _matter_client_and_attorney(
+    db: AsyncSession, matter: Matter | None
+) -> tuple[Contact | None, User | None]:
+    """The matter's client contact and attorney of record.
+
+    Loaded with explicit queries rather than through the relationships: those
+    are ``lazy="select"`` and would raise on attribute access under the async
+    session.
+    """
+    if matter is None:
+        return None, None
+    client = None
+    if matter.client_contact_id:
+        client = await db.scalar(
+            select(Contact).where(
+                Contact.id == matter.client_contact_id,
+                Contact.tenant_id == matter.tenant_id,
+            )
+        )
+    attorney = None
+    if matter.attorney_of_record_id:
+        attorney = await db.scalar(
+            select(User).where(
+                User.id == matter.attorney_of_record_id,
+                User.tenant_id == matter.tenant_id,
+            )
+        )
+    return client, attorney
+
+
+async def send_task_due_reminder(
+    db: AsyncSession,
+    task: Task,
+    *,
+    assignee: User | None = None,
+    today: date | None = None,
+) -> EmailDeliveryResult:
+    """Email the assignee a reminder that identifies the task it is about.
+
+    Every caller -- the nightly sweep and the manual "remind" button -- goes
+    through here so a reminder reads the same wherever it came from, and so
+    the context (client, matter, attorney of record, who raised it) is
+    resolved once rather than per call site.
+
+    A task carrying client SMS content sends a reminder stripped of that
+    context: SMS review stays in LawHand, and the assignee still needs to know
+    the deadline exists.
+    """
+    if assignee is None and task.assigned_to_user_id:
+        assignee = await db.scalar(
+            select(User).where(
+                User.id == task.assigned_to_user_id,
+                User.tenant_id == task.tenant_id,
+            )
+        )
+    if not assignee or not (assignee.email or "").strip():
+        return EmailDeliveryResult.INVALID_RECIPIENT
+
+    withhold = await task_contains_sms(db, task)
+    creator, contact, matter = await _load_task_context(db, task)
+    matter_client, attorney = await _matter_client_and_attorney(db, matter)
+    client = contact or matter_client
+
+    return await email_service.send_task_reminder(
+        to_email=assignee.email,
+        task_title=task.title,
+        due_date=_format_task_due(task),
+        due_label=due_label(task, today=today),
+        matter_name=None if withhold else (matter.matter_name if matter else None),
+        assignee_name=_user_label(assignee),
+        status=_humanize(task.status),
+        priority=_humanize(task.priority),
+        task_type=_humanize(task.task_type),
+        description=None if withhold else task.description,
+        client_name=None if withhold else (client.display_name if client else None),
+        attorney_name=None if withhold else _user_label(attorney),
+        created_at=_format_task_created_at(task),
+        created_by_name=_user_label(creator),
+        source=_humanize(task.source),
+        task_url=_task_url(task),
+        details_withheld=withhold,
+    )
 
 
 async def _task_timezone(db: AsyncSession, task: Task) -> str:
@@ -320,22 +433,26 @@ async def send_task_assignment_alert(
                 )
             )
         ).scalar_one_or_none()
+    matter_client, attorney = await _matter_client_and_attorney(db, matter)
+    client = contact or matter_client
 
     return await email_service.send_task_assignment_alert(
         to_email=assignee.email,
         task_title=task.title,
         due_date=_format_task_due(task),
-        priority=task.priority,
-        task_type=task.task_type,
+        priority=_humanize(task.priority),
+        task_type=_humanize(task.task_type),
         description=task.description,
         assignee_name=assignee.full_name or assignee.email,
         created_by_name=_user_label(creator),
         created_at=_format_task_created_at(task),
-        customer_name=contact.display_name if contact else None,
+        customer_name=client.display_name if client else None,
         matter_name=matter.matter_name if matter else None,
-        source=task.source,
+        source=_humanize(task.source),
         assigner_note=assignment_note,
         task_url=_task_url(task),
+        attorney_name=_user_label(attorney),
+        status=_humanize(task.status),
     )
 
 
