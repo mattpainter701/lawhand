@@ -176,6 +176,38 @@ def docx_outline(content: bytes) -> dict[str, Any]:
     }
 
 
+def _validate_pdf_anchor(field: dict) -> None:
+    """A Word signing field's anchor names the caption it is placed at.
+
+    Absent means "derive it from the text around the field", so only a
+    present anchor is checked: it must name a caption and, if it says where
+    the field sits, say it in a way the locator understands.
+    """
+    from app.services.docx_templates import TemplateDocxError
+
+    if "pdf_anchor" not in field:
+        return
+    anchor = field.get("pdf_anchor")
+    if not isinstance(anchor, dict) or not str(anchor.get("text") or "").strip():
+        raise TemplateDocxError(
+            f"Word field {field.get('name', '')!r}: the anchor text must name the "
+            "caption printed beside the signature line"
+        )
+    if len(str(anchor["text"])) > 200:
+        raise TemplateDocxError(
+            f"Word field {field.get('name', '')!r}: the anchor text is too long"
+        )
+    if anchor.get("placement") not in (None, "after", "before", "below"):
+        raise TemplateDocxError(
+            f"Word field {field.get('name', '')!r}: a field sits after, before, or "
+            "below its caption"
+        )
+    if set(anchor) - {"text", "placement"}:
+        raise TemplateDocxError(
+            f"Word field {field.get('name', '')!r}: the anchor has unexpected keys"
+        )
+
+
 def validate_visual_field_map(content: bytes, current: dict, proposed: dict) -> None:
     """Permit selected Word spans only after verifying them against retained bytes."""
     from app.services.template_semantics import is_semantic_only_change
@@ -221,6 +253,11 @@ def validate_visual_field_map(content: bytes, current: dict, proposed: dict) -> 
         "binding",
         "logic",
         "value_from",
+        # A Word signing field: who signs it, whether as a signature or
+        # initials, and the caption it is placed at on the generated PDF.
+        "signer_role",
+        "signing_type",
+        "pdf_anchor",
     }
     for field in fields:
         name = field.get("name", "") if isinstance(field, dict) else ""
@@ -259,6 +296,7 @@ def validate_visual_field_map(content: bytes, current: dict, proposed: dict) -> 
                 continue
         elif set(field) - allowed - (set(old) if old else set()):
             raise TemplateDocxError("New Word fields must come from a text selection")
+        _validate_pdf_anchor(field)
         if old and field.get("docx_choice") != old.get("docx_choice"):
             raise TemplateDocxError("Preserve the source-backed Word choice options")
         anchor = field.get("docx_anchor")
