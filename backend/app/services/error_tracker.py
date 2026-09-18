@@ -45,7 +45,7 @@ async def capture_error(
     db: AsyncSession,
     error_type: str,
     message: str,
-    severity: str = "error",
+    severity: Optional[str] = None,
     request: Optional[Request] = None,
     status_code: Optional[int] = None,
     user_id: Optional[uuid.UUID] = None,
@@ -87,9 +87,15 @@ async def capture_error(
                 request.headers.get("user-agent", "")[:500] if request.headers else None
             )
 
-        # Auto-map severity from status code if not explicitly provided
-        if status_code and severity == "error" and status_code not in (500, 502, 504):
-            severity = HTTP_SEVERITY_MAP.get(status_code, severity)
+        # Auto-map severity from the status code only when the caller did not
+        # choose one. An explicit severity wins: a handled 503 (chat generation
+        # backpressure, a retryable customer-storage outage) is deliberately
+        # recorded as "error", and silently promoting it to "critical" during an
+        # incident buries the genuinely unrecoverable failures.
+        if severity is None:
+            severity = (
+                HTTP_SEVERITY_MAP.get(status_code, "error") if status_code else "error"
+            )
 
         if stack_trace is None:
             stack_trace = traceback.format_exc()
