@@ -21,6 +21,10 @@
 - The isolated Skynet `dev1` stack is the QA promotion gate. It has separate
   development-only volumes and its public writers remain disabled. It is not a
   production failover or a source of production DNS changes.
+- A weekly unauthenticated OWASP ZAP baseline (`prod-dast.yml`) runs from the
+  Skynet runner through the root-owned `/usr/local/sbin/lawhand-dast-scan`.
+  The runner holds no Docker membership and only that exact-command sudo rule; a
+  GitHub-hosted job files `dast`-labeled GitHub issues. See `SKYNET_DEV_DR.md`.
 
 ## Run from a phone
 

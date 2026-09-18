@@ -1,0 +1,122 @@
+name: Production DAST (OWASP ZAP baseline)
+
+# Scheduled, unauthenticated baseline scan of the public production surface,
+# run from the Skynet self-hosted runner. The runner only reaches a root-owned,
+# argument-free entrypoint; a separate GitHub-hosted job files the findings as
+# GitHub issues. This is report-only: a finding never fails the run, but an
+# unreachable scan is recorded as a [dast-alert] issue.
+on:
+  schedule:
+    - cron: "37 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dast
+  cancel-in-progress: false
+
+jobs:
+  zap-baseline:
+    name: Scan production public surface
+    runs-on: [self-hosted, Linux, X64, skynet, lawhand-prod]
+    timeout-minutes: 30
+    permissions: {}
+    outputs:
+      zap_exit: ${{ steps.scan.outputs.zap_exit }}
+    steps:
+      - name: Run root-owned baseline scan against production
+        id: scan
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          output="$(sudo -n /usr/local/sbin/lawhand-dast-scan)"
+          printf '%s\n' "$output"
+          json="$(printf '%s\n' "$output" | sed -n 's/^ZAP_REPORT_JSON=//p' | tail -n1)"
+          md="$(printf '%s\n' "$output" | sed -n 's/^ZAP_REPORT_MD=//p' | tail -n1)"
+          zap_exit="$(printf '%s\n' "$output" | sed -n 's/^ZAP_SCAN_EXIT=//p' | tail -n1)"
+          if [[ -n "$json" && -f "$json" && ! -L "$json" ]]; then
+            mkdir -p "$RUNNER_TEMP/dast"
+            cp "$json" "$RUNNER_TEMP/dast/zap-report.json"
+            if [[ -n "$md" && -f "$md" && ! -L "$md" ]]; then
+              cp "$md" "$RUNNER_TEMP/dast/zap-report.md"
+            fi
+          fi
+          echo "zap_exit=${zap_exit:-100}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DAST report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dast-zap-report
+          path: ${{ runner.temp }}/dast
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Record scan summary
+        if: always()
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          ZAP_EXIT: ${{ steps.scan.outputs.zap_exit }}
+        run: |
+          {
+            echo "## Production DAST baseline"
+            echo
+            echo "- Target: \`https://getlawhand.com\`"
+            echo "- Scan outcome: $SCAN_OUTCOME (ZAP exit ${ZAP_EXIT:-unknown})"
+            echo "- Findings are written to labeled GitHub issues by the report job."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: File DAST findings as GitHub issues
+    needs: zap-baseline
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Require main
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_REF" == refs/heads/main ]]
+
+      - name: Checkout trusted reconcile helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Download DAST report
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dast-zap-report
+          path: dast-report
+
+      - name: Reconcile findings into GitHub issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ZAP_EXIT: ${{ needs.zap-baseline.outputs.zap_exit }}
+        run: |
+          set -Eeuo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          report="dast-report/zap-report.json"
+          if [[ "${{ steps.download.outcome }}" == "success" && -f "$report" ]]; then
+            python scripts/reconcile_dast_findings.py \
+              --report "$report" \
+              --run-url "$run_url" \
+              --min-risk medium \
+              --zap-exit-code "${ZAP_EXIT:-100}"
+          else
+            python scripts/reconcile_dast_findings.py \
+              --scan-missing \
+              --run-url "$run_url"
+          fi

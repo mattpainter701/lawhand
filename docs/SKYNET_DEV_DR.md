@@ -38,6 +38,10 @@ workspace MCP, and research MCP product surfaces are disabled.
    repository variables `LAWHAND_DEV1_ENABLED=true` and
    `LAWHAND_SKYNET_DR_ENABLED=true`. Until then, their scheduled workflows are
    intentionally dormant and manual dispatch remains available for acceptance.
+8. Install the production DAST boundary:
+   `sudo bash scripts/install_dast_scan_entrypoint.sh`. It adds exactly one
+   path-scoped sudo rule (`lawhand-runner` may run only
+   `/usr/local/sbin/lawhand-dast-scan`) and does not grant Docker membership.
 The deployment workflow pins current `origin/main`, requires CI for that exact
 SHA, and calls a root-owned entrypoint. The entrypoint refuses a dirty checkout,
 non-main commit, wrong origin, or non-isolated environment.
@@ -59,6 +63,18 @@ Create a proxied CNAME for `dev1.getlawhand.com` to the Skynet Tunnel target.
 Keep the IONOS production records unchanged. Gate dev1 with Cloudflare Access
 before it contains any non-public feature or test data. Preserve the terminal
 404 rule and verify that an unknown hostname does not reach nginx.
+
+## Production DAST baseline
+
+`.github/workflows/prod-dast.yml` runs weekly (and on manual dispatch) from the
+Skynet runner. The runner can only invoke the root-owned, argument-free
+`/usr/local/sbin/lawhand-dast-scan`, which runs an unauthenticated OWASP ZAP
+baseline against `https://getlawhand.com` from a digest-pinned image. The target
+is fixed in that root-owned file, so the narrow sudo rule cannot be repurposed
+into a general network scanner. A separate GitHub-hosted job parses the report
+and files, updates, or closes `dast`-labeled GitHub issues. It is report-only: a
+finding never fails the run, but a scan that produces no report opens a
+`[dast-alert]` issue.
 
 ## DR backup and rehearsal
 
