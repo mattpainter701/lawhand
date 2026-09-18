@@ -11,7 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services import portal_client_alerts
+from app.models.contact import Contact
+from app.services import client_notifications
 from app.services.portal_client_alerts import (
     new_message_headline,
     notify_client_portal_update,
@@ -20,11 +21,23 @@ from app.services.portal_client_alerts import (
 
 
 class Db:
+    """Answers the client-contact lookup; the firm-branding reads fall back.
+
+    The nudge now names the firm, so it reads the branding row alongside the
+    contact. Leaving both branding reads empty keeps these tests on the
+    fallback identity and off the firm's own name, which has its own coverage
+    in ``test_client_notifications.py``.
+    """
+
     def __init__(self, contact=None):
         self._contact = contact
 
-    async def scalar(self, _statement):
-        return self._contact
+    async def scalar(self, statement):
+        entity = statement.column_descriptions[0]["entity"]
+        return self._contact if entity is Contact else None
+
+    async def execute(self, _statement):
+        return SimpleNamespace(first=lambda: None)
 
 
 def matter(**overrides):
@@ -44,7 +57,7 @@ def sent(monkeypatch):
     async def send(_db, **kwargs):
         calls.update(kwargs)
 
-    monkeypatch.setattr(portal_client_alerts, "send_client_email", send)
+    monkeypatch.setattr(client_notifications, "send_client_email", send)
     return calls
 
 
@@ -103,7 +116,7 @@ async def test_a_delivery_failure_is_swallowed(monkeypatch):
     async def explode(_db, **_kwargs):
         raise RuntimeError("the provider is down")
 
-    monkeypatch.setattr(portal_client_alerts, "send_client_email", explode)
+    monkeypatch.setattr(client_notifications, "send_client_email", explode)
 
     delivered = await notify_client_portal_update(
         Db(SimpleNamespace(email="jane@example.com")),
