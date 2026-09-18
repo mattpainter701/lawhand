@@ -377,9 +377,10 @@ async def sync_deadlines(
 
 
 @router.get("/probate/jurisdictions")
-async def list_jurisdictions():
+async def list_jurisdictions(request: Request, db: AsyncSession = Depends(get_db)):
     """States the workbench has rules and forms for, for the selector."""
 
+    await get_current_user(request, db)
     return {"jurisdictions": jurisdiction.list_jurisdictions()}
 
 
