@@ -539,7 +539,16 @@ async def create_signature_request(
         ) from exc
 
     placements = body.positioned_fields or doc.positioned_fields or []
-    if doc.signing_placement_required and not placements:
+    unbound = list(doc.signing_placement_problems or [])
+    # A Word template binds each signing field at its own caption, one field
+    # at a time, so "some bound" is now an ordinary outcome rather than an
+    # authoring mistake the publish gate would have caught. Partial binding
+    # must block too: the fields that bound would otherwise carry the request
+    # on their own and the signer would never be shown the rest. Staff who
+    # place the fields by hand have answered the problems and pass.
+    if doc.signing_placement_required and (
+        not placements or (unbound and not body.positioned_fields)
+    ):
         # Generation recorded why each signing field went unbound. Replay it
         # here: a gate that only says "review positions" cannot be acted on
         # when the fault is in the template, or when the saved artifact is a
@@ -547,7 +556,7 @@ async def create_signature_request(
         raise HTTPException(
             status_code=422,
             detail=placement_block_detail(
-                doc.signing_placement_problems or [],
+                unbound,
                 filename=doc.filename,
                 output_is_pdf=_is_pdf_document(doc),
             ),

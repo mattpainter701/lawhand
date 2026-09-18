@@ -45,6 +45,8 @@ PAGE_OUT_OF_RANGE = "page_out_of_range"
 INVALID_GEOMETRY = "invalid_geometry"
 NO_PDF_OUTPUT = "no_pdf_output"
 WORD_SOURCE_NOT_POSITIONABLE = "word_source_not_positionable"
+ANCHOR_NOT_FOUND = "anchor_not_found"
+ANCHOR_AMBIGUOUS = "anchor_ambiguous"
 
 #: What the firm has to change to clear each code. Keyed by code so the
 #: dispatch message and the generation warning give identical advice.
@@ -75,6 +77,16 @@ REMEDIES = {
     WORD_SOURCE_NOT_POSITIONABLE: (
         "Open the placement review on this generated PDF and place a field for "
         "each signer."
+    ),
+    ANCHOR_NOT_FOUND: (
+        "Open the template and set this field's anchor text to the caption "
+        "printed beside its signature line, or place it by hand on the "
+        "generated PDF before sending."
+    ),
+    ANCHOR_AMBIGUOUS: (
+        "Open the template and make this field's anchor text distinctive "
+        "enough to appear once, or place it by hand on the generated PDF "
+        "before sending."
     ),
 }
 
@@ -385,6 +397,7 @@ def template_placement_report(
     source: bytes,
     template_format: str,
     output_format: str | None = None,
+    word_anchors: Iterable[Any] | None = None,
 ) -> PlacementReport:
     """Bind a template's signing fields to one generated file, and explain.
 
@@ -427,6 +440,14 @@ def template_placement_report(
             ],
             False,
         )
+    if source_format != "pdf" and word_anchors is not None:
+        # Converted to PDF from a Word template that declared where each field
+        # sits: bound by the caption printed beside it. Every field that could
+        # not be found is reported on its own; the rest bind.
+        from app.services.esign.anchors import locate_word_signing_fields
+
+        placements, problems = locate_word_signing_fields(source, list(word_anchors))
+        return PlacementReport(placements, roles, True, problems, True)
     if source_format != "pdf":
         # Converted to PDF from a Word template: there were never any overlay
         # coordinates to bind, but the saved PDF can be reviewed by hand.

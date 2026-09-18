@@ -689,6 +689,33 @@ describe('TemplateStudioEditor', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^Saved /))
   })
 
+  it('lets a Word signing field name the caption it sits beside', async () => {
+    const onSave = vi.fn().mockResolvedValue({})
+    render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'client_signature', label: 'Client signature', field_type: 'signature', signer_role: 'client', source_text: '____', docx_anchor: { paragraph_ordinal: 0, start: 18, end: 22 } }]), format: 'docx' }} onSave={onSave} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Client signature' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Anchor text' }), { target: { value: 'Client Signature:' } })
+    fireEvent.change(screen.getByLabelText('Field sits'), { target: { value: 'below' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0].fields[0].pdf_anchor).toEqual({ text: 'Client Signature:', placement: 'below' })
+  })
+
+  it('drops an anchor that is cleared rather than saving it empty', async () => {
+    const onSave = vi.fn().mockResolvedValue({})
+    render(<TemplateStudioEditor template={{ ...templateWith([{ name: 'client_signature', label: 'Client signature', field_type: 'signature', signer_role: 'client', pdf_anchor: { text: 'By:', placement: 'after' } }]), format: 'docx' }} onSave={onSave} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Client signature' }))
+    expect(screen.getByRole('textbox', { name: 'Anchor text' })).toHaveValue('By:')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Anchor text' }), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save fields/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0].fields[0].pdf_anchor).toBeUndefined()
+  })
+
+  it('offers no anchor on a PDF signing field, which carries its own geometry', () => {
+    render(<TemplateStudioEditor template={templateWith([{ name: 'client_signature', label: 'Client signature', field_type: 'signature', signer_role: 'client', pdf_overlay: { page: 1, rect: [72, 100, 272, 136] } }])} source={pdfSource()} onSave={vi.fn()} />)
+    expect(screen.queryByRole('textbox', { name: 'Anchor text' })).not.toBeInTheDocument()
+  })
+
   it('keeps signer role with unsaved field edits until save', async () => {
     const onSave = vi.fn().mockResolvedValue({})
     render(<TemplateStudioEditor template={templateWith([])} source={pdfSource()} onSave={onSave} />)

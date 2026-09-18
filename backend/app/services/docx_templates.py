@@ -20,7 +20,10 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 from app.services.template_bindings import is_item_binding, item_key
-from app.services.esign.placement import is_signing_template_field
+from app.services.esign.placement import (
+    is_signing_template_field,
+    signing_template_fields,
+)
 
 
 class TemplateDocxError(ValueError):
@@ -688,6 +691,182 @@ def _open_docx(content: bytes) -> Document:
         raise TemplateDocxError("The DOCX is damaged or could not be parsed.") from exc
 
 
+#: What a signing field becomes in the generated document: a printed rule
+#: for the signer, and the blank the anchor locator looks for in the PDF.
+SIGNING_RULE = "_" * 24
+_RULE = re.compile(r"_{8,}")
+_PLACEHOLDER = re.compile(r"\{\{[^{}]*\}\}")
+#: A caption is what is printed beside the field. Text longer than this wraps
+#: across lines in the converted PDF, where the locator reads one line at a
+#: time, so a longer derivation could never match and is trimmed to its end.
+_MAX_CAPTION = 60
+
+
+def _beside(
+    text: str, spans: list[tuple[int, int]], start: int, end: int
+) -> tuple[str, str]:
+    """The text either side of one field span, stopping at its neighbours.
+
+    Everything inside another field's span is rewritten when the document is
+    filled, so it is neither part of this field's caption nor a rule drawn
+    beside it.
+    """
+    low = max((e for s, e in spans if e <= start), default=0)
+    high = min((s for s, e in spans if s >= end), default=len(text))
+    return text[low:start], text[end:high]
+
+
+def _caption_before(text: str) -> str:
+    """The caption printed immediately before a field: the end of the text."""
+    for pattern in (_PLACEHOLDER, _RULE):
+        hits = list(pattern.finditer(text))
+        if hits:
+            text = text[hits[-1].end() :]
+    text = text.strip()
+    if len(text) > _MAX_CAPTION:
+        text = text[-_MAX_CAPTION:]
+        if " " in text:
+            text = text[text.index(" ") + 1 :]
+    # A trailing colon is part of the caption ("Client Signature:"); the
+    # punctuation left behind by whatever preceded the field is not.
+    return text.lstrip(" ,;:\t").strip()
+
+
+def _caption_after(text: str) -> str:
+    """The caption printed immediately after a field: the start of the text."""
+    for pattern in (_PLACEHOLDER, _RULE):
+        hit = pattern.search(text)
+        if hit:
+            text = text[: hit.start()]
+    text = text.strip(" ,;:_\t")
+    if len(text) > _MAX_CAPTION:
+        text = text[:_MAX_CAPTION]
+        if " " in text:
+            text = text[: text.rindex(" ")]
+    return text.strip(" ,;:_\t")
+
+
+def _paragraph_spans(fields: Any) -> dict[int, list[tuple[int, int]]]:
+    """Every field's reviewed span, by paragraph. Signing or not: all reflow."""
+    spans: dict[int, list[tuple[int, int]]] = {}
+    for field in fields or []:
+        anchor = field.get("docx_anchor") if isinstance(field, dict) else None
+        if not isinstance(anchor, dict):
+            continue
+        try:
+            ordinal, start, end = (
+                int(anchor["paragraph_ordinal"]),
+                int(anchor["start"]),
+                int(anchor["end"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        spans.setdefault(ordinal, []).append((start, end))
+    return spans
+
+
+def _derived_word_anchor(
+    field: dict,
+    paragraphs: list[str],
+    spans: dict[int, list[tuple[int, int]]] | None = None,
+) -> tuple[str, str]:
+    """The caption around a signing field's span, and where the field sits.
+
+    "Client Signature: ____" anchors after its caption; "____, MOTHER" before
+    it; a placeholder alone on its line anchors below the line above it.
+
+    The caption is read from the *unfilled* template, so it may only contain
+    text the generated PDF still prints: a sibling field's placeholder or
+    span, and a rule drawn beside the field, are cut away.
+    """
+    anchor = field.get("docx_anchor")
+    ordinal = start = end = None
+    if isinstance(anchor, dict):
+        try:
+            ordinal, start, end = (
+                int(anchor["paragraph_ordinal"]),
+                int(anchor["start"]),
+                int(anchor["end"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            ordinal = None
+    if ordinal is None:
+        needle = (
+            str(field.get("source_text") or "")
+            or "{{" + str(field.get("name") or "") + "}}"
+        )
+        for index, text in enumerate(paragraphs):
+            position = text.find(needle) if needle else -1
+            if position >= 0:
+                ordinal, start, end = index, position, position + len(needle)
+                break
+    if ordinal is None or not 0 <= ordinal < len(paragraphs):
+        return "", "after"
+    combined = paragraphs[ordinal]
+    neighbours = [
+        span for span in (spans or {}).get(ordinal, []) if span != (start, end)
+    ]
+    head, tail = _beside(combined, neighbours, start, end)
+    before = _caption_before(head)
+    after = _caption_after(tail)
+    if before:
+        return before, "after"
+    if after:
+        return after, "before"
+    for index in range(ordinal - 1, -1, -1):
+        text = paragraphs[index]
+        if not text.strip():
+            continue
+        above = _caption_before(
+            _beside(text, (spans or {}).get(index, []), len(text), len(text))[0]
+        )
+        if above:
+            return above, "below"
+        return "", "after"
+    return "", "after"
+
+
+def word_signing_anchors(content: bytes, variable_schema: dict | None) -> list:
+    """One anchor per included signing field, from the template's own text.
+
+    An author's ``pdf_anchor`` on the field wins; otherwise the caption is
+    read from around the field's span in the Word document.
+    """
+    from app.services.esign.anchors import PLACEMENTS, WordAnchor
+
+    document = _open_docx(content)
+    paragraphs = [
+        "".join(run.text for run in paragraph.runs)
+        for _, paragraph in iter_docx_paragraphs_with_anchors(document)
+    ]
+    spans = _paragraph_spans((variable_schema or {}).get("fields"))
+    anchors = []
+    for field in signing_template_fields(variable_schema):
+        name = str(field.get("name") or "")
+        role = str(field.get("signer_role") or "").strip()
+        kind = (
+            "date"
+            if field.get("field_type") == "date"
+            else str(field.get("signing_type") or field.get("field_type"))
+        )
+        override = field.get("pdf_anchor")
+        if isinstance(override, dict) and str(override.get("text") or "").strip():
+            placement = override.get("placement")
+            anchors.append(
+                WordAnchor(
+                    name,
+                    kind,
+                    role,
+                    str(override["text"]).strip(),
+                    placement if placement in PLACEMENTS else "after",
+                )
+            )
+            continue
+        text, placement = _derived_word_anchor(field, paragraphs, spans)
+        anchors.append(WordAnchor(name, kind, role, text, placement))
+    return anchors
+
+
 def fill_docx_template(
     content: bytes,
     *,
@@ -715,6 +894,7 @@ def fill_docx_template(
     from app.services.docx_source_review import word_values
 
     variables = word_values(fields, variables)
+    signing_names: set[str] = set()
     for name, field in by_name.items():
         if field.get("included") is not False and is_signing_template_field(field):
             if str(variables.get(name) or "").strip():
@@ -722,6 +902,7 @@ def fill_docx_template(
                     f"Signing field {name!r} must remain blank for signing."
                 )
             variables[name] = ""
+            signing_names.add(name)
 
     unknown = set(variables) - set(by_name)
     if unknown:
@@ -784,6 +965,8 @@ def fill_docx_template(
             )
             continue
 
+        if name in signing_names:
+            value = SIGNING_RULE
         replacements.append((f"{{{{{name}}}}}", value))
         source_text = str(field.get("source_text") or field.get("example") or "")
         if source_text and source_text != f"{{{{{name}}}}}":
@@ -793,14 +976,31 @@ def fill_docx_template(
     replacement_pattern, replacement_by_source = _compile_replacements(replacements)
     anchored_names: set[str] = set()
     for ordinal, paragraph in iter_docx_paragraphs_with_anchors(document):
-        for start, end, source_text, value, name in sorted(
-            anchored_replacements.get(ordinal, []), reverse=True
-        ):
+        entries = sorted(anchored_replacements.get(ordinal, []), reverse=True)
+        spans = [(entry[0], entry[1]) for entry in entries]
+        # Decided once, before anything is replaced: spans are applied
+        # right-to-left, so every index past the one in hand shifts as soon as
+        # the first replacement lands. "Beside" means the gap between this
+        # field and its neighbours -- a rule belonging to another field, or
+        # further down the line, is not this field's.
+        original = "".join(run.text for run in paragraph.runs) if entries else ""
+        draws_rule = {
+            span: any(
+                _RULE.search(side)
+                for side in _beside(original, spans, span[0], span[1])
+            )
+            for span in spans
+        }
+        for start, end, source_text, value, name in entries:
             combined = "".join(run.text for run in paragraph.runs)
             if combined[start:end] != source_text:
                 raise TemplateDocxError(
                     f"The retained Word document no longer matches the reviewed location for {name!r}. Re-upload and review the template."
                 )
+            if name in signing_names:
+                # A signing field prints as a rule for the signer -- unless the
+                # paragraph already draws one beside it.
+                value = "" if draws_rule[(start, end)] else SIGNING_RULE
             if _replace_at_span(paragraph, start, end, value):
                 replacement_count += 1
                 anchored_names.add(name)

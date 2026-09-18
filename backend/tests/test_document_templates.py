@@ -4832,3 +4832,285 @@ async def test_a_listed_document_carries_its_placement_problems_to_the_ui(
         "missing_signer_role"
     ]
     assert row["signing_placement_problems"][0]["field"] == "client_sig"
+
+
+async def _docx_signing_template_via_intake(client, monkeypatch, tmp_path):
+    """A Word template with a printed signature blank, created as a customer would."""
+    from docx import Document
+
+    monkeypatch.setattr(document_templates.settings, "UPLOAD_DIR", str(tmp_path))
+    document = Document()
+    document.add_paragraph("Client name: ___")
+    document.add_paragraph("Client Signature: ________")
+    source = BytesIO()
+    document.save(source)
+    created = await client.post(
+        "/api/templates/intake/create",
+        files={
+            "file": (
+                "engagement.docx",
+                source.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert created.status_code == 201, created.text
+    return created.json()
+
+
+def _caption_pdf(*captions) -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    pdf.setFont("Helvetica", 11)
+    y = 700
+    for caption in captions:
+        pdf.drawString(72, y, caption)
+        y -= 40
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_a_word_template_binds_its_signing_field_by_the_caption_beside_it(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """Generated from Word, converted to PDF, and bound like a PDF template."""
+    from app.models.document_template import DocumentTemplate
+    from app.models.plugin import Matter
+    from app.services import matter_file_store as matter_store_module
+
+    monkeypatch.setattr(matter_store_module.settings, "UPLOAD_DIR", str(tmp_path))
+    await _grant_manage_documents(db_session, test_tenant, test_user)
+    template = await _docx_signing_template_via_intake(client, monkeypatch, tmp_path)
+    template_id = template["id"]
+
+    # The printed blank came through intake as a text field; the author makes
+    # it the client's signature line. Its caption is derived from the Word
+    # document, so nothing else needs setting.
+    row = await db_session.get(DocumentTemplate, uuid.UUID(template_id))
+    schema = dict(row.variable_schema or {})
+    fields = [dict(field) for field in schema["fields"]]
+    blank = next(
+        field
+        for field in fields
+        if field.get("docx_anchor", {}).get("paragraph_ordinal") == 1
+    )
+    blank.update({"field_type": "signature", "signer_role": "client", "required": False})
+    schema["fields"] = fields
+    changed = await client.patch(
+        f"/api/templates/{template_id}", json={"variable_schema": schema}
+    )
+    assert changed.status_code == 200, changed.text
+
+    # What LibreOffice would produce: the caption with the rule the fill
+    # printed after it.
+    converted = _caption_pdf("Client name: Ada Lovelace", "Client Signature: " + "_" * 24)
+
+    async def fake_conversion(content, **kwargs):
+        return converted
+
+    monkeypatch.setattr(document_templates, "docx_to_pdf_bytes", fake_conversion)
+
+    values = {next(f["name"] for f in fields if f is not blank): "Ada Lovelace"}
+    tested = await client.post(
+        f"/api/templates/{template_id}/render-file",
+        json={"variables": values, "preview_purpose": "activation", "convert_to_pdf": True},
+    )
+    assert tested.status_code == 200, tested.text
+    published = await client.post(f"/api/templates/{template_id}/publish", json={})
+    assert published.status_code == 200, published.text
+
+    matter = Matter(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        user_id=test_user.id,
+        slug="word-anchored-signing",
+        matter_name="Word anchored signing",
+        matter_type="general",
+    )
+    db_session.add(matter)
+    await db_session.commit()
+    preview = await client.post(
+        f"/api/templates/{template_id}/render-file",
+        json={
+            "variables": values,
+            "matter_id": str(matter.id),
+            "preview_purpose": "generation",
+            "convert_to_pdf": True,
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    generated = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={
+            "variables": values,
+            "matter_id": str(matter.id),
+            "preview_id": preview.headers["x-clarity-preview-id"],
+            "convert_to_pdf": True,
+        },
+    )
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["output_format"] == "pdf"
+
+    document = await _latest_document(db_session, matter)
+    assert document.signing_placement_required is True
+    assert document.signing_placement_problems == []
+    [placed] = document.positioned_fields
+    assert placed["source"] == "anchored"
+    assert placed["role"] == "client" and placed["page"] == 1
+    assert placed["source_sha256"] == document.document_sha256
+    # Over the rule after the caption, not over the caption itself.
+    assert placed["rect"][0] > 150
+
+    # And it sends without anyone placing a field by hand.
+    listed = await client.get(f"/api/matters/{matter.id}/documents")
+    listing = next(
+        item for item in listed.json()["items"] if item["id"] == str(document.id)
+    )
+    assert listing["positioned_fields"][0]["source"] == "anchored"
+
+    import app.routers.esignature as esign
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(esign, "notify_actionable_signers", AsyncMock())
+    created = await client.post(
+        f"/api/matters/{matter.id}/signatures",
+        json={
+            "document_id": str(document.id),
+            "signers": [
+                {"name": "Ada", "email": "ada@example.test", "role": "client"}
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    # The template bound this, not a person: the review must say so rather
+    # than report it back as something staff placed and checked.
+    assert [item["source"] for item in created.json()["positioned_fields"]] == [
+        "anchored"
+    ]
+    sent = await client.post(
+        f"/api/matters/{matter.id}/signatures/{created.json()['id']}/send"
+    )
+    assert sent.status_code == 200, sent.text
+
+
+@pytest.mark.asyncio
+async def test_a_word_template_that_binds_only_some_fields_is_held_before_sending(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """A caption the generated PDF never printed must not be sent past.
+
+    A Word template binds one field at a time, at its own caption, so a field
+    left unbound is an ordinary outcome rather than an authoring mistake the
+    publish gate would have caught. The fields that did bind would otherwise
+    carry the request on their own and the signer would never be shown the
+    rest.
+    """
+    from app.models.document_template import DocumentTemplate
+    from app.models.plugin import Matter
+    from app.services import matter_file_store as matter_store_module
+
+    monkeypatch.setattr(matter_store_module.settings, "UPLOAD_DIR", str(tmp_path))
+    await _grant_manage_documents(db_session, test_tenant, test_user)
+    template = await _docx_signing_template_via_intake(client, monkeypatch, tmp_path)
+    template_id = template["id"]
+
+    row = await db_session.get(DocumentTemplate, uuid.UUID(template_id))
+    schema = dict(row.variable_schema or {})
+    fields = [dict(field) for field in schema["fields"]]
+    by_paragraph = {
+        field.get("docx_anchor", {}).get("paragraph_ordinal"): field
+        for field in fields
+        if field.get("docx_anchor")
+    }
+    by_paragraph[0].update(
+        {"field_type": "date", "signer_role": "client", "required": False}
+    )
+    by_paragraph[1].update(
+        {"field_type": "signature", "signer_role": "client", "required": False}
+    )
+    schema["fields"] = fields
+    changed = await client.patch(
+        f"/api/templates/{template_id}", json={"variable_schema": schema}
+    )
+    assert changed.status_code == 200, changed.text
+
+    # What LibreOffice produced: the signature's caption, and nothing that
+    # reads as the date's.
+    converted = _caption_pdf("Client Signature: " + "_" * 24)
+
+    async def fake_conversion(content, **kwargs):
+        return converted
+
+    monkeypatch.setattr(document_templates, "docx_to_pdf_bytes", fake_conversion)
+
+    tested = await client.post(
+        f"/api/templates/{template_id}/render-file",
+        json={"variables": {}, "preview_purpose": "activation", "convert_to_pdf": True},
+    )
+    assert tested.status_code == 200, tested.text
+    published = await client.post(f"/api/templates/{template_id}/publish", json={})
+    assert published.status_code == 200, published.text
+
+    matter = Matter(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        user_id=test_user.id,
+        slug="word-partly-anchored",
+        matter_name="Word partly anchored",
+        matter_type="general",
+    )
+    db_session.add(matter)
+    await db_session.commit()
+    preview = await client.post(
+        f"/api/templates/{template_id}/render-file",
+        json={
+            "variables": {},
+            "matter_id": str(matter.id),
+            "preview_purpose": "generation",
+            "convert_to_pdf": True,
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    generated = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={
+            "variables": {},
+            "matter_id": str(matter.id),
+            "preview_id": preview.headers["x-clarity-preview-id"],
+            "convert_to_pdf": True,
+        },
+    )
+    assert generated.status_code == 200, generated.text
+
+    document = await _latest_document(db_session, matter)
+    # One bound, one reported -- the document is saved either way.
+    assert [item["source"] for item in document.positioned_fields] == ["anchored"]
+    assert [item["code"] for item in document.signing_placement_problems] == [
+        "anchor_not_found"
+    ]
+
+    import app.routers.esignature as esign
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(esign, "notify_actionable_signers", AsyncMock())
+    body = {
+        "document_id": str(document.id),
+        "signers": [{"name": "Ada", "email": "ada@example.test", "role": "client"}],
+    }
+    blocked = await client.post(f"/api/matters/{matter.id}/signatures", json=body)
+    assert blocked.status_code == 422, blocked.text
+    detail = blocked.json()["detail"]
+    assert "was not found in the generated PDF" in detail
+    assert "anchor text" in detail
+
+    # Staff who place the fields on this PDF have answered the problem.
+    reviewed = await client.post(
+        f"/api/matters/{matter.id}/signatures",
+        json={**body, "positioned_fields": document.positioned_fields},
+    )
+    assert reviewed.status_code == 201, reviewed.text

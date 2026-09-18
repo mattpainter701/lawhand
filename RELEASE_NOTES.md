@@ -17,6 +17,16 @@ A plain-language probate intake, answered in the portal, on paper, or by phone, 
 - **The probate clock.** Enter the appointment and publication dates and the statutory deadlines appear on the estate and, if you choose, as matter tasks.
 - **Clients list what the estate owns.** After appointment, the client portal shows an Estate inventory tab. Items wait for staff to verify before they count toward the inventory.
 
+## 2026.09.16.08 — Word templates place their signature fields themselves
+
+Released September 16, 2026.
+
+Word templates now place their signature fields on the generated PDF by the caption printed beside each one, so a document made from Word is ready to send like one made from a PDF template.
+
+- **Word templates place their own signature fields.** A signing field in a Word template is placed at its caption in the generated PDF, so no one has to position it by hand.
+- **The caption is read from the document, or set in Studio.** The text around the field in the Word document is the default; a Word signing field in Template Studio can name a different caption.
+- **Signature lines print as rules.** A signing field in a generated Word document now prints as a ruled line for the signer instead of a blank gap.
+
 ## 2026.09.16.07 — Email LawHand to route tasks, reviews, and deadlines
 
 Released September 16, 2026.

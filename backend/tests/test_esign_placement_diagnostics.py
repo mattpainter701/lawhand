@@ -19,6 +19,8 @@ from pypdf import PdfWriter
 from pypdf.generic import FloatObject, NameObject, RectangleObject
 
 from app.services.esign.placement import (
+    ANCHOR_AMBIGUOUS,
+    ANCHOR_NOT_FOUND,
     INVALID_GEOMETRY,
     MISSING_PDF_PLACEMENT,
     MISSING_SIGNER_ROLE,
@@ -133,6 +135,8 @@ def test_every_reason_code_carries_a_remedy():
         INVALID_GEOMETRY,
         NO_PDF_OUTPUT,
         WORD_SOURCE_NOT_POSITIONABLE,
+        ANCHOR_NOT_FOUND,
+        ANCHOR_AMBIGUOUS,
     }
     assert all(text.strip() for text in REMEDIES.values())
 

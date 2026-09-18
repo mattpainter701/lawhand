@@ -970,8 +970,44 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                     onChange={(event) => updateField(selectedEntry.identity, { signer_role: event.target.value.trim() || undefined })}
                     className="mt-1 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink"
                   />
-                  <span className="mt-1 block text-[11px] text-brand-muted">Assign the matching role to the signer when sending. Word fields require position review after generation. Leave ordinary filled dates without a signer role.</span>
+                  <span className="mt-1 block text-[11px] text-brand-muted">Assign the matching role to the signer when sending. Leave ordinary filled dates without a signer role.</span>
                   {selected.field_type === 'signature' && <select aria-label="Signing field kind" value={selected.signing_type || 'signature'} onChange={event => updateField(selectedEntry.identity, { signing_type: event.target.value })} className="mt-2 w-full rounded border border-brand-line p-2 text-sm"><option value="signature">Signature</option><option value="initials">Initials</option></select>}
+                  {isDocx && (
+                    <>
+                      {/* A Word field carries no page geometry: it is placed on
+                          the generated PDF at the caption printed beside it. The
+                          text around the field is the default; the author can
+                          name the caption when that text is not it. An empty
+                          anchor is dropped rather than stored, since a present
+                          but empty anchor would bind to nothing. */}
+                      <input
+                        aria-label="Anchor text"
+                        value={selected.pdf_anchor?.text || ''}
+                        placeholder="e.g. Client Signature:"
+                        onChange={(event) => updateField(selectedEntry.identity, {
+                          pdf_anchor: event.target.value.trim()
+                            ? { text: event.target.value, placement: selected.pdf_anchor?.placement || 'after' }
+                            : undefined,
+                        })}
+                        className="mt-2 w-full rounded-md border border-brand-line bg-brand-bg px-2 py-1.5 text-sm text-brand-ink"
+                      />
+                      <select
+                        aria-label="Field sits"
+                        value={selected.pdf_anchor?.placement || 'after'}
+                        onChange={(event) => updateField(selectedEntry.identity, {
+                          pdf_anchor: (selected.pdf_anchor?.text || '').trim()
+                            ? { text: selected.pdf_anchor.text, placement: event.target.value }
+                            : undefined,
+                        })}
+                        className="mt-2 w-full rounded border border-brand-line p-2 text-sm"
+                      >
+                        <option value="after">after the caption, on the same line</option>
+                        <option value="before">before the caption, on the same line</option>
+                        <option value="below">on the line under the caption</option>
+                      </select>
+                      <span className="mt-1 block text-[11px] text-brand-muted">The caption printed beside this field in the generated PDF. Leave blank to use the text around the field in the Word document.</span>
+                    </>
+                  )}
                 </PropertyRow>
               )}
               <PropertyRow label="Fills from">
