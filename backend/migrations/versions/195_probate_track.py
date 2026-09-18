@@ -46,7 +46,16 @@ _ASSET_COLUMNS = (
         server_default=sa.text("'verified'"),
     ),
     sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
-    sa.Column("artifact_document_id", postgresql.UUID(as_uuid=True), nullable=True),
+    sa.Column(
+        "artifact_document_id",
+        postgresql.UUID(as_uuid=True),
+        sa.ForeignKey(
+            "matter_documents.id",
+            ondelete="SET NULL",
+            name="fk_estate_assets_artifact_document",
+        ),
+        nullable=True,
+    ),
 )
 
 
@@ -55,9 +64,15 @@ def upgrade():
         op.add_column("estates", column)
     for column in _ASSET_COLUMNS:
         op.add_column("estate_assets", column)
+    op.create_index(
+        "ix_estate_assets_artifact_document_id",
+        "estate_assets",
+        ["artifact_document_id"],
+    )
 
 
 def downgrade():
+    op.drop_index("ix_estate_assets_artifact_document_id", table_name="estate_assets")
     for column in reversed(_ASSET_COLUMNS):
         op.drop_column("estate_assets", column.name)
     for column in reversed(_ESTATE_COLUMNS):

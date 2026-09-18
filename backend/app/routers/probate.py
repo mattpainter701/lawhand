@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
@@ -29,16 +29,23 @@ from app.services.access_control import require_capability
 from app.services.probate import (
     PROBATE_ADDON,
     deadlines,
-    determination,
     facts as facts_module,
     intake,
 )
+from app.services.probate import registry as jurisdiction
 from app.services.probate.facts import ProbateFacts
 
+# Staff-only surface: the add-on entitlement gates the firm, and every route
+# additionally requires ``manage_matters``. Without it a portal client login
+# (``role="client"``, which ``get_current_user`` accepts) could read or rewrite
+# any estate's probate facts and court-form inputs via a replayed token.
 router = APIRouter(
     prefix="/api/plugins/trust-estate",
     tags=["trust-estate-probate"],
-    dependencies=[Depends(require_addon_workflow(PROBATE_ADDON))],
+    dependencies=[
+        Depends(require_addon_workflow(PROBATE_ADDON)),
+        Depends(require_capability("manage_matters")),
+    ],
 )
 
 
@@ -78,10 +85,25 @@ def _apply_to_columns(estate: Estate, facts: ProbateFacts) -> None:
         estate.gross_estate_value = facts.probate_property_value
 
 
-def _determine(
-    estate: Estate, facts: ProbateFacts
-) -> determination.ProbateDetermination:
-    result = determination.determine(facts)
+def _jurisdiction_for(estate: Estate):
+    """The estate's probate jurisdiction, or a 409 when it is not yet supported."""
+
+    bundle = jurisdiction.for_estate(estate)
+    if bundle is None:
+        requested = jurisdiction.normalize(getattr(estate, "jurisdiction", None)) or (
+            getattr(estate, "jurisdiction", None) or "this jurisdiction"
+        )
+        raise HTTPException(
+            409,
+            f"The probate workbench does not yet support {requested}. "
+            "Set the estate's jurisdiction to a supported state.",
+        )
+    return bundle
+
+
+def _determine(estate: Estate, facts: ProbateFacts):
+    bundle = _jurisdiction_for(estate)
+    result = bundle.determine(facts)
     estate.probate_facts = facts_module.to_json(facts)
     estate.probate_determination = result.to_json()
     estate.probate_track = result.track
@@ -131,20 +153,43 @@ async def _state(
     from app.services.probate import forms as forms_module
 
     facts = _facts(estate)
-    result = estate.probate_determination
+    bundle = jurisdiction.for_estate(estate)
     track = estate.probate_track
-    forms_state = await forms_module.forms_state(db, estate.tenant_id, track=track)
+    if bundle is None:
+        # Fail closed: an explicitly unsupported state gets no ND forms, no ND
+        # deadlines, and no determination — only what the estate last stored.
+        return ProbateStateResponse(
+            estate_id=str(estate.id),
+            matter_id=str(estate.matter_id) if estate.matter_id else None,
+            facts=facts_module.to_json(facts),
+            determination=estate.probate_determination,
+            determined_at=estate.probate_determined_at,
+            anchors=_anchors(estate),
+            forms=[],
+            deadlines_preview=deadlines.compute(date_of_death=None, rules=()).to_json(),
+            sources=(estate.probate_facts or {}).get("extra", {}).get("sources", []),
+            intake=intake_preview,
+            jurisdiction=None,
+            jurisdiction_label=None,
+            jurisdiction_supported=False,
+        )
+    forms_state = await forms_module.forms_state(
+        db, estate.tenant_id, track=track, jurisdiction=bundle
+    )
     return ProbateStateResponse(
         estate_id=str(estate.id),
         matter_id=str(estate.matter_id) if estate.matter_id else None,
         facts=facts_module.to_json(facts),
-        determination=result,
+        determination=estate.probate_determination,
         determined_at=estate.probate_determined_at,
         anchors=_anchors(estate),
         forms=forms_state,
         deadlines_preview=deadlines.plan_for_estate(estate, track).to_json(),
         sources=(estate.probate_facts or {}).get("extra", {}).get("sources", []),
         intake=intake_preview,
+        jurisdiction=bundle.code,
+        jurisdiction_label=bundle.name,
+        jurisdiction_supported=True,
     )
 
 
@@ -331,9 +376,20 @@ async def sync_deadlines(
 # ── Forms pack ────────────────────────────────────────────────────────────────
 
 
+@router.get("/probate/jurisdictions")
+async def list_jurisdictions():
+    """States the workbench has rules and forms for, for the selector."""
+
+    return {"jurisdictions": jurisdiction.list_jurisdictions()}
+
+
 @router.get("/probate/forms")
-async def list_forms(request: Request, db: AsyncSession = Depends(get_db)):
-    """The ND form registry joined with this firm's installed templates.
+async def list_forms(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    jurisdiction_code: str | None = Query(default=None, alias="jurisdiction"),
+):
+    """A jurisdiction's form registry joined with this firm's installed templates.
 
     Installs the pack on first sight so the Probate tab is never empty for a
     firm that has never opened Template Studio.
@@ -343,10 +399,20 @@ async def list_forms(request: Request, db: AsyncSession = Depends(get_db)):
 
     user = await get_current_user(request, db)
     await set_tenant_context(db, str(user.tenant_id))
-    state = await forms_module.forms_state(db, user.tenant_id)
+    try:
+        bundle = (
+            jurisdiction.require(jurisdiction_code)
+            if jurisdiction_code
+            else jurisdiction.default()
+        )
+    except jurisdiction.UnsupportedJurisdictionError as exc:
+        raise HTTPException(422, str(exc))
+    state = await forms_module.forms_state(db, user.tenant_id, jurisdiction=bundle)
     if not any(item.get("template_id") for item in state):
-        await install_module.install_forms_pack(db, user.tenant_id, user.id)
-        state = await forms_module.forms_state(db, user.tenant_id)
+        await install_module.install_forms_pack(
+            db, user.tenant_id, user.id, jurisdiction=bundle
+        )
+        state = await forms_module.forms_state(db, user.tenant_id, jurisdiction=bundle)
     return {"forms": state}
 
 
@@ -354,11 +420,20 @@ async def list_forms(request: Request, db: AsyncSession = Depends(get_db)):
 async def install_forms(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    jurisdiction_code: str | None = Query(default=None, alias="jurisdiction"),
     current_user=Depends(require_capability("manage_documents")),
 ):
     from app.services.probate import install as install_module
 
     await set_tenant_context(db, str(current_user.tenant_id))
+    try:
+        bundle = (
+            jurisdiction.require(jurisdiction_code)
+            if jurisdiction_code
+            else jurisdiction.default()
+        )
+    except jurisdiction.UnsupportedJurisdictionError as exc:
+        raise HTTPException(422, str(exc))
     return await install_module.install_forms_pack(
-        db, current_user.tenant_id, current_user.id
+        db, current_user.tenant_id, current_user.id, jurisdiction=bundle
     )

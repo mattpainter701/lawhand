@@ -22,6 +22,23 @@ STAFF = "/api/plugins/trust-estate"
 
 @pytest_asyncio.fixture
 async def estate_portal(db_session, test_tenant, test_user):
+    from app.models.rbac import Role, UserRole
+
+    staff_role = Role(
+        tenant_id=test_tenant.id,
+        name="Estate staff",
+        capabilities=["manage_matters"],
+    )
+    db_session.add(staff_role)
+    await db_session.flush()
+    db_session.add(
+        UserRole(
+            user_id=test_user.id,
+            role_id=staff_role.id,
+            tenant_id=test_tenant.id,
+            source="manual",
+        )
+    )
     contact = Contact(
         id=uuid.uuid4(),
         tenant_id=test_tenant.id,

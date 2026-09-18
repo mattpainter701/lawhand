@@ -19,18 +19,23 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import sample_import
-from app.services.probate import forms as forms_module
 
 MODULE = "trust-estate"
-JURISDICTION = "North Dakota"
 
 
 async def install_forms_pack(
-    db: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID | None = None
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
+    *,
+    jurisdiction=None,
 ) -> dict[str, Any]:
+    from app.services.probate import registry
+
+    bundle = jurisdiction or registry.default()
     installed: list[dict[str, Any]] = []
     missing: list[str] = []
-    for slug, kind, description in forms_module.PACK_SAMPLES:
+    for slug, kind, description in bundle.pack_samples:
         sample = await sample_import.find_sample(db, slug)
         if sample is None:
             missing.append(slug)
@@ -42,7 +47,7 @@ async def install_forms_pack(
                 sample,
                 module=MODULE,
                 kind=kind,
-                jurisdiction=JURISDICTION,
+                jurisdiction=bundle.name,
                 description=description,
             )
         except sample_import.SampleSourceError:

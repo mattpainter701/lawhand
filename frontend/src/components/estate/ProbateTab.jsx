@@ -337,6 +337,11 @@ export default function ProbateTab({ estate, onChanged }) {
     <div className="space-y-6">
       {error && <p role="alert" className="text-sm text-brand-rose bg-brand-rose/10 px-3 py-2 rounded border border-brand-rose/20">{error}</p>}
       {notice && <p role="status" className="text-sm text-brand-green">{notice}</p>}
+      {state.jurisdiction_supported === false && (
+        <p role="alert" className="text-sm text-brand-ink-2 bg-brand-bg-soft px-3 py-2 rounded border border-brand-line">
+          The probate workbench does not yet support this estate&apos;s jurisdiction. Set the estate&apos;s jurisdiction to North Dakota to use the court forms and deadline clock.
+        </p>
+      )}
       <Section icon={CheckCircle2} title="Which probate does this estate need?" aside={
         <button type="button" className={SECONDARY} onClick={sendIntake} disabled={!estate.matter_id} title={estate.matter_id ? '' : 'Link this estate to a matter to send paperwork'}>
           <Send size={14} /> Send probate intake

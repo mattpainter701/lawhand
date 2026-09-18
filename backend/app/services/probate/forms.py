@@ -248,14 +248,14 @@ def form(number: int) -> NdProbateForm | None:
     return _BY_NUMBER.get(number)
 
 
-def forms_for(track: str | None) -> tuple[NdProbateForm, ...]:
+def forms_for(
+    track: str | None, forms: tuple[NdProbateForm, ...] = ND_PROBATE_FORMS
+) -> tuple[NdProbateForm, ...]:
     """Required forms for a track, in filing order."""
 
     if not track:
         return ()
-    return tuple(
-        item for item in ND_PROBATE_FORMS if track in item.tracks and not item.optional
-    )
+    return tuple(item for item in forms if track in item.tracks and not item.optional)
 
 
 _HEADER = re.compile(
@@ -493,37 +493,45 @@ def registry_json() -> list[dict[str, Any]]:
 
 
 async def forms_state(
-    db, tenant_id, *, track: str | None = None
+    db, tenant_id, *, track: str | None = None, jurisdiction=None
 ) -> list[dict[str, Any]]:
     """The registry joined with the tenant's copies of the pack.
 
     Each row says whether the guidebook template is installed and published,
     which is what the Probate tab needs to enable "Generate", and which pages
-    to print for the form.
+    to print for the form. ``jurisdiction`` is a resolved
+    :class:`~app.services.probate.base.ProbateJurisdiction`; when omitted the
+    default jurisdiction is used.
     """
 
     from app.services import sample_import
+    from app.services.probate import registry
+
+    bundle = jurisdiction or registry.default()
 
     templates: dict[str, Any] = {}
-    for slug, _kind, _description in PACK_SAMPLES:
+    for slug, _kind, _description in bundle.pack_samples:
         template = await sample_import.find_import(db, tenant_id, slug)
         if template is not None:
             templates[slug] = template
-    guidebook = templates.get(GUIDEBOOK_SLUG)
-    required = {item.number for item in forms_for(track)}
+    guidebook = templates.get(bundle.guidebook_slug)
+    required = {item.number for item in bundle.forms_for(track)}
+    # Key the catalogue by form number rather than by position: a second
+    # state's registry need not be contiguous or start at one.
+    catalog = {row["number"]: row for row in bundle.catalog()}
     rows: list[dict[str, Any]] = []
-    for item in ND_PROBATE_FORMS:
+    for item in bundle.forms:
         rows.append(
             {
-                **registry_json()[item.number - 1],
+                **catalog[item.number],
                 "required": item.number in required,
-                "slug": GUIDEBOOK_SLUG,
+                "slug": bundle.guidebook_slug,
                 "template_id": str(guidebook.id) if guidebook else None,
                 "template_status": guidebook.status if guidebook else None,
                 "published": bool(guidebook.is_active) if guidebook else False,
             }
         )
-    for slug, kind, description in PACK_SAMPLES[1:]:
+    for slug, kind, description in bundle.pack_samples[1:]:
         template = templates.get(slug)
         rows.append(
             {

@@ -22,16 +22,32 @@ _KEY_TO_FIELD = {
     "priority_persons": "persons_with_prior_or_equal_priority",
 }
 
-_QUESTION_KEYS = tuple(q.key for q in PROBATE_QUESTIONS)
-_YES_NO_KEYS = tuple(q.key for q in PROBATE_QUESTIONS if q.kind == "yes_no")
+
+def _questions_for_estate(estate) -> tuple:
+    """The estate's jurisdiction's question set, or the default (ND) set."""
+
+    from app.services.probate import registry
+
+    bundle = registry.for_estate(estate)
+    return bundle.questions if bundle is not None else PROBATE_QUESTIONS
 
 
-def has_probate_answers(values: Mapping[str, Any] | None) -> bool:
+def _question_keys(questions: tuple) -> tuple[str, ...]:
+    return tuple(q.key for q in questions)
+
+
+def _yes_no_keys(questions: tuple) -> tuple[str, ...]:
+    return tuple(q.key for q in questions if q.kind == "yes_no")
+
+
+def has_probate_answers(
+    values: Mapping[str, Any] | None, questions=PROBATE_QUESTIONS
+) -> bool:
     """True when any probate question was answered (not merely present)."""
 
     if not values:
         return False
-    for key in _QUESTION_KEYS:
+    for key in _question_keys(questions):
         if str(values.get(key) or "").strip():
             return True
         if (
@@ -69,26 +85,31 @@ def _yes_no(values: Mapping[str, Any], key: str) -> Any:
     return None
 
 
-def facts_from_values(values: Mapping[str, Any] | None) -> ProbateFacts:
+def facts_from_values(
+    values: Mapping[str, Any] | None, questions=PROBATE_QUESTIONS
+) -> ProbateFacts:
     """Map answers keyed by question key onto the facts dataclass."""
 
     if not values:
         return ProbateFacts()
+    yes_no = _yes_no_keys(questions)
     payload: dict[str, Any] = {}
-    for key in _QUESTION_KEYS:
-        raw = _yes_no(values, key) if key in _YES_NO_KEYS else values.get(key)
+    for key in _question_keys(questions):
+        raw = _yes_no(values, key) if key in yes_no else values.get(key)
         if raw is None or (isinstance(raw, str) and not raw.strip()):
             continue
         payload[_KEY_TO_FIELD.get(key, key)] = raw
     return from_json(payload)
 
 
-def preview(values: Mapping[str, Any] | None) -> dict[str, Any] | None:
+def preview(
+    values: Mapping[str, Any] | None, questions=PROBATE_QUESTIONS
+) -> dict[str, Any] | None:
     """Facts plus determination for a submitted questionnaire, or ``None``."""
 
-    if not has_probate_answers(values):
+    if not has_probate_answers(values, questions):
         return None
-    facts = facts_from_values(values)
+    facts = facts_from_values(values, questions)
     if is_blank(facts):
         return None
     determination = determine(facts)
@@ -125,13 +146,14 @@ async def harvest(db, user, estate) -> tuple[ProbateFacts, list[dict[str, Any]]]
     from app.models.matter_document import MatterDocument
     from app.models.matter_intake import MatterIntake
     from app.services import matter_fact_extraction
-    from app.services.pdf_templates import TemplatePdfError, read_pdf_form_values
+    from app.services.pdf_templates import read_pdf_form_values
     from app.services.probate.facts import merge
 
     facts = ProbateFacts()
     sources: list[dict[str, Any]] = []
     if not getattr(estate, "matter_id", None):
         return facts, sources
+    questions = _questions_for_estate(estate)
     packet = await db.scalar(
         select(MatterIntake).where(
             MatterIntake.tenant_id == estate.tenant_id,
@@ -140,8 +162,8 @@ async def harvest(db, user, estate) -> tuple[ProbateFacts, list[dict[str, Any]]]
     )
     if packet is None:
         return facts, sources
-    if has_probate_answers(packet.answers):
-        facts = merge(facts, facts_from_values(packet.answers))
+    if has_probate_answers(packet.answers, questions):
+        facts = merge(facts, facts_from_values(packet.answers, questions))
         sources.append(
             {
                 "kind": "portal_questionnaire",
@@ -169,11 +191,11 @@ async def harvest(db, user, estate) -> tuple[ProbateFacts, list[dict[str, Any]]]
                 db, user, estate.matter_id, document.id
             )
             values = values_from_pdf_fields(read_pdf_form_values(content))
-        except (TemplatePdfError, Exception):  # noqa: BLE001 - a bad scan is not fatal
+        except Exception:  # noqa: BLE001 - a bad scan is not fatal
             continue
-        if not has_probate_answers(values):
+        if not has_probate_answers(values, questions):
             continue
-        facts = merge(facts, facts_from_values(values))
+        facts = merge(facts, facts_from_values(values, questions))
         sources.append(
             {
                 "kind": "returned_pdf",

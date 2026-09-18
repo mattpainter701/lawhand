@@ -117,6 +117,12 @@ it('disables intake and generation without a linked matter', async () => {
   expect(screen.getByText(/Link this estate to a matter to generate/)).toBeInTheDocument()
 })
 
+it('warns when the estate jurisdiction is not supported yet', async () => {
+  getProbate.mockResolvedValue({ ...state, jurisdiction_supported: false, jurisdiction: null, jurisdiction_label: null, forms: [] })
+  renderTab()
+  expect(await screen.findByText(/does not yet support this estate's jurisdiction/)).toBeInTheDocument()
+})
+
 it('round-trips facts through the form helpers', () => {
   const form = factsToForm(state.facts)
   expect(form.will_exists).toBe('yes')

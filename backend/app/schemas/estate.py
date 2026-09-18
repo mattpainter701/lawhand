@@ -623,3 +623,6 @@ class ProbateStateResponse(BaseModel):
     deadlines_preview: dict
     sources: List[dict]
     intake: Optional[dict] = None
+    jurisdiction: Optional[str] = None
+    jurisdiction_label: Optional[str] = None
+    jurisdiction_supported: bool = True

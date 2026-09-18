@@ -27,6 +27,31 @@ SEED_DIR = Path(__file__).resolve().parents[1] / "seed" / "sample_templates"
 BASE = "/api/plugins/trust-estate"
 
 
+@pytest.fixture(autouse=True)
+async def _probate_staff_capability(db_session, test_tenant, test_user):
+    """The staff workbench now requires ``manage_matters`` on every route."""
+
+    from app.models.rbac import Role, UserRole
+
+    role = Role(
+        tenant_id=test_tenant.id,
+        name="Probate staff",
+        capabilities=["manage_matters"],
+    )
+    db_session.add(role)
+    await db_session.flush()
+    db_session.add(
+        UserRole(
+            user_id=test_user.id,
+            role_id=role.id,
+            tenant_id=test_tenant.id,
+            source="manual",
+        )
+    )
+    await db_session.commit()
+    return role
+
+
 async def _estate(client, **overrides) -> dict:
     payload = {"estate_name": "Estate of Ole Olson", "estate_type": "probate"}
     payload.update(overrides)
@@ -435,3 +460,75 @@ async def test_the_forms_pack_installs_once_from_the_shipped_sample(
     assert template.module == "trust-estate"
     assert template.source_provenance["sample_slug"] == forms_module.GUIDEBOOK_SLUG
     assert Path(template.source_storage_path).read_bytes() == content
+
+
+@pytest.mark.asyncio
+async def test_the_state_reports_its_resolved_jurisdiction(client):
+    estate = await _estate(client)
+    state = await client.get(f"{BASE}/estates/{estate['id']}/probate")
+    assert state.status_code == 200, state.text
+    body = state.json()
+    assert body["jurisdiction"] == "ND"
+    assert body["jurisdiction_label"] == "North Dakota"
+    assert body["jurisdiction_supported"] is True
+
+
+@pytest.mark.asyncio
+async def test_an_unsupported_jurisdiction_fails_closed(client, db_session):
+    estate = await _estate(client, jurisdiction="Minnesota")
+    state = await client.get(f"{BASE}/estates/{estate['id']}/probate")
+    assert state.status_code == 200, state.text
+    body = state.json()
+    assert body["jurisdiction_supported"] is False
+    assert body["forms"] == []
+    assert body["deadlines_preview"]["deadlines"] == []
+    # A write that would apply the wrong state's rules is refused.
+    refused = await client.put(
+        f"{BASE}/estates/{estate['id']}/probate/facts", json={"will_exists": True}
+    )
+    assert refused.status_code == 409
+
+    listed = await client.get(f"{BASE}/probate/forms", params={"jurisdiction": "MN"})
+    assert listed.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_a_portal_client_token_cannot_reach_the_staff_workbench(
+    client, db_session, test_tenant
+):
+    """A role="client" login must not replay its token against staff routes."""
+
+    from app.models.user import User
+    from app.services.portal_token import create_user_token
+
+    client_user = User(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        email="portal-client@testfirm.com",
+        full_name="Portal Client",
+        role="client",
+        is_active=True,
+        license_active=True,
+    )
+    db_session.add(client_user)
+    await db_session.commit()
+    token = create_user_token(
+        user_id=str(client_user.id),
+        tenant_id=str(test_tenant.id),
+        role="client",
+        email=client_user.email,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    read = await client.get(f"{BASE}/probate/forms", headers=headers)
+    assert read.status_code == 403
+    write = await client.put(
+        f"{BASE}/estates/{uuid.uuid4()}/probate/facts", json={}, headers=headers
+    )
+    assert write.status_code == 403
+    verify = await client.post(
+        f"{BASE}/estates/{uuid.uuid4()}/assets/{uuid.uuid4()}/verify",
+        json={"verification_status": "verified"},
+        headers=headers,
+    )
+    assert verify.status_code == 403

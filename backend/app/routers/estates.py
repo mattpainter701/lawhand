@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_capability
 from app.middleware.addon_guard import require_addon_workflow
 from app.models.contact import Contact
 from app.models.estate import (
@@ -68,7 +69,13 @@ from app.schemas.estate import (
 router = APIRouter(
     prefix="/api/plugins/trust-estate",
     tags=["trust-estate"],
-    dependencies=[Depends(require_addon_workflow("trust-estate-legal"))],
+    dependencies=[
+        Depends(require_addon_workflow("trust-estate-legal")),
+        # Staff-only surface: the entitlement gates the firm, the capability
+        # gates the person. A portal client token (role="client") must not be
+        # able to read or rewrite an estate through the staff API.
+        Depends(require_capability("manage_matters")),
+    ],
 )
 
 _OPEN_STATUSES = ("complete", "na", "cancelled")

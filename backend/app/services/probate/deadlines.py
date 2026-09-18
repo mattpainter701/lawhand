@@ -174,6 +174,7 @@ def compute(
     first_publication_date: date | None = None,
     closing_statement_filed_date: date | None = None,
     track: str | None = None,
+    rules: Iterable[DeadlineRule] = RULES,
 ) -> DeadlinePlan:
     anchors = {
         DEATH: date_of_death,
@@ -183,7 +184,7 @@ def compute(
     }
     computed: list[ComputedDeadline] = []
     waiting: dict[str, list[str]] = {}
-    for rule in RULES:
+    for rule in rules:
         if rule.tracks is not None and track not in rule.tracks:
             continue
         candidates: list[tuple[date, str]] = []
@@ -213,6 +214,9 @@ def compute(
 
 
 def plan_for_estate(estate, track: str | None = None) -> DeadlinePlan:
+    """The estate's deadline plan under its own jurisdiction's rule table."""
+
+    rules = _rules_for_estate(estate)
     return compute(
         date_of_death=getattr(estate, "date_of_death", None),
         appointment_date=getattr(estate, "appointment_date", None),
@@ -221,11 +225,32 @@ def plan_for_estate(estate, track: str | None = None) -> DeadlinePlan:
             estate, "closing_statement_filed_date", None
         ),
         track=track or getattr(estate, "probate_track", None),
+        rules=rules,
     )
 
 
+def _rules_for_estate(estate) -> Iterable[DeadlineRule]:
+    """The rule table for the estate's jurisdiction, defaulting to ND's.
+
+    An explicit, recognised jurisdiction with no registered implementation
+    yields no rules rather than silently applying North Dakota law. Imported
+    lazily: ``registry`` imports this module (through the ND bundle), so a
+    module-level import here would be circular.
+    """
+
+    from app.services.probate import registry
+
+    bundle = registry.for_estate(estate)
+    return bundle.deadline_rules if bundle is not None else ()
+
+
 async def sync(
-    db, estate, *, mirror_tasks: bool = False, actor_id: uuid.UUID | None = None
+    db,
+    estate,
+    *,
+    mirror_tasks: bool = False,
+    actor_id: uuid.UUID | None = None,
+    rules: Iterable[DeadlineRule] | None = None,
 ) -> dict:
     """Upsert one ``EstateDeadline`` per rule; never touch a completed row.
 
@@ -238,14 +263,25 @@ async def sync(
 
     from app.models.estate import EstateDeadline
 
-    plan = plan_for_estate(estate)
+    rule_list = tuple(rules) if rules is not None else tuple(_rules_for_estate(estate))
+    rule_types = tuple(rule.deadline_type for rule in rule_list)
+    plan = compute(
+        date_of_death=getattr(estate, "date_of_death", None),
+        appointment_date=getattr(estate, "appointment_date", None),
+        first_publication_date=getattr(estate, "first_publication_date", None),
+        closing_statement_filed_date=getattr(
+            estate, "closing_statement_filed_date", None
+        ),
+        track=getattr(estate, "probate_track", None),
+        rules=rule_list,
+    )
     existing = {
         row.deadline_type: row
         for row in (
             await db.execute(
                 select(EstateDeadline).where(
                     EstateDeadline.estate_id == estate.id,
-                    EstateDeadline.deadline_type.in_(RULE_TYPES),
+                    EstateDeadline.deadline_type.in_(rule_types),
                 )
             )
         ).scalars()
