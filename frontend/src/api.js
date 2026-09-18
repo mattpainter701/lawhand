@@ -1005,6 +1005,26 @@ export const updateEstateChild = (id, resource, childId, data) =>
 export const deleteEstateChild = (id, resource, childId) =>
   api.delete(`/plugins/trust-estate/estates/${id}/${resource}/${childId}`).then(r => r.data)
 
+// ── Probate (Trust, Estate & Probate add-on) ─────────────────────────────────
+export const getProbate = (estateId) =>
+  api.get(`/plugins/trust-estate/estates/${estateId}/probate`).then(r => r.data)
+export const saveProbateFacts = (estateId, facts) =>
+  api.put(`/plugins/trust-estate/estates/${estateId}/probate/facts`, facts).then(r => r.data)
+export const pullProbateFactsFromIntake = (estateId, { overwrite = false } = {}) =>
+  api.post(`/plugins/trust-estate/estates/${estateId}/probate/facts/from-intake`, { overwrite }).then(r => r.data)
+export const recomputeProbate = (estateId) =>
+  api.post(`/plugins/trust-estate/estates/${estateId}/probate/determine`).then(r => r.data)
+export const saveProbateAnchors = (estateId, anchors) =>
+  api.patch(`/plugins/trust-estate/estates/${estateId}/probate/anchors`, anchors).then(r => r.data)
+export const syncProbateDeadlines = (estateId, { mirror_tasks = false } = {}) =>
+  api.post(`/plugins/trust-estate/estates/${estateId}/probate/deadlines/sync`, { mirror_tasks }).then(r => r.data)
+export const listProbateForms = () =>
+  api.get('/plugins/trust-estate/probate/forms').then(r => r.data)
+export const installProbateForms = () =>
+  api.post('/plugins/trust-estate/probate/forms/install').then(r => r.data)
+export const verifyEstateAsset = (estateId, assetId, data = {}) =>
+  api.post(`/plugins/trust-estate/estates/${estateId}/assets/${assetId}/verify`, data).then(r => r.data)
+
 export const getEstateAccountingSummary = (id) =>
   api.get(`/plugins/trust-estate/estates/${id}/accounting/summary`).then(r => r.data)
 
@@ -1259,6 +1279,13 @@ export const installIntakeStarterDocuments = () => api.post('/intake-starter-pac
 
 export const getClientIntake = () => clientPortalApi.get('/portal/client/intake').then(r => r.data)
 export const submitClientIntake = (answers) => clientPortalApi.post('/portal/client/intake/questionnaire', { answers, confirm_complete: true }).then(r => r.data)
+
+export const getClientPortalEstate = () =>
+  clientPortalApi.get('/portal/client/estate').then((r) => r.data)
+export const addClientPortalEstateAsset = (data) =>
+  clientPortalApi.post('/portal/client/estate/assets', data).then((r) => r.data)
+export const updateClientPortalEstateAsset = (assetId, data) =>
+  clientPortalApi.patch(`/portal/client/estate/assets/${assetId}`, data).then((r) => r.data)
 
 export const getClientPortalMediation = () =>
   clientPortalApi.get('/portal/client/mediation').then((r) => r.data)

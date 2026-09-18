@@ -155,6 +155,7 @@ from app.services.template_bindings import (
 )
 from app.services import pdf_source_review
 from app.services import template_cards
+from app.services.probate import bindings as probate_bindings
 from app.services.template_cards import CardKind
 from app.services.template_fill_coverage import (
     binding_is_resolvable as _binding_is_resolvable,
@@ -2108,6 +2109,7 @@ def _collect_smart_fill_candidates(
     parties: Sequence[MatterParty] = (),
     current_user,
     retainer: Retainer | None = None,
+    estate=None,
 ) -> dict[str, DocumentTemplateVariableSuggestion]:
     candidates: dict[str, DocumentTemplateVariableSuggestion] = {}
 
@@ -2139,6 +2141,23 @@ def _collect_smart_fill_candidates(
 
     if not matter:
         return candidates
+
+    # The estate linked to the matter supplies the ``estate.*`` group: probate
+    # court forms fill from the record the firm keeps, never from a retyped
+    # copy. Values are composed in ``app.services.probate.bindings`` so the
+    # rules (heirs table layout, "None." statements, inventory totals) are
+    # unit-tested away from this router.
+    for alias, value, source_field, record_id in probate_bindings.estate_candidates(
+        estate
+    ):
+        _add_candidate(
+            candidates,
+            alias,
+            value,
+            source_type="estate",
+            source_field=source_field,
+            record_id=record_id,
+        )
 
     matter_fields = {
         "matter_id": matter.id,
@@ -2391,6 +2410,7 @@ def _smart_fill_alias_vocabulary() -> frozenset[str]:
             id=uuid.uuid4(), full_name="Probe User", email="probe@user.com"
         ),
         retainer=retainer,
+        estate=probate_bindings.probe_estate(),
     )
     return frozenset(candidates)
 
@@ -2518,6 +2538,29 @@ async def _load_matter_parties(
         )
     )
     return list(result.scalars().all())
+
+
+async def _load_estate_for_matter(*, db: AsyncSession, tenant_id: uuid.UUID, matter):
+    """The newest estate record linked to the matter, with its parties loaded."""
+
+    from app.models.plugin import Estate
+
+    return await db.scalar(
+        select(Estate)
+        .options(
+            selectinload(Estate.fiduciaries),
+            selectinload(Estate.beneficiaries),
+            selectinload(Estate.assets),
+            selectinload(Estate.liabilities),
+        )
+        .where(
+            Estate.tenant_id == tenant_id,
+            Estate.matter_id == matter.id,
+            Estate.is_deleted.is_(False),
+        )
+        .order_by(Estate.created_at.desc())
+        .limit(1)
+    )
 
 
 async def _load_current_retainer(
@@ -2754,11 +2797,18 @@ async def build_variable_suggestions(
         if needs_retainer
         else None
     )
+    estate = (
+        await _load_estate_for_matter(db=db, tenant_id=tenant_id, matter=matter)
+        if matter is not None
+        and any(binding.startswith("estate.") for binding in bindings.values())
+        else None
+    )
     candidates = _collect_smart_fill_candidates(
         matter=matter,
         parties=parties,
         current_user=current_user,
         retainer=retainer,
+        estate=estate,
     )
 
     custom = await template_custom_fields.suggestions(db, tenant_id, matter, bindings)

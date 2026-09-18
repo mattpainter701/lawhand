@@ -102,6 +102,8 @@ from app.routers.sample_templates import router as sample_templates_router
 from app.routers.template_intake_preview import router as template_intake_preview_router
 from app.routers.matters import matter_context_cache_manager, router as matters_router
 from app.routers.estates import router as estates_router
+from app.routers.probate import router as probate_router
+from app.routers.client_portal_estate import router as client_portal_estate_router
 from app.routers.domestic import router as domestic_router
 from app.routers.mediation import router as mediation_router
 from app.routers.mediation_portal import router as mediation_portal_router
@@ -483,6 +485,8 @@ app.include_router(platform_sms_router, prefix="/api")
 # plugins_router, whose greedy ``POST /{plugin}/{skill}`` skill-execution route
 # would otherwise shadow specific paths like ``/api/plugins/mediation/cases``.
 app.include_router(estates_router)
+app.include_router(probate_router)
+app.include_router(client_portal_estate_router)
 app.include_router(domestic_router)
 app.include_router(mediation_router)
 app.include_router(mediation_portal_router)

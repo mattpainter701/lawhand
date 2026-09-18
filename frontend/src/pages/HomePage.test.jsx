@@ -174,7 +174,7 @@ describe('marketing add-on workflows', () => {
       </MemoryRouter>,
     )
 
-    const estateButton = screen.getByRole('button', { name: /trust & estate management/i })
+    const estateButton = screen.getByRole('button', { name: /trust, estate & probate/i })
     const mediationButton = screen.getByRole('button', { name: /mediation management/i })
     const estatePanel = document.getElementById(estateButton.getAttribute('aria-controls'))
     const mediationPanel = document.getElementById(mediationButton.getAttribute('aria-controls'))

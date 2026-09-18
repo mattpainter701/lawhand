@@ -116,6 +116,19 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange, onEnga
     if (packet && packet.status !== 'cancelled') loadDocuments()
   }, [packet, loadDocuments])
 
+  // The estate's Probate tab sends staff here with ``?paperwork=`` in the
+  // address so the drawer is already open when the page lands; the query is
+  // read once, on mount, and cleared so a reload does not reopen it.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (!params.get('paperwork')) return
+    params.delete('paperwork')
+    const rest = params.toString()
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`)
+    openDrawer()
+  }, [])
+
   // Staff and the client's email are only needed to compose a packet.
   async function openDrawer() {
     setDrawerOpen(true)

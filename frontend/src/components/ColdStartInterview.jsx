@@ -15,7 +15,7 @@ const PLUGIN_LABELS = {
   'ip-legal': 'IP Legal',
   'ai-governance-legal': 'AI Governance Legal',
   'regulatory-legal': 'Regulatory Legal',
-  'trust-estate-legal': 'Trust & Estate',
+  'trust-estate-legal': 'Trust, Estate & Probate',
   'mediation-legal': 'Mediation',
 }
 

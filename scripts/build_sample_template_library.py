@@ -50,6 +50,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = REPO_ROOT.parent / "legal_forms_library_acro"
 SEED_DIR = REPO_ROOT / "backend" / "seed" / "sample_templates"
 
+#: Manifest entries with no scraped source to rebuild from: the authored firm
+#: paperwork and the court packets shipped by ``backend/scripts/build_nd_probate_guidebook.py``.
+_PRESERVED_ORIGINS = {"authored", "court_form"}
+
 # "Fillable" is not enough: the template studio also rejects PDFs with active
 # content (embedded files, /URI links, /OpenAction, /AA, XFA, etc.). Use the
 # app's own discovery path as the single source of truth for what is renderable.
@@ -772,7 +776,7 @@ def _authored_forms(out: Path) -> list[dict]:
     if not manifest.is_file():
         return []
     forms = json.loads(manifest.read_text(encoding="utf-8")).get("forms") or []
-    return [form for form in forms if form.get("origin") == "authored"]
+    return [form for form in forms if form.get("origin") in _PRESERVED_ORIGINS]
 
 
 def main() -> int:
@@ -802,7 +806,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     for form in manifest["forms"]:
-        if form.get("origin") == "authored":
+        if form.get("origin") in _PRESERVED_ORIGINS:
             continue
         dest = out / form["filename"]
         dest.parent.mkdir(parents=True, exist_ok=True)

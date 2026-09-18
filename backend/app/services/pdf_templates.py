@@ -167,6 +167,10 @@ _COMPLEX_SCRIPT_RANGES = (
 # also called directly by background/service code and must enforce its own
 # dimension-independent work bounds.
 _MAX_PDF_FIELD_VALUE_CHARS = 10_000
+#: A court packet such as North Dakota's 63-page informal-probate guidebook
+#: carries every form in one file, so the ceiling is sized for a whole packet
+#: rather than a single form.
+MAX_PDF_WIDGETS = 400
 _MAX_PDF_RENDERED_LINES_PER_FIELD = 200
 _MAX_PDF_WIDTH_PROBES_PER_RENDER = 50_000
 
@@ -399,9 +403,9 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
 
     raw_fields = reader.get_fields() or {}
     widgets = _widgets(reader)
-    if len(widgets) > 200:
+    if len(widgets) > MAX_PDF_WIDGETS:
         raise TemplatePdfError(
-            "PDF templates may contain at most 200 form fields/widgets."
+            f"PDF templates may contain at most {MAX_PDF_WIDGETS} form fields/widgets."
         )
     data_widgets = [
         widget
@@ -513,8 +517,15 @@ def read_pdf_form_values(content: bytes) -> list[dict[str, Any]]:
             # client never actually marked.
             if str(raw_value).lstrip("/") in {"", "Off"}:
                 continue
-            type_name = "radio" if flags & (1 << 15) else "checkbox"
-            text = "true"
+            if flags & (1 << 15):
+                # A radio group's value is the chosen option's export name —
+                # ``yes``/``no`` on a questionnaire — not the fact that one was
+                # picked. A checkbox has no such choice, so it stays ``true``.
+                type_name = "radio"
+                text = str(raw_value).lstrip("/")
+            else:
+                type_name = "checkbox"
+                text = "true"
         elif field_type == "/Ch":
             type_name = "choice"
             if isinstance(raw_value, (list, tuple)):
@@ -842,9 +853,9 @@ def _discover_pdf_overlay_fields(
         )
 
     location_count = sum(len(field.get("pdf_overlays") or []) for field in discovered)
-    if len(discovered) > 200 or location_count > 400:
+    if len(discovered) > MAX_PDF_WIDGETS or location_count > 2 * MAX_PDF_WIDGETS:
         raise TemplatePdfError(
-            "A PDF template may contain at most 200 detected fields."
+            f"A PDF template may contain at most {MAX_PDF_WIDGETS} detected fields."
         )
     return discovered
 

@@ -157,6 +157,24 @@ class EstateAsset(Base):
     valuation_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     location: Mapped[str | None] = mapped_column(String(300), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Who entered the row and whether staff have checked it (migration 195).
+    # A client's portal entry is ``client_portal`` / ``unverified`` until an
+    # attorney or paralegal verifies it; only verified rows feed court forms.
+    source: Mapped[str] = mapped_column(
+        String(30), default="staff", server_default="staff"
+    )
+    verification_status: Mapped[str] = mapped_column(
+        String(30), default="verified", server_default="verified"
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    artifact_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("matter_documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

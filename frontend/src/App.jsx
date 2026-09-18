@@ -445,7 +445,7 @@ export default function App() {
         />
         <Route
           path="/plugins/trust-estate/estates"
-          element={<ShellRoute title="Trust & Estate" module="plugins"><EstatePortfolioPage /></ShellRoute>}
+          element={<ShellRoute title="Trust, Estate & Probate" module="plugins"><EstatePortfolioPage /></ShellRoute>}
         />
         <Route
           path="/plugins/trust-estate/estates/:id"

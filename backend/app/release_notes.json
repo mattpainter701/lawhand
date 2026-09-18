@@ -2,6 +2,35 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.18.01",
+      "version": "2026.09.18.01",
+      "title": "North Dakota probate: intake picks the proceeding, forms pre-fill",
+      "published_at": "2026-09-18",
+      "summary": "A plain-language probate intake, answered in the portal, on paper, or by phone, works out which North Dakota proceeding an estate needs and fills the court's informal-probate forms from the estate record for attorney review.",
+      "highlights": [
+        {
+          "title": "One intake, three ways to answer it",
+          "description": "Clients answer in the portal with date, yes/no and money controls, save and come back later, mark what they don't know, fill in the paper form, or read it to the office by phone."
+        },
+        {
+          "title": "The proceeding, with the statute",
+          "description": "The Probate tab names the track and says why, citing N.D.C.C. Title 30.1, and lists the NDPC forms to file with the pages to print. Correct a fact to change the answer."
+        },
+        {
+          "title": "Court forms pre-loaded and pre-filled",
+          "description": "The court's informal-probate packet ships with LawHand, installs into your templates on first use, and fills from the estate record for review before anything is generated."
+        },
+        {
+          "title": "The probate clock",
+          "description": "Enter the appointment and publication dates and the statutory deadlines appear on the estate and, if you choose, as matter tasks."
+        },
+        {
+          "title": "Clients list what the estate owns",
+          "description": "After appointment, the client portal shows an Estate inventory tab. Items wait for staff to verify before they count toward the inventory."
+        }
+      ]
+    },
+    {
       "id": "2026.09.16.08",
       "version": "2026.09.16.08",
       "title": "Word templates place their signature fields themselves",

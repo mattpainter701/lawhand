@@ -25,9 +25,30 @@ class EngagementRecord(BaseModel):
 
 
 class IntakeQuestion(BaseModel):
+    """One questionnaire prompt.
+
+    ``kind`` says how the answer is entered and checked. ``text`` (the default)
+    is a free narrative; ``date`` expects an ISO date, ``money`` and ``number``
+    a numeric amount, ``yes_no`` the literal ``yes``/``no``, and ``select`` one
+    of ``options``. Answers are still stored as strings, so a packet sent before
+    kinds existed reads exactly as it did.
+    """
+
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,49}$")
     label: str = Field(min_length=1, max_length=500)
     required: bool = True
+    kind: Literal["text", "date", "yes_no", "money", "number", "select"] = "text"
+    options: list[str] = Field(default_factory=list, max_length=60)
+    help: str | None = Field(None, max_length=300)
+
+    @model_validator(mode="after")
+    def _options_match_kind(self):
+        if self.kind == "select":
+            if len(self.options) < 2:
+                raise ValueError("A select question needs at least two options.")
+        elif self.options:
+            raise ValueError("Only a select question carries options.")
+        return self
 
 
 class IntakeDocumentSelection(BaseModel):

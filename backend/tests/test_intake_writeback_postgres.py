@@ -503,3 +503,53 @@ async def test_intake_conflict_record_hides_matters_the_packet_owner_cannot_see(
     assert "Confidential rival engagement" not in serialized
     assert str(hidden.id) not in serialized
     assert record.restricted_matter_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_a_probate_questionnaire_previews_its_track_for_the_reviewer(
+    db_session, test_user, monkeypatch
+):
+    """Probate answers ride along as a preview; nothing lands on an estate."""
+
+    from app.services.practice_resolution import PROBATE_QUESTIONS
+
+    env = await make_packet(db_session, test_user, monkeypatch)
+    env.packet.config = {
+        **env.packet.config,
+        "questions": [question.as_dict() for question in PROBATE_QUESTIONS],
+    }
+    await db_session.commit()
+    await submit(
+        db_session,
+        env,
+        {
+            "decedent_name": "Ole Olson",
+            "date_of_death": "2025-01-15",
+            "domicile_state": "North Dakota",
+            "domicile_county": "Cass",
+            "will_exists": "yes",
+            "real_property_in_nd": "yes",
+            "probate_property_value": "250000",
+            "applicant_name": "Ann Olson",
+            "applicant_relationship": "spouse",
+            "applicant_address": "1 Main St, Fargo ND",
+            "applicant_phone": "701-555-0100",
+            "heirs_list": "Ann Olson; 70; spouse; Fargo",
+            "prior_appointment": "no",
+            "probate_opened_elsewhere": "no",
+            "demand_for_notice": "no",
+            "assets_summary": "Checking at Gate City Bank; farmland in Cass County",
+        },
+    )
+    await db_session.refresh(env.packet)
+    preview = env.packet.proposed_changes["probate"]
+    assert preview["track"] == "informal_testate"
+    assert preview["facts"]["decedent_name"] == "Ole Olson"
+    assert preview["facts"]["heirs"][0]["relationship"] == "spouse"
+    public = intake_writeback.public_changes(env.packet)
+    assert public["probate"]["label"].startswith("Informal probate")
+    task = await db_session.scalar(
+        select(Task).where(Task.external_ref == f"intake:{env.packet.id}:writeback")
+    )
+    assert task is not None
+    assert "Probate track (preview)" in task.description

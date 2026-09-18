@@ -115,7 +115,7 @@ export const WORKSPACE_MODULES = [
     id: 'estate',
     plugin: 'trust-estate-legal',
     icon: 'Vault',
-    name: 'Trust & Estate management',
+    name: 'Trust, Estate & Probate',
     description: 'Estate portfolios with role-aware access for trustees, grantors, and beneficiaries — asset tracking, tax analysis, and probate records organized for review.',
     example: 'Hamilton Family Estate',
     status: 'Attorney review',

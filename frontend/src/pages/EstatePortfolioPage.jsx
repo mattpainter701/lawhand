@@ -90,7 +90,7 @@ export default function EstatePortfolioPage() {
       .catch((err) => {
         const status = err?.response?.status
         setError(status === 404
-          ? 'Trust & Estate data could not be loaded. Confirm the API route is deployed.'
+          ? 'Trust, Estate & Probate data could not be loaded. Confirm the API route is deployed.'
           : err?.message || 'Failed to load estates.')
         reportError(err)
       })
@@ -140,7 +140,7 @@ export default function EstatePortfolioPage() {
             className="flex items-center gap-2 text-brand-ink-2 hover:text-brand-ink transition-colors text-sm font-sans font-medium"
           >
             <Vault size={16} />
-            Trust & Estate
+            Trust, Estate & Probate
           </button>
           <div className="h-4 w-px bg-brand-line"></div>
           <span className="font-serif font-bold text-lg text-brand-ink tracking-tight">Estate Portfolio</span>

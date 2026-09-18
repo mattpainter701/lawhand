@@ -8,7 +8,8 @@ import logging
 import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from html import escape
 from zoneinfo import ZoneInfo
 
@@ -55,6 +56,50 @@ MAX_AGREEMENT_BYTES = 20 * 1024 * 1024
 
 def now():
     return datetime.now(timezone.utc)
+
+
+def validate_answers(questions, answers):
+    """Reject a questionnaire whose answers do not fit its questions.
+
+    Raises ``HTTPException(422)`` naming the first problem in the client's own
+    words: an unknown key, an oversized answer, a required blank, or a typed
+    answer that does not parse (a date that is not a date, a yes/no that is
+    neither). Optional questions may be left blank whatever their kind.
+    """
+
+    allowed = {q["key"] for q in questions}
+    if set(answers) - allowed or any(len(v) > 20000 for v in answers.values()):
+        raise HTTPException(422, "Questionnaire contains unknown or oversized answers.")
+    for question in questions:
+        value = (answers.get(question["key"]) or "").strip()
+        if not value:
+            if question.get("required", True):
+                raise HTTPException(422, f"Complete: {question['label']}")
+            continue
+        kind = question.get("kind", "text")
+        if kind == "date":
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(
+                    422, f"Enter a date as YYYY-MM-DD for: {question['label']}"
+                ) from None
+        elif kind in ("money", "number"):
+            cleaned = value.replace(",", "").replace("$", "").strip()
+            try:
+                Decimal(cleaned)
+            except InvalidOperation:
+                raise HTTPException(
+                    422, f"Enter a number for: {question['label']}"
+                ) from None
+        elif kind == "yes_no":
+            if value.lower() not in ("yes", "no"):
+                raise HTTPException(422, f"Answer yes or no for: {question['label']}")
+        elif kind == "select":
+            if value not in (question.get("options") or []):
+                raise HTTPException(
+                    422, f"Choose one of the listed options for: {question['label']}"
+                )
 
 
 def public_packet(packet, *, client=False):

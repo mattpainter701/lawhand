@@ -183,7 +183,14 @@ def test_authored_forms_generate_with_every_checkbox_false(builder) -> None:
         content = (SEED_DIR / form.filename).read_bytes()
         fields = discover_pdf_fields(content)
         variables = {
-            field["name"]: ("false" if field["field_type"] == "checkbox" else "Sample")
+            field["name"]: (
+                "false"
+                if field["field_type"] == "checkbox"
+                # A radio group takes one of its own options, never free text.
+                else (field["options"] or ["Sample"])[0]
+                if field["field_type"] == "radio"
+                else "Sample"
+            )
             for field in fields
         }
         generated = fill_pdf_template(
