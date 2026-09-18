@@ -123,3 +123,33 @@ it('drops the questionnaire and its deadline when no questionnaire is sent', () 
   // The old payload still sent the questions after the box was unchecked.
   expect(options.questions).toEqual([])
 })
+
+it('sends the pack questions with their keys and kinds while the list is untouched', async () => {
+  const user = userEvent.setup()
+  const probatePack = {
+    ...familyPack, practice: 'probate', practice_label: 'Probate and estate administration',
+    questions: [
+      { key: 'date_of_death', label: 'Date of death', required: true, kind: 'date' },
+      { key: 'will_exists', label: 'Did they leave a will?', required: true, kind: 'yes_no', help: 'Answer no if unsure.' },
+    ],
+  }
+  getIntakeStarterPack.mockResolvedValue(probatePack)
+  let latest
+  function Capture() {
+    const [value, setValue] = useState(defaultIntakeSetup)
+    latest = value
+    return <IntakeSetupFields value={value} onChange={setValue} onFile={() => {}} matterId="matter-1" />
+  }
+  render(<Capture />)
+  await user.click(screen.getByRole('button', { name: /standard questions/i }))
+  await waitFor(() => expect(latest.pack_questions).toHaveLength(2))
+
+  const untouched = intakeOptions(latest, 'client@example.com').questions
+  expect(untouched).toEqual([
+    { key: 'date_of_death', label: 'Date of death', required: true, kind: 'date' },
+    { key: 'will_exists', label: 'Did they leave a will?', required: true, kind: 'yes_no', help: 'Answer no if unsure.' },
+  ])
+
+  const edited = intakeOptions({ ...latest, questions: `${latest.questions}\nAnything else?` }).questions
+  expect(edited.map(q => q.key)).toEqual(['question_1', 'question_2', 'question_3'])
+})

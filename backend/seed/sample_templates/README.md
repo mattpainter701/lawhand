@@ -19,7 +19,8 @@ source of truth for what is in a form.
 | `size_bytes` | yes | Size of the shipped bytes. |
 | `field_count` | yes | AcroForm fields the studio can render. |
 | `bindings` | no | `{field name: platform variable path}` for authored forms. |
-| `origin` | no | `"authored"` marks a form written in-repo rather than imported. |
+| `origin` | no | `"authored"` marks a form written in-repo rather than imported; `"court_form"` marks a court packet shipped whole by `backend/scripts/build_nd_probate_guidebook.py`. Both survive a scraped-library rebuild. |
+| `page_ranges` | no | `{"<form number>": [first, last]}` for a packet that holds several court forms in one PDF. Read from the PDF's own page headers at build time and re-checked by `tests/test_nd_probate_forms.py`; the Probate tab uses it to tell staff which pages to print. |
 | `provenance` | no | Where the form came from — see below. |
 
 ## `provenance`

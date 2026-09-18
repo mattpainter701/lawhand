@@ -186,7 +186,7 @@ class DocumentTemplateQueueResponse(BaseModel):
 
 class DocumentTemplateRenderRequest(BaseModel):
     folder_id: Optional[uuid.UUID] = None
-    variables: dict[str, str] = Field(default_factory=dict, max_length=200)
+    variables: dict[str, str] = Field(default_factory=dict, max_length=400)
     matter_id: Optional[str] = None
     include_suggestions: bool = False
     # Binary PDF previews persist non-PII evidence.  Activation previews must
@@ -223,7 +223,7 @@ class DocumentTemplatePublishRequest(BaseModel):
 class DocumentTemplateWordDeriveRequest(BaseModel):
     """Explicit Word span selections used to create a fresh draft source."""
 
-    fields: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
+    fields: list[dict[str, Any]] = Field(default_factory=list, max_length=400)
     source_review: dict[str, str] = Field(default_factory=dict, max_length=500)
     source_mode: Literal["prose", "form"] | None = None
     reviewed_schema: dict[str, Any] | None = None

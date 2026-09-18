@@ -5077,7 +5077,7 @@ PLUGIN_DISPLAY_NAMES = {
     "ip-legal": "IP Legal",
     "ai-governance-legal": "AI Governance Legal",
     "regulatory-legal": "Regulatory Legal",
-    "trust-estate-legal": "Trust & Estate Legal",
+    "trust-estate-legal": "Trust, Estate & Probate",
     "family-law": "Family & Domestic Law",
     "criminal-defense": "Criminal Defense",
     "real-estate": "Real Estate",

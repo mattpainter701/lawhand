@@ -5,9 +5,10 @@ import { format, parseISO } from 'date-fns'
 import ReactMarkdown from 'react-markdown'
 import {
   getEstate, updateEstate, addEstateEvent,
-  listEstateChildren, getEstateAccountingSummary, getEstateReport,
+  listEstateChildren, getEstateAccountingSummary, getEstateReport, verifyEstateAsset,
 } from '../api'
 import EstateSubTable, { fmtMoney, fmtDate } from '../components/EstateSubTable'
+import ProbateTab from '../components/estate/ProbateTab'
 import StatusBadge from '../components/StatusBadge'
 import { Vault, ArrowLeft, CalendarPlus, Check, X, FileEdit, Clock, Download } from 'lucide-react'
 
@@ -17,14 +18,14 @@ const ESTATE_TYPES = ['Probate', 'Trust Administration', 'Estate Planning', 'Gua
 
 const normalizeEstateUpdatePayload = (data) => {
   const payload = { ...data }
-  for (const key of ['date_of_death', 'gross_estate_value', 'net_estate_value']) {
+  for (const key of ['date_of_death', 'will_execution_date', 'gross_estate_value', 'net_estate_value']) {
     if (payload[key] === '') payload[key] = null
   }
   return payload
 }
 
 const TABS = [
-  'Overview', 'Fiduciaries', 'Beneficiaries', 'Assets', 'Claims',
+  'Overview', 'Probate', 'Fiduciaries', 'Beneficiaries', 'Assets', 'Claims',
   'Distributions', 'Accounting', 'Deadlines', 'Activity',
 ]
 
@@ -49,7 +50,7 @@ function Field({ label, children, bold = false }) {
 
 // ── Sub-resource configs ──────────────────────────────────────────────────────
 
-const FIDUCIARY_ROLES = ['executor', 'administrator', 'trustee', 'personal_representative', 'co_executor', 'guardian', 'attorney', 'cpa', 'financial_advisor']
+const FIDUCIARY_ROLES = ['executor', 'administrator', 'trustee', 'personal_representative', 'applicant', 'co_executor', 'guardian', 'attorney', 'cpa', 'financial_advisor']
 
 const fiduciaryConfig = {
   resource: 'fiduciaries', title: 'Fiduciaries & Representatives',
@@ -111,6 +112,7 @@ const assetConfig = {
     { key: 'date_of_death_value', label: 'DoD Value', render: fmtMoney },
     { key: 'current_value', label: 'Current Value', render: fmtMoney },
     { key: 'is_probate', label: 'Probate', render: (v) => <Bool value={v} /> },
+    { key: 'verification_status', label: 'Review', render: (v, row) => (row?.source === 'client_portal' ? <Pill>{v === 'verified' ? 'client · verified' : v === 'rejected' ? 'client · rejected' : 'client · to review'}</Pill> : null) },
   ],
   fields: [
     { key: 'name', label: 'Asset Name', type: 'text', required: true, half: true },
@@ -159,7 +161,7 @@ const deadlineConfig = {
   ],
   fields: [
     { key: 'title', label: 'Title', type: 'text', required: true },
-    { key: 'deadline_type', label: 'Type', type: 'select', options: ['court_filing', 'tax_706', 'tax_1041', 'tax_709', 'tax_1040', 'inventory', 'accounting', 'creditor_bar', 'distribution', 'task', 'other'], half: true },
+    { key: 'deadline_type', label: 'Type', type: 'select', options: ['court_filing', 'tax_706', 'tax_1041', 'tax_709', 'tax_1040', 'inventory', 'accounting', 'creditor_bar', 'notice_heirs', 'hhs_affidavit', 'creditor_publication', 'claims_disallowance', 'nd_estate_tax', 'elective_share', 'closing_earliest', 'pr_termination', 'distribution', 'task', 'other'], half: true },
     { key: 'due_date', label: 'Due Date', type: 'date', required: true, half: true },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'in_progress', 'complete', 'overdue', 'na'], half: true },
     { key: 'notes', label: 'Notes', type: 'textarea' },
@@ -189,6 +191,42 @@ const accountingConfig = {
   ],
 }
 
+// Rows the client entered from the portal wait here until staff check them;
+// only a verified row reaches the inventory totals a court form prints.
+function ClientSubmittedAssets({ estateId, refreshKey, onReviewed }) {
+  const [rows, setRows] = useState([])
+  const [busyId, setBusyId] = useState(null)
+  useEffect(() => {
+    listEstateChildren(estateId, 'assets')
+      .then((items) => setRows((items || []).filter((row) => row.source === 'client_portal' && row.verification_status === 'unverified')))
+      .catch(() => setRows([]))
+  }, [estateId, refreshKey])
+  if (!rows.length) return null
+  async function review(row, verification_status) {
+    setBusyId(row.id)
+    try { await verifyEstateAsset(estateId, row.id, { verification_status }); onReviewed() }
+    catch (err) { reportError(err) }
+    finally { setBusyId(null) }
+  }
+  return (
+    <section className="bg-brand-amber/5 border border-brand-amber/30 rounded-2xl p-5 mb-6" aria-label="Client-submitted assets to review">
+      <h2 className="font-serif font-bold text-lg text-brand-ink mb-1">The client listed {rows.length} item{rows.length === 1 ? '' : 's'} in the portal</h2>
+      <p className="text-sm text-brand-ink-2 mb-3">Verify each one to count it toward the inventory, or reject it and follow up with the client.</p>
+      <ul className="divide-y divide-brand-line">
+        {rows.map((row) => (
+          <li key={row.id} className="py-2 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span className="text-brand-ink"><strong>{row.name}</strong> — {row.category?.replace(/_/g, ' ')}{row.ownership_type ? `, ${row.ownership_type.replace(/_/g, ' ')}` : ''}{row.date_of_death_value != null ? ` · ${fmtMoney(row.date_of_death_value)}` : ''}{row.institution ? ` · ${row.institution}` : ''}</span>
+            <span className="flex gap-2">
+              <button type="button" disabled={busyId === row.id} onClick={() => review(row, 'verified')} className="px-3 py-1.5 bg-brand-ink text-white text-xs font-semibold rounded-lg disabled:opacity-50">Verify</button>
+              <button type="button" disabled={busyId === row.id} onClick={() => review(row, 'rejected')} className="px-3 py-1.5 border border-brand-line text-xs font-semibold rounded-lg disabled:opacity-50">Reject</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export default function EstateDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -210,6 +248,7 @@ export default function EstateDetailPage() {
   // For the Distributions tab — beneficiary dropdown options.
   const [beneficiaryOptions, setBeneficiaryOptions] = useState([])
   const [acctSummary, setAcctSummary] = useState(null)
+  const [assetsRefresh, setAssetsRefresh] = useState(0)
 
   const loadEstate = useCallback(() => {
     return getEstate(id)
@@ -400,7 +439,9 @@ export default function EstateDetailPage() {
                       { key: 'grantor', label: 'Grantor / Decedent' },
                       { key: 'jurisdiction', label: 'Jurisdiction' },
                       { key: 'domicile_state', label: 'Domicile State' },
+                      { key: 'domicile_county', label: 'Domicile County' },
                       { key: 'date_of_death', label: 'Date of Death', type: 'date' },
+                      { key: 'will_execution_date', label: 'Will Signed On', type: 'date' },
                       { key: 'gross_estate_value', label: 'Gross Estate Value', type: 'number' },
                       { key: 'net_estate_value', label: 'Net Estate Value', type: 'number' },
                       { key: 'court_name', label: 'Court' },
@@ -427,7 +468,9 @@ export default function EstateDetailPage() {
                     <Field label="Grantor / Decedent">{display.grantor}</Field>
                     <Field label="Jurisdiction">{display.jurisdiction}</Field>
                     <Field label="Domicile State">{display.domicile_state}</Field>
+                    <Field label="Domicile County">{display.domicile_county}</Field>
                     <Field label="Date of Death">{display.date_of_death ? fmtDate(display.date_of_death) : null}</Field>
+                    <Field label="Probate Track">{display.probate_track ? display.probate_track.replace(/_/g, ' ') : null}</Field>
                     <Field label="Gross Estate Value" bold>{fmtMoney(display.gross_estate_value)}</Field>
                     <Field label="Net Estate Value" bold>{fmtMoney(display.net_estate_value)}</Field>
                     <Field label="Beneficiaries">{display.beneficiaries_count}</Field>
@@ -470,9 +513,11 @@ export default function EstateDetailPage() {
           </div>
         )}
 
+        {tab === 'Probate' && <ProbateTab estate={estate} onChanged={loadEstate} />}
         {tab === 'Fiduciaries' && <EstateSubTable estateId={id} {...fiduciaryConfig} />}
         {tab === 'Beneficiaries' && <EstateSubTable estateId={id} {...beneficiaryConfig} onChanged={loadEstate} />}
-        {tab === 'Assets' && <EstateSubTable estateId={id} {...assetConfig} />}
+        {tab === 'Assets' && <ClientSubmittedAssets estateId={id} refreshKey={assetsRefresh} onReviewed={() => setAssetsRefresh(n => n + 1)} />}
+        {tab === 'Assets' && <EstateSubTable key={assetsRefresh} estateId={id} {...assetConfig} />}
         {tab === 'Claims' && <EstateSubTable estateId={id} {...claimConfig} />}
         {tab === 'Distributions' && <EstateSubTable estateId={id} {...distributionConfig} />}
         {tab === 'Deadlines' && <EstateSubTable estateId={id} {...deadlineConfig} onChanged={loadEstate} />}

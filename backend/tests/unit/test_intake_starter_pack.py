@@ -303,7 +303,7 @@ async def test_reading_the_pack_for_a_matter_reads_that_matters_type(monkeypatch
 
     payload = await router.read_pack(matter_id=uuid.uuid4(), db=db, user=user)
 
-    assert payload["practice"] == "estate"
+    assert payload["practice"] == "probate"
     assert payload["matter_type"] == "Probate of estate"
 
 

@@ -246,6 +246,30 @@
       "title": "ND Divorce Start"
     },
     {
+      "bindings": {},
+      "category": "court_form",
+      "description": "Clerk of court document return request; used to recover an original will.",
+      "field_count": 17,
+      "filename": "court_form/nd-document-return-request.pdf",
+      "jurisdictions": [
+        "North Dakota"
+      ],
+      "origin": "court_form",
+      "provenance": {
+        "edition": "Rev. 2024\u20132025",
+        "retrieved_at": "2026-09-18",
+        "source_files": [
+          "6afe54c7-Document-Return-Request.pdf"
+        ],
+        "source_name": "North Dakota Court System \u2014 Legal Self Help Center",
+        "source_url": "https://www.ndcourts.gov/legal-self-help/informal-probate"
+      },
+      "sha256": "8ba7f92fdf8bf3b5a39bb2d80a232436d6ace5efebb622425367be92f8dd5d7d",
+      "size_bytes": 1313751,
+      "slug": "nd-document-return-request",
+      "title": "ND Document Return Request"
+    },
+    {
       "category": "court_form",
       "description": "ND General. Fillable starter form from the public sample library; verify jurisdiction-specific requirements before use.",
       "field_count": 10,
@@ -270,6 +294,345 @@
       "size_bytes": 1468220,
       "slug": "nd-general-2",
       "title": "ND General"
+    },
+    {
+      "bindings": {
+        "1_i_am_the_successor_of_deceased_person": "estate.decedent_name",
+        "1_lessees_name": "estate.decedent_name",
+        "3_venue_for_this_case_is_in_this_county_because": "estate.venue_basis",
+        "3_venue_for_this_case_is_in_this_county_because_1": "estate.venue_basis",
+        "5_i_have_not_received_any_demand_for_notice_and_am_unaware_of_a_demand_for_notice_of": "estate.demand_for_notice_statement",
+        "a_1_i_am_the_state_name_and_interest_of_applicant": "estate.applicant_name_and_interest",
+        "address_nhd": "estate.pr_address",
+        "aff_co": "estate.pr_name",
+        "aff_for_dhhs": "estate.pr_address",
+        "affiant_address": "estate.applicant_address",
+        "age": "estate.age_at_death",
+        "age_f2": "estate.age_at_death",
+        "ainest_app": "estate.applicant_name_and_interest",
+        "ainstexcept": "estate.prior_appointment_statement",
+        "appaddressint": "estate.applicant_address",
+        "appcityint": "estate.applicant_city_state_zip",
+        "appin_0": "estate.bond_amount",
+        "appint_prio": "estate.pr_priority_statement",
+        "appintc": "estate.applicant_name",
+        "appintescept": "estate.demand_for_notice_statement",
+        "appintestcity": "estate.applicant_phone",
+        "appintestemail": "estate.applicant_email",
+        "appintheir": "estate.heirs_table",
+        "appintn": "estate.pr_prior_priority_persons",
+        "appintnot_being": "estate.unprobated_instrument_statement",
+        "appintrequest": "estate.pr_name",
+        "applicant_s_name_f19": "estate.pr_name",
+        "appstatein": "estate.applicant_name",
+        "apptd_on": "estate.appointment_date",
+        "being_duly_sworn_states_the_following": "estate.applicant_name",
+        "case_no_f4": "estate.case_number",
+        "case_number_f19": "estate.case_number",
+        "city_state_zip_code": "estate.applicant_city_state_zip",
+        "county_name_f4": "estate.venue_county",
+        "court_of_f10": "estate.venue_county",
+        "court_of_f13": "estate.venue_county",
+        "court_of_f15": "estate.venue_county",
+        "court_of_f16": "estate.venue_county",
+        "court_of_f17": "estate.venue_county",
+        "court_of_f18": "estate.venue_county",
+        "court_of_f2": "estate.venue_county",
+        "court_of_f3": "estate.venue_county",
+        "court_of_f5": "estate.venue_county",
+        "court_of_f6": "estate.venue_county",
+        "court_of_f7": "estate.venue_county",
+        "court_of_f8": "estate.venue_county",
+        "court_of_f9": "estate.venue_county",
+        "deceased_name_f4": "estate.decedent_name",
+        "deceased_s_name_f19": "estate.decedent_name",
+        "deceased_without_bond_or_upon_giving_bond_in_the_amount_of": "estate.bond_amount",
+        "decedent": "estate.decedent_name",
+        "decedent_f11": "estate.decedent_name",
+        "decedent_f11_p2": "estate.decedent_name",
+        "decedent_f12": "estate.decedent_name",
+        "decedent_f12_p2": "estate.decedent_name",
+        "decedent_f13": "estate.decedent_name",
+        "decedent_f13_2": "estate.decedent_name",
+        "decedent_f13_p2": "estate.decedent_name",
+        "decedent_f18": "estate.decedent_name",
+        "decedent_f3": "estate.decedent_name",
+        "decedent_f3_p2": "estate.decedent_name",
+        "decedent_f3_p2_2": "estate.decedent_name",
+        "decedent_f5": "estate.decedent_name",
+        "decedent_f7": "estate.decedent_name",
+        "decedentf12_1": "estate.decedent_name",
+        "dod": "estate.date_of_death",
+        "dod_f10": "estate.date_of_death",
+        "dod_f17": "estate.date_of_death",
+        "dod_f18": "estate.date_of_death",
+        "dod_f2": "estate.date_of_death",
+        "dod_f3": "estate.date_of_death",
+        "dod_f5": "estate.date_of_death",
+        "domaint": "estate.domicile_county",
+        "domaint22": "estate.domicile_state",
+        "email_address": "estate.applicant_email",
+        "estate_of": "estate.decedent_name",
+        "estate_of_f13": "estate.decedent_name",
+        "estate_of_f15": "estate.decedent_name",
+        "estate_of_f16": "estate.decedent_name",
+        "estate_of_f17": "estate.decedent_name",
+        "estate_of_f18": "estate.decedent_name",
+        "estate_of_f2": "estate.decedent_name",
+        "estate_of_f3": "estate.decedent_name",
+        "estate_of_f5": "estate.decedent_name",
+        "estate_of_f6": "estate.decedent_name",
+        "estate_of_f8": "estate.decedent_name",
+        "estate_of_f9": "estate.decedent_name",
+        "estate_off7": "estate.decedent_name",
+        "heirs_app": "estate.heirs_table",
+        "if_no": "estate.bond_amount",
+        "in_the_matter_of_the_estate_of": "estate.decedent_name",
+        "lettersadmin": "estate.applicant_name",
+        "lme_2": "estate.inventory_encumbrances",
+        "name_of_county_f19": "estate.venue_county",
+        "nc_mailing": "estate.pr_address",
+        "ndcounty": "estate.venue_county",
+        "no_f10": "estate.case_number",
+        "no_f13": "estate.case_number",
+        "no_f16": "estate.case_number",
+        "no_f17": "estate.case_number",
+        "no_f18": "estate.case_number",
+        "no_f2": "estate.case_number",
+        "no_f3": "estate.case_number",
+        "no_f5": "estate.case_number",
+        "no_f6": "estate.case_number",
+        "no_f7": "estate.case_number",
+        "no_f8": "estate.case_number",
+        "no_f9": "estate.case_number",
+        "personal_representative_name_f4": "estate.pr_name",
+        "phone_number": "estate.applicant_phone",
+        "phoneddds": "estate.pr_phone",
+        "ppj": "estate.inventory_personal_jointly",
+        "pps": "estate.inventory_personal_solely",
+        "ppsolely": "estate.inventory_personal_description",
+        "pr": "estate.pr_name",
+        "pr_add_nc": "estate.pr_address",
+        "pr_appt": "estate.appointment_date",
+        "pr_f10": "estate.pr_name",
+        "pr_f10_pg3": "estate.pr_name",
+        "pr_f12": "estate.pr_name",
+        "pr_f15": "estate.pr_name",
+        "pr_f15_p2": "estate.pr_name",
+        "pr_f16": "estate.pr_name",
+        "pr_f18": "estate.applicant_name",
+        "pr_f2": "estate.applicant_name",
+        "pr_f3": "estate.applicant_name",
+        "pr_f3_p2": "estate.applicant_name",
+        "pr_f3_p2_2": "estate.applicant_name",
+        "pr_f5": "estate.pr_name",
+        "pr_f6": "estate.pr_name",
+        "pr_f7": "estate.pr_name",
+        "pr_f9": "estate.pr_name",
+        "pr_hone": "estate.pr_phone",
+        "pr_nd_email": "estate.pr_email",
+        "prf13": "estate.pr_name",
+        "pria": "estate.pr_name",
+        "priaadd": "estate.pr_address",
+        "priae": "estate.pr_email",
+        "priaph": "estate.pr_phone",
+        "prnc_phone": "estate.pr_phone",
+        "prncemail": "estate.pr_email",
+        "prnd": "estate.pr_address",
+        "probate_no": "estate.case_number",
+        "prssaddress": "estate.pr_address",
+        "prssemail": "estate.pr_email",
+        "prssname": "estate.pr_name",
+        "prssphone": "estate.pr_phone",
+        "prvs_address": "estate.pr_address",
+        "prvsphone": "estate.pr_phone",
+        "rp_solely": "estate.inventory_real_description",
+        "rpj": "estate.inventory_real_jointly",
+        "rps": "estate.inventory_real_solely",
+        "sought_is_as_follows_1": "estate.pr_name",
+        "sought_is_as_follows_2": "estate.pr_priority_statement",
+        "sta_add": "estate.applicant_full_address",
+        "sta_phone": "estate.applicant_phone",
+        "state_1": "estate.domicile_state",
+        "terminated_except": "estate.prior_appointment_statement",
+        "totalia": "estate.inventory_total",
+        "undefined_3": "estate.applicant_email",
+        "who_died_on_date_of_death": "estate.date_of_death",
+        "will": "estate.will_execution_date",
+        "will_f2": "estate.will_execution_date",
+        "years_at_the_time_of_death_the_decedent_was_domiciled_in": "estate.domicile_county"
+      },
+      "category": "court_form",
+      "description": "The State Court Administrator's Informal Administration of an Estate packet: Forms 1\u201319 (small-estate affidavit, informal probate and appointment applications, statements, letters, notices, inventory, deeds, and closing statements) in one fillable PDF. Generate once from the estate record and print the pages the filing needs.",
+      "field_count": 340,
+      "filename": "court_form/nd-informal-probate-guidebook.pdf",
+      "jurisdictions": [
+        "North Dakota"
+      ],
+      "origin": "court_form",
+      "page_ranges": {
+        "1": [
+          22,
+          23
+        ],
+        "10": [
+          38,
+          40
+        ],
+        "11": [
+          43,
+          44
+        ],
+        "12": [
+          47,
+          48
+        ],
+        "13": [
+          49,
+          50
+        ],
+        "14": [
+          51,
+          51
+        ],
+        "15": [
+          52,
+          53
+        ],
+        "16": [
+          54,
+          55
+        ],
+        "17": [
+          58,
+          60
+        ],
+        "18": [
+          61,
+          62
+        ],
+        "19": [
+          63,
+          63
+        ],
+        "2": [
+          26,
+          28
+        ],
+        "3": [
+          29,
+          30
+        ],
+        "4": [
+          31,
+          31
+        ],
+        "5": [
+          32,
+          33
+        ],
+        "6": [
+          34,
+          34
+        ],
+        "7": [
+          35,
+          35
+        ],
+        "8": [
+          36,
+          36
+        ],
+        "9": [
+          37,
+          37
+        ]
+      },
+      "provenance": {
+        "edition": "Guidebook Rev. Aug 2025; forms Rev. Sep 2026",
+        "retrieved_at": "2026-09-18",
+        "source_files": [
+          "91b9f7c9-Guidebook-for-Informal-Admin-of-Estate.pdf"
+        ],
+        "source_name": "North Dakota Court System \u2014 Legal Self Help Center",
+        "source_url": "https://www.ndcourts.gov/legal-self-help/informal-probate"
+      },
+      "sha256": "eb122f8946cd9732e4c8085a14a9894327181b24e334cd5ed798da622f049a2b",
+      "size_bytes": 3566728,
+      "slug": "nd-informal-probate-guidebook",
+      "title": "ND Informal Administration of an Estate \u2014 Probate Forms 1\u201319"
+    },
+    {
+      "bindings": {},
+      "category": "court_form",
+      "description": "Claim against estate form and the self-help guide it ships with (N.D.C.C. 30.1-19).",
+      "field_count": 62,
+      "filename": "court_form/nd-probate-claim-against-estate.pdf",
+      "jurisdictions": [
+        "North Dakota"
+      ],
+      "origin": "court_form",
+      "provenance": {
+        "edition": "Rev. 2024\u20132025",
+        "retrieved_at": "2026-09-18",
+        "source_files": [
+          "ddfe6900-Claims-Against-Estate.pdf"
+        ],
+        "source_name": "North Dakota Court System \u2014 Legal Self Help Center",
+        "source_url": "https://www.ndcourts.gov/legal-self-help/informal-probate"
+      },
+      "sha256": "1ea0fea4e144519596aae4768ee9688262148f7ffd4a7ca0c2d37f7ff0cfd00b",
+      "size_bytes": 1512890,
+      "slug": "nd-probate-claim-against-estate",
+      "title": "ND Probate \u2014 Claim Against Estate (with guide)"
+    },
+    {
+      "bindings": {},
+      "category": "court_form",
+      "description": "Declaration of service by mail for probate filings (N.D.C.C. 30.1-03).",
+      "field_count": 39,
+      "filename": "court_form/nd-probate-declaration-of-service-mail.pdf",
+      "jurisdictions": [
+        "North Dakota"
+      ],
+      "origin": "court_form",
+      "provenance": {
+        "edition": "Rev. 2024\u20132025",
+        "retrieved_at": "2026-09-18",
+        "source_files": [
+          "1b370438-Declaration_Service_Mail_30.1-03.pdf"
+        ],
+        "source_name": "North Dakota Court System \u2014 Legal Self Help Center",
+        "source_url": "https://www.ndcourts.gov/legal-self-help/informal-probate"
+      },
+      "sha256": "4524ac1290a69993251f9546830837c14e10ddbe777fc9290fbd1e978c15dc12",
+      "size_bytes": 1277121,
+      "slug": "nd-probate-declaration-of-service-mail",
+      "title": "ND Probate \u2014 Declaration of Service by Mail"
+    },
+    {
+      "bindings": {},
+      "category": "court_form",
+      "description": "Declaration of service by personal delivery for probate filings (N.D.C.C. 30.1-03).",
+      "field_count": 39,
+      "filename": "court_form/nd-probate-declaration-of-service-personal.pdf",
+      "jurisdictions": [
+        "North Dakota"
+      ],
+      "origin": "court_form",
+      "provenance": {
+        "edition": "Rev. 2024\u20132025",
+        "retrieved_at": "2026-09-18",
+        "source_files": [
+          "c8da15fe-Declaration_Service_Personal_30.1-03.pdf"
+        ],
+        "source_name": "North Dakota Court System \u2014 Legal Self Help Center",
+        "source_url": "https://www.ndcourts.gov/legal-self-help/informal-probate"
+      },
+      "sha256": "aa036c68e3fa30cee665ba707083a9deb9a7e3fbe6674e41bcbce3061a8752ab",
+      "size_bytes": 1234325,
+      "slug": "nd-probate-declaration-of-service-personal",
+      "title": "ND Probate \u2014 Declaration of Service by Personal Delivery"
     },
     {
       "category": "court_form",
@@ -387,6 +750,29 @@
       "size_bytes": 92050,
       "slug": "client-questionnaire",
       "title": "Client Questionnaire \u2014 All Matter Types"
+    },
+    {
+      "bindings": {
+        "client_city": "client.address.city",
+        "client_email": "client.email",
+        "client_name": "client.name",
+        "client_phone": "client.phone",
+        "client_state": "client.address.state",
+        "client_street": "client.address.street",
+        "client_zip": "client.address.zip"
+      },
+      "category": "intake",
+      "description": "The probate intake for the person opening a North Dakota estate: who died and when, whether there is a will, the property and its rough value, the applicant, the heirs, and any prior court history. Its answers decide which of the four probate tracks applies and pre-fill the court's informal-probate forms. Field names match the platform's probate questions, so a mailed paper copy carries the same answers as the portal.",
+      "field_count": 36,
+      "filename": "intake/nd-probate-intake-questionnaire.pdf",
+      "jurisdictions": [
+        "North Dakota"
+      ],
+      "origin": "authored",
+      "sha256": "87f22623da5b38f183536fe9935c21511f793fca31ca02f22ca5938baef36c4e",
+      "size_bytes": 46726,
+      "slug": "nd-probate-intake-questionnaire",
+      "title": "Probate Intake Questionnaire \u2014 North Dakota"
     },
     {
       "bindings": {

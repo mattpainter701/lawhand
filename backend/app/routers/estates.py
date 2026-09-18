@@ -40,6 +40,7 @@ from app.schemas.estate import (
     AssetCreate,
     AssetResponse,
     AssetUpdate,
+    AssetVerify,
     BeneficiaryCreate,
     BeneficiaryResponse,
     BeneficiaryUpdate,
@@ -129,6 +130,8 @@ def _estate_to_response(estate: Estate) -> EstateResponse:
         "Court": estate.court_name,
         "Court case number": estate.case_number,
     }
+    if getattr(estate, "estate_type", None) in {"probate", "small_estate"}:
+        missing_candidates["Domicile county"] = getattr(estate, "domicile_county", None)
     missing_facts = [label for label, value in missing_candidates.items() if not value]
     unvalued_assets = sum(
         1
@@ -187,6 +190,16 @@ def _estate_to_response(estate: Estate) -> EstateResponse:
             str(estate.client_contact_id) if estate.client_contact_id else None
         ),
         client_name=_contact_name(estate.client),
+        domicile_county=getattr(estate, "domicile_county", None),
+        will_execution_date=getattr(estate, "will_execution_date", None),
+        probate_track=getattr(estate, "probate_track", None),
+        probate_determined_at=getattr(estate, "probate_determined_at", None),
+        appointment_date=getattr(estate, "appointment_date", None),
+        first_publication_date=getattr(estate, "first_publication_date", None),
+        letters_issued_date=getattr(estate, "letters_issued_date", None),
+        closing_statement_filed_date=getattr(
+            estate, "closing_statement_filed_date", None
+        ),
         beneficiaries_count=len(estate.beneficiaries or []),
         missing_facts=missing_facts,
         unvalued_assets_count=unvalued_assets,
@@ -770,6 +783,43 @@ async def update_asset(
     a = await _get_child_or_404(db, EstateAsset, child_id, estate_id, user.tenant_id)
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(a, field, value)
+    await db.commit()
+    await db.refresh(a)
+    return a
+
+
+@router.post(
+    "/estates/{estate_id}/assets/{child_id}/verify", response_model=AssetResponse
+)
+async def verify_asset(
+    estate_id: str,
+    child_id: str,
+    body: AssetVerify,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Record staff's review of a client-submitted asset.
+
+    Only a verified row counts toward the inventory totals a court form
+    prints; a rejected one stays on file as what the client said.
+    """
+
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    a = await _get_child_or_404(db, EstateAsset, child_id, estate_id, user.tenant_id)
+    a.verification_status = body.verification_status
+    if body.note:
+        a.notes = f"{a.notes}\n{body.note}".strip() if a.notes else body.note
+    a.updated_at = datetime.now(timezone.utc)
+    db.add(
+        EstateEvent(
+            id=uuid.uuid4(),
+            estate_id=a.estate_id,
+            event_type="review",
+            title=f"Asset {body.verification_status}: {a.name}",
+            content=body.note,
+        )
+    )
     await db.commit()
     await db.refresh(a)
     return a

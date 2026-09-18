@@ -542,6 +542,25 @@ class Estate(Base):
         Numeric(14, 2), nullable=True
     )
 
+    # Probate (migration 195). ``probate_facts`` is the JSON form of
+    # ``app.services.probate.facts.ProbateFacts``; ``probate_determination`` is
+    # the last result of ``determination.determine`` and is advisory. The four
+    # dates are the anchors the deadline clock runs from.
+    domicile_county: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    will_execution_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    probate_track: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    probate_facts: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    probate_determination: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    probate_determined_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    appointment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    first_publication_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    letters_issued_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    closing_statement_filed_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )
+
     # Optional link to a Matter (reuses billing, IOLTA, documents) and client Contact
     matter_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

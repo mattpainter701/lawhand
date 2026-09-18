@@ -49,4 +49,7 @@ def test_estate_response_prioritizes_overdue_deadline_and_attention_counts():
     assert response.unresolved_claims_count == 1
     assert response.pending_distributions_count == 1
     assert "Date of death" in response.missing_facts
-    assert response.attention_count == 7
+    # A probate estate also needs the county of domicile: venue for the
+    # application lies there.
+    assert "Domicile county" in response.missing_facts
+    assert response.attention_count == 8

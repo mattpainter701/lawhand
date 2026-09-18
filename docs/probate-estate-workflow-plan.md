@@ -4,7 +4,7 @@
 
 Build a shared estate-workflow foundation that supports probate administration, will-and-testament lifecycle management, trusts, mediation-adjacent settlement workflows, and later consumer-practice modules without duplicating portal, document-intelligence, or template-generation logic.
 
-This plan focuses on the probate/estate deep implementation. The reusable template-index mechanics that should later benefit every module are expanded in [`module-template-index-plan.md`](module-template-index-plan.md).
+This plan focuses on the probate/estate deep implementation. The first shipped slice — the North Dakota intake, track determination, pre-filled court forms, deadline clock, and portal inventory — is documented in [`probate-nd-first-slice.md`](probate-nd-first-slice.md). The reusable template-index mechanics that should later benefit every module are expanded in [`module-template-index-plan.md`](module-template-index-plan.md).
 
 The target experience is a guided loop:
 

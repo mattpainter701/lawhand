@@ -48,7 +48,7 @@ it('keeps signature outstanding after a legacy questionnaire is answered', async
   submitClientIntake.mockResolvedValue({ ...packet(), requirements: { fee_agreement: { completed: false }, questionnaire: { completed: true } } })
   render(<ClientIntakeChecklist onSign={onSign} />)
   await user.type(await screen.findByLabelText('Describe your matter *'), 'Case summary')
-  await user.click(screen.getByRole('button', { name: 'Submit completed questionnaire' }))
+  await user.click(screen.getByRole('button', { name: 'Send my answers' }))
   // Old packets carried free-text questions; once answered the questionnaire
   // has no row of its own — new packets ship it as a PDF form instead.
   await waitFor(() => expect(screen.queryByLabelText('Describe your matter *')).not.toBeInTheDocument())
@@ -97,7 +97,7 @@ it('groups forms to sign apart from records to send, with a status on each', asy
   expect(screen.getByText('Forms to complete and sign')).toBeInTheDocument()
   expect(screen.getByText('Records to send us')).toBeInTheDocument()
   expect(screen.queryByText(/Questionnaire:/)).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Submit completed questionnaire' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Send my answers' })).not.toBeInTheDocument()
 
   expect(screen.getByText('Fee agreement')).toBeInTheDocument()
   expect(screen.getByText('Signed ✓')).toBeInTheDocument()
@@ -154,7 +154,7 @@ it('preserves answers when submission fails', async () => {
   submitClientIntake.mockRejectedValue({ response: { data: { detail: 'Storage unavailable; please retry' } } })
   render(<ClientIntakeChecklist />)
   await user.type(await screen.findByLabelText('Describe your matter *'), 'My answer')
-  await user.click(screen.getByRole('button', { name: 'Submit completed questionnaire' }))
+  await user.click(screen.getByRole('button', { name: 'Send my answers' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Storage unavailable')
   expect(screen.getByLabelText('Describe your matter *')).toHaveValue('My answer')
 })

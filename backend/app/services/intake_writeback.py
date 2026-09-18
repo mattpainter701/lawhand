@@ -29,6 +29,7 @@ from app.services.conflict_check import (
     visible_matter_ids,
 )
 from app.services.intake_starter_pack import CLIENT_INTAKE_FORM
+from app.services.probate import intake as probate_intake
 from app.services.matter_access import can_access_matter
 from app.services.task_workflow import append_task_event, transition_task
 from app.services.template_bindings import MANUAL_BINDING
@@ -333,7 +334,7 @@ async def _record_conflict_check(db, packet, matter, answers):
         return None
 
 
-def _task_description(changes, conflict_record, oversized=()):
+def _task_description(changes, conflict_record, oversized=(), probate=None):
     lines = [
         "The client's questionnaire proposes updates to contact and matter "
         "records. Review each change and accept or reject it; accepted "
@@ -353,6 +354,11 @@ def _task_description(changes, conflict_record, oversized=()):
             f"{item['length']} characters and the field holds "
             f"{item['max_length']}. Shorten it with the client, then edit the "
             "record by hand."
+        )
+    if probate:
+        lines.append(
+            f"- Probate track (preview): {probate['label']}. Open the estate's "
+            "Probate tab and choose Pull from intake to apply these answers."
         )
     if conflict_record is not None:
         if conflict_record.match_count:
@@ -404,10 +410,16 @@ async def plan_writeback(db, packet, matter, answers):
         "conflict_check_id": str(conflict_record.id) if conflict_record else None,
         "derived_at": datetime.now(timezone.utc).isoformat(),
     }
+    # A probate questionnaire also previews the track its answers imply. The
+    # preview is advisory and lands on the estate only when staff pull it in
+    # from the Probate tab, so it never bypasses review.
+    probate_preview = probate_intake.preview(answers)
+    if probate_preview is not None:
+        state["probate"] = probate_preview
     packet.proposed_changes = state
     # An oversized answer raises the review task on its own: it has no proposal
     # to accept, so the task is the only place a person would ever see it.
-    if not changes and not oversized:
+    if not changes and not oversized and probate_preview is None:
         return state
     task_id = uuid.uuid5(packet.id, TASK_KIND)
     task = await db.scalar(
@@ -422,7 +434,9 @@ async def plan_writeback(db, packet, matter, answers):
             matter_id=packet.matter_id,
             contact_id=packet.contact_id,
             title=f"Review intake updates: {matter.matter_name}"[:500],
-            description=_task_description(changes, conflict_record, oversized),
+            description=_task_description(
+                changes, conflict_record, oversized, probate_preview
+            ),
             task_type="review",
             status="pending",
             priority="high",
@@ -462,6 +476,7 @@ def public_changes(packet):
             1 for change in state.get("changes", []) if change["status"] == "pending"
         ),
         "oversized_count": len(state.get("oversized", [])),
+        "probate": state.get("probate"),
     }
 
 

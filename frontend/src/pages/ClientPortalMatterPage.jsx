@@ -2,6 +2,7 @@ import ClientSignatureDocument from '../components/ClientSignatureDocument'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import PortalDocumentTransfer from '../components/PortalDocumentTransfer'
 import ClientIntakeChecklist from '../components/ClientIntakeChecklist'
+import ClientPortalEstateTab from '../components/portal/ClientPortalEstateTab'
 import { useConfirm } from '../components/dialog/ConfirmProvider'
 import { SIGNED_COPY_RECEIVED_MESSAGE, signedOutcomeMessage } from '../components/portal/signingMessages'
 import {
@@ -9,6 +10,7 @@ import {
   getClientPortalSession,
   logoutClientPortal,
   getClientPortalMatter,
+  getClientPortalEstate,
   getClientPortalMediation,
   listClientPortalMessages,
   sendClientPortalMessage,
@@ -26,7 +28,7 @@ import {
 import {
   ShieldCheck, MessageSquare, FileText, Receipt, Send,
   Download, AlertTriangle, Scale, PenLine, CheckCircle2, LockKeyhole,
-  LogOut, CalendarClock, CreditCard, RefreshCw, Clock, Handshake,
+  LogOut, CalendarClock, CreditCard, RefreshCw, Clock, Handshake, Vault,
   Phone, Mail, Globe, Repeat,
 } from 'lucide-react'
 
@@ -124,6 +126,7 @@ export default function ClientPortalMatterPage() {
   const confirmAction = useConfirm()
   const [matter, setMatter] = useState(null)
   const [mediation, setMediation] = useState(null)
+  const [estate, setEstate] = useState(null)
   const [session, setSession] = useState(null)
   const [matters, setMatters] = useState([])
   const [switching, setSwitching] = useState(false)
@@ -153,6 +156,11 @@ export default function ClientPortalMatterPage() {
           if (requestSequence !== matterRequestSequence.current) return data
           setMatter(data)
           setMediation(null)
+          // The estate inventory is likewise optional: shown only when the
+          // firm's Trust, Estate & Probate add-on has an estate for this matter.
+          getClientPortalEstate()
+            .then((estateData) => { if (requestSequence === matterRequestSequence.current) setEstate(estateData) })
+            .catch(() => { if (requestSequence === matterRequestSequence.current) setEstate(null) })
           // Mediation is an optional add-on. A missing entitlement, a stale
           // deployment, or a transient failure must never hide the core matter.
           return getClientPortalMediation()
@@ -190,6 +198,9 @@ export default function ClientPortalMatterPage() {
   useEffect(() => {
     if (!mediation && tab === 'mediation') setTab('overview')
   }, [mediation, tab])
+  useEffect(() => {
+    if (!estate && tab === 'estate') setTab('overview')
+  }, [estate, tab])
 
   useEffect(() => {
     if (!matter?.paperwork_only) return undefined
@@ -360,7 +371,7 @@ export default function ClientPortalMatterPage() {
         <SessionExpiryBanner expiresAt={session?.expires_at} />
         <nav role="tablist" aria-label="Client portal sections"
           className="flex flex-wrap gap-1 border-b border-brand-line sm:flex-nowrap sm:overflow-x-auto">
-          {[...TABS.filter(item => !matter.paperwork_only || ['overview', 'signatures'].includes(item.key)), ...(mediation ? [{ key: 'mediation', label: 'Mediation', icon: Handshake }] : [])].map(({ key, label, icon: Icon }) => (
+          {[...TABS.filter(item => !matter.paperwork_only || ['overview', 'signatures'].includes(item.key)), ...(mediation ? [{ key: 'mediation', label: 'Mediation', icon: Handshake }] : []), ...(estate && !matter.paperwork_only ? [{ key: 'estate', label: 'Estate inventory', icon: Vault }] : [])].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               role="tab"
@@ -399,6 +410,7 @@ export default function ClientPortalMatterPage() {
           {tab === 'signatures' && <SignaturesTab {...tabProps} />}
           {tab === 'invoices' && <InvoicesTab {...tabProps} />}
           {tab === 'mediation' && mediation && <ClientPortalMediationTab mediation={mediation} />}
+          {tab === 'estate' && estate && <ClientPortalEstateTab estate={estate} onChange={setEstate} />}
         </div>
         <PortalHelpFooter firm={firm} />
       </div>

@@ -26,6 +26,7 @@ vi.mock('../api', () => ({
   getClientPortalSession: vi.fn(),
   logoutClientPortal: vi.fn(),
   getClientPortalMatter: vi.fn(),
+  getClientPortalEstate: vi.fn(() => Promise.reject(new Error('none'))),
   getClientPortalMediation: vi.fn(),
   listClientPortalMessages: vi.fn(),
   sendClientPortalMessage: vi.fn(),

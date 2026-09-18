@@ -184,11 +184,13 @@ _METADATA: dict[str, dict] = {
     },
     "trust-estate-legal": {
         "category": "Consumer Practice",
-        "description": "Will and trust review, probate checklists, beneficiary letters, estate tax worksheets, and fiduciary accounting.",
+        "description": "Probate administration with a typed intake that decides the proceeding and pre-fills the court forms, the statutory deadline clock, a client-portal estate inventory, plus will and trust review, beneficiary letters, estate tax worksheets, and fiduciary accounting.",
         "matter_types": [
             "trust",
             "estate",
             "probate",
+            "small estate",
+            "personal representative",
             "will",
             "beneficiary",
             "fiduciary",

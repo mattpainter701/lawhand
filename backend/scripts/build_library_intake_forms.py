@@ -1700,10 +1700,121 @@ CLIENT_QUESTIONNAIRE = LibraryForm(
 )
 
 
+def _probate_blocks() -> tuple:
+    """Print the probate practice's questions as a form the client can mail back.
+
+    The question keys are the field names, so a returned PDF is read straight
+    into the same facts the portal questionnaire fills. Yes/no questions are
+    radio groups with ``yes``/``no`` export values; typed questions get a
+    single box with a hint of the format; long answers get a paragraph box.
+    Written for a client who may be filling it in by hand at a kitchen table:
+    plain words, one question at a time, and room to write.
+    """
+
+    from app.services.practice_resolution import PROBATE_QUESTIONS, PROBATE_UPLOADS
+
+    blocks: list = [
+        H1("Probate Intake Questionnaire — North Dakota"),
+        P(
+            "We are sorry for your loss. This form gathers what the court needs "
+            "to open the estate. Answer what you can; write “don't know” where "
+            "you are not sure and we will help. You can fill it in on a computer "
+            "or by hand and mail it back, or bring it to the office."
+        ),
+        NOTE(REVIEW_NOTE),
+        H2("Your information"),
+        ROW(
+            Field("client_name", "Your full legal name", "client.name", 2.2),
+            Field("client_phone", "Phone", "client.phone", 1.0),
+            Field("client_email", "Email", "client.email", 1.4),
+        ),
+        ROW(
+            Field("client_street", "Address", "client.address.street", 2.4),
+            Field("client_city", "City", "client.address.city", 1.2),
+            Field("client_state", "State", "client.address.state", 0.5),
+            Field("client_zip", "ZIP", "client.address.zip", 0.6),
+        ),
+    ]
+    sections = {
+        "decedent_name": "About the person who died",
+        "will_exists": "The will",
+        "real_property_in_nd": "Property and value",
+        "applicant_name": "About you, the person opening the estate",
+        "heirs_list": "Family and heirs",
+        "prior_appointment": "Court history",
+        "assets_summary": "What they owned and owed",
+    }
+    for question in PROBATE_QUESTIONS:
+        if question.key in sections:
+            blocks.append(H2(sections[question.key]))
+        label = (
+            question.label if question.required else f"{question.label} (if you know)"
+        )
+        if question.kind == "yes_no":
+            blocks.append(
+                RADIO(label, question.key, (Choice("yes", "Yes"), Choice("no", "No")))
+            )
+        elif question.kind == "date":
+            blocks.append(
+                ROW(Field(question.key, f"{label} (month/day/year)", "", 2.0))
+            )
+        elif question.kind == "money":
+            blocks.append(ROW(Field(question.key, f"{label} ($)", "", 2.0)))
+        elif question.kind == "select":
+            blocks.append(ROW(Field(question.key, label, "", 2.0)))
+        elif question.key in {"heirs_list", "assets_summary", "debts_summary"}:
+            blocks.append(BLOCK(Field(question.key, label, lines=5)))
+        else:
+            blocks.append(ROW(Field(question.key, label, "", 3.0)))
+        if question.help:
+            blocks.append(NOTE(question.help))
+    blocks.extend(
+        (
+            H2("Papers to send with this form"),
+            P(
+                "If you have them, send a copy or a phone photo of: "
+                + "; ".join(upload.label for upload in PROBATE_UPLOADS)
+                + ". Bring the original will to the office — do not mail it."
+            ),
+            KEEP(120),
+            P(
+                "**The information above is true to the best of my knowledge. I "
+                "understand the office will confirm it with me before anything is "
+                "filed with the court.**"
+            ),
+            SIGN("Signature"),
+            ROW(
+                Field("client_name", "Printed name", "client.name", 2.0),
+                Field("form_date", "Date completed", "", 1.0),
+            ),
+        )
+    )
+    return tuple(blocks)
+
+
+PROBATE_INTAKE_ND = LibraryForm(
+    slug="nd-probate-intake-questionnaire",
+    title="Probate Intake Questionnaire — North Dakota",
+    category="intake",
+    description=(
+        "The probate intake for the person opening a North Dakota estate: who "
+        "died and when, whether there is a will, the property and its rough "
+        "value, the applicant, the heirs, and any prior court history. Its "
+        "answers decide which of the four probate tracks applies and pre-fill "
+        "the court's informal-probate forms. Field names match the platform's "
+        "probate questions, so a mailed paper copy carries the same answers as "
+        "the portal."
+    ),
+    blocks=_probate_blocks(),
+    jurisdictions=("North Dakota",),
+)
+
+
 FORMS: tuple[LibraryForm, ...] = (
     FEE_AGREEMENT,
     PROSPECTIVE_INTAKE,
     CLIENT_QUESTIONNAIRE,
+    PROBATE_INTAKE_ND,
 )
 
 
@@ -1780,10 +1891,18 @@ def main() -> int:
         default=SEED_DIR,
         help="library directory to write into (default: the committed seed tree)",
     )
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="SLUG",
+        help="build only these forms (default: every authored form)",
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
-    entries = [build_form(form, args.out) for form in FORMS]
+    selected = [form for form in FORMS if not args.only or form.slug in args.only]
+    entries = [build_form(form, args.out) for form in selected]
     total = update_manifest(entries, args.out)
     for entry in entries:
         print(

@@ -28,9 +28,39 @@ class PackQuestion:
     key: str
     label: str
     required: bool = True
+    #: How the answer is entered and parsed. ``text`` is a free narrative; the
+    #: typed kinds (``date``, ``yes_no``, ``money``, ``number``, ``select``)
+    #: render as the matching control in the portal and are validated on
+    #: submission, so a rules engine downstream reads a value, not a sentence.
+    kind: str = "text"
+    options: tuple[str, ...] = ()
+    #: One-line plain-language help shown under the prompt. Written for a
+    #: client who has never dealt with a court, never for a lawyer.
+    help: str = ""
 
     def as_dict(self) -> dict[str, Any]:
-        return {"key": self.key, "label": self.label, "required": self.required}
+        data: dict[str, Any] = {
+            "key": self.key,
+            "label": self.label,
+            "required": self.required,
+        }
+        if self.kind != "text":
+            data["kind"] = self.kind
+        if self.options:
+            data["options"] = list(self.options)
+        if self.help:
+            data["help"] = self.help
+        return data
+
+
+QUESTION_KINDS: tuple[str, ...] = (
+    "text",
+    "date",
+    "yes_no",
+    "money",
+    "number",
+    "select",
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +88,238 @@ class Practice:
     aliases: tuple[str, ...]
     questions: tuple[PackQuestion, ...]
     uploads: tuple[PackUpload, ...] = dataclass_field(default_factory=tuple)
+
+
+_US_STATES = (
+    "Alabama",
+    "Alaska",
+    "Arizona",
+    "Arkansas",
+    "California",
+    "Colorado",
+    "Connecticut",
+    "Delaware",
+    "District of Columbia",
+    "Florida",
+    "Georgia",
+    "Hawaii",
+    "Idaho",
+    "Illinois",
+    "Indiana",
+    "Iowa",
+    "Kansas",
+    "Kentucky",
+    "Louisiana",
+    "Maine",
+    "Maryland",
+    "Massachusetts",
+    "Michigan",
+    "Minnesota",
+    "Mississippi",
+    "Missouri",
+    "Montana",
+    "Nebraska",
+    "Nevada",
+    "New Hampshire",
+    "New Jersey",
+    "New Mexico",
+    "New York",
+    "North Carolina",
+    "North Dakota",
+    "Ohio",
+    "Oklahoma",
+    "Oregon",
+    "Pennsylvania",
+    "Rhode Island",
+    "South Carolina",
+    "South Dakota",
+    "Tennessee",
+    "Texas",
+    "Utah",
+    "Vermont",
+    "Virginia",
+    "Washington",
+    "West Virginia",
+    "Wisconsin",
+    "Wyoming",
+)
+
+
+#: The probate intake, asked of the person who wants to open the estate — the
+#: nominated personal representative or a family member, often elderly and
+#: rarely a courtroom veteran. Every prompt is written in plain language, each
+#: typed answer feeds ``app.services.probate.determination`` directly, and the
+#: same keys are printed as the fillable "ND Probate Intake Questionnaire" so a
+#: mailed paper copy carries the same answers as the portal.
+PROBATE_QUESTIONS: tuple[PackQuestion, ...] = (
+    PackQuestion(
+        "decedent_name",
+        "Full legal name of the person who died",
+        help="As it appears on the death certificate.",
+    ),
+    PackQuestion(
+        "decedent_aka",
+        "Any other names they used (nicknames, maiden name, prior married name)",
+        required=False,
+    ),
+    PackQuestion("date_of_death", "Date of death", kind="date"),
+    PackQuestion(
+        "date_of_birth",
+        "Their date of birth",
+        kind="date",
+        required=False,
+        help="Used to state their age on the court application.",
+    ),
+    PackQuestion(
+        "domicile_state",
+        "Which state did they live in at the time of death?",
+        kind="select",
+        options=_US_STATES,
+        help="Their permanent home, not where they happened to be.",
+    ),
+    PackQuestion(
+        "domicile_county",
+        "Which county did they live in?",
+        help="The court case is filed in this county.",
+    ),
+    PackQuestion(
+        "will_exists",
+        "Did they leave a will?",
+        kind="yes_no",
+        help="Answer no if you are not aware of one. The office can help you look.",
+    ),
+    PackQuestion(
+        "will_original_available",
+        "Do you have the original signed will (not a copy)?",
+        kind="yes_no",
+        required=False,
+        help="The court needs the original. A copy is still helpful — send it along.",
+    ),
+    PackQuestion(
+        "will_date",
+        "What date was the will signed?",
+        kind="date",
+        required=False,
+        help="Printed near the signatures on the last page.",
+    ),
+    PackQuestion(
+        "real_property_in_nd",
+        "Did they own any land, house, farmland, or mineral rights in North Dakota in their own name?",
+        kind="yes_no",
+        help="Property owned jointly with someone who is still living usually passes without probate; tell us anyway.",
+    ),
+    PackQuestion(
+        "nd_property_counties",
+        "If yes, which North Dakota county or counties is that property in?",
+        required=False,
+    ),
+    PackQuestion(
+        "probate_property_value",
+        "Roughly, what is the total value of everything they owned in their own name (bank accounts, vehicles, investments, land), after subtracting any loans against it?",
+        kind="money",
+        help="A best guess is fine. Do not count life insurance or accounts that name a beneficiary.",
+    ),
+    PackQuestion(
+        "applicant_name",
+        "Your full legal name",
+        help="You are the person asking the court to open the estate.",
+    ),
+    PackQuestion(
+        "applicant_relationship",
+        "Your relationship to the person who died",
+        help="For example: spouse, daughter, son, brother, friend named in the will.",
+    ),
+    PackQuestion(
+        "applicant_is_nominee",
+        "Does the will name you as the personal representative (executor)?",
+        kind="yes_no",
+        required=False,
+        help="Skip this if there is no will.",
+    ),
+    PackQuestion(
+        "applicant_address", "Your mailing address (street, city, state, ZIP)"
+    ),
+    PackQuestion("applicant_phone", "Your phone number"),
+    PackQuestion("applicant_email", "Your email address", required=False),
+    PackQuestion(
+        "heirs_list",
+        "List the surviving spouse, children, and anyone else named in the will or closely related. For each person give: name, age, relationship, and mailing address — one person per line.",
+        help="Include people who have died only if they left children of their own; note that they are deceased.",
+    ),
+    PackQuestion(
+        "priority_persons",
+        "Is there anyone with an equal or better right than you to serve as personal representative — for example a surviving spouse, or someone the will names ahead of you? List their names, or enter none.",
+        required=False,
+        help="They will be asked to sign a short waiver so you can be appointed.",
+    ),
+    PackQuestion(
+        "prior_appointment",
+        "Has a court anywhere already appointed someone to handle this estate?",
+        kind="yes_no",
+    ),
+    PackQuestion(
+        "prior_appointment_details",
+        "If yes: who was appointed, when, and in which county and state?",
+        required=False,
+    ),
+    PackQuestion(
+        "probate_opened_elsewhere",
+        "Has a probate case for this person been started in any other court, in North Dakota or another state?",
+        kind="yes_no",
+    ),
+    PackQuestion(
+        "demand_for_notice",
+        "Has anyone told you they filed a 'demand for notice' about this estate with a court?",
+        kind="yes_no",
+        help="Most people have not. Answer no if you are unsure.",
+    ),
+    PackQuestion(
+        "demand_for_notice_details",
+        "If yes, who filed it and where?",
+        required=False,
+    ),
+    PackQuestion(
+        "assets_summary",
+        "Briefly list what they owned: bank accounts (bank name), vehicles, land, investments, business interests, and anything else of value.",
+        help="Account numbers are not needed now.",
+    ),
+    PackQuestion(
+        "debts_summary",
+        "What did they owe? Mortgages, loans, credit cards, medical bills, or taxes — or enter none.",
+        required=False,
+    ),
+    PackQuestion(
+        "funeral_expenses",
+        "Approximate funeral and burial costs, and who paid them",
+        kind="money",
+        required=False,
+    ),
+)
+
+PROBATE_UPLOADS: tuple[PackUpload, ...] = (
+    PackUpload("probate_death_certificate", "Death certificate (a photo is fine)"),
+    PackUpload(
+        "probate_will",
+        "The will and any codicils — bring the original to the office; send a photo or copy now",
+        required=False,
+    ),
+    PackUpload(
+        "probate_statements",
+        "Recent statements for bank, investment, and retirement accounts",
+        required=False,
+    ),
+    PackUpload(
+        "probate_deeds",
+        "Deeds, vehicle titles, or mineral-rights papers",
+        required=False,
+    ),
+    PackUpload("probate_funeral_bill", "Funeral home bill or receipt", required=False),
+    PackUpload(
+        "probate_prior_letters",
+        "Any court papers you already received about this estate",
+        required=False,
+    ),
+)
 
 
 _PRACTICES: tuple[Practice, ...] = (
@@ -260,11 +522,10 @@ _PRACTICES: tuple[Practice, ...] = (
     ),
     Practice(
         "estate",
-        "Estate planning and probate",
+        "Estate planning",
         (
             "estate",
             "estate planning",
-            "probate",
             "will",
             "trust",
             "guardianship",
@@ -315,6 +576,27 @@ _PRACTICES: tuple[Practice, ...] = (
                 "estate_death_certificate", "Death certificate, if someone has died"
             ),
         ),
+    ),
+    Practice(
+        "probate",
+        "Probate and estate administration",
+        (
+            "probate",
+            "estate administration",
+            "decedent's estate",
+            "decedents estate",
+            "personal representative",
+            "letters testamentary",
+            "letters of administration",
+            "informal probate",
+            "formal probate",
+            "small estate",
+            "intestate",
+            "intestacy",
+            "determination of heirs",
+        ),
+        PROBATE_QUESTIONS,
+        PROBATE_UPLOADS,
     ),
     Practice(
         "employment",
@@ -870,6 +1152,7 @@ _SCOPE_ALIASES: dict[str, frozenset[str]] = {
     "criminal": frozenset({"criminal", "criminal defense", "defense"}),
     "injury": frozenset({"injury", "personal injury"}),
     "estate": frozenset({"estate", "estate planning"}),
+    "probate": frozenset({"probate", "estate administration"}),
     "employment": frozenset({"employment", "labor"}),
     "business": frozenset({"business", "commercial", "corporate"}),
     "real_estate": frozenset({"real estate", "property"}),

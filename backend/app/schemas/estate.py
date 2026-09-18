@@ -4,7 +4,26 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+import uuid
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class OrmResponse(BaseModel):
+    """A response read straight from an ORM row.
+
+    The estate sub-entity responses declare their identifiers as ``str`` while
+    the rows carry ``uuid.UUID``; pydantic v2 does not coerce one to the other,
+    so every child endpoint that returned a row failed response validation.
+    Converting here keeps the wire format the frontend already reads.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _uuid_to_str(cls, value):
+        return str(value) if isinstance(value, uuid.UUID) else value
 
 
 # ── Events (activity log) ─────────────────────────────────────────────────────
@@ -16,15 +35,12 @@ class EstateEventCreate(BaseModel):
     content: Optional[str] = None
 
 
-class EstateEventResponse(BaseModel):
+class EstateEventResponse(OrmResponse):
     id: str
     event_type: str
     title: str
     content: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ── Estate ────────────────────────────────────────────────────────────────────
@@ -81,6 +97,12 @@ class EstateUpdate(BaseModel):
     net_estate_value: Optional[Decimal] = None
     matter_id: Optional[str] = None
     client_contact_id: Optional[str] = None
+    domicile_county: Optional[str] = None
+    will_execution_date: Optional[date] = None
+    appointment_date: Optional[date] = None
+    first_publication_date: Optional[date] = None
+    letters_issued_date: Optional[date] = None
+    closing_statement_filed_date: Optional[date] = None
 
 
 class KeyDate(BaseModel):
@@ -110,6 +132,14 @@ class EstateResponse(BaseModel):
     matter_id: Optional[str]
     client_contact_id: Optional[str]
     client_name: Optional[str]
+    domicile_county: Optional[str] = None
+    will_execution_date: Optional[date] = None
+    probate_track: Optional[str] = None
+    probate_determined_at: Optional[datetime] = None
+    appointment_date: Optional[date] = None
+    first_publication_date: Optional[date] = None
+    letters_issued_date: Optional[date] = None
+    closing_statement_filed_date: Optional[date] = None
     beneficiaries_count: int = 0
     missing_facts: List[str] = []
     unvalued_assets_count: int = 0
@@ -165,7 +195,7 @@ class FiduciaryUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class FiduciaryResponse(BaseModel):
+class FiduciaryResponse(OrmResponse):
     id: str
     estate_id: str
     name: str
@@ -179,9 +209,6 @@ class FiduciaryResponse(BaseModel):
     phone: Optional[str]
     notes: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ── Beneficiaries ─────────────────────────────────────────────────────────────
@@ -221,7 +248,7 @@ class BeneficiaryUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class BeneficiaryResponse(BaseModel):
+class BeneficiaryResponse(OrmResponse):
     id: str
     estate_id: str
     name: str
@@ -270,7 +297,16 @@ class AssetUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class AssetResponse(BaseModel):
+class AssetVerify(BaseModel):
+    verification_status: Literal["verified", "unverified", "rejected"] = "verified"
+    note: Optional[str] = Field(None, max_length=1000)
+
+
+class AssetResponse(OrmResponse):
+    source: str = "staff"
+    verification_status: str = "verified"
+    submitted_at: Optional[datetime] = None
+    artifact_document_id: Optional[str] = None
     id: str
     estate_id: str
     name: str
@@ -285,9 +321,6 @@ class AssetResponse(BaseModel):
     location: Optional[str]
     notes: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ── Liabilities / claims ──────────────────────────────────────────────────────
@@ -321,7 +354,7 @@ class LiabilityUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class LiabilityResponse(BaseModel):
+class LiabilityResponse(OrmResponse):
     id: str
     estate_id: str
     creditor_name: str
@@ -332,9 +365,6 @@ class LiabilityResponse(BaseModel):
     status: str
     notes: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ── Distributions ─────────────────────────────────────────────────────────────
@@ -362,7 +392,7 @@ class DistributionUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class DistributionResponse(BaseModel):
+class DistributionResponse(OrmResponse):
     id: str
     estate_id: str
     beneficiary_id: str
@@ -391,6 +421,14 @@ class DeadlineCreate(BaseModel):
         "inventory",
         "accounting",
         "creditor_bar",
+        "notice_heirs",
+        "hhs_affidavit",
+        "creditor_publication",
+        "claims_disallowance",
+        "nd_estate_tax",
+        "elective_share",
+        "closing_earliest",
+        "pr_termination",
         "distribution",
         "task",
         "other",
@@ -413,6 +451,14 @@ class DeadlineUpdate(BaseModel):
             "inventory",
             "accounting",
             "creditor_bar",
+            "notice_heirs",
+            "hhs_affidavit",
+            "creditor_publication",
+            "claims_disallowance",
+            "nd_estate_tax",
+            "elective_share",
+            "closing_earliest",
+            "pr_termination",
             "distribution",
             "task",
             "other",
@@ -426,7 +472,7 @@ class DeadlineUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class DeadlineResponse(BaseModel):
+class DeadlineResponse(OrmResponse):
     id: str
     estate_id: str
     title: str
@@ -437,9 +483,6 @@ class DeadlineResponse(BaseModel):
     completed_at: Optional[datetime]
     notes: Optional[str]
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 # ── Fiduciary accounting ──────────────────────────────────────────────────────
@@ -473,7 +516,7 @@ class AccountingEntryUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class AccountingEntryResponse(BaseModel):
+class AccountingEntryResponse(OrmResponse):
     id: str
     estate_id: str
     entry_date: date
@@ -487,9 +530,6 @@ class AccountingEntryResponse(BaseModel):
     notes: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class AccountingSummary(BaseModel):
     principal_balance: Decimal
@@ -500,3 +540,86 @@ class AccountingSummary(BaseModel):
     total_losses: Decimal
     total_distributions: Decimal
     entry_count: int
+
+
+# ── Probate ───────────────────────────────────────────────────────────────────
+
+
+class HeirRowInput(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    age: Optional[str] = Field(None, max_length=20)
+    relationship: Optional[str] = Field(None, max_length=150)
+    address: Optional[str] = Field(None, max_length=500)
+
+
+class ProbateFactsInput(BaseModel):
+    """The probate facts as staff edit them on the Probate tab.
+
+    Dates and money arrive as strings and are parsed server-side with the same
+    tolerant readers the intake uses, so a phone-call entry of ``3/4/25`` or
+    ``about 80k`` lands as a value rather than a validation error.
+    """
+
+    decedent_name: Optional[str] = Field(None, max_length=300)
+    decedent_aka: Optional[str] = Field(None, max_length=300)
+    date_of_death: Optional[str] = Field(None, max_length=40)
+    date_of_birth: Optional[str] = Field(None, max_length=40)
+    age_at_death: Optional[int] = Field(None, ge=0, le=130)
+    domicile_state: Optional[str] = Field(None, max_length=100)
+    domicile_county: Optional[str] = Field(None, max_length=150)
+    real_property_in_nd: Optional[bool] = None
+    nd_property_counties: Optional[List[str]] = Field(None, max_length=20)
+    probate_property_value: Optional[str] = Field(None, max_length=40)
+    will_exists: Optional[bool] = None
+    will_original_available: Optional[bool] = None
+    will_execution_date: Optional[str] = Field(None, max_length=40)
+    applicant_name: Optional[str] = Field(None, max_length=300)
+    applicant_relationship: Optional[str] = Field(None, max_length=150)
+    applicant_is_nominee: Optional[bool] = None
+    applicant_address: Optional[str] = Field(None, max_length=500)
+    applicant_phone: Optional[str] = Field(None, max_length=50)
+    applicant_email: Optional[str] = Field(None, max_length=300)
+    persons_with_prior_or_equal_priority: Optional[List[str]] = Field(
+        None, max_length=50
+    )
+    heirs: Optional[List[HeirRowInput]] = Field(None, max_length=100)
+    probate_opened_elsewhere: Optional[bool] = None
+    prior_appointment: Optional[bool] = None
+    prior_appointment_details: Optional[str] = Field(None, max_length=1000)
+    demand_for_notice: Optional[bool] = None
+    demand_for_notice_details: Optional[str] = Field(None, max_length=1000)
+    bond_amount: Optional[str] = Field(None, max_length=40)
+    assets_summary: Optional[str] = Field(None, max_length=5000)
+    debts_summary: Optional[str] = Field(None, max_length=5000)
+    funeral_expenses: Optional[str] = Field(None, max_length=40)
+    inventory_open: Optional[bool] = None
+    notes: Optional[str] = Field(None, max_length=5000)
+
+
+class ProbateAnchorsInput(BaseModel):
+    appointment_date: Optional[date] = None
+    first_publication_date: Optional[date] = None
+    letters_issued_date: Optional[date] = None
+    closing_statement_filed_date: Optional[date] = None
+    date_of_death: Optional[date] = None
+
+
+class ProbateFromIntakeInput(BaseModel):
+    overwrite: bool = False
+
+
+class ProbateDeadlineSyncInput(BaseModel):
+    mirror_tasks: bool = False
+
+
+class ProbateStateResponse(BaseModel):
+    estate_id: str
+    matter_id: Optional[str]
+    facts: dict
+    determination: Optional[dict]
+    determined_at: Optional[datetime]
+    anchors: dict
+    forms: List[dict]
+    deadlines_preview: dict
+    sources: List[dict]
+    intake: Optional[dict] = None

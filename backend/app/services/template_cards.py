@@ -40,6 +40,7 @@ from app.services.template_bindings import (
     MANUAL_BINDING,
     alias_for_binding,
     binding_label,
+    catalogue as binding_catalogue,
     custom_binding,
     is_valid_binding,
 )
@@ -455,6 +456,25 @@ _CARDS: tuple[Card, ...] = (
                 alias="prepared_by",
                 legacy_path="current_user.prepared_by",
             ),
+        ),
+    ),
+    Card(
+        key="estate",
+        label="Estate (probate)",
+        kind=CardKind.MATTER,
+        group="Estate",
+        # Generated from the catalogue's ``estate.*`` group: the card's field
+        # key is the path suffix and its alias is the catalogue alias, so a
+        # form bound either way resolves through the same Smart Fill candidate.
+        fields=tuple(
+            CardField(
+                entry.path.split(".", 1)[1],
+                entry.label,
+                alias=entry.alias,
+                legacy_path=entry.path,
+            )
+            for entry in binding_catalogue()
+            if entry.path.startswith("estate.")
         ),
     ),
     Card(

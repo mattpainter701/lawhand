@@ -520,14 +520,7 @@ async def submit(
         raise HTTPException(
             409, "The questionnaire is closed; contact your legal team for corrections."
         )
-    allowed = {q["key"] for q in packet.config["questions"]}
-    if set(body.answers) - allowed or any(
-        len(v) > 20000 for v in body.answers.values()
-    ):
-        raise HTTPException(422, "Questionnaire contains unknown or oversized answers.")
-    for q in packet.config["questions"]:
-        if q["required"] and not body.answers.get(q["key"], "").strip():
-            raise HTTPException(422, f"Complete: {q['label']}")
+    service.validate_answers(packet.config["questions"], body.answers)
     if packet.requirements["questionnaire"]["completed"]:
         if packet.answers != body.answers:
             raise HTTPException(

@@ -193,6 +193,254 @@ _CATALOGUE: tuple[TemplateBinding, ...] = (
         "current_user.email", "current_user_email", "Current user email", "People"
     ),
     TemplateBinding("current_user.prepared_by", "prepared_by", "Prepared by", "People"),
+    # Estate (probate). Resolved from the Estate record linked to the matter —
+    # its columns, its fiduciaries and beneficiaries, and the probate facts the
+    # intake gathered — so a court form fills from the record the firm already
+    # keeps, not from a second copy of the same answers.
+    TemplateBinding(
+        "estate.decedent_name", "estate_decedent_name", "Decedent name", "Estate"
+    ),
+    TemplateBinding(
+        "estate.decedent_aka", "estate_decedent_aka", "Decedent also known as", "Estate"
+    ),
+    TemplateBinding(
+        "estate.date_of_death", "estate_date_of_death", "Date of death", "Estate"
+    ),
+    TemplateBinding(
+        "estate.age_at_death", "estate_age_at_death", "Age at death", "Estate"
+    ),
+    TemplateBinding(
+        "estate.domicile_state",
+        "estate_domicile_state",
+        "State of domicile at death",
+        "Estate",
+    ),
+    TemplateBinding(
+        "estate.domicile_county",
+        "estate_domicile_county",
+        "County of domicile at death",
+        "Estate",
+    ),
+    TemplateBinding(
+        "estate.venue_county", "estate_venue_county", "Venue county", "Estate"
+    ),
+    TemplateBinding(
+        "estate.venue_basis",
+        "estate_venue_basis",
+        "Why venue lies in this county",
+        "Estate",
+    ),
+    TemplateBinding("estate.court_name", "estate_court", "Probate court", "Estate"),
+    TemplateBinding(
+        "estate.case_number", "estate_case_number", "Probate case number", "Estate"
+    ),
+    TemplateBinding(
+        "estate.will_execution_date",
+        "estate_will_date",
+        "Date the will was signed",
+        "Estate",
+    ),
+    TemplateBinding(
+        "estate.gross_value", "estate_gross_value", "Gross estate value", "Estate"
+    ),
+    TemplateBinding(
+        "estate.net_value", "estate_net_value", "Net estate value", "Estate"
+    ),
+    TemplateBinding(
+        "estate.probate_track_label",
+        "estate_probate_track",
+        "Probate proceeding",
+        "Estate",
+    ),
+    TemplateBinding(
+        "estate.heirs_table",
+        "estate_heirs_table",
+        "Heirs and devisees (name, age, relationship, address)",
+        "Estate",
+    ),
+    TemplateBinding(
+        "estate.heir_names",
+        "estate_heir_names",
+        "Heirs and devisees (names only)",
+        "Estate",
+    ),
+    TemplateBinding(
+        "estate.applicant_name",
+        "estate_applicant_name",
+        "Applicant name",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.applicant_name_and_interest",
+        "estate_applicant_interest",
+        "Applicant name and interest in the estate",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.applicant_address",
+        "estate_applicant_address",
+        "Applicant street address",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.applicant_city_state_zip",
+        "estate_applicant_city_state_zip",
+        "Applicant city, state, ZIP",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.applicant_full_address",
+        "estate_applicant_full_address",
+        "Applicant full mailing address",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.applicant_phone",
+        "estate_applicant_phone",
+        "Applicant phone",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.applicant_email",
+        "estate_applicant_email",
+        "Applicant email",
+        "Estate applicant",
+    ),
+    TemplateBinding(
+        "estate.pr_name",
+        "estate_pr_name",
+        "Personal representative name",
+        "Personal representative",
+    ),
+    TemplateBinding(
+        "estate.pr_address",
+        "estate_pr_address",
+        "Personal representative address",
+        "Personal representative",
+    ),
+    TemplateBinding(
+        "estate.pr_phone",
+        "estate_pr_phone",
+        "Personal representative phone",
+        "Personal representative",
+    ),
+    TemplateBinding(
+        "estate.pr_email",
+        "estate_pr_email",
+        "Personal representative email",
+        "Personal representative",
+    ),
+    TemplateBinding(
+        "estate.pr_priority_statement",
+        "estate_pr_priority",
+        "Priority for appointment",
+        "Personal representative",
+    ),
+    TemplateBinding(
+        "estate.pr_prior_priority_persons",
+        "estate_pr_prior_persons",
+        "Persons with prior or equal priority",
+        "Personal representative",
+    ),
+    TemplateBinding(
+        "estate.prior_appointment_statement",
+        "estate_prior_appointment",
+        "Prior appointment statement",
+        "Estate statements",
+    ),
+    TemplateBinding(
+        "estate.demand_for_notice_statement",
+        "estate_demand_for_notice",
+        "Demand for notice statement",
+        "Estate statements",
+    ),
+    TemplateBinding(
+        "estate.unprobated_instrument_statement",
+        "estate_unprobated_instrument",
+        "Why an instrument is not being probated",
+        "Estate statements",
+    ),
+    TemplateBinding(
+        "estate.bond_amount", "estate_bond_amount", "Bond amount", "Estate statements"
+    ),
+    TemplateBinding(
+        "estate.appointment_date",
+        "estate_appointment_date",
+        "Date of appointment",
+        "Estate dates",
+    ),
+    TemplateBinding(
+        "estate.letters_issued_date",
+        "estate_letters_date",
+        "Date letters were issued",
+        "Estate dates",
+    ),
+    TemplateBinding(
+        "estate.first_publication_date",
+        "estate_first_publication",
+        "First publication of notice to creditors",
+        "Estate dates",
+    ),
+    TemplateBinding(
+        "estate.claims_bar_date",
+        "estate_claims_bar_date",
+        "Creditor claims bar date",
+        "Estate dates",
+    ),
+    TemplateBinding(
+        "estate.closing_statement_filed_date",
+        "estate_closing_date",
+        "Closing statement filed",
+        "Estate dates",
+    ),
+    TemplateBinding(
+        "estate.inventory_real_solely",
+        "estate_inventory_real_solely",
+        "Real property owned solely (total)",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_real_jointly",
+        "estate_inventory_real_jointly",
+        "Real property owned with others (total)",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_personal_solely",
+        "estate_inventory_personal_solely",
+        "Personal property owned solely (total)",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_personal_jointly",
+        "estate_inventory_personal_jointly",
+        "Personal property owned with others (total)",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_encumbrances",
+        "estate_inventory_encumbrances",
+        "Liens and encumbrances (total)",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_total",
+        "estate_inventory_total",
+        "Total value of estate assets",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_real_description",
+        "estate_inventory_real_description",
+        "Real property descriptions",
+        "Estate inventory",
+    ),
+    TemplateBinding(
+        "estate.inventory_personal_description",
+        "estate_inventory_personal_description",
+        "Personal property descriptions",
+        "Estate inventory",
+    ),
     # Item bindings resolve once per iteration of a repeating section, not from
     # the matter, so they have no alias: there is no single record behind them.
     TemplateBinding(

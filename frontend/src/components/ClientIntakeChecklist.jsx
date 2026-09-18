@@ -82,16 +82,93 @@ function Group({ heading, explanation, children }) {
   )
 }
 
+// Partly answered questions are kept on this device so an older client who
+// closes the browser halfway through picks up where they left off. The
+// storage can be missing (private window, cleared data), so every access is
+// guarded and the form works without it.
+const DRAFT_PREFIX = 'lawhand.intake.draft.'
+export function readDraft(packetId) {
+  try { const raw = window.localStorage.getItem(`${DRAFT_PREFIX}${packetId}`); return raw ? JSON.parse(raw) : null }
+  catch { return null }
+}
+export function writeDraft(packetId, answers) {
+  try { window.localStorage.setItem(`${DRAFT_PREFIX}${packetId}`, JSON.stringify(answers)) } catch { /* no storage */ }
+}
+export function clearDraft(packetId) {
+  try { window.localStorage.removeItem(`${DRAFT_PREFIX}${packetId}`) } catch { /* no storage */ }
+}
+
+export const DONT_KNOW = "I don't know"
+
+// A typed question renders as the matching control so an answer is a value,
+// not a sentence: a date picker, a yes/no choice, a number pad on a phone,
+// a short list to choose from. Everything else stays a free-text box.
+export function QuestionInput({ question, value, onChange, disabled }) {
+  const id = `intake-q-${question.key}`
+  const className = 'mt-1 block w-full border border-brand-line rounded-xl px-3 py-3 text-base font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent/40'
+  const kind = question.kind || 'text'
+  if (kind === 'yes_no') {
+    return (
+      <fieldset className="mt-1" disabled={disabled}>
+        <legend className="sr-only">{question.label}</legend>
+        <div className="flex flex-wrap gap-4">
+          {['yes', 'no'].map(option => (
+            <label key={option} className="inline-flex items-center gap-2 text-base text-brand-ink border border-brand-line rounded-xl px-4 py-3 cursor-pointer">
+              <input type="radio" name={id} value={option} checked={value === option} onChange={() => onChange(option)} required={question.required} className="h-5 w-5" />
+              {option === 'yes' ? 'Yes' : 'No'}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    )
+  }
+  if (kind === 'select') {
+    return (
+      <select id={id} className={className} value={value} onChange={event => onChange(event.target.value)} required={question.required} disabled={disabled}>
+        <option value="">Choose one…</option>
+        {(question.options || []).map(option => <option key={option} value={option}>{option}</option>)}
+      </select>
+    )
+  }
+  if (kind === 'date') {
+    return <input id={id} type="date" className={className} value={value} onChange={event => onChange(event.target.value)} required={question.required} disabled={disabled} />
+  }
+  if (kind === 'money' || kind === 'number') {
+    return <input id={id} type="text" inputMode="decimal" placeholder={kind === 'money' ? '$' : ''} className={className} value={value} onChange={event => onChange(event.target.value)} required={question.required} disabled={disabled} />
+  }
+  return <textarea id={id} className={className} rows={3} required={question.required} maxLength={20000} value={value} onChange={event => onChange(event.target.value)} disabled={disabled} />
+}
+
 export default function ClientIntakeChecklist({ onSign }) {
   const [packet, setPacket] = useState(null)
   const [answers, setAnswers] = useState({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [savedNote, setSavedNote] = useState('')
   const load = useCallback(async () => {
-    try { const result = await getClientIntake(); setPacket(result); setAnswers(previous => Object.keys(previous).length ? previous : result.answers || {}); setError('') }
+    try {
+      const result = await getClientIntake(); setPacket(result); setError('')
+      setAnswers(previous => {
+        if (Object.keys(previous).length) return previous
+        if (result.answers && Object.keys(result.answers).length) return result.answers
+        return readDraft(result.id) || {}
+      })
+    }
     catch (e) { if (e.response?.status !== 404) setError('Your paperwork checklist could not load. Please retry.') }
   }, [])
   useEffect(() => { load() }, [load])
+  function answer(key, value) {
+    setAnswers(previous => {
+      const next = { ...previous, [key]: value }
+      if (packet?.id) writeDraft(packet.id, next)
+      return next
+    })
+    setSavedNote('')
+  }
+  function saveForLater() {
+    if (packet?.id) writeDraft(packet.id, answers)
+    setSavedNote('Saved on this device. You can close this page and come back later.')
+  }
   // A signed form flips to "Signed" once its executed copy is filed, which
   // happens on the server without the client doing anything, so the checklist
   // watches for it instead of leaving the client to press refresh.
@@ -104,7 +181,7 @@ export default function ClientIntakeChecklist({ onSign }) {
   }, [waiting, load])
   async function submit(e) {
     e.preventDefault(); setBusy(true); setError('')
-    try { setPacket(await submitClientIntake(answers)) }
+    try { setPacket(await submitClientIntake(answers)); if (packet?.id) clearDraft(packet.id) }
     catch (e) { setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'Your questionnaire was not saved. Please retry.') }
     finally { setBusy(false) }
   }
@@ -179,24 +256,33 @@ export default function ClientIntakeChecklist({ onSign }) {
         </Group>
       )}
       {legacyQuestions && actionable && (
-        <Group heading="Client questionnaire" explanation="Answer the questions below and submit them to your legal team.">
+        <Group heading="Questions from your legal team" explanation="Answer what you can. If you are not sure, choose “I don't know” or leave it blank and the office will help you. Nothing is sent until you press the button at the bottom.">
           <li className="pt-0">
-            <form className="space-y-3" onSubmit={submit}>
-              {packet.questions.map(q => (
-                <label className="block text-sm text-brand-ink" key={q.key}>
-                  {q.label}{q.required ? ' *' : ''}
-                  <textarea
-                    className="mt-1 block w-full border border-brand-line rounded-xl px-3 py-2 text-sm font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
-                    required={q.required}
-                    maxLength={20000}
-                    value={answers[q.key] || ''}
-                    onChange={e => setAnswers({ ...answers, [q.key]: e.target.value })}
-                  />
-                </label>
-              ))}
-              <button disabled={busy} className={PRIMARY_BUTTON} type="submit">
-                {busy ? 'Saving…' : 'Submit completed questionnaire'}
-              </button>
+            <form className="space-y-5" onSubmit={submit}>
+              {packet.questions.map(q => {
+                const value = answers[q.key] || ''
+                const unsure = value === DONT_KNOW
+                return (
+                  <div className="text-base text-brand-ink" key={q.key}>
+                    <label htmlFor={`intake-q-${q.key}`} className="block font-medium">{q.label}{q.required ? ' *' : ''}</label>
+                    {q.help && <p className="text-sm text-brand-ink-2 mt-0.5">{q.help}</p>}
+                    {!unsure && <QuestionInput question={q} value={value} onChange={next => answer(q.key, next)} disabled={busy} />}
+                    {!q.required && (
+                      <label className="mt-2 inline-flex items-center gap-2 text-sm text-brand-ink-2">
+                        <input type="checkbox" className="h-5 w-5" checked={unsure} onChange={event => answer(q.key, event.target.checked ? DONT_KNOW : '')} />
+                        {DONT_KNOW} — the office will help
+                      </label>
+                    )}
+                  </div>
+                )
+              })}
+              <div className="flex flex-wrap items-center gap-3">
+                <button disabled={busy} className={PRIMARY_BUTTON} type="submit">
+                  {busy ? 'Saving…' : 'Send my answers'}
+                </button>
+                <button type="button" className={LINK_CLASS} onClick={saveForLater}>Save and finish later</button>
+                {savedNote && <span role="status" className="text-sm text-brand-green">{savedNote}</span>}
+              </div>
             </form>
           </li>
         </Group>

@@ -9,12 +9,23 @@ export const defaultIntakeSetup = {
   questions: 'Please describe your legal matter.\nWho are the other people or organizations involved?\nWhat important dates should your legal team know about? Enter none if unknown.',
 }
 
+// The standard pack's questions carry stable keys and typed kinds (a date, a
+// yes/no) that the portal and the write-back rely on. They survive only while
+// the textarea still reads exactly as the pack was loaded; the moment staff
+// edit a line the list is theirs and falls back to numbered free-text keys.
+export function packQuestionsIfUnchanged(setup) {
+  const pack = Array.isArray(setup.pack_questions) ? setup.pack_questions : null
+  if (!pack || !pack.length) return null
+  if (pack.map(q => q.label).join('\n') !== (setup.questions || '')) return null
+  return pack.map(q => ({ key: q.key, label: q.label, required: q.required !== false, ...(q.kind ? { kind: q.kind } : {}), ...(q.options ? { options: q.options } : {}), ...(q.help ? { help: q.help } : {}) }))
+}
+
 export function intakeOptions(setup, clientEmail = '') {
   return {
     email: setup.email || clientEmail, channels: setup.channels, timezone: setup.timezone,
     owner_id: setup.owner_id || null, sms_permission_verified: setup.sms_permission_verified,
     questions: setup.include_questionnaire !== false
-      ? setup.questions.split('\n').map(s => s.trim()).filter(Boolean).map((label, i) => ({ key: `question_${i + 1}`, label, required: true }))
+      ? packQuestionsIfUnchanged(setup) || setup.questions.split('\n').map(s => s.trim()).filter(Boolean).map((label, i) => ({ key: `question_${i + 1}`, label, required: true }))
       : [],
     agreement_document_id: setup.agreement_document_id || null,
     agreement_due_at: dueDateToIso(setup.agreement_due, setup.timezone),
@@ -40,7 +51,7 @@ export default function IntakeSetupFields({ value, onChange, onFile, clientEmail
     setPackNote('Loading the standard questions…')
     try {
       const pack = await getIntakeStarterPack(matterId ? { matter_id: matterId } : { matter_type: matterType, practice_area: practiceArea })
-      onChange({ ...value, questions: pack.questions.map(q => q.label).join('\n'), upload_requirements: pack.upload_requirements.map(u => u.label).join('\n') })
+      onChange({ ...value, pack_questions: pack.questions, questions: pack.questions.map(q => q.label).join('\n'), upload_requirements: pack.upload_requirements.map(u => u.label).join('\n') })
       setPackNote(`Loaded the ${pack.practice_label} questions and requested uploads. Review and edit them before sending.`)
     } catch { setPackNote('Could not load the standard questions. Enter them below.') }
   }
