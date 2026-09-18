@@ -72,3 +72,47 @@ async def test_capture_error_records_request_id():
     saved_error = db.add.call_args.args[0]
     assert isinstance(saved_error, ErrorLog)
     assert saved_error.request_id == "rid-abc"
+
+
+@pytest.mark.asyncio
+async def test_capture_error_keeps_an_explicit_severity():
+    """A handled 503 is not an unrecoverable incident.
+
+    Chat generation backpressure and retryable customer-storage outages answer
+    503 and are deliberately recorded as "error". Auto-mapping must not silently
+    promote them to "critical", or an expected, self-healing condition looks
+    like a production incident in the operator error log.
+    """
+    db = Mock()
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+    db.add = Mock()
+
+    await capture_error(
+        db=db,
+        error_type="api_error",
+        message="Assistant is at capacity",
+        severity="error",
+        status_code=503,
+    )
+
+    saved_error = db.add.call_args.args[0]
+    assert saved_error.severity == "error"
+
+
+@pytest.mark.asyncio
+async def test_capture_error_auto_maps_severity_when_not_given():
+    db = Mock()
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+    db.add = Mock()
+
+    await capture_error(
+        db=db,
+        error_type="api_error",
+        message="unhandled outage",
+        status_code=503,
+    )
+
+    saved_error = db.add.call_args.args[0]
+    assert saved_error.severity == "critical"

@@ -44,6 +44,23 @@ def _empty_llm_response_msg() -> str:
     )
 
 
+# A provider can answer HTTP 200 while streaming only hidden reasoning tokens
+# and no visible content. LiteLLM's gateway fallback chain fires on provider
+# errors, never on an empty successful response, so without a retry the whole
+# turn fails with "no visible answer" even though a second attempt may succeed.
+# One extra attempt draws on a larger output budget so hidden reasoning cannot
+# starve the visible answer. Bounded to a single retry per resolved route so a
+# genuinely broken model cannot multiply latency or spend.
+_EMPTY_RESPONSE_ATTEMPTS = 2
+_EMPTY_RESPONSE_TOKEN_CEILING = 32768
+
+
+def _stream_token_budget(base_max_tokens: int, attempt: int) -> int:
+    """Return the output budget for ``attempt`` (0-based) of one route."""
+    budget = max(1, int(base_max_tokens)) * (2**attempt)
+    return min(budget, _EMPTY_RESPONSE_TOKEN_CEILING)
+
+
 # Public OpenAI-compatible endpoints for tenant BYOK providers that don't
 # require a tenant-supplied endpoint. Copilot (Azure OpenAI) always requires
 # a tenant-supplied endpoint — Azure deployments are per-resource.
@@ -463,91 +480,114 @@ class LLMService:
             customer_api_key=customer_api_key,
         )
         for candidate in candidates:
-            request_id = str(uuid.uuid4())
-            logger.debug(
-                "LLM stream_complete request_id=%s model=%s", request_id, candidate
-            )
-            t0 = time.monotonic()
-            first_token_recorded = False
-            finish_reason = None
-            reasoning_content_seen = False
-            try:
-                create_kwargs: dict = dict(
-                    model=candidate,
-                    messages=all_messages,
-                    temperature=0.1,
-                    max_tokens=max(1, int(max_output_tokens)),
-                    stream=True,
-                    extra_headers={"x-request-id": request_id},
-                )
-                metadata = sanitized_gateway_metadata(**(gateway_metadata or {}))
-                if metadata and not customer_api_key:
-                    create_kwargs["extra_body"] = {"litellm_metadata": metadata}
-                if not customer_api_key:
-                    create_kwargs["stream_options"] = {"include_usage": True}
-                stream = await client.chat.completions.create(**create_kwargs)
-                async for chunk in stream:
-                    if usage_sink is not None:
-                        usage_sink["requested_model"] = candidate
-                        usage_sink["model"] = getattr(chunk, "model", None) or candidate
-                        chunk_usage = getattr(chunk, "usage", None)
-                        if chunk_usage:
-                            usage_sink["tokens_in"] = chunk_usage.prompt_tokens or 0
-                            usage_sink["tokens_out"] = (
-                                chunk_usage.completion_tokens or 0
-                            )
-                    choice = chunk.choices[0] if chunk.choices else None
-                    if choice and getattr(choice, "finish_reason", None):
-                        finish_reason = choice.finish_reason
-                    delta = choice.delta if choice else None
-                    content = getattr(delta, "content", None) if delta else None
-                    if delta:
-                        reasoning_content = getattr(delta, "reasoning_content", None)
-                        if reasoning_content is None:
-                            model_extra = getattr(delta, "model_extra", None) or {}
-                            reasoning_content = model_extra.get("reasoning_content")
-                        reasoning_content_seen = reasoning_content_seen or bool(
-                            reasoning_content
-                        )
-                    if content:
-                        if not first_token_recorded:
-                            ttft_ms = (time.monotonic() - t0) * 1000
-                            _record_latency(candidate, ttft_ms)
-                            if usage_sink is not None:
-                                usage_sink["provider_ttft_ms"] = int(ttft_ms)
-                            first_token_recorded = True
-                        yield content
-                if not first_token_recorded:
-                    # A reasoning model can consume the entire output budget in
-                    # hidden reasoning and still return HTTP 200. Treat that as
-                    # a failed completion instead of persisting a blank answer.
-                    _record_latency(candidate, (time.monotonic() - t0) * 1000)
-                    completion_tokens = int((usage_sink or {}).get("tokens_out") or 0)
-                    logger.error(
-                        "LLM stream returned no visible content "
-                        "model=%s finish_reason=%s completion_tokens=%s "
-                        "reasoning_content_seen=%s",
-                        candidate,
-                        finish_reason,
-                        completion_tokens,
-                        reasoning_content_seen,
-                    )
-                    raise RuntimeError(_empty_llm_response_msg())
-                if usage_sink is not None:
-                    usage_sink["provider_stream_ms"] = int(
-                        (time.monotonic() - t0) * 1000
-                    )
-                return
-            except (APIError, APIConnectionError) as e:
-                elapsed_ms = (time.monotonic() - t0) * 1000
-                _record_latency(candidate, elapsed_ms)
-                if first_token_recorded or candidate == candidates[-1]:
-                    logger.error(
-                        "LiteLLM Gateway streaming error: %s", _clean_llm_error(e)
-                    )
-                    raise RuntimeError(_llm_error_msg(e)) from e
-                logger.warning(
-                    "LiteLLM model %s failed before first token, trying fallback: %s",
+            for attempt in range(_EMPTY_RESPONSE_ATTEMPTS):
+                request_id = str(uuid.uuid4())
+                logger.debug(
+                    "LLM stream_complete request_id=%s model=%s attempt=%s",
+                    request_id,
                     candidate,
-                    _clean_llm_error(e),
+                    attempt + 1,
                 )
+                t0 = time.monotonic()
+                first_token_recorded = False
+                finish_reason = None
+                reasoning_content_seen = False
+                try:
+                    create_kwargs: dict = dict(
+                        model=candidate,
+                        messages=all_messages,
+                        temperature=0.1,
+                        max_tokens=_stream_token_budget(max_output_tokens, attempt),
+                        stream=True,
+                        extra_headers={"x-request-id": request_id},
+                    )
+                    metadata = sanitized_gateway_metadata(**(gateway_metadata or {}))
+                    if metadata and not customer_api_key:
+                        create_kwargs["extra_body"] = {"litellm_metadata": metadata}
+                    if not customer_api_key:
+                        create_kwargs["stream_options"] = {"include_usage": True}
+                    stream = await client.chat.completions.create(**create_kwargs)
+                    async for chunk in stream:
+                        if usage_sink is not None:
+                            usage_sink["requested_model"] = candidate
+                            usage_sink["model"] = (
+                                getattr(chunk, "model", None) or candidate
+                            )
+                            chunk_usage = getattr(chunk, "usage", None)
+                            if chunk_usage:
+                                usage_sink["tokens_in"] = chunk_usage.prompt_tokens or 0
+                                usage_sink["tokens_out"] = (
+                                    chunk_usage.completion_tokens or 0
+                                )
+                        choice = chunk.choices[0] if chunk.choices else None
+                        if choice and getattr(choice, "finish_reason", None):
+                            finish_reason = choice.finish_reason
+                        delta = choice.delta if choice else None
+                        content = getattr(delta, "content", None) if delta else None
+                        if delta:
+                            reasoning_content = getattr(
+                                delta, "reasoning_content", None
+                            )
+                            if reasoning_content is None:
+                                model_extra = getattr(delta, "model_extra", None) or {}
+                                reasoning_content = model_extra.get("reasoning_content")
+                            reasoning_content_seen = reasoning_content_seen or bool(
+                                reasoning_content
+                            )
+                        if content:
+                            if not first_token_recorded:
+                                ttft_ms = (time.monotonic() - t0) * 1000
+                                _record_latency(candidate, ttft_ms)
+                                if usage_sink is not None:
+                                    usage_sink["provider_ttft_ms"] = int(ttft_ms)
+                                first_token_recorded = True
+                            yield content
+                    if not first_token_recorded:
+                        # A reasoning model can consume the entire output budget
+                        # in hidden reasoning and still return HTTP 200. LiteLLM
+                        # only falls back on provider errors, so a blank success
+                        # would otherwise fail the whole turn. Retry once with a
+                        # larger budget before giving up.
+                        _record_latency(candidate, (time.monotonic() - t0) * 1000)
+                        completion_tokens = int(
+                            (usage_sink or {}).get("tokens_out") or 0
+                        )
+                        logger.error(
+                            "LLM stream returned no visible content "
+                            "model=%s attempt=%s finish_reason=%s "
+                            "completion_tokens=%s reasoning_content_seen=%s",
+                            candidate,
+                            attempt + 1,
+                            finish_reason,
+                            completion_tokens,
+                            reasoning_content_seen,
+                        )
+                        if attempt + 1 < _EMPTY_RESPONSE_ATTEMPTS:
+                            logger.warning(
+                                "Retrying model %s with a larger output budget "
+                                "after an empty visible response",
+                                candidate,
+                            )
+                            continue
+                        raise RuntimeError(_empty_llm_response_msg())
+                    if usage_sink is not None:
+                        usage_sink["provider_stream_ms"] = int(
+                            (time.monotonic() - t0) * 1000
+                        )
+                    return
+                except (APIError, APIConnectionError) as e:
+                    elapsed_ms = (time.monotonic() - t0) * 1000
+                    _record_latency(candidate, elapsed_ms)
+                    if first_token_recorded or candidate == candidates[-1]:
+                        logger.error(
+                            "LiteLLM Gateway streaming error: %s",
+                            _clean_llm_error(e),
+                        )
+                        raise RuntimeError(_llm_error_msg(e)) from e
+                    logger.warning(
+                        "LiteLLM model %s failed before first token, "
+                        "trying fallback: %s",
+                        candidate,
+                        _clean_llm_error(e),
+                    )
+                    break
