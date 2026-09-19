@@ -58,6 +58,12 @@ Before saving:
 
 Smart Fill and AI analysis accelerate assembly; they do not approve legal content.
 
+## Prepare a document from Studio into a matter
+
+[Prepare](/templates/prepare) takes a published template from Template Studio, the library, or a matter straight to a chosen matter: select the matter, review the filled fields and the exact preview, and save the generated document into that matter's documents. Opening the route preselects the template, matter, and destination folder named in the link; the shortcut links elsewhere in the app use the same [Prepare](/templates/prepare) address.
+
+After the save, the same page can create and send an e-signature request for the new document. Recipients, roles, and dates come from the same signature form used on the matter, so check every signer and the placement plan before sending. A request is only sent when you confirm it.
+
 ## Version and activation discipline
 
 When source language changes, create or update the controlled template through the supported workflow. Record what changed and re-test representative scenarios. Do not replace a template file in a way that makes prior generated documents impossible to explain.
