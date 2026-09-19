@@ -9,8 +9,7 @@ on a real share, and that answers a query in under a second."
 at the profiler.
 
 > **Verified at `origin/main`, 2026-09-18.** Every file:line, constant and
-> version in this document was read from `origin/main` (not the local working
-> tree, which is 339 commits behind). Claims marked ✅ were re-verified by hand
+> version in this document was read from commit `4d7b58b5`. Claims marked ✅ were re-verified by hand
 > against the source after first being surfaced by analysis. Where a finding is
 > inferred rather than observed, it says so.
 
@@ -65,9 +64,11 @@ a *configurable* ceiling, not a hard cap — its own comment records that it was
 raised from 500 because "ordinary legal shares [went] silently partial."
 
 Today, past the ceiling, every excess file appends a per-path error object
-(`backend/app/services/smb.py:946-951`) and ✅ that list is returned unbounded
-(`:1035`, no slice or cap) on *every* sync, forever. A 750k-file share produces a
-750k-element JSON array per sync batch.
+(`backend/app/services/smb.py:946-951`) and ✅ the response returns the whole
+batch's error list (`:1035`, no aggregation). The request schema caps a sync at
+500 files and the agent sends 100-file batches, so memory is bounded; however, a
+750k-file share still produces 500k redundant per-path rejection records across
+5,000 requests on each attempted full backfill.
 
 Pick one: raise the ceiling with a documented memory cost; aggregate the
 overflow into a single typed coverage error; or refuse to bind an oversized
@@ -94,8 +95,9 @@ release) is unshipped.
 The `agent-v0.15.2` tag is on `origin` and the tag *would* have passed the
 publish job's version gate (✅ `__version__` and `pyproject.toml` both read
 `0.15.2` at that tag). No `agent-release` run exists for it in the 2026-08-25 →
-09-05 window. Cause not established; the tag is pushed but no run fired.
-**Re-tagging is the test** — and it will now fail at signing instead (§1.2).
+09-05 window. Cause not established; the tag is pushed but no run fired. A
+fresh `agent-v0.17.0` tag is the next valid end-to-end test; do not move or
+re-push the existing `agent-v0.15.2` tag.
 
 ### 1.2 Signing is unconfigured — this is the hard blocker
 
@@ -240,9 +242,13 @@ purely to refresh DACLs. If a full pass takes longer than an hour — certain on
 a multi-terabyte share with one extraction worker — the agent never reaches
 steady state and never converges.
 
-**Fix:** add an ACL-refresh job kind that updates `acl_json` / `acl_captured_at`
-without touching text or the engine document. This is precisely what
-`crawl_control.py:80,970-979` already implements (Decision 1).
+**Fix:** add an ACL-refresh job kind that updates `acl_json` /
+`acl_captured_at` and the OpenSearch allow/deny metadata without fetching or
+re-extracting file content. OpenSearch uses those tokens as a candidate filter,
+so updating SQLite alone would preserve fail-closed authorization but leave new
+grants falsely unsearchable. `crawl_control.py:80,970-979` already models the
+separate job kind (Decision 1), but the live sink still needs the metadata-only
+engine mutation.
 
 ### 4.2 Item 2 in detail — what dominates p95
 
@@ -263,9 +269,11 @@ SaaS deadline (`LOCAL_SEARCH_TIMEOUT_SECONDS = 12.0`, `smb.py:78`). Exceeding it
 yields `agent_search_timeout` and a partial-coverage response.
 
 **Fix:** reuse one authenticated connection for the whole query, gather with
-bounded concurrency, add a short-TTL per-(path, identity) decision cache, and
-authorize lazily for hits actually returned. The authorization property — no
-cached grant survives a live DENY — is preserved by all four.
+bounded concurrency, and authorize lazily for hits actually returned. Do not
+cache positive authorization decisions: even a short-TTL allow can survive a
+new live DENY and would weaken the current fail-closed property. A negative-only
+cache is safe if profiling shows it is useful, because a stale denial affects
+availability rather than disclosing content.
 
 ### 4.3 Prerequisite: none of this is measurable today
 
@@ -399,8 +407,8 @@ a week-one *finding*; it depends on week-one *decisions*.
 
 | # | Task | Gate |
 |---|---|---|
-| 2.1 | **ACL-only refresh job** (§4.1) — no text re-fetch, no re-publish | A corpus at steady state does zero re-extractions in an hour |
-| 2.2 | **Query-path authorization** (§4.2) — connection reuse, bounded concurrency, short-TTL decision cache, lazy per-returned-hit | p95 under 1s on a 10k-doc corpus; live DENY still denies |
+| 2.1 | **ACL-only refresh job** (§4.1) — update manifest and engine ACL metadata without text re-fetch or re-extraction | A corpus at steady state does zero re-extractions in an hour; changed grants and denies affect candidate filtering |
+| 2.2 | **Query-path authorization** (§4.2) — connection reuse, bounded concurrency, lazy per-returned-hit, and no positive-decision cache | p95 under 1s on a 10k-doc corpus; a newly-added live DENY still denies immediately |
 | 2.3 | **Batch the OpenSearch write path** (§4 item 3) + outbox drain in one call with an empty-path early return (item 6) | Segment count per 1k docs drops by an order of magnitude |
 | 2.4 | Per-query overhead: cache index/mapping/lease state, bound `track_total_hits`, stop the per-query `stats()` full scan (item 7) | Preflight round trips per query: 4 → 0 warm |
 | 2.5 | **UX honesty tier** — §6 defects 1, 4, 6: explain the dead action (or stop rendering it), stop calling a page size a result count, and carry `ocr_pending` / permanent-failure through to distinct copy | A user can tell "no matches" from "we could not search these files", and from "this will never be searchable without OCR" |
@@ -447,7 +455,7 @@ retrieval on the file-share path, and a mobile document viewer.
 - [ ] Ingest/query instrumentation landed
 - [ ] `agent-v0.17.0` tagged, signed, published, assets verified
 - [ ] ACL-only refresh job
-- [ ] Query-path connection reuse + bounded concurrency + decision cache
+- [ ] Query-path connection reuse + bounded concurrency without positive-decision caching
 - [ ] OpenSearch batched writes + outbox drain fix
 - [ ] Per-query preflight caching
 - [ ] UX honesty tier (§6 defects 1, 4, 6)
@@ -469,6 +477,5 @@ retrieval on the file-share path, and a mobile document viewer.
   `CHANGELOG.md`, `RELEASE_NOTES.md` and `backend/app/release_notes.json`.
 - **Worktrees:** `gwt new <branch>` under `worktrees\`; tear down on merged-PR
   state, never `git branch --merged`.
-- **Local `main` is 339 commits behind `origin/main`** and the working tree has
-  11 unrelated in-flight paths (DAST + intake starter, plus an untracked
-  `build/`). Cut branches from fresh `origin/main` and stage explicitly.
+- **Branch from a fresh `origin/main`**, never from a local checkout whose state
+  or ownership has not been verified, and stage explicitly.
