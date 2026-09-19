@@ -33,6 +33,14 @@ SCAN_ALERT_TITLE = (
 TARGET = "https://getlawhand.com"
 MAX_AFFECTED_URLS = 50
 
+# Cloudflare answers /cdn-cgi/* at its edge; those responses never reach the
+# origin nginx, so no origin security header can apply. The scanner still
+# spiders the links Cloudflare injects (email-protection, challenge), and a
+# missing header there is a permanent false positive this repository cannot
+# fix. Drop those instances rather than filing an unactionable issue; a rule
+# that also fires on a real app URL keeps the app URLs.
+_EDGE_MANAGED_PATH_RE = re.compile(r"^https?://[^/]+/cdn-cgi/", re.IGNORECASE)
+
 _RISK_NAMES = {"0": "Informational", "1": "Low", "2": "Medium", "3": "High"}
 _MIN_RISK = {"informational": 0, "low": 1, "medium": 2, "high": 3}
 _CONFIDENCE_NAMES = {
@@ -177,9 +185,14 @@ def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
                     )
                     findings[key] = finding
                 uri = str(instance.get("uri") or default_uri)
+                if _EDGE_MANAGED_PATH_RE.match(uri):
+                    continue
                 method = str(instance.get("method", "GET") or "GET").upper()
                 finding.affected.setdefault(uri, set()).add(method)
-    return sorted(findings.values(), key=lambda finding: (finding.name, finding.param))
+    return sorted(
+        (finding for finding in findings.values() if finding.affected),
+        key=lambda finding: (finding.name, finding.param),
+    )
 
 
 def render_title(finding: Finding) -> str:
