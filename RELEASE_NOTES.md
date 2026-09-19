@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.19.04 — Send for signature right after you prepare a document
+
+Released September 19, 2026.
+
+A PDF prepared from a template with signature fields now offers Send for signature on the same page, with the matter's client filled in as the signer and the same checks the matter's E-Signature panel applies.
+
+- **A Send step after Save.** When the saved PDF has signature fields, the Prepare page stays open with signers, dates and reminders ready. The client's name and email come from the matter.
+- **One form, wherever you send from.** The matter's E-Signature panel and the Prepare page use the same request form, so placement review, role checks and the signing-plan acknowledgement behave the same.
+- **Word templates with signature fields default to PDF.** Only a PDF can be sent for signature, so a Word template with signature fields is generated as PDF unless you choose the editable Word document, and the page says why.
+
 ## 2026.09.19.03 — Prepare a document from Studio, straight into the matter
 
 Released September 19, 2026.

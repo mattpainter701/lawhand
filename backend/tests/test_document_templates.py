@@ -314,6 +314,18 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
         .first()
     )
     assert str(document.folder_id) == folder.json()["id"]
+    # The generation response carries the signing descriptor the document
+    # was saved with, so the Prepare page can offer "Send for signature"
+    # without listing the matter's documents again.
+    assert generated.json()["signing_roles"] == ["attorney", "client"]
+    assert generated.json()["signing_placement_required"] is True
+    assert generated.json()["positioned_fields"] == document.positioned_fields
+    assert generated.json()["signing_placement_problems"] == []
+    replay = await client.post(f"/api/templates/{template_id}/render", json=payload)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["matter_document_id"] == str(document.id)
+    assert replay.json()["signing_roles"] == ["attorney", "client"]
+    assert replay.json()["positioned_fields"] == document.positioned_fields
     wrong_destination = await client.post(
         f"/api/templates/{template_id}/render", json={**payload, "folder_id": None}
     )

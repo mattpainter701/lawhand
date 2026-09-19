@@ -18,6 +18,16 @@ describe('prepare steps', () => {
     expect(states({ template, matterId: 'm', progress, requiredMissing: 0, previewReady: true, saved: true })).toEqual(['done', 'done', 'done', 'done', 'done'])
   })
 
+  it('adds a Send step only for a template with signing fields, and only a PDF can reach it', () => {
+    const base = { template, matterId: 'm', progress, requiredMissing: 0, previewReady: true, saved: true }
+    expect(prepareSteps(base)).toHaveLength(5)
+    const word = prepareSteps({ ...base, signing: { pdf: false, sent: false } }).at(-1)
+    expect(word).toMatchObject({ key: 'send', state: 'todo', note: 'Needs PDF output to send for signature' })
+    expect(prepareSteps({ ...base, saved: false, signing: { pdf: true, sent: false } }).at(-1).state).toBe('todo')
+    expect(prepareSteps({ ...base, signing: { pdf: true, sent: false } }).at(-1)).toMatchObject({ state: 'current', note: 'Send for signature' })
+    expect(prepareSteps({ ...base, signing: { pdf: true, sent: true } }).at(-1)).toMatchObject({ state: 'done', note: 'Sent for signature' })
+  })
+
   it('shows the fill counts the progress bar shows, from the same numbers', () => {
     render(<PrepareStepper steps={prepareSteps({ template, matterId: 'm', progress, requiredMissing: 2 })} />)
     const nav = screen.getByRole('navigation', { name: 'Prepare steps' })

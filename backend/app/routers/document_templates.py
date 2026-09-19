@@ -651,6 +651,10 @@ def _existing_document_response(
         storage_backend=document.storage_backend,
         storage_provider=document.storage_provider,
         storage_warning=document.storage_error,
+        signing_roles=list(document.signing_roles or []),
+        signing_placement_required=bool(document.signing_placement_required),
+        positioned_fields=list(document.positioned_fields or []),
+        signing_placement_problems=list(document.signing_placement_problems or []),
     )
 
 
@@ -5125,6 +5129,14 @@ async def render_template_endpoint(
         storage_backend=storage_backend,
         storage_provider=storage_provider,
         storage_warning=storage_warning,
+        signing_roles=list(signing_roles) if matter_document_id else [],
+        signing_placement_required=bool(signing_required) if matter_document_id else False,
+        positioned_fields=list(positioned_fields) if matter_document_id else [],
+        signing_placement_problems=(
+            placement_report.as_dicts()
+            if matter_document_id and placement_report is not None
+            else []
+        ),
     )
 
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-19
 **Status:** shipped on `claude/pdf-auto-filing-mechanism-e5tqb5`, including
-Phase 2 (auto-initiation of document prefill); Phase 3 is logged at the end.
+Phase 2 (auto-initiation of document prefill); Phase 3 is logged at the end (3a and 3b shipped; see `template-prepare-route-plan-2026-09-19.md`, which also holds Phases 4 and 5).
 
 Smart Fill is the mechanism that fills a template's fields from a matter. This
 page says what it is now that it lives in one place, what the quirk campaign
@@ -147,7 +147,7 @@ Follow-ups still open: a rule action that requests a document (a Stack A
 `document_propose` step bridging to `propose_document_from_template`), and the
 Phase 3 guided route below.
 
-## Phase 3 (planned): Studio to signature in one path, with set fan-out
+## Phase 3 (3a and 3b shipped; 3c, 3d planned): Studio to signature in one path, with set fan-out
 
 Planned in [`template-prepare-route-plan-2026-09-19.md`](template-prepare-route-plan-2026-09-19.md):
 a `/templates/prepare` route (Select, Matter, Populate, Review, Save, Send)

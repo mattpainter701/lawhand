@@ -1,7 +1,7 @@
 # Phase 3: Prepare route, from Studio to signature, with set fan-out
 
 **Date:** 2026-09-19
-**Status:** 3a shipped on `claude/pdf-auto-filing-mechanism-e5tqb5` (see CHANGELOG 2026.09.19.03); 3b, 3c, 3d proposed.
+**Status:** 3a and 3b shipped on `claude/pdf-auto-filing-mechanism-e5tqb5` (CHANGELOG 2026.09.19.03 and .04); 3c, 3d proposed. Phases 4 (verification pass) and 5 (documents as evidence) added 2026-09-19 from the owner's follow-up asks; see the end of this document.
 **Builds on:** [`smart-fill-engine.md`](smart-fill-engine.md) (engine, Phase 2
 readiness record), the Clio-parity plan's W3 (Sets) and W7.3 (`/templates/prepare`).
 
@@ -105,7 +105,19 @@ Acceptance: Studio, published template, "Use on a matter", pick matter,
 fields auto-filled with sources, Generate, Render & Save to Matter, land on
 the matter's Documents tab with the document open.
 
-## Phase 3b: the Send step (one PR; additive backend fields)
+## Phase 3b: the Send step (shipped; one PR; additive backend fields)
+
+Shipped as planned, with two departures worth knowing. The matter panel
+does not merely "delegate" to the card: its whole new-request form and the
+draft section *are* `SignatureSendCard`, with the document select and the
+prepared-PDF upload passed in as the card's `picker`, so there is one form,
+not a copy. And the route does not show a "Word documents can't be sent"
+card after saving a DOCX: the explanation sits beside the output-format
+choice before the save, where it can still change the outcome, and the
+stepper's Send step reads "Needs PDF output to send for signature" until
+PDF is chosen. A saved document with no signing fields lands on the matter
+as before; only a PDF with signing roles or fields stays for the Send step.
+
 
 Backend: the four signing fields on `DocumentTemplateRenderResponse`,
 populated where the `MatterDocument` row is built; assert them in
@@ -260,3 +272,162 @@ npx vitest run && npx eslint src
   never offered for signature.
 - Applicability rules stay advisory; templates stay catalogue objects; sets
   stay tenant-scoped lists of template ids with optional pins.
+
+## Phase 4: the verification pass (owner's ask, 2026-09-19; not started)
+
+> "a review mechanism for confidence in these automations ... presented a
+> box to 'verified' and can click, click, click, change field, click
+> rapidly through docs to validate them, clicking can be optional too."
+
+What exists: the Populate pane already tracks per-field `reviewedValues`
+(a value the user confirmed or typed) and `fieldSources` (where the value
+came from), and `fillReview` counts them; the Prepare route's "Smart Fill"
+button is the auto fill and "Refresh matter values" re-runs it against the
+matter's current data, keeping hand edits. What is missing is a *fast*
+verification affordance and a record that survives the page.
+
+- **4a: one-keystroke verification in Populate.** Each filled row gets a
+  "Verified" check (space or Enter on the focused row; Tab moves on), a
+  "Change" that opens the input, and a running "12 of 19 verified"
+  count beside the fill count. Verification is optional: Save never waits
+  on it, and an unverified field is rendered with the same value. A field
+  the user edits is verified by that act. Row order puts `review_required`
+  and synonym matches first so rapid clicking spends attention where the
+  engine was least sure. Keyboard model: `j`/`k` or arrow keys move,
+  space verifies, `e` edits, `Enter` verifies and moves on.
+- **4b: verification travels with the document.** The render request
+  carries `verified_fields` (names only) and the `document_generated`
+  event records them with the counts, so the matter's Documents tab can
+  show "19 fields, 12 verified" per generated document and a reviewer can
+  tell a checked document from an unchecked one. No new table: names in
+  event metadata, as 2b did for readiness.
+- **4c: persisted per-session state** lands with 3d's
+  `document_fill_sessions` (migration 196): verified names and reviewed
+  values are saved per (template, matter, user) so leaving the page and
+  coming back, or moving to the next document in a set, does not lose the
+  pass. The set route then supports "click through docs": the Send/Save
+  rail moves to the next member with its own verification count.
+- **4d: the readiness record learns from it.** `document_prefill_ready`
+  gains `verified` counts from the latest session so the Case Documents
+  banner can say "3 documents ready, 2 verified".
+
+Invariants: verification is advisory and never a gate; a verified value is
+still re-derived on refresh and marked "changed since verified" if the
+matter moved; the generation preview evidence stays the only gate to a
+saved PDF.
+
+## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; not started)
+
+> "as documents get entered into the matters > doc that's the 'repo' of
+> knowledge outside of matter fields ... a mechanism to read those
+> documents, cache, index such, update non cached, and use OCR / handle
+> handwritten info. ... a button next to document in the matter, 'use
+> premium AI to gather fields' ... say we send a template out that had
+> acroforms, but the customer printed it and manually filled it out."
+
+### What the codebase already has (surveyed 2026-09-19)
+
+- `app/services/matter_fact_extraction.py`: reads one matter document
+  (PDF, DOCX, TXT, 10 MB cap, sha-checked bytes), takes AcroForm values,
+  `Label: value` lines and email/phone/ZIP patterns, proposes them against
+  standard bindings and the tenant's custom fields, and `accept()` writes
+  through `intake_writeback` with a `MatterEvent`. It runs as the
+  `matter_fact_extraction` durable job on every upload and files a review
+  `Task`; `POST /matters/{id}/documents/{doc}/facts?ai=true` adds an AI pass
+  (`intake_extraction_ai.extract_with_ai`, metered, closed schema, gated by
+  `TenantSettings.custom_config["intake_fact_extraction"].{enabled,ai_enabled}`
+  and the platform flag). The review list is
+  `components/documents/MatterDocumentFacts.jsx` inside the document
+  preview panel, with an "Also read with AI for scans and prose" checkbox.
+  **This is the "gather fields" button, already next to the document.**
+- OCR: `app/services/template_ocr.py` (local RapidOCR over pypdfium2 renders,
+  pooled, bounded to 25 pages / 80M pixels, line confidence floor 0.35,
+  label-plus-handwritten-value row merging) and `template_ocr_azure.py`
+  (opt-in Azure Document Intelligence read). Wired only into *template*
+  upload analysis; `matter_fact_extraction` explicitly warns "a scan with
+  no text layer proposes nothing until OCR text is supplied".
+- No cache: nothing persists extracted text; every propose re-downloads and
+  re-parses. No index over matter documents: the pgvector `documents` /
+  `chunks` corpus is the RAG corpus and matter documents are not in it.
+  No document-kind classifier. No per-fact "verified" flag; provenance is
+  the signed proposal contract, `value_hmac` and the event.
+
+### The design
+
+**5a: OCR reaches matter documents (one PR).** `matter_fact_extraction`
+calls `template_ocr.ocr_pdf` / `ocr_image` when the text layer is empty or
+thin (reuse `template_intake._needs_pdf_ocr` and `_merge_pdf_text_and_ocr`),
+accepts `.png/.jpg/.tiff` uploads, and carries each candidate's OCR line
+confidence into `Candidate.confidence`. The same tenant gate applies.
+Handwriting is handled the way template intake already handles it: label
+and value on one row; a low-confidence line is proposed with the
+confidence shown, never dropped silently.
+
+**5b: the extraction cache (one PR; migration 196 or 197, after 3d claims
+its number).** `document_text_extractions(tenant_id, document_sha256,
+engine, engine_version, text, pages_json, ocr_confidence, extracted_at)`,
+RLS like every tenant table. Keyed by the document's bytes, so a re-upload
+of identical bytes is free and a new version invalidates by construction;
+"update non-cached" is a sweep job that extracts documents whose sha has
+no row for the current engine version. `get_matter_document_text` (the MCP
+tool) reads the cache first. Extracted text of a document is evidence
+about the document, not a matter fact: it never writes to matter fields
+on its own.
+
+**5c: template-anchored reading of a printed, hand-filled form (one PR).
+This is the strong idea for the owner's scenario.** A document generated
+from one of our templates records `template_id` and
+`template_version_no` in its `document_generated` event, and the
+published version knows the exact rectangle of every field on every page
+(`discover_pdf_fields` / `pdf_overlay`). When a scan comes back (uploaded
+as a new document or the signed copy of a signature request), the
+extraction pairs it with the template version by the user's choice or by
+the closest text match over the page text, aligns each scanned page to
+the template's blank page (pypdfium2 render, feature or projection
+alignment), crops each field rectangle, and reads *each crop* with OCR
+first and the vision model (`extract_with_ai` given the crop) when OCR
+confidence is below the floor. The result is a field-name to value list
+with a confidence and a thumbnail of the handwriting per field: exactly
+the shape the Populate pane and Phase 4's verification pass already
+consume. No "converted twin" document is generated; the template is the
+pairing key and the scan stays the evidence. Whole-page extraction (5a)
+remains the path for documents that did not come from our templates.
+
+**5d: documents as a `FillSource` (one PR).** `DocumentEvidenceSource` in
+`template_fill_engine` offers aliases from *accepted* facts only (the
+write-back proposals a human accepted, which are already matter or custom
+fields) plus, at lower precedence and `review_required`, the cached
+candidates from 5a/5c for the matter's documents, with
+`provenance.source_document_id` and the crop thumbnail id. Precedence
+stays firm > custom > binding > name match > synonym > document evidence,
+so a document never silently overrides a matter field; it fills a blank
+and asks to be verified.
+
+**5e: the index (later).** Chunk cached text with the existing
+`chunk_text`, embed with `EmbeddingService`, store in a matter-scoped
+table (not the RAG corpus) keyed by `document_sha256`, invalidated by the
+cache row. Consumers: "find where this fact came from" in the review list,
+and the assistant's matter context. Not needed for 5a to 5d.
+
+### UX note, and Clio
+
+Clio Manage has no OCR-to-field extraction; its document automation fills
+from matter fields only, and scanned forms are stored, not read. Clio's
+"Clio Duo" reads documents to answer questions, not to write fields. So
+there is no parity target to copy; the closest products (Smokeball's form
+filling, Lawmatics' intake) also fill from fields. The UX here is: the
+document preview panel already offers "Find details"; 5c adds "Read this
+scan against the form it was printed from" with the template picked or
+confirmed, then the per-field list with a thumbnail beside each value and
+the Phase 4 verify keys. Nothing is written until accepted.
+
+### Costs and gates
+
+The AI pass is metered per tenant already (`UsageRecord`,
+`check_token_budget`, `background_ai_quota`) and 5c reuses it per crop
+rather than per page, so a 40-field form costs 40 small calls only for the
+fields OCR could not read. The local OCR engine has no per-call cost. Both
+respect the existing tenant `intake_fact_extraction` settings and the
+per-user `premium_ai_enabled` flag; the button is hidden, not disabled,
+when the tenant has neither.
+

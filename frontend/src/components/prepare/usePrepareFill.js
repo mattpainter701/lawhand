@@ -7,6 +7,10 @@ import { getErrorMessage, getTemplateVariables } from './prepareHelpers'
 // route: values, their sources and review state, the once-per-matter Smart
 // Fill, the preview and its evidence, and the save. Moved verbatim from the
 // dialog so a route and a dialog cannot drift apart on what "reviewed" means.
+const templateIsDocx = (template) => String(template?.format || '').toLowerCase() === 'docx' && Boolean(template?.source_sha256)
+export const templateHasSigningFields = (template) => (template?.variable_schema?.fields || [])
+  .some((field) => field?.included !== false && isSigningField(field))
+
 export default function usePrepareFill({ template, initialMatterId, folderId, onSaved }) {
   const [variables, setVariables] = useState({})
   const [matterId, setMatterId] = useState(initialMatterId || '')
@@ -21,7 +25,10 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const [filePreviewUrl, setFilePreviewUrl] = useState('')
   const [previewId, setPreviewId] = useState('')
   const [previewPurpose, setPreviewPurpose] = useState('')
-  const [convertDocxToPdf, setConvertDocxToPdf] = useState(false)
+  // A Word template that carries signature fields is generated as PDF unless
+  // the user says otherwise: only a PDF can be sent for signature, and the
+  // Send step that follows the save would otherwise be a dead end.
+  const [convertDocxToPdf, setConvertDocxToPdf] = useState(() => templateHasSigningFields(template) && templateIsDocx(template))
   const [rendering, setRendering] = useState(false)
   const [renderPurpose, setRenderPurpose] = useState('')
   const [saving, setSaving] = useState(false)
@@ -48,7 +55,8 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
       .map((field) => [field.name, field]),
   ), [template])
   const isPdfTemplate = String(template?.format || '').toLowerCase() === 'pdf'
-  const isDocxTemplate = String(template?.format || '').toLowerCase() === 'docx' && Boolean(template?.source_sha256)
+  const isDocxTemplate = templateIsDocx(template)
+  const hasSigningFields = useMemo(() => templateHasSigningFields(template), [template])
   const isFileTemplate = isPdfTemplate || isDocxTemplate
   const isPdfOutput = isPdfTemplate || (isDocxTemplate && convertDocxToPdf)
   const canSaveToMatter = Boolean(template?.is_active)
@@ -386,6 +394,6 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
 
 
   return {
-    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
+    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
   }
 }

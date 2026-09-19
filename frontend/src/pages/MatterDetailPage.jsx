@@ -15,8 +15,8 @@ import {
   setAssignmentActive, getMatterTimeEntries, getConversations, createConversation,
   getTasks, updateTask, getMatterDashboard, getMatterCloudFiles,
   createMatterPortalInvite, listMatterPortalInvites, revokeMatterPortalInvite,
-  getMatterDocuments, createSignatureRequest, getSignatureRequestFields, listSignatureRequests,
-  sendSignatureRequest, resendSignatureRequest, voidSignatureRequest, getMatterDocumentDownloadUrl, getMatterDocumentSigningSource,
+  getMatterDocuments, listSignatureRequests,
+  resendSignatureRequest, voidSignatureRequest, getMatterDocumentDownloadUrl,
   acceptSignatureSubmission, rejectSignatureSubmission, uploadMatterDocument,
   syncMatterCloudFolder, listTrustAccounts,
   getContacts, getAdminUsers, getMatterByNumber, reopenMatter,
@@ -35,8 +35,9 @@ import UserSearchInput from '../components/UserSearchInput'
 import ContactPicker from '../components/ContactPicker'
 import MatterExpensesPanel from '../components/MatterExpensesPanel'
 import MatterWorkflowPanel from '../components/MatterWorkflowPanel'
-import GeneratedSigningPlacementReview from '../components/templates/GeneratedSigningPlacementReview'
-import { placementBlockMessage, placementProblemLines, placementReviewPossible } from '../components/templates/signingPlacementProblems'
+import SignatureSendCard from '../components/signatures/SignatureSendCard'
+import useSignatureRequestDraft from '../components/signatures/useSignatureRequestDraft'
+import { formatSignatureDate, formatSignerRole, signatureSendNotice, signerStatusLabel } from '../components/signatures/signatureRequestRules'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 function Icon({ d, size = 18, className = '' }) {
@@ -2581,109 +2582,19 @@ function ClientPortalTab({ matterId, matter }) {
 }
 
 // ── E-signature requests (firm side) ────────────────────────────────────────
-function formatSignatureDate(value) {
-  if (!value) return '—'
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-    }).format(new Date(value))
-  } catch {
-    return '—'
-  }
-}
-
-const SIGNER_ROLE_OPTIONS = [
-  { value: 'client', label: 'Client' },
-  { value: 'co_client', label: 'Co-client' },
-  { value: 'attorney_countersigner', label: 'Attorney countersigner' },
-  { value: 'witness', label: 'Witness' },
-  { value: 'signer', label: 'Signer' },
-]
-
-const newSignerRow = () => ({ name: '', email: '', role: 'client' })
-
-const signingFieldKind = (kind) => ({ signature: 'Signature', initials: 'Initials', date: 'Date signed' }[kind] || kind)
-
-// Where a field came from decides how much to trust it: a widget in the PDF,
-// a block staff placed, or a Word template's declared caption is certain; a
-// printed line the server read is a good guess; a fallback block is the server
-// admitting it found nothing.
-const signingFieldOrigin = (source) => ({
-  acroform: 'a field in the PDF form',
-  placed: 'placed by you',
-  anchored: 'the caption the template prints beside it',
-  detected: 'a signature line found on the page',
-  fallback: 'no line found — a block at the foot of the last page',
-}[source] || source || 'unknown')
-
-function formatSignerRole(role) {
-  const match = SIGNER_ROLE_OPTIONS.find((option) => option.value === role)
-  return match ? match.label : (role || 'Signer').replace(/_/g, ' ')
-}
-
-function signerStatusLabel(signer) {
-  if (signer.status === 'signed') return `Signed ${formatSignatureDate(signer.signed_at)}`
-  if (signer.status === 'declined') return `Declined ${formatSignatureDate(signer.declined_at)}`
-  return 'Pending signature'
-}
-
-// Why an invitation email never left the server. The API reports a per-signer
-// delivery result; a configuration problem must never be shown as "sent".
-const EMAIL_DELIVERY_REASONS = {
-  disabled: 'outbound email is turned off for this environment',
-  unconfigured: 'the outbound email settings are incomplete',
-  reauthorization_required: 'the sending mailbox needs to be reconnected',
-  invalid_recipient: 'the signer address was rejected',
-  failed: 'the mail server rejected the message',
-}
-
-const SENT_NOTICE = 'Signature request sent. Signers will see it in their client portal Signatures tab when it is their turn.'
-
-// The request is created and visible in the portal either way, so an
-// undelivered invitation is a warning rather than a failure — but it has to be
-// said, and it has to name the signer whose email did not go out.
-export function signatureSendNotice(request) {
-  const undelivered = (request?.signers || []).filter((signer) => (
-    signer.invitation_delivery_status
-    && !['sent', 'not_required'].includes(signer.invitation_delivery_status)
-    // A signer who already acted is not waiting on an invitation.
-    && !['signed', 'declined'].includes(signer.status)
-  ))
-  if (!undelivered.length) return { text: SENT_NOTICE, delivered: true }
-  const reasons = [...new Set(undelivered.map((signer) => (
-    EMAIL_DELIVERY_REASONS[signer.invitation_delivery_status]
-    || String(signer.invitation_delivery_status).replace(/_/g, ' ')
-  )))]
-  const recipients = undelivered.map((signer) => signer.email).filter(Boolean).join(', ')
-  return {
-    text: `Signature request created, but the email invitation${recipients ? ` to ${recipients}` : ''} was not delivered — ${reasons.join('; ')}. The request is waiting in the signer's client portal; fix email delivery and use Resend, or tell the signer directly.`,
-    delivered: false,
-  }
-}
-
-const EMPTY_SIGNING_FIELDS = []
+// The rules, the request lifecycle and the form live in components/signatures
+// so the Prepare route's Send step and this panel build the same request.
+export { signatureSendNotice }
 
 export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
   const [requests, setRequests] = useState([])
   const [docs, setDocs] = useState([])
   const [docId, setDocId] = useState('')
-  const [positionedFields, setPositionedFields] = useState(EMPTY_SIGNING_FIELDS)
-  const [reviewOpen, setReviewOpen] = useState(false)
-  const [signingSource, setSigningSource] = useState(null)
-  // A created request waits here, with where each signer will sign, until
-  // staff have looked. A plan the server guessed at cannot be sent unread.
-  const [draft, setDraft] = useState(null)
-  const [signers, setSigners] = useState([newSignerRow()])
-  const [expiresOn, setExpiresOn] = useState('')
-  const [dueOn, setDueOn] = useState('')
-  const [reminderDays, setReminderDays] = useState('7,1')
-  const [enforceSigningOrder, setEnforceSigningOrder] = useState(true)
   const [voidReasonById, setVoidReasonById] = useState({})
   const [rejectReasonById, setRejectReasonById] = useState({})
   const [reviewingId, setReviewingId] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [notice, setNotice] = useState('')
   const [noticeDelivered, setNoticeDelivered] = useState(true)
@@ -2703,37 +2614,11 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
   useEffect(() => { load() }, [load, refreshKey])
 
   const selectedDocument = docs.find(document => String(document.id) === String(docId))
-  const initialFields = selectedDocument?.positioned_fields || EMPTY_SIGNING_FIELDS
-  const requiredRoles = selectedDocument?.signing_roles || EMPTY_SIGNING_FIELDS
-  const placementRoles = [...new Set([...requiredRoles, ...initialFields.map(field => field.role), ...signers.map(signer => signer.role).filter(Boolean)])]
-  const roleOptions = [...SIGNER_ROLE_OPTIONS, ...placementRoles.filter(role => !SIGNER_ROLE_OPTIONS.some(option => option.value === role)).map(role => ({ value: role, label: role }))]
-  // The placement review groups its fields by role, so it needs the signer
-  // behind each role to label them — two signers are only distinguishable
-  // there once each carries their own role and name.
-  const placementSigners = placementRoles.map(role => ({
-    role,
-    name: signers.find(signer => signer.role === role && signer.name.trim())?.name.trim() || '',
-  }))
-  const duplicateRoles = [...new Set(signers.map(signer => signer.role).filter(role => signers.filter(other => other.role === role).length > 1))]
-  // A Word document has no page the review can render, so offering the button
-  // would send staff to a screen that cannot clear the block.
-  const reviewPossible = placementReviewPossible(selectedDocument)
-  const placementLines = placementProblemLines(selectedDocument)
-  useEffect(() => {
-    let cancelled = false
-    setSigningSource(null)
-    if (reviewOpen && docId) getMatterDocumentSigningSource(matterId, docId).then(source => {
-      if (!cancelled) setSigningSource(source)
-    }).catch(() => { if (!cancelled) setErr('The final PDF could not be loaded for placement review.') })
-    return () => { cancelled = true }
-  }, [reviewOpen, docId, matterId])
-  // `list` lets a just-uploaded document be chosen before the state update
-  // that adds it to `docs` has been applied.
-  const chooseDocument = (id, list = docs) => {
-    const document = list.find(item => String(item.id) === id)
-    setDocId(id); setReviewOpen(false); setSigningSource(null)
-    setPositionedFields(document?.positioned_fields || EMPTY_SIGNING_FIELDS)
-  }
+  const request = useSignatureRequestDraft({
+    matterId,
+    document: selectedDocument,
+    onSent: () => { setDocId(''); load() },
+  })
 
   // A PDF prepared outside the matter (filled in Acrobat, scanned, exported
   // from Word) is saved to the matter first so the request can hash it, then
@@ -2756,7 +2641,7 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
       } catch { /* The upload response alone is enough to select it. */ }
       const merged = document?.id && !listed.some(item => String(item.id) === String(document.id)) ? [document, ...listed] : listed
       setDocs(merged)
-      if (document?.id) chooseDocument(String(document.id), merged)
+      if (document?.id) setDocId(String(document.id))
     } catch (e) {
       const detail = e?.response?.data?.detail
       setUploadError(typeof detail === 'string' ? detail : 'The PDF could not be uploaded. Please try again.')
@@ -2769,128 +2654,6 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
     acc[r.status] = (acc[r.status] || 0) + 1
     return acc
   }, {})
-
-  const updateSigner = (idx, key, value) => {
-    setSigners((prev) => prev.map((row, i) => i === idx ? { ...row, [key]: value } : row))
-  }
-
-  // Every signer needs their own role: signing fields are bound to a role, and
-  // the request is rejected when two signers claim the same one. Default the
-  // new row to the first role nobody has taken.
-  const addSigner = () => setSigners((prev) => {
-    const taken = new Set(prev.map((signer) => signer.role))
-    const free = SIGNER_ROLE_OPTIONS.find((option) => !taken.has(option.value))
-    return [...prev, { ...newSignerRow(), role: free ? free.value : 'signer' }]
-  })
-
-  const removeSigner = (idx) => {
-    setSigners((prev) => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx))
-  }
-
-  const create = async (e) => {
-    e.preventDefault()
-    setErr('')
-    setNotice('')
-    setNoticeDelivered(true)
-    if (!docId) { setErr('Choose a document to send for signature.'); return }
-    const preparedSigners = signers.map((s, idx) => ({
-      name: s.name.trim(),
-      email: s.email.trim(),
-      role: s.role || 'signer',
-      sign_order: idx,
-    }))
-    if (preparedSigners.some((s) => !s.name || !s.email)) {
-      setErr('Each signer needs a name and email.')
-      return
-    }
-    if (selectedDocument?.signing_placement_required && !positionedFields.length) {
-      setErr(placementBlockMessage(selectedDocument)); return
-    }
-    if (requiredRoles.some(role => !positionedFields.some(field => field.role === role))) { setErr('Add signing fields for every role required by this document.'); return }
-    if (positionedFields.some(field => preparedSigners.filter(signer => signer.role === field.role).length !== 1)) {
-      setErr('Assign exactly one signer to each role used by a signing field.'); return
-    }
-    const parsedReminderDays = reminderDays
-      .split(/[\s,]+/)
-      .map((value) => Number.parseInt(value, 10))
-      .filter((value) => Number.isInteger(value) && value > 0)
-    setBusy(true)
-    try {
-      const req = await createSignatureRequest(matterId, {
-        document_id: docId,
-        signers: preparedSigners,
-        // The portal is the only signing provider; the server detects
-        // signature lines itself when none were placed here.
-        provider: 'internal',
-        // Generated-PDF placement metadata is attached by the final-PDF
-        // generation flow. Never derive this from a DOCX preview here.
-        positioned_fields: positionedFields,
-        // 5pm, matching the deadline wording a client is given at intake.
-        due_at: dueOn ? new Date(`${dueOn}T17:00:00`).toISOString() : null,
-        expires_at: expiresOn ? new Date(`${expiresOn}T23:59:59`).toISOString() : null,
-        reminder_days: parsedReminderDays,
-        enforce_signing_order: enforceSigningOrder,
-      })
-      await openDraft(req)
-      load()
-    } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Failed to create signature request.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // The request exists as a draft; show where the server put each signer
-  // before anything reaches the client.
-  const openDraft = async (request) => {
-    let manifest = null
-    try { manifest = await getSignatureRequestFields(matterId, request.id) } catch { manifest = null }
-    setDraft({ request, fields: Array.isArray(manifest?.fields) ? manifest.fields : [], acknowledged: false })
-  }
-
-  const sendDraft = async () => {
-    if (!draft) return
-    setErr('')
-    setNotice('')
-    setNoticeDelivered(true)
-    setBusy(true)
-    try {
-      const sent = draft.acknowledged
-        ? await sendSignatureRequest(matterId, draft.request.id, { acknowledge_review: true })
-        : await sendSignatureRequest(matterId, draft.request.id)
-      setDraft(null)
-      setSigners([newSignerRow()])
-      setDocId('')
-      setReviewOpen(false); setSigningSource(null); setPositionedFields(EMPTY_SIGNING_FIELDS)
-      setExpiresOn('')
-      setDueOn('')
-      setReminderDays('7,1')
-      setEnforceSigningOrder(true)
-      const outcome = signatureSendNotice(sent)
-      setNoticeDelivered(outcome.delivered)
-      setNotice(outcome.text)
-      load()
-    } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Failed to send the signature request.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const discardDraft = async () => {
-    if (!draft) return
-    setErr('')
-    setBusy(true)
-    try {
-      await voidSignatureRequest(matterId, draft.request.id, { reason: 'Discarded before sending' })
-      setDraft(null)
-      load()
-    } catch (e2) {
-      setErr(e2?.response?.data?.detail || 'Failed to discard the draft.')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const voidReq = async (id) => {
     setErr('')
@@ -2993,137 +2756,36 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
       </div>
 
       <div className="p-6 space-y-6">
-        <form onSubmit={create} className="rounded-2xl border border-brand-line bg-white p-4 space-y-4">
-          <div>
-            <h3 className="text-sm font-sans font-semibold text-brand-ink">New request</h3>
-            <p className="text-xs text-brand-muted mt-0.5">Choose a matter document and the portal signers who should sign it.</p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <label className="text-sm text-brand-ink">
-              <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Document to sign</span>
-              <select aria-label="Document to sign" value={docId} onChange={(e) => chooseDocument(e.target.value)} className={inputClass}>
-                <option value="">Select document…</option>
-                {docs.map((d) => <option key={d.id} value={d.id}>{d.filename}</option>)}
-              </select>
-            </label>
-            <label className="text-sm text-brand-ink">
-              <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Upload a prepared PDF</span>
-              <input
-                type="file"
-                accept="application/pdf"
-                aria-label="Upload a prepared PDF"
-                onChange={uploadPrepared}
-                disabled={uploading}
-                className="w-full text-[13px] text-brand-ink file:mr-3 file:rounded-lg file:border file:border-brand-line file:bg-brand-surface file:px-3 file:py-1.5 file:text-[13px] disabled:opacity-50"
-              />
-              {uploading && <span role="status" className="mt-1 block text-[12px] text-brand-muted">Uploading…</span>}
-              {uploadError && <span role="alert" className="mt-1 block text-[12px] text-brand-rose">{uploadError}</span>}
-              {!uploading && !uploadError && <span className="mt-1 block text-[12px] text-brand-muted">Saved to the matter and selected above.</span>}
-            </label>
-            <label className="text-sm text-brand-ink">
-              <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Due from client</span>
-              <input type="date" aria-label="Due from client" value={dueOn} onChange={(e) => setDueOn(e.target.value)} className={inputClass} />
-              <span className="mt-1 block text-[12px] text-brand-muted">Creates an assigned follow-up task. Optional.</span>
-            </label>
-            <label className="text-sm text-brand-ink">
-              <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Expires</span>
-              <input type="date" aria-label="Expires" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} className={inputClass} />
-              <span className="mt-1 block text-[12px] text-brand-muted">After this date the request can no longer be signed.</span>
-            </label>
-            <label className="text-sm text-brand-ink">
-              <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Reminders</span>
-              <input aria-label="Reminders" value={reminderDays} onChange={(e) => setReminderDays(e.target.value)} placeholder="7,1" className={inputClass} />
-              <span className="mt-1 block text-[12px] text-brand-muted">Days before expiry to remind the signer.</span>
-            </label>
-          </div>
-          {selectedDocument && (
-            <div className="flex flex-wrap items-center gap-3">
-              {reviewPossible && <button type="button" onClick={() => setReviewOpen(true)} className="rounded border border-brand-line px-3 py-2 text-sm">Review PDF signing positions</button>}
-              {reviewPossible && <span className="text-xs text-brand-muted">Place a signature, initials, or date block per signer on the PDF (optional — fields in the PDF and printed signature lines are detected automatically)</span>}
-              {positionedFields.length > 0 && <span className="text-xs">{positionedFields.length} positioned signing fields</span>}
-            </div>
-          )}
-          {/* The template defect behind an unsendable document, shown before
-              staff fill the form rather than after they press Send. */}
-          {selectedDocument && !positionedFields.length && placementLines.length > 0 && (
-            <ul role="alert" className="space-y-1 rounded-lg border border-brand-amber/40 bg-brand-amber/5 p-3 text-xs text-brand-ink">
-              {placementLines.map((line) => <li key={line}>{line}</li>)}
-            </ul>
-          )}
-          {reviewOpen && (signingSource ? <GeneratedSigningPlacementReview key={docId} source={signingSource} initialFields={initialFields} signerRoles={placementSigners} onChange={setPositionedFields} /> : <p role="status">Loading final PDF for placement review…</p>)}
-          <label className="inline-flex items-center gap-2 text-xs text-brand-muted">
-            <input type="checkbox" checked={enforceSigningOrder} onChange={(e) => setEnforceSigningOrder(e.target.checked)} />
-            <span>Require signers to complete in listed order</span>
-          </label>
-          <div className="space-y-2">
-            {signers.map((signer, idx) => (
-              <div key={idx} className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_190px_auto] gap-2 rounded-xl bg-brand-bg-soft p-3">
-                <input value={signer.name} onChange={(e) => updateSigner(idx, 'name', e.target.value)} placeholder={`Signer ${idx + 1} full name`} className="border border-brand-line rounded-lg px-3 py-2 text-sm font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent/40" />
-                <input type="email" value={signer.email} onChange={(e) => updateSigner(idx, 'email', e.target.value)} placeholder="Signer email" className="border border-brand-line rounded-lg px-3 py-2 text-sm font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent/40" />
-                <select value={signer.role} onChange={(e) => updateSigner(idx, 'role', e.target.value)} className="border border-brand-line rounded-lg px-3 py-2 text-sm font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent/40">
-                  {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        <SignatureSendCard
+          draft={request}
+          document={selectedDocument}
+          submitDisabled={uploading}
+          picker={(
+            <>
+              <label className="text-sm text-brand-ink">
+                <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Document to sign</span>
+                <select aria-label="Document to sign" value={docId} onChange={(e) => setDocId(e.target.value)} className={inputClass}>
+                  <option value="">Select document…</option>
+                  {docs.map((d) => <option key={d.id} value={d.id}>{d.filename}</option>)}
                 </select>
-                <button type="button" onClick={() => removeSigner(idx)} disabled={signers.length === 1} className="px-3 py-2 text-xs font-semibold text-brand-rose disabled:text-brand-muted disabled:cursor-not-allowed">Remove</button>
-              </div>
-            ))}
-            {duplicateRoles.length > 0 && (
-              <p role="alert" className="text-xs font-semibold text-brand-amber">
-                {duplicateRoles.map(formatSignerRole).join(', ')} is used by more than one signer. Give each signer their own role so they get their own signature fields.
-              </p>
-            )}
-            <button type="button" onClick={addSigner} className="text-xs font-semibold text-brand-accent hover:text-brand-ink">Add signer</button>
-            <p className="text-[11px] text-brand-muted">Each signer signs the fields placed for their role. Add the signer first, then place their blocks in the PDF review above.</p>
-          </div>
-          <button type="submit" disabled={busy || uploading} className="px-4 py-2 bg-brand-ink text-white text-sm font-sans font-semibold rounded-lg hover:bg-brand-ink-2 transition-all disabled:opacity-50">
-            {busy ? 'Preparing…' : 'Prepare for signature'}
-          </button>
-        </form>
-          {draft && (() => {
-            const request = draft.request || {}
-            const roles = [...new Set((request.signers || []).map((signer) => signer.role || 'signer'))]
-            const signing = draft.fields.filter((item) => ['signature', 'initials', 'date'].includes(item.kind))
-            const review = Array.isArray(request.plan_review) ? request.plan_review : []
-            const mustAcknowledge = Boolean(request.plan_review_required)
-            return (
-              <section aria-label="Where each signer will sign" className="rounded-2xl border border-brand-line bg-white p-4 space-y-3">
-                <div>
-                  <h3 className="text-sm font-sans font-semibold text-brand-ink">Where each signer will sign</h3>
-                  <p className="text-xs text-brand-muted mt-0.5">{request.document_name || 'Document'} — check this before it reaches the client.</p>
-                </div>
-                <ul className="space-y-2">
-                  {roles.map((role) => {
-                    const mine = signing.filter((item) => (item.role || 'signer') === role)
-                    return (
-                      <li key={role} className="text-sm">
-                        <span className="font-semibold text-brand-ink">{formatSignerRole(role)}</span>
-                        <ul className="ml-4 mt-1 space-y-0.5 text-xs text-brand-muted">
-                          {mine.length === 0 && <li>No field</li>}
-                          {mine.map((item) => (
-                            <li key={item.field_id}>
-                              Page {item.page} · {signingFieldKind(item.kind)}{item.label && !['Signature', signingFieldKind(item.kind)].includes(item.label) ? ` “${item.label}”` : ''} · {signingFieldOrigin(item.source)}
-                            </li>
-                          ))}
-                        </ul>
-                      </li>
-                    )
-                  })}
-                </ul>
-                {review.map((item, index) => (
-                  <p key={index} role={item.level === 'warn' ? 'alert' : 'status'} className={`text-xs ${item.level === 'warn' ? 'font-semibold text-brand-amber' : 'text-brand-muted'}`}>{item.detail}</p>
-                ))}
-                {mustAcknowledge && (
-                  <label className="inline-flex items-center gap-2 text-xs text-brand-ink">
-                    <input type="checkbox" checked={draft.acknowledged} onChange={(e) => setDraft({ ...draft, acknowledged: e.target.checked })} />
-                    <span>I have checked where each signer will sign</span>
-                  </label>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <button type="button" onClick={sendDraft} disabled={busy || (mustAcknowledge && !draft.acknowledged)} className="rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Send for signature</button>
-                  <button type="button" onClick={discardDraft} disabled={busy} className="rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-rose disabled:opacity-50">Discard draft</button>
-                </div>
-              </section>
-            )
-          })()}
+              </label>
+              <label className="text-sm text-brand-ink">
+                <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wider text-brand-muted">Upload a prepared PDF</span>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  aria-label="Upload a prepared PDF"
+                  onChange={uploadPrepared}
+                  disabled={uploading}
+                  className="w-full text-[13px] text-brand-ink file:mr-3 file:rounded-lg file:border file:border-brand-line file:bg-brand-surface file:px-3 file:py-1.5 file:text-[13px] disabled:opacity-50"
+                />
+                {uploading && <span role="status" className="mt-1 block text-[12px] text-brand-muted">Uploading…</span>}
+                {uploadError && <span role="alert" className="mt-1 block text-[12px] text-brand-rose">{uploadError}</span>}
+                {!uploading && !uploadError && <span className="mt-1 block text-[12px] text-brand-muted">Saved to the matter and selected above.</span>}
+              </label>
+            </>
+          )}
+        />
 
         {err && <p className="text-sm text-brand-rose">{err}</p>}
         {notice && <p role="status" className={`text-sm ${noticeDelivered ? 'text-brand-green' : 'text-brand-amber font-semibold'}`}>{notice}</p>}
@@ -3170,7 +2832,7 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
                         <a href={getMatterDocumentDownloadUrl(matterId, executedDocumentId)} className="text-xs font-semibold text-brand-accent hover:text-brand-ink">Signed copy filed</a>
                       )}
                       {['sent', 'partially_signed'].includes(r.status) && <button onClick={() => resendReq(r.id)} className="text-brand-accent hover:underline text-xs font-medium">Resend</button>}
-                      {r.status === 'draft' && <button onClick={() => openDraft(r)} className="text-brand-accent hover:underline text-xs font-medium">Review and send</button>}
+                      {r.status === 'draft' && <button onClick={() => request.openDraft(r)} className="text-brand-accent hover:underline text-xs font-medium">Review and send</button>}
                       {open && <button onClick={() => voidReq(r.id)} className="text-brand-rose hover:underline text-xs font-medium">Void</button>}
                     </div>
                   </div>

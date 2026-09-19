@@ -261,6 +261,13 @@ class DocumentTemplateRenderResponse(BaseModel):
     storage_backend: Optional[str] = None
     storage_provider: Optional[str] = None
     storage_warning: Optional[str] = None
+    # Signing readiness of the saved document, so the caller that just
+    # generated it can offer "Send for signature" without a second listing
+    # round trip. Empty until a document is saved into a matter.
+    signing_roles: list[str] = Field(default_factory=list)
+    signing_placement_required: bool = False
+    positioned_fields: list[dict[str, Any]] = Field(default_factory=list)
+    signing_placement_problems: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentTemplateSmartFillRequest(BaseModel):

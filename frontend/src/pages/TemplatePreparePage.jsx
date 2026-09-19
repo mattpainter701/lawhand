@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { getMattersV2, getTemplate } from '../api'
-import usePrepareFill from '../components/prepare/usePrepareFill'
+import usePrepareFill, { templateHasSigningFields } from '../components/prepare/usePrepareFill'
+import SendStep, { renderIsSendable, savedDocumentFromRender } from '../components/prepare/SendStep'
 import PrepareDocumentBody from '../components/prepare/PrepareDocumentBody'
 import PrepareStepper, { prepareSteps } from '../components/prepare/PrepareStepper'
 import { buildSavedTarget, readPrepareQuery } from '../components/prepare/prepareRouting'
@@ -24,13 +25,22 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   // The hook reports the render response; the matter it was saved to is the
   // one chosen in the body, which the page cannot see until the hook returns.
   const matterRef = useRef(query.matterId || '')
+  // A saved PDF with signing fields stays on the page for the Send step;
+  // everything else hands over to the matter's documents.
+  const [sendable, setSendable] = useState(null)
+  const [sent, setSent] = useState(false)
   const fill = usePrepareFill({
     template,
     initialMatterId: query.matterId || '',
     folderId: query.folderId || null,
-    onSaved: (res) => onSaved(res, matterRef.current),
+    onSaved: (res) => {
+      const matterId = matterRef.current
+      if (renderIsSendable(res)) setSendable({ matterId, document: savedDocumentFromRender(res) })
+      else onSaved(res, matterId)
+    },
   })
   matterRef.current = fill.matterId
+  const signing = templateHasSigningFields(template) ? { pdf: fill.isPdfOutput, sent } : null
   const steps = prepareSteps({
     template,
     matterId: fill.matterId,
@@ -38,11 +48,21 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
     requiredMissing: fill.requiredUnresolvedNames.length,
     previewReady: Boolean(fill.previewId || fill.filePreview || fill.rendered),
     saved: fill.saved,
+    signing,
   })
   return (
     <>
       <PrepareStepper steps={steps} />
-      <PrepareDocumentBody fill={fill} template={template} matters={matters} matterLoading={matterLoading} layout="page" />
+      {sendable ? (
+        <SendStep
+          matterId={sendable.matterId}
+          document={sendable.document}
+          savedTarget={buildSavedTarget({ matterId: sendable.matterId, documentId: sendable.document.id, returnTo: query.returnTo })}
+          onSent={() => setSent(true)}
+        />
+      ) : (
+        <PrepareDocumentBody fill={fill} template={template} matters={matters} matterLoading={matterLoading} layout="page" />
+      )}
     </>
   )
 }

@@ -3,7 +3,10 @@ import { Check, Circle, CircleDot, Lock } from 'lucide-react'
 // The route's progress rail. Every state is derived from the fill hook, so
 // the rail, the progress bar and the Save button can never disagree about
 // how far along a document is (one derivation, one number).
-export function prepareSteps({ template, matterId, progress, requiredMissing, previewReady, saved }) {
+// `signing`, when given, appends a Send step: `{ pdf, sent }` says whether the
+// output being prepared can be sent for signature (only a PDF can) and
+// whether the request has gone out.
+export function prepareSteps({ template, matterId, progress, requiredMissing, previewReady, saved, signing = null }) {
   const hasTemplate = Boolean(template)
   const hasMatter = Boolean(String(matterId || '').trim())
   const populated = hasMatter && requiredMissing === 0
@@ -19,6 +22,14 @@ export function prepareSteps({ template, matterId, progress, requiredMissing, pr
     { key: 'review', label: 'Review', state: !populated ? 'todo' : previewReady ? 'done' : 'current', note: previewReady ? 'Previewed' : 'Preview the exact document' },
     { key: 'save', label: 'Save', state: !previewReady ? 'todo' : saved ? 'done' : 'current', note: saved ? 'Saved to the matter' : 'Save to the matter' },
   ]
+  if (signing) {
+    steps.push({
+      key: 'send',
+      label: 'Send',
+      state: signing.sent ? 'done' : saved && signing.pdf ? 'current' : 'todo',
+      note: signing.sent ? 'Sent for signature' : signing.pdf ? 'Send for signature' : 'Needs PDF output to send for signature',
+    })
+  }
   return steps
 }
 

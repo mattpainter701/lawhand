@@ -29,6 +29,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     previewId,
     previewPurpose,
     convertDocxToPdf,
+    hasSigningFields,
     setConvertDocxToPdf,
     rendering,
     renderPurpose,
@@ -285,6 +286,13 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                 </span>
               </label>
             </div>
+            {hasSigningFields && (
+              <p className="mt-2 text-xs text-brand-muted">
+                {convertDocxToPdf
+                  ? 'PDF is preselected because this template has signature fields. Only a PDF can be sent for signature after it is saved.'
+                  : 'This template has signature fields. A Word document cannot be sent for signature; choose PDF to send it from the matter.'}
+              </p>
+            )}
           </fieldset>
         )}
 

@@ -14,11 +14,18 @@ const api = vi.hoisted(() => ({
   getTemplateSource: vi.fn(),
   getTemplateSourcePreview: vi.fn(),
   getTemplateOutline: vi.fn(),
+  getMatterV2: vi.fn(),
+  createSignatureRequest: vi.fn(),
+  getSignatureRequestFields: vi.fn(),
+  sendSignatureRequest: vi.fn(),
+  voidSignatureRequest: vi.fn(),
+  getMatterDocumentSigningSource: vi.fn(),
 }))
 vi.mock('../api', () => api)
 vi.mock('../components/templates/GeneratedPdfPreview', () => ({ default: ({ title }) => <section aria-label={`Preview of ${title}`} /> }))
 vi.mock('../components/templates/TemplateFillSource', () => ({ default: () => <div>reference</div> }))
 vi.mock('../components/templates/TemplateFactReview', () => ({ default: () => null }))
+vi.mock('../components/templates/GeneratedSigningPlacementReview', () => ({ default: () => null }))
 
 const T = '11111111-1111-4111-8111-111111111111'
 const M = '22222222-2222-4222-8222-222222222222'
@@ -94,6 +101,66 @@ describe('the Prepare route', () => {
     expect(screen.getAllByRole('status').some((node) => /Draft preview/.test(node.textContent))).toBe(true)
     expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Preview draft' })).toBeEnabled()
+  })
+
+  it('stays for the Send step when the saved PDF carries signing fields, and sends to the matter client', async () => {
+    const pdf = {
+      ...published, format: 'pdf', source_sha256: 'abc',
+      variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }, { name: 'sig', field_type: 'signature', signer_role: 'client' }] },
+    }
+    api.getTemplate.mockResolvedValue(pdf)
+    api.renderTemplateFile.mockResolvedValue({ blob: new Blob(['%PDF']), previewId: 'prev-1', previewPurpose: 'generation', filename: 'fee.pdf' })
+    api.renderTemplate.mockResolvedValue({
+      rendered: 'PDF saved', matter_document_id: DOC, output_format: 'pdf', output_filename: 'fee.pdf',
+      signing_roles: ['client'], signing_placement_required: true,
+      positioned_fields: [{ field_id: 'sig', role: 'client', source: 'acroform', source_sha256: 'x' }], signing_placement_problems: [],
+    })
+    api.getMatterV2.mockResolvedValue({ id: M, client_name: 'Ada Smith', client_email: 'ada@example.test' })
+    api.createSignatureRequest.mockResolvedValue({ id: 'req', document_name: 'fee.pdf', signers: [{ role: 'client' }], plan_review_required: false })
+    api.getSignatureRequestFields.mockResolvedValue({ fields: [{ field_id: 'sig', role: 'client', kind: 'signature', page: 1, source: 'acroform' }] })
+    api.sendSignatureRequest.mockResolvedValue({ id: 'req', status: 'sent', signers: [{ email: 'ada@example.test', invitation_delivery_status: 'sent' }] })
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('6. Send')
+    await waitFor(() => expect(screen.getByLabelText(/Client name/)).toHaveValue('Ada Smith'))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await waitFor(() => expect(api.renderTemplateFile).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await screen.findByRole('heading', { name: 'Send for signature' })
+    // Still on the Prepare route: the Send step is here, not on the matter.
+    expect(screen.getByLabelText('Location')).toHaveTextContent('/templates/prepare')
+    expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('Send for signature')
+    expect(screen.getByPlaceholderText('Signer 1 full name')).toHaveValue('Ada Smith')
+    expect(screen.getByPlaceholderText('Signer email')).toHaveValue('ada@example.test')
+    expect(screen.getByRole('link', { name: "Open it in the matter's documents" })).toHaveAttribute('href', `/matters/${M}?tab=documents&document=${DOC}`)
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare for signature' }))
+    await screen.findByRole('region', { name: 'Where each signer will sign' })
+    expect(api.createSignatureRequest).toHaveBeenCalledWith(M, expect.objectContaining({
+      document_id: DOC, provider: 'internal',
+      signers: [{ name: 'Ada Smith', email: 'ada@example.test', role: 'client', sign_order: 0 }],
+      positioned_fields: [{ field_id: 'sig', role: 'client', source: 'acroform', source_sha256: 'x' }],
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send for signature' }))
+    await screen.findByRole('region', { name: 'Sent for signature' })
+    expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('Sent for signature')
+    expect(screen.getByRole('link', { name: "Open the matter's documents" })).toHaveAttribute('href', `/matters/${M}?tab=documents&document=${DOC}`)
+  })
+
+  it('generates a Word template with signature fields as PDF unless told otherwise', async () => {
+    const docx = {
+      ...published, format: 'docx', source_sha256: 'abc',
+      variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }, { name: 'sig', field_type: 'signature', signer_role: 'client' }] },
+    }
+    api.getTemplate.mockResolvedValue(docx)
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    const pdfChoice = screen.getByRole('radio', { name: /PDF for signature/ })
+    expect(pdfChoice).toBeChecked()
+    expect(screen.getByText(/PDF is preselected because this template has signature fields/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: /Editable Word document/ }))
+    expect(screen.getByText(/A Word document cannot be sent for signature/)).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('Needs PDF output to send for signature')
   })
 
   it('explains itself without a template and reports a load failure', async () => {
