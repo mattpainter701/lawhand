@@ -11,6 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "prod-dast.yml"
 ENTRYPOINT = ROOT / "scripts" / "lawhand-dast-scan"
+ACTIVE_ENTRYPOINT = ROOT / "scripts" / "lawhand-active-scan"
 INSTALLER = ROOT / "scripts" / "install_dast_scan_entrypoint.sh"
 RECONCILE_PATH = ROOT / "scripts" / "reconcile_dast_findings.py"
 
@@ -45,32 +46,35 @@ def test_prod_dast_workflow_scans_from_skynet_and_reports_on_github_hosted() -> 
     parsed = yaml.safe_load(workflow)
     jobs = parsed["jobs"]
     scan = jobs["zap-baseline"]
+    active = jobs["nuclei-active"]
     report = jobs["report"]
 
-    assert scan["runs-on"] == [
-        "self-hosted",
-        "Linux",
-        "X64",
-        "skynet",
-        "lawhand-prod",
-    ]
+    skynet = ["self-hosted", "Linux", "X64", "skynet", "lawhand-prod"]
+    assert scan["runs-on"] == skynet
+    assert active["runs-on"] == skynet
     assert scan["permissions"] == {}
+    assert active["permissions"] == {}
+    assert active["if"] == "${{ vars.LAWHAND_DAST_ACTIVE_ENABLED == 'true' }}"
     assert report["runs-on"] == "ubuntu-latest"
     assert report["permissions"] == {"contents": "read", "issues": "write"}
-    assert report["needs"] == "zap-baseline"
+    assert report["needs"] == ["zap-baseline", "nuclei-active"]
     assert report["if"] == "always()"
 
     scan_block = workflow.split("  zap-baseline:", 1)[1].split("\n  report:", 1)[0]
     assert "actions/checkout" not in scan_block
     assert "sudo -n /usr/local/sbin/lawhand-dast-scan" in scan_block
+    assert "sudo -n /usr/local/sbin/lawhand-active-scan" in scan_block
     assert "secrets." not in scan_block
     assert "GITHUB_TOKEN" not in scan_block
     assert "continue-on-error: true" in scan_block
 
-    report_block = workflow.split("  report:", 1)[1]
+    report_block = workflow.split("\n  report:", 1)[1]
     assert "ref: main" in report_block
     assert "issues: write" in workflow
     assert "python scripts/reconcile_dast_findings.py" in report_block
+    assert "--min-risk low" in report_block
+    assert "--exclude-uri-substring /cdn-cgi/" in report_block
+    assert "--nuclei-report" in report_block
 
 
 def test_dast_entrypoint_is_argument_free_root_owned_and_digest_pinned() -> None:
@@ -103,11 +107,32 @@ def test_dast_entrypoint_is_argument_free_root_owned_and_digest_pinned() -> None
     assert "exit 3" in entrypoint
 
 
-def test_dast_installer_grants_only_the_fixed_entrypoint() -> None:
+def test_active_entrypoint_is_argument_free_and_detection_only() -> None:
+    entrypoint = ACTIVE_ENTRYPOINT.read_text(encoding="utf-8")
+
+    assert 'readonly TARGET="https://getlawhand.com"' in entrypoint
+    assert '[[ "$#" -eq 0 ]]' in entrypoint
+    assert '"$(id -u)" -eq 0' in entrypoint
+    assert re.search(r'IMAGE="projectdiscovery/nuclei@sha256:[0-9a-f]{64}"', entrypoint)
+    assert "-jsonl" in entrypoint
+    assert "-tags cve,exposure" in entrypoint
+    # Detection only: never exploit, flood, or fuzz production.
+    assert "-etags intrusive,dos,fuzz" in entrypoint
+    assert 'TARGET="${' not in entrypoint
+    assert "install -d -m 0755 -o root -g root" in entrypoint
+    assert '! -L "$REPORT_DIR"' in entrypoint
+    assert "flock -n 9" in entrypoint
+    assert "NUCLEI_REPORT_JSONL" in entrypoint
+    assert "exit 3" in entrypoint
+
+
+def test_dast_installer_grants_only_the_fixed_entrypoints() -> None:
     installer = INSTALLER.read_text(encoding="utf-8")
 
     assert "entrypoint=/usr/local/sbin/lawhand-dast-scan" in installer
+    assert "active_entrypoint=/usr/local/sbin/lawhand-active-scan" in installer
     assert "NOPASSWD: $entrypoint" in installer
+    assert "NOPASSWD: $active_entrypoint" in installer
     assert "runner_user" in installer
     assert "visudo -cf" in installer
     assert "chmod 0440" in installer
@@ -186,9 +211,7 @@ def test_cloudflare_edge_responses_are_not_filed_as_findings() -> None:
     missing CSP header there. That response never reaches nginx, so it is a
     permanent false positive; only the app URLs of the same rule are filed.
     """
-    edge_only = _report(
-        "2", uri="https://getlawhand.com/cdn-cgi/l/email-protection"
-    )
+    edge_only = _report("2", uri="https://getlawhand.com/cdn-cgi/l/email-protection")
     assert reconcile.normalize_report(edge_only, min_risk=1) == []
 
     mixed = _report("2")
@@ -203,6 +226,78 @@ def test_cloudflare_edge_responses_are_not_filed_as_findings() -> None:
     findings = reconcile.normalize_report(mixed, min_risk=1)
     assert len(findings) == 1
     assert set(findings[0].affected) == {"https://getlawhand.com/login"}
+
+
+def _nuclei_lines() -> list[str]:
+    return [
+        '{"template-id":"CVE-2021-44228","info":{"name":"Apache Log4j RCE",'
+        '"severity":"critical","description":"JNDI RCE","remediation":"Upgrade",'
+        '"reference":["https://nvd.nist.gov/vuln/detail/CVE-2021-44228"],'
+        '"classification":{"cve-id":["CVE-2021-44228"],"cwe-id":["cwe-502"]}},'
+        '"type":"http","matched-at":"https://getlawhand.com/api"}',
+        '{"template-id":"exposed-config","info":{"name":"Exposed Config",'
+        '"severity":"low","classification":{"cve-id":null,"cwe-id":["cwe-200"]}},'
+        '"type":"http","matched-at":"https://getlawhand.com/.env"}',
+        '{"template-id":"dns-waf-detect","info":{"name":"DNS WAF Detection",'
+        '"severity":"info","classification":{"cve-id":null,"cwe-id":["cwe-200"]}},'
+        '"type":"dns","matched-at":"getlawhand.com"}',
+    ]
+
+
+def test_nuclei_findings_map_severity_cve_and_cwe() -> None:
+    findings = reconcile.normalize_nuclei_report(_nuclei_lines(), min_risk=1)
+    by_id = {finding.plugin_id: finding for finding in findings}
+    assert set(by_id) == {"CVE-2021-44228", "exposed-config"}
+
+    log4j = by_id["CVE-2021-44228"]
+    assert log4j.criticality == "Critical"
+    assert log4j.cves == ("CVE-2021-44228",)
+    assert log4j.cwe == "cwe-502"
+    assert log4j.source == "nuclei"
+    assert log4j.solution == "Upgrade"
+    assert log4j.affected == {"https://getlawhand.com/api": {"GET"}}
+    assert reconcile.severity_labels(log4j) == ["dast", "severity:critical"]
+
+    body = reconcile.render_body(log4j, "https://run/x")
+    assert "| Criticality | Confidence | CWE | WASC | CVE |" in body
+    assert "| Critical | n/a | cwe-502 | n/a | CVE-2021-44228 |" in body
+    assert "Detected by the scheduled Nuclei active scan." in body
+
+
+def test_exclude_uri_substring_drops_cloudflare_paths() -> None:
+    report = _report("2")
+    report["site"][0]["alerts"][0]["instances"] = [
+        {"uri": "https://getlawhand.com/app", "method": "GET", "param": ""},
+        {
+            "uri": "https://getlawhand.com/cdn-cgi/l/email-protection",
+            "method": "GET",
+            "param": "",
+        },
+    ]
+    kept = reconcile.normalize_report(
+        report, min_risk=1, exclude_substrings=("/cdn-cgi/",)
+    )
+    assert set(kept[0].affected) == {"https://getlawhand.com/app"}
+
+    # A finding that exists only under the excluded path is dropped entirely.
+    only_cdn = _report("2", uri="https://getlawhand.com/cdn-cgi/x")
+    assert (
+        reconcile.normalize_report(
+            only_cdn, min_risk=1, exclude_substrings=("/cdn-cgi/",)
+        )
+        == []
+    )
+
+    nuclei_only_cdn = [
+        '{"template-id":"x","info":{"name":"X","severity":"high"},'
+        '"type":"http","matched-at":"https://getlawhand.com/cdn-cgi/y"}'
+    ]
+    assert (
+        reconcile.normalize_nuclei_report(
+            nuclei_only_cdn, min_risk=1, exclude_substrings=("/cdn-cgi/",)
+        )
+        == []
+    )
 
 
 class _FakeGitHub:

@@ -1,10 +1,12 @@
-name: Production DAST (OWASP ZAP baseline)
+name: Production DAST (ZAP baseline + Nuclei active)
 
-# Scheduled, unauthenticated baseline scan of the public production surface,
-# run from the Skynet self-hosted runner. The runner only reaches a root-owned,
-# argument-free entrypoint; a separate GitHub-hosted job files the findings as
-# GitHub issues. This is report-only: a finding never fails the run, but an
-# unreachable scan is recorded as a [dast-alert] issue.
+# Scheduled scans of the public production surface, run from the Skynet
+# self-hosted runner. The runner only reaches root-owned, argument-free
+# entrypoints; a separate GitHub-hosted job files the findings as GitHub
+# issues. Report-only: a finding never fails the run, but a scan that produces
+# no report opens a [dast-alert] issue. The Nuclei active scan is scoped to
+# detection templates (no intrusive/dos/fuzz) and can be disabled by clearing
+# the LAWHAND_DAST_ACTIVE_ENABLED repository variable.
 on:
   schedule:
     - cron: "37 6 * * 1"
@@ -19,7 +21,7 @@ concurrency:
 
 jobs:
   zap-baseline:
-    name: Scan production public surface
+    name: Scan production public surface (ZAP)
     runs-on: [self-hosted, Linux, X64, skynet, lawhand-prod]
     timeout-minutes: 30
     permissions: {}
@@ -62,16 +64,64 @@ jobs:
           ZAP_EXIT: ${{ steps.scan.outputs.zap_exit }}
         run: |
           {
-            echo "## Production DAST baseline"
+            echo "## Production DAST baseline (ZAP)"
             echo
             echo "- Target: \`https://getlawhand.com\`"
             echo "- Scan outcome: $SCAN_OUTCOME (ZAP exit ${ZAP_EXIT:-unknown})"
             echo "- Findings are written to labeled GitHub issues by the report job."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  nuclei-active:
+    name: Active detection scan (Nuclei)
+    if: ${{ vars.LAWHAND_DAST_ACTIVE_ENABLED == 'true' }}
+    runs-on: [self-hosted, Linux, X64, skynet, lawhand-prod]
+    timeout-minutes: 40
+    permissions: {}
+    outputs:
+      nuclei_exit: ${{ steps.scan.outputs.nuclei_exit }}
+    steps:
+      - name: Run root-owned active scan against production
+        id: scan
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          output="$(sudo -n /usr/local/sbin/lawhand-active-scan)"
+          printf '%s\n' "$output"
+          jsonl="$(printf '%s\n' "$output" | sed -n 's/^NUCLEI_REPORT_JSONL=//p' | tail -n1)"
+          nuclei_exit="$(printf '%s\n' "$output" | sed -n 's/^NUCLEI_SCAN_EXIT=//p' | tail -n1)"
+          if [[ -n "$jsonl" && -f "$jsonl" && ! -L "$jsonl" ]]; then
+            mkdir -p "$RUNNER_TEMP/nuclei"
+            cp "$jsonl" "$RUNNER_TEMP/nuclei/nuclei-report.jsonl"
+          fi
+          echo "nuclei_exit=${nuclei_exit:-100}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Nuclei report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dast-nuclei-report
+          path: ${{ runner.temp }}/nuclei
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Record scan summary
+        if: always()
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          NUCLEI_EXIT: ${{ steps.scan.outputs.nuclei_exit }}
+        run: |
+          {
+            echo "## Production active scan (Nuclei)"
+            echo
+            echo "- Target: \`https://getlawhand.com\`"
+            echo "- Scan outcome: $SCAN_OUTCOME (Nuclei exit ${NUCLEI_EXIT:-unknown})"
+            echo "- Detection only: intrusive, dos, and fuzz templates are excluded."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   report:
     name: File DAST findings as GitHub issues
-    needs: zap-baseline
+    needs: [zap-baseline, nuclei-active]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -92,13 +142,21 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: Download DAST report
-        id: download
+      - name: Download ZAP report
+        id: download-zap
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dast-zap-report
           path: dast-report
+
+      - name: Download Nuclei report
+        id: download-nuclei
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dast-nuclei-report
+          path: nuclei-report
 
       - name: Reconcile findings into GitHub issues
         env:
@@ -108,15 +166,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          report="dast-report/zap-report.json"
-          if [[ "${{ steps.download.outcome }}" == "success" && -f "$report" ]]; then
-            python scripts/reconcile_dast_findings.py \
-              --report "$report" \
-              --run-url "$run_url" \
-              --min-risk medium \
-              --zap-exit-code "${ZAP_EXIT:-100}"
+          # /cdn-cgi/ is Cloudflare's own surface, not the application.
+          args=(--run-url "$run_url" --min-risk low --exclude-uri-substring /cdn-cgi/ --zap-exit-code "${ZAP_EXIT:-100}")
+          have_report=false
+          if [[ "${{ steps.download-zap.outcome }}" == "success" && -f dast-report/zap-report.json ]]; then
+            args+=(--report dast-report/zap-report.json)
+            have_report=true
+          fi
+          if [[ "${{ steps.download-nuclei.outcome }}" == "success" && -f nuclei-report/nuclei-report.jsonl ]]; then
+            args+=(--nuclei-report nuclei-report/nuclei-report.jsonl)
+            have_report=true
+          fi
+          if [[ "$have_report" == "true" ]]; then
+            python scripts/reconcile_dast_findings.py "${args[@]}"
           else
-            python scripts/reconcile_dast_findings.py \
-              --scan-missing \
-              --run-url "$run_url"
+            python scripts/reconcile_dast_findings.py --scan-missing --run-url "$run_url"
           fi
