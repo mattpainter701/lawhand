@@ -552,6 +552,21 @@ def caption_parties(parties: Sequence[Any], role: str) -> list[Any]:
     )
 
 
+#: Roles whose plural is not ``role + "s"``. The caption builder writes a
+#: field literally named after the plural (``witnesses``, ``opposing_parties``),
+#: so a naive suffix leaves those names unreachable.
+_ROLE_PLURALS: dict[str, str] = {
+    "witness": "witnesses",
+    "opposing_party": "opposing_parties",
+}
+
+
+def role_plural(role: str) -> str:
+    """The plural field name a caption writes for ``role``."""
+
+    return _ROLE_PLURALS.get(role, f"{role}s")
+
+
 def role_aliases(role: str) -> frozenset[str]:
     """Every alias the caption builder writes for one role's first instance."""
 
@@ -559,7 +574,7 @@ def role_aliases(role: str) -> frozenset[str]:
         {
             role,
             f"{role}_name",
-            f"{role}s",
+            role_plural(role),
             f"{role}_names",
             f"{role}_email",
             f"{role}_phone",
@@ -687,7 +702,7 @@ class CaptionPartySource(FillSource):
                 dict.fromkeys(party.contact.display_name for party in role_parties)
             )
             all_party_ids = [str(party.id) for party in role_parties]
-            for alias in (f"{role}s", f"{role}_names"):
+            for alias in (role_plural(role), f"{role}_names"):
                 add_candidate(
                     index,
                     alias,
