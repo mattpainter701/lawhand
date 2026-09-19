@@ -44,6 +44,10 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const pendingFocus = useRef(null)
   const previewRequestGenerationRef = useRef(0)
   const smartFillRequestGenerationRef = useRef(0)
+  // The generation of the most recent Smart Fill run. `invalidatePreview` bumps
+  // the generation above without starting a run, so comparing against this
+  // tells a stale run whether a newer one has taken over the state.
+  const smartFillLatestRequestRef = useRef(0)
   const formRevisionRef = useRef(0)
   const smartFillRef = useRef(null)
   const smartFillAutoKeyRef = useRef('')
@@ -197,6 +201,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     }
     const requestGeneration = smartFillRequestGenerationRef.current + 1
     smartFillRequestGenerationRef.current = requestGeneration
+    smartFillLatestRequestRef.current = requestGeneration
     const requestRevision = formRevisionRef.current
     const requestMatterId = matterId.trim() || null
     setSmartFillState('loading')
@@ -211,8 +216,10 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         smartFillRequestGenerationRef.current !== requestGeneration
         || formRevisionRef.current !== requestRevision
       ) {
-        setSmartFillState('idle')
-        setSmartFillMessage('Smart-fill results were not applied because the matter or fields changed. Run Smart Fill again if needed.')
+        if (smartFillLatestRequestRef.current === requestGeneration) {
+          setSmartFillState('idle')
+          setSmartFillMessage('Smart-fill results were not applied because the matter or fields changed. Run Smart Fill again if needed.')
+        }
         return
       }
       const discovered = discoverySuggestions(res)
@@ -230,7 +237,15 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
       setSmartFillState('ready')
       setSmartFillMessage('Available values refreshed. Your entries were kept.')
     } catch (err) {
-      if (smartFillRequestGenerationRef.current !== requestGeneration) return
+      if (smartFillRequestGenerationRef.current !== requestGeneration) {
+        // An edit (or a newer run) made this response irrelevant. If no newer
+        // run owns the state, clear the spinner so Save is not blocked forever.
+        if (smartFillLatestRequestRef.current === requestGeneration) {
+          setSmartFillState('idle')
+          setSmartFillMessage('')
+        }
+        return
+      }
       if ([404, 405, 501].includes(err?.response?.status)) {
         setSmartFillState('unavailable')
         setSmartFillMessage('Smart fill is not enabled on this server yet. Manual fields are ready for review.')
