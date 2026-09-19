@@ -18,6 +18,9 @@ describe('prepare route addresses', () => {
     const target = buildPrepareTarget({ templateId: 'not-an-id', matterId: '<script>', returnTo: 'https://evil.example/x' })
     expect(target.url).toBe('/templates/prepare')
     expect(safeReturnPath('//evil.example')).toBe('')
+    expect(safeReturnPath('/\\evil.example')).toBe('')
+    expect(safeReturnPath('\\\\evil.example')).toBe('')
+    expect(safeReturnPath('/matters/x\\..\\evil')).toBe('')
     expect(safeReturnPath('/matters/x')).toBe('/matters/x')
   })
 

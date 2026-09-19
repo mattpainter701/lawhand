@@ -11,9 +11,12 @@ const isId = (value) => UUID_PATTERN.test(String(value || ''))
 
 // A return target must be a path on this app, never an absolute URL, so a
 // crafted link cannot bounce a signed-in user somewhere else after saving.
+// Browsers treat a backslash as a slash, so `/\evil.example` and `\\evil` are
+// protocol-relative too; reject any backslash rather than just a leading `//`.
 export const safeReturnPath = (value) => {
   const text = String(value || '')
   if (!text.startsWith('/') || text.startsWith('//')) return ''
+  if (text.includes('\\') || Array.from(text).some((char) => char.charCodeAt(0) < 0x20)) return ''
   return text
 }
 
