@@ -35,6 +35,27 @@ MAX_AFFECTED_URLS = 50
 
 _RISK_NAMES = {"0": "Informational", "1": "Low", "2": "Medium", "3": "High"}
 _MIN_RISK = {"informational": 0, "low": 1, "medium": 2, "high": 3}
+_CONFIDENCE_NAMES = {
+    "0": "False Positive",
+    "1": "Low",
+    "2": "Medium",
+    "3": "High",
+    "4": "User Confirmed",
+}
+# A filterable criticality label per scanner risk level.
+_SEVERITY_LABELS = {
+    "High": "severity:high",
+    "Medium": "severity:medium",
+    "Low": "severity:low",
+    "Informational": "severity:informational",
+}
+_SEVERITY_COLORS = {
+    "severity:high": "b60205",
+    "severity:medium": "d93f0b",
+    "severity:low": "fbca04",
+    "severity:informational": "0e8a16",
+}
+_CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
 _FINGERPRINT_RE = re.compile(r"<!-- dast-fingerprint: ([0-9a-f]{40}) -->")
 _CONTENT_RE = re.compile(r"<!-- dast-content: ([0-9a-f]{40}) -->")
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -53,11 +74,18 @@ class Finding:
     risk: str
     confidence: str
     cwe: str
+    wasc: str
+    cves: tuple[str, ...]
     description: str
     solution: str
     reference: str
     param: str
     affected: dict[str, set[str]] = field(default_factory=dict)
+
+    @property
+    def criticality(self) -> str:
+        # ZAP's risk rating is the criticality: High, Medium, Low, Informational.
+        return self.risk
 
     @property
     def fingerprint(self) -> str:
@@ -78,6 +106,8 @@ class Finding:
                 self.risk,
                 self.confidence,
                 self.cwe,
+                self.wasc,
+                self.cves,
                 self.description,
                 self.solution,
                 self.reference,
@@ -96,6 +126,17 @@ def html_to_text(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def extract_cves(*values: object) -> tuple[str, ...]:
+    """Return the real CVE IDs an alert references, in first-seen order."""
+    found: list[str] = []
+    for value in values:
+        for match in _CVE_RE.findall(str(value or "")):
+            cve = match.upper()
+            if cve not in found:
+                found.append(cve)
+    return tuple(found)
+
+
 def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
     findings: dict[tuple[str, str], Finding] = {}
     for site in report.get("site", []) or []:
@@ -105,6 +146,15 @@ def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
             if _MIN_RISK.get(risk.lower(), 0) < min_risk:
                 continue
             plugin_id = str(alert.get("pluginid", ""))
+            wasc_id = str(alert.get("wascid", "") or "")
+            wasc = wasc_id if wasc_id and wasc_id != "-1" else ""
+            cves = extract_cves(
+                alert.get("cveid"),
+                alert.get("cve"),
+                alert.get("reference"),
+                alert.get("otherinfo"),
+                alert.get("desc"),
+            )
             for instance in alert.get("instances") or [{}]:
                 param = str(instance.get("param", "") or "")
                 key = (plugin_id, param)
@@ -114,8 +164,12 @@ def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
                         plugin_id=plugin_id,
                         name=str(alert.get("alert") or alert.get("name") or "Unknown"),
                         risk=risk,
-                        confidence=str(alert.get("confidence", "")),
+                        confidence=_CONFIDENCE_NAMES.get(
+                            str(alert.get("confidence", "")), ""
+                        ),
                         cwe=str(alert.get("cweid", "") or ""),
+                        wasc=wasc,
+                        cves=cves,
                         description=html_to_text(str(alert.get("desc", ""))),
                         solution=html_to_text(str(alert.get("solution", ""))),
                         reference=html_to_text(str(alert.get("reference", ""))),
@@ -129,24 +183,31 @@ def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
 
 
 def render_title(finding: Finding) -> str:
-    title = f"[dast] {finding.name} [{finding.plugin_id}]"
+    title = f"[dast][{finding.criticality}] {finding.name} [{finding.plugin_id}]"
     if finding.param:
         title += f" ({finding.param})"
     return title[:200]
 
 
+def severity_labels(finding: Finding) -> list[str]:
+    label = _SEVERITY_LABELS.get(finding.criticality)
+    return [LABEL, label] if label else [LABEL]
+
+
 def render_body(finding: Finding, run_url: str) -> str:
-    meta = f"**Risk:** {finding.risk}"
-    if finding.confidence:
-        meta += f" · **Confidence:** {finding.confidence}"
-    meta += f" · **Plugin:** `{finding.plugin_id}`"
-    if finding.cwe:
-        meta += f" · **CWE:** {finding.cwe}"
+    cve = ", ".join(finding.cves) if finding.cves else "None"
     lines = [
         f"<!-- dast-fingerprint: {finding.fingerprint} -->",
         f"<!-- dast-content: {finding.content_hash} -->",
         "",
-        meta,
+        "| Criticality | Confidence | CWE | WASC | CVE |",
+        "| --- | --- | --- | --- | --- |",
+        (
+            f"| {finding.criticality} | {finding.confidence or 'n/a'} | "
+            f"{finding.cwe or 'n/a'} | {finding.wasc or 'n/a'} | {cve} |"
+        ),
+        "",
+        f"**Plugin:** `{finding.plugin_id}`",
         "",
         finding.description or "_No description supplied by the scanner._",
         "",
@@ -157,6 +218,8 @@ def render_body(finding: Finding, run_url: str) -> str:
         "**References**",
         "",
         finding.reference or "_None._",
+        "",
+        "**CVSS:** _Not provided by the OWASP ZAP baseline scanner._",
         "",
         "**Affected URLs**",
         "",
@@ -174,6 +237,11 @@ def render_body(finding: Finding, run_url: str) -> str:
         f"- Target: `{TARGET}`",
         f"- Run: {run_url or '_n/a_'}",
     ]
+    if not finding.cves:
+        lines.append(
+            "- CVE: none associated with this rule. It is a configuration or "
+            "information-disclosure finding (see CWE/WASC), not a known CVE."
+        )
     return "\n".join(lines)
 
 
@@ -205,11 +273,9 @@ class GitHub:
         except urllib.error.HTTPError as exc:
             raise GitHubError(exc.code, exc.read().decode("utf-8", "replace")) from exc
 
-    def ensure_label(self) -> None:
+    def ensure_label(self, name: str, color: str, description: str) -> None:
         try:
-            self.request(
-                "GET", f"/repos/{self.repo}/labels/{urllib.parse.quote(LABEL)}"
-            )
+            self.request("GET", f"/repos/{self.repo}/labels/{urllib.parse.quote(name)}")
             return
         except GitHubError as exc:
             if exc.code != 404:
@@ -217,7 +283,7 @@ class GitHub:
         self.request(
             "POST",
             f"/repos/{self.repo}/labels",
-            {"name": LABEL, "color": LABEL_COLOR, "description": LABEL_DESCRIPTION},
+            {"name": name, "color": color, "description": description},
         )
 
     def list_labeled_issues(self) -> list[dict]:
@@ -266,7 +332,17 @@ def reconcile(
     zap_exit_code: int = 0,
     dry_run: bool = False,
 ) -> dict:
-    gh.ensure_label()
+    gh.ensure_label(LABEL, LABEL_COLOR, LABEL_DESCRIPTION)
+    for severity in {
+        _SEVERITY_LABELS[f.criticality]
+        for f in findings
+        if f.criticality in _SEVERITY_LABELS
+    }:
+        gh.ensure_label(
+            severity,
+            _SEVERITY_COLORS[severity],
+            f"DAST finding criticality: {severity.split(':', 1)[1]}",
+        )
     issues = gh.list_labeled_issues()
     by_fingerprint: dict[str, list[dict]] = {}
     for issue in issues:
@@ -284,12 +360,13 @@ def reconcile(
         target = open_issue or closed_issue
         title = render_title(finding)
         body = render_body(finding, run_url)
+        labels = severity_labels(finding)
         if target is None:
             if not dry_run:
                 gh.request(
                     "POST",
                     f"/repos/{gh.repo}/issues",
-                    {"title": title, "body": body, "labels": [LABEL]},
+                    {"title": title, "body": body, "labels": labels},
                 )
             counts["created"] += 1
         elif open_issue is None:
@@ -297,17 +374,26 @@ def reconcile(
                 gh.request(
                     "PATCH",
                     f"/repos/{gh.repo}/issues/{target['number']}",
-                    {"state": "open", "body": body},
+                    {"state": "open", "title": title, "body": body, "labels": labels},
                 )
             counts["reopened"] += 1
-        elif _marker(target.get("body") or "", _CONTENT_RE) != finding.content_hash:
-            if not dry_run:
-                gh.request(
-                    "PATCH",
-                    f"/repos/{gh.repo}/issues/{target['number']}",
-                    {"body": body},
-                )
-            counts["updated"] += 1
+        else:
+            existing_labels = sorted(
+                label["name"] for label in (target.get("labels") or [])
+            )
+            if (
+                target.get("title") != title
+                or _marker(target.get("body") or "", _CONTENT_RE)
+                != finding.content_hash
+                or existing_labels != sorted(labels)
+            ):
+                if not dry_run:
+                    gh.request(
+                        "PATCH",
+                        f"/repos/{gh.repo}/issues/{target['number']}",
+                        {"title": title, "body": body, "labels": labels},
+                    )
+                counts["updated"] += 1
 
     # Close resolved findings only when the scan completed cleanly. A non-zero
     # ZAP exit with no parsed findings is contradictory evidence, so leave the
@@ -341,7 +427,7 @@ def reconcile(
 
 
 def reconcile_scan_alert(gh: GitHub, run_url: str, *, dry_run: bool = False) -> dict:
-    gh.ensure_label()
+    gh.ensure_label(LABEL, LABEL_COLOR, LABEL_DESCRIPTION)
     body = (
         "The scheduled OWASP ZAP baseline scan did not produce a report. "
         "Findings for this run are unknown; check the runner and the "
