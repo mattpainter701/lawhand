@@ -61,6 +61,9 @@ JOB_HANDLERS = {
     "workflow_run": JobHandler(
         "app.services.workflow_runtime", "run_workflow_job", "row", False, True
     ),
+    "document_prefill": JobHandler(
+        "app.services.document_prefill", "run_prefill_job", "session_row"
+    ),
 }
 
 

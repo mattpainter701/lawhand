@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.19.02 — Documents are prepared the moment a matter has data
+
+Released September 19, 2026.
+
+When a matter is created, converted from a lead, or receives intake answers, LawHand fills every published template from it in the background and the matter page shows what is ready to review.
+
+- **Ready to review, without a click.** Case Documents shows how many published templates fill from this matter and how much of each is filled, with what still needs a person. Open one and it is already filled in.
+- **Nothing is generated or sent on its own.** The background run records counts and field names only. Reviewing, previewing and saving a document stay yours, and sending for signature is a separate step.
+- **Refreshes as the matter grows.** A questionnaire coming back or accepted intake updates queue a fresh run. If details changed since the last run, the panel says so; opening a document always fills from live data.
+- **Converted leads count as new matters.** Opening a matter from a lead now fires the same matter-created trigger as creating one directly, so firm workflow rules and document preparation both see it.
+
 ## 2026.09.19.01 — Smart Fill reaches more of the matter and fills the right way
 
 Released September 19, 2026.

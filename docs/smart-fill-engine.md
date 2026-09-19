@@ -117,13 +117,43 @@ add the catalogue path and card field so a binding can name it. A source that
 writes an alias it did not declare, or declares one it never writes, fails
 the vocabulary test.
 
-## Phase 2: auto-initiation (not in this change)
+## Phase 2: prepared the moment a matter has data (shipped)
 
-`prepare_fill()` needs no request or user, which is what a job needs. The
-follow-up is: emit `matter_created` from lead-to-matter conversion (today only
-`POST /api/matters` does), add a `document_prefill` durable job that runs
-`prepare_fill` over the published templates applicable to a matter and records
-a `document_prefill_ready` matter event with per-template coverage, and show
-"N documents ready to review, X% filled" on the matter page opening the
-existing pre-filled review. No values or PDFs are stored by the job; the
-human generation-preview evidence gate stays the only path to a saved PDF.
+`app/services/document_prefill.py` runs Smart Fill unattended. A
+`document_prefill` durable job is queued, in the same transaction as the save
+that triggered it, when a matter is created (`POST /api/matters`), converted
+from a lead (which now also fires `matter_created` for firm workflow rules),
+receives a portal questionnaire (`intake_submitted`), or has intake answers
+accepted (`intake_writeback_accepted`). The job's idempotency key is the
+matter id plus a digest of the engine's own candidate index, so the same facts
+never run twice and changed facts queue a fresh run. A failure to queue is
+logged and released inside a savepoint; it never blocks the save.
+
+The job fills every active, published, automation-ready template (PDF:
+approved) for the matter, highest-ranked first and at most 20, and records one
+`document_prefill_ready` matter event. Its metadata carries counts and field
+names only: fields, filled, percent, missing required, to-confirm, the
+coverage split, the sources loaded, and any alias collisions. No value, no
+rendered page, no matter document, no preview evidence. Generating a document
+is still a person's act behind the preview-evidence gate.
+
+`GET /api/matters/{id}/document-prefill` returns the newest record with
+`stale` set when the matter's fill-relevant facts changed since. Case
+Documents shows it as "N documents ready to review, X% filled from this
+matter" and **Review and save** opens the existing review with that template
+preselected, where the values are computed live.
+
+Follow-ups still open: a rule action that requests a document (a Stack A
+`document_propose` step bridging to `propose_document_from_template`), and the
+Phase 3 guided route below.
+
+## Phase 3 (logged): Studio to signature in one path
+
+From Template Studio, selecting a template should offer: auto fill, choose the
+matter, save into that matter's documents so work can continue, review, and
+send for e-signature. The join points exist (`prepare_fill()` for the values,
+the generation preview evidence for the PDF save, the placement review and
+e-sign plan for sending); what is missing is the guided
+`Select -> Populate -> Review -> Send` route the Clio-parity plan names,
+started from a Studio template with the matter chosen there and landing on the
+saved matter document with "Send for signature" as the next step.

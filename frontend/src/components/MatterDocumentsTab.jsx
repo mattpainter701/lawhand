@@ -3,6 +3,7 @@ import MatterTransferSettings from './MatterTransferSettings'
 import MatterImportWizard from './MatterImportWizard'
 import MatterDocumentPreview from './documents/MatterDocumentPreview'
 import MatterTemplatePicker from './templates/MatterTemplatePicker'
+import PreparedDocumentsBanner from './documents/PreparedDocumentsBanner'
 import MatterDocumentFacts from './documents/MatterDocumentFacts'
 import { format, parseISO } from 'date-fns'
 import api, {
@@ -270,6 +271,8 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     refreshDocuments,
   } = explorer
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateToOpen, setTemplateToOpen] = useState(null)
+  const [prefillVersion, setPrefillVersion] = useState(0)
   const [documentView, setDocumentView] = useState(() => { try { return localStorage.getItem(`document-view:${matterId}`) === 'folder' ? 'folder' : 'detailed' } catch { return 'detailed' } })
   useEffect(() => { try { localStorage.setItem(`document-view:${matterId}`, documentView) } catch { /* Optional preference. */ } }, [matterId, documentView])
   const [filingMode, setFilingMode] = useState('move')
@@ -596,7 +599,13 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
         </div>
       </div>
 
-      {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} onClose={() => setTemplateOpen(false)} onSaved={() => { refreshDocuments(); refreshFolders() }} />}
+      <PreparedDocumentsBanner
+        matterId={matterId}
+        version={prefillVersion}
+        onOpen={(templateId) => { setTemplateToOpen(templateId); setTemplateOpen(true) }}
+      />
+
+      {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} initialTemplateId={templateToOpen} onClose={() => { setTemplateOpen(false); setTemplateToOpen(null) }} onSaved={() => { refreshDocuments(); refreshFolders(); setPrefillVersion((v) => v + 1) }} />}
 
       {/* Folder name entry — create or rename */}
       {folderDraft && (

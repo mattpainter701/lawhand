@@ -16,6 +16,13 @@ describe('matter template attachment', () => {
     expect(api.getTemplate).toHaveBeenCalledWith('t')
     expect(saved).toHaveBeenCalledWith({ matter_document_id: 'saved' })
   })
+  it('opens a prepared template straight into review when told which one', async () => {
+    api.getTemplate.mockResolvedValue({ id: 'ready', is_active: true })
+    render(<MatterTemplatePicker matterId="jane" folderId="intake" initialTemplateId="ready" onClose={vi.fn()} onSaved={vi.fn()} />)
+    expect(await screen.findByText('Review jane in intake')).toBeVisible()
+    expect(api.getTemplate).toHaveBeenCalledWith('ready')
+    expect(api.getTemplates).not.toHaveBeenCalled()
+  })
   it('searches the library and presents load failures without an empty success state', async () => {
     api.getTemplates.mockRejectedValue(new Error('offline'))
     render(<MatterTemplatePicker matterId="jane" onClose={vi.fn()} />)

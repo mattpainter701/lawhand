@@ -20,6 +20,7 @@ const apiMocks = vi.hoisted(() => ({
   getMatterDocumentDownloadUrl: vi.fn(),
   getMatterDocumentFolders: vi.fn(),
   getMatterDocuments: vi.fn(),
+  getMatterDocumentPrefill: vi.fn().mockResolvedValue(null),
   moveMatterDocuments: vi.fn(),
   provisionMatterCloudFolder: vi.fn(),
   setMatterDocumentTags: vi.fn(),

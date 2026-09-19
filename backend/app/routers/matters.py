@@ -87,6 +87,11 @@ from app.services.matter_budget import (
 from app.services.task_notifications import remove_task_from_calendars_now
 from app.services.task_visibility import task_is_sms_expression
 from app.services.durable_workflow_automations import enqueue_matter_event
+from app.services.document_prefill import (
+    enqueue_document_prefill,
+    latest_readiness,
+)
+from app.schemas.document_prefill import DocumentPrefillReadiness
 from app.services.matter_engagement import engagement_payload
 from app.services.matter_number import (
     assign_matter_number,
@@ -947,6 +952,14 @@ async def create_matter(
     await enqueue_matter_event(
         db,
         matter=matter,
+        trigger_event="matter_created",
+        actor_user_id=user.id,
+    )
+    # Prefill is advisory: it rides the same commit but never blocks it.
+    await enqueue_document_prefill(
+        db,
+        tenant_id=tenant_id,
+        matter_id=matter_id,
         trigger_event="matter_created",
         actor_user_id=user.id,
     )
@@ -2035,6 +2048,27 @@ async def get_timeline(
     # Sort combined entries by created_at descending
     entries.sort(key=lambda x: x.created_at, reverse=True)
     return entries[:limit]
+
+
+@router.get(
+    "/{matter_id}/document-prefill",
+    response_model=DocumentPrefillReadiness | None,
+    response_model_exclude_none=True,
+)
+async def get_document_prefill(
+    matter_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """What the last unattended Smart Fill run prepared for this matter.
+
+    Counts and field names only; values are recomputed live when a document
+    is opened. ``null`` means no run has completed yet.
+    """
+
+    user = await get_current_user(request, db)
+    matter = await _get_matter_or_404(db, matter_id, user.tenant_id)
+    return await latest_readiness(db, matter=matter)
 
 
 # ── Budget ────────────────────────────────────────────────────────────────────
