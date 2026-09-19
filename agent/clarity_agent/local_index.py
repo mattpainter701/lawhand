@@ -597,6 +597,9 @@ class LocalSearchIndex:
         if not self.available or not self._db or not files:
             return
         self._require_writable()
+        queued_new_or_changed = 0
+        queued_acl_refresh = 0
+        queue_depth = 0
         async with self._db_lock:
             await self._db.execute("BEGIN IMMEDIATE")
             try:
@@ -624,18 +627,20 @@ class LocalSearchIndex:
                         error,
                     )
                     if only_if_missing:
-                        await self._db.execute(
+                        inserted = await self._db.execute(
                             """INSERT OR IGNORE INTO index_files(
                                    path,share_id,ext,content_hash,size_bytes,modified_time,
                                    status,extraction_error
                                ) VALUES(?,?,?,?,?,?,?,?)""",
                             values,
                         )
+                        if status == "pending" and inserted.rowcount == 1:
+                            queued_new_or_changed += 1
                     else:
                         await self._db.execute(
                             "DELETE FROM index_fts WHERE path=?", (path,)
                         )
-                        await self._db.execute(
+                        upserted = await self._db.execute(
                             """INSERT INTO index_files(
                                    path,share_id,ext,content_hash,size_bytes,modified_time,
                                    status,extraction_error
@@ -659,11 +664,13 @@ class LocalSearchIndex:
                                    acl_captured_at=NULL""",
                             values,
                         )
+                        if status == "pending" and upserted.rowcount == 1:
+                            queued_new_or_changed += 1
                 # An unchanged file can still have a changed DACL.  Queue a
                 # bounded refresh without deleting its old text; searches deny
                 # the stale ACL until the refreshed record commits atomically.
                 cutoff = int(time.time()) - self.acl_refresh_seconds
-                await self._db.execute(
+                refreshed = await self._db.execute(
                     """UPDATE index_files
                        SET status='pending', acl_state='pending', attempts=0,
                            lease_until=NULL, next_attempt_at=NULL
@@ -671,10 +678,21 @@ class LocalSearchIndex:
                              (acl_captured_at IS NULL OR acl_captured_at<?)""",
                     (cutoff,),
                 )
+                queued_acl_refresh = max(0, refreshed.rowcount)
+                cursor = await self._db.execute(
+                    "SELECT count(*) FROM index_files WHERE status IN ('pending','running')"
+                )
+                queue_depth = int((await cursor.fetchone())[0])
                 await self._db.commit()
             except Exception:
                 await self._db.rollback()
                 raise
+        logger.info(
+            "Local index queue updated new_or_changed=%d acl_refresh=%d queue_depth=%d",
+            queued_new_or_changed,
+            queued_acl_refresh,
+            queue_depth,
+        )
         self._wake.set()
 
     async def delete(self, paths: list[str]) -> None:
@@ -780,6 +798,10 @@ class LocalSearchIndex:
                 except asyncio.TimeoutError:
                     pass
                 continue
+            job_started_at = time.perf_counter()
+            fetch_ms = 0
+            extract_ms = 0
+            publish_ms = 0
             try:
                 if self._fetcher is None:
                     raise RuntimeError("local index fetcher is unavailable")
@@ -788,13 +810,18 @@ class LocalSearchIndex:
                 acl_record = self._acl_loader(job)
                 if inspect.isawaitable(acl_record):
                     acl_record = await acl_record
+                fetch_started_at = time.perf_counter()
                 content = await self._fetcher(job)
+                fetch_ms = round((time.perf_counter() - fetch_started_at) * 1000)
                 if len(content) > self.max_file_bytes:
                     raise PermanentIndexError("file_too_large")
+                extract_started_at = time.perf_counter()
                 rows, page_count = await self._extract_text(job, content)
+                extract_ms = round((time.perf_counter() - extract_started_at) * 1000)
                 if not rows:
                     raise PermanentIndexError("no_extractable_text")
                 assert self._db
+                publish_started_at = time.perf_counter()
                 async with self._db_lock:
                     await self._db.execute("BEGIN IMMEDIATE")
                     try:
@@ -834,10 +861,29 @@ class LocalSearchIndex:
                             raise RuntimeError(
                                 "local index claim changed during commit"
                             )
+                        cursor = await self._db.execute(
+                            "SELECT count(*) FROM index_files WHERE status IN ('pending','running')"
+                        )
+                        queue_depth = int((await cursor.fetchone())[0])
                         await self._db.commit()
+                        publish_ms = round(
+                            (time.perf_counter() - publish_started_at) * 1000
+                        )
                     except BaseException:
                         await self._db.rollback()
                         raise
+                logger.info(
+                    "Local index job completed extension=%s source_bytes=%d chunks=%d "
+                    "fetch_ms=%d extract_ms=%d publish_ms=%d total_ms=%d queue_depth=%d",
+                    str(job.get("ext") or "")[:20],
+                    len(content),
+                    len(rows),
+                    fetch_ms,
+                    extract_ms,
+                    publish_ms,
+                    round((time.perf_counter() - job_started_at) * 1000),
+                    queue_depth,
+                )
             except asyncio.CancelledError:
                 raise
             except PermanentIndexError as exc:

@@ -45,15 +45,14 @@ budget before OCR begins. Adapters should not treat a lease as completion or
 delete the previous good search
 record before a replacement is acknowledged.
 
-## Planned FM-03/FM-04 adapters
+## Serving and queue adapters
 
-This draft intentionally does not import either parallel, unmerged branch. The
-later FM-04 queue adapter maps its extraction request to `ManifestJob`, retaining
+The queue adapter maps its extraction request to `ManifestJob`, retaining
 `source_id`, `file_id`, `content_version`, SHA-256 fingerprint, lease token,
 optional `matter_ids`, and stable delete/tombstone semantics. Tombstones remain
-an FM-04 reconciliation outcome and address stable file identity, not path.
+a reconciliation outcome and address stable file identity, not path.
 
-The later FM-03 sink adapter maps each `Section` to `DocumentChunk` and calls the
+The serving sink adapter maps each `Section` to `DocumentChunk` and calls the
 local `LocalSearchEngine.bulk_index` boundary. The normalized record already
 carries deterministic `chunk_id`, content, page number, section path, ordinal,
 offsets, share/source identity, relative path, filename, extension, optional

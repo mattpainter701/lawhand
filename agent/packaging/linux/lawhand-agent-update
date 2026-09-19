@@ -7,7 +7,8 @@ if [[ $EUID -ne 0 || $# -ne 0 ]]; then
     exit 2
 fi
 
-MANIFEST_URL="https://github.com/mattpainter701/lawhand/releases/latest/download/agent-update.json"
+RELEASE_REPOSITORY="mattpainter701/lawhand"
+MANIFEST_URL="https://github.com/${RELEASE_REPOSITORY}/releases/latest/download/agent-update.json"
 ASSET_NAME="lawhand-agent-linux-x86_64.tar.gz"
 CONFIG_DIR="/etc/lawhand-agent"
 UPDATER_CONFIG_DIR="/etc/lawhand-agent-updater"
@@ -48,7 +49,7 @@ download_official() {
     local url="$1"
     local destination="$2"
     local max_bytes="$3"
-    python3 - "$url" "$destination" "$max_bytes" <<'PY'
+    python3 - "$url" "$destination" "$max_bytes" "$RELEASE_REPOSITORY" <<'PY'
 import pathlib
 import re
 import ssl
@@ -57,7 +58,7 @@ import time
 import urllib.request
 from urllib.parse import urlparse
 
-url, destination, max_bytes_text = sys.argv[1:]
+url, destination, max_bytes_text, release_repository = sys.argv[1:]
 max_bytes = int(max_bytes_text)
 target = pathlib.Path(destination)
 allowed_hosts = {
@@ -67,7 +68,7 @@ allowed_hosts = {
     "github-releases.githubusercontent.com",
 }
 github_path = re.compile(
-    r"^/mattpainter701/lawhand/releases/(?:latest/download/agent-update\.json|"
+    rf"^/{re.escape(release_repository)}/releases/(?:latest/download/agent-update\.json|"
     r"download/agent-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)/"
     r"(?:agent-update\.json|lawhand-agent-x64\.msi|"
     r"lawhand-agent-linux-x86_64\.tar\.gz))$"
@@ -308,7 +309,7 @@ PY
 )"
 
 ARCHIVE="$TMP/$ASSET_NAME"
-ASSET_URL="https://github.com/mattpainter701/lawhand/releases/download/agent-v${TARGET}/${ASSET_NAME}"
+ASSET_URL="https://github.com/${RELEASE_REPOSITORY}/releases/download/agent-v${TARGET}/${ASSET_NAME}"
 download_official "$ASSET_URL" "$ARCHIVE" $((512 * 1024 * 1024))
 [[ $(stat -c '%s' "$ARCHIVE") -le $((512 * 1024 * 1024)) ]] || { UPDATE_ERROR="Update archive exceeds 512 MiB"; exit 1; }
 echo "$DIGEST  $ARCHIVE" | sha256sum --check --status

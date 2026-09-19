@@ -12,6 +12,8 @@ import tempfile
 import hashlib
 import inspect
 import json
+import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
@@ -24,6 +26,9 @@ from clarity_agent.local_index import (
 from clarity_agent.native_acl import authorize_acl
 from clarity_agent.search_engine import DocumentMutation, SearchFilters, SearchRequest
 from clarity_agent.search_ingest import document_chunks
+
+
+logger = logging.getLogger("clarity_agent.search_serving")
 
 
 class OpenSearchServingIndex(LocalSearchIndex):
@@ -286,6 +291,8 @@ class OpenSearchServingIndex(LocalSearchIndex):
                 raise ValueError("invalid assigned folder")
             roots.append((share_id, root + ("\\" + folder if folder else "")))
         limit = max(1, min(int(limit), 100))
+        query_started_at = time.perf_counter()
+        engine_started_at = time.perf_counter()
         response = await self.engine.search(
             SearchRequest(
                 query=query,
@@ -300,8 +307,11 @@ class OpenSearchServingIndex(LocalSearchIndex):
                 limit=min(100, max(limit * 2, limit)),
             )
         )
+        engine_ms = round((time.perf_counter() - engine_started_at) * 1000)
         hits = []
         filtered = False
+        acl_seconds = 0.0
+        manifest_seconds = 0.0
         for hit in response.hits:
             path = hit.relative_path
             share = assigned.get(hit.share_id)
@@ -311,12 +321,14 @@ class OpenSearchServingIndex(LocalSearchIndex):
             ):
                 filtered = True
                 continue
+            manifest_started_at = time.perf_counter()
             async with self._db_lock:
                 cursor = await self._db.execute(
                     "SELECT acl_json FROM index_files WHERE path=? AND share_id=? AND status='ready'",
                     (path, hit.share_id),
                 )
                 row = await cursor.fetchone()
+            manifest_seconds += time.perf_counter() - manifest_started_at
             stored = json.loads(row["acl_json"] or "null") if row else None
             if (
                 not stored
@@ -325,9 +337,11 @@ class OpenSearchServingIndex(LocalSearchIndex):
             ):
                 filtered = True
                 continue
+            acl_started_at = time.perf_counter()
             decision = await self.authorize_path(
                 path, authorization, acl_max_age_seconds=acl_max_age_seconds
             )
+            acl_seconds += time.perf_counter() - acl_started_at
             if not decision.allowed:
                 filtered = True
                 continue
@@ -344,7 +358,9 @@ class OpenSearchServingIndex(LocalSearchIndex):
             )
             if len(hits) >= limit:
                 break
+        manifest_started_at = time.perf_counter()
         stats = await self.stats()
+        manifest_seconds += time.perf_counter() - manifest_started_at
         statuses = stats["statuses"]
         ready = statuses.get("ready", {}).get("files", 0)
         pending = sum(
@@ -357,6 +373,18 @@ class OpenSearchServingIndex(LocalSearchIndex):
                 statuses.get(state, {}).get("files", 0)
                 for state in ("error", "unsupported", "ocr_pending")
             )
+        )
+        logger.info(
+            "Firm Memory query completed engine_ms=%d engine_reported_ms=%d "
+            "acl_ms=%d manifest_ms=%d total_ms=%d candidates=%d returned=%d filtered=%s",
+            engine_ms,
+            int(getattr(response, "took_ms", 0) or 0),
+            round(acl_seconds * 1000),
+            round(manifest_seconds * 1000),
+            round((time.perf_counter() - query_started_at) * 1000),
+            len(response.hits),
+            len(hits),
+            filtered,
         )
         return {
             "hits": hits,

@@ -1,6 +1,7 @@
 """Scanner manifest -> extraction -> OpenSearch -> portal permission contract."""
 
 import asyncio
+import logging
 from dataclasses import replace
 from types import SimpleNamespace
 import time
@@ -119,6 +120,36 @@ async def test_serves_engine_text_with_empty_sqlite_fts(serving):
     assert (await index.stats())["fts_rows"] == 0
     assert engine.request.acl_tokens == (SID,)
     assert engine.request.filters.extensions == (".txt",)
+
+
+@pytest.mark.asyncio
+async def test_search_logs_engine_acl_and_manifest_timing_without_query_or_path(
+    serving, caplog
+):
+    index, _ = serving
+    with caplog.at_level(logging.INFO, logger="clarity_agent.search_serving"):
+        result = await search(index)
+    assert result["hits"]
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if "Firm Memory query completed" in record.getMessage()
+    ]
+    assert len(messages) == 1
+    message = messages[0]
+    for field in (
+        "engine_ms=",
+        "engine_reported_ms=",
+        "acl_ms=",
+        "manifest_ms=",
+        "total_ms=",
+        "candidates=1",
+        "returned=1",
+        "filtered=False",
+    ):
+        assert field in message
+    assert "pleading" not in message
+    assert PATH not in message
 
 
 @pytest.mark.asyncio

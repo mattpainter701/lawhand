@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import sqlite3
 from pathlib import Path
@@ -603,6 +604,56 @@ async def test_pending_index_reports_building(tmp_path):
         )
         assert result["index_state"] == "building"
         assert result["pending_files"] == 1
+    finally:
+        await index.close()
+
+
+@pytest.mark.asyncio
+async def test_queue_and_worker_emit_aggregate_timing_without_paths(tmp_path, caplog):
+    path = SHARE_A + r"\Cases\private-client-name.txt"
+
+    async def fetcher(job):
+        return b"safe aggregate telemetry"
+
+    index = await _make_index(tmp_path, fetcher, acl_refresh_seconds=1)
+    try:
+        with caplog.at_level(logging.INFO, logger="clarity_agent.local_index"):
+            await index.enqueue(_file(path, "firm"))
+            await index.wait_until_idle()
+        messages = [record.getMessage() for record in caplog.records]
+        queue_message = next(
+            message for message in messages if "Local index queue updated" in message
+        )
+        job_message = next(
+            message for message in messages if "Local index job completed" in message
+        )
+        assert "new_or_changed=1" in queue_message
+        assert "acl_refresh=0" in queue_message
+        assert "queue_depth=1" in queue_message
+        assert "fetch_ms=" in job_message
+        assert "extract_ms=" in job_message
+        assert "publish_ms=" in job_message
+        assert "queue_depth=0" in job_message
+        assert path not in " ".join(messages)
+
+        async with index._db_lock:
+            await index._db.execute(
+                "UPDATE index_files SET acl_captured_at=? WHERE path=?",
+                (int(time.time()) - 100, path),
+            )
+            await index._db.commit()
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="clarity_agent.local_index"):
+            await index.enqueue_many([_file(path, "firm")], only_if_missing=True)
+        refresh_message = next(
+            record.getMessage()
+            for record in caplog.records
+            if "Local index queue updated" in record.getMessage()
+        )
+        assert "new_or_changed=0" in refresh_message
+        assert "acl_refresh=1" in refresh_message
+        assert path not in refresh_message
+        await index.wait_until_idle()
     finally:
         await index.close()
 

@@ -9,10 +9,9 @@ The package intentionally contains no OpenSearch client, crawler reconciliation,
 portal surface, per-user ACL filtering, or embeddings. Those systems consume or
 implement the contracts in `search_node.contracts`.
 
-The contracts retain the FM-04 stable source/file/content identity and lease
-generation needed for a future queue adapter, plus the deterministic chunks and
-metadata needed for a thin FM-03 `LocalSearchEngine` sink adapter. Neither
-parallel branch is imported here.
+The contracts retain stable source/file/content identity and lease generation
+for the durable queue adapter, plus the deterministic chunks and metadata needed
+for the `LocalSearchEngine` sink adapter.
 
 ## Local checks
 

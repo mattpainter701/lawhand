@@ -4,8 +4,7 @@ The OpenSearch portal path is an opt-in pilot, not a measured capacity claim.
 The normal scanner feeds the durable local extraction manifest; isolated parser
 children produce text; OpenSearch is the only full-text sink for this path.
 SQLite retains status, paths, ACL evidence and durable mutation counters, with
-an empty FTS table. The separate experimental CrawlPipeline/OCR queue is not
-the daemon's scheduler. No automatic whole-archive onboarding occurs.
+an empty FTS table. No automatic whole-archive onboarding occurs.
 
 ## Provision before enabling
 
