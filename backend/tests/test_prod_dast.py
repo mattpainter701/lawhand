@@ -179,6 +179,32 @@ def test_finding_is_rule_scoped_so_spider_variance_does_not_churn() -> None:
     )
 
 
+def test_cloudflare_edge_responses_are_not_filed_as_findings() -> None:
+    """Cloudflare serves /cdn-cgi/* itself, so the origin cannot set headers.
+
+    ZAP spiders the email-protection links Cloudflare injects and reports a
+    missing CSP header there. That response never reaches nginx, so it is a
+    permanent false positive; only the app URLs of the same rule are filed.
+    """
+    edge_only = _report(
+        "2", uri="https://getlawhand.com/cdn-cgi/l/email-protection"
+    )
+    assert reconcile.normalize_report(edge_only, min_risk=1) == []
+
+    mixed = _report("2")
+    mixed["site"][0]["alerts"][0]["instances"] = [
+        {
+            "uri": "https://getlawhand.com/cdn-cgi/l/email-protection",
+            "method": "GET",
+            "param": "",
+        },
+        {"uri": "https://getlawhand.com/login", "method": "GET", "param": ""},
+    ]
+    findings = reconcile.normalize_report(mixed, min_risk=1)
+    assert len(findings) == 1
+    assert set(findings[0].affected) == {"https://getlawhand.com/login"}
+
+
 class _FakeGitHub:
     def __init__(self, issues: list[dict] | None = None) -> None:
         self.repo = "owner/repo"
