@@ -11,7 +11,6 @@ Document Templates router — CRUD + variable substitution rendering.
 """
 
 import asyncio
-import functools
 import hashlib
 import hmac
 import json
@@ -23,9 +22,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -34,7 +31,6 @@ from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 from pydantic import ValidationError
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import async_session_maker, get_db, set_tenant_context
@@ -79,12 +75,10 @@ from app.schemas.document_template import (
     DocumentTemplateUpdate,
     DocumentTemplateVariableSuggestion,
 )
-from app.schemas.matter_party import normalize_matter_party_role
 from app.services import (
     template_custom_fields,
     template_fact_review,
     template_field_library,
-    template_firm_fields,
 )
 from app.services.template_intake import (
     TemplateAnalysis,
@@ -146,21 +140,31 @@ from app.services.template_semantics import (
     validate_semantic_metadata,
 )
 from app.services.template_bindings import (
-    MANUAL_BINDING,
     alias_for_binding,
     catalogue as binding_catalogue,
     collections as binding_collections,
     declared_bindings,
-    is_item_binding,
 )
 from app.services import pdf_source_review
 from app.services import template_cards
-from app.services.probate import bindings as probate_bindings
-from app.services.template_cards import CardKind
 from app.services.template_fill_coverage import (
     binding_is_resolvable as _binding_is_resolvable,
     coverage as fill_coverage,
     normalize_variable_name as _normalize_variable_name,
+)
+from app.services import template_fill_engine
+from app.services.template_fill_engine import (  # noqa: F401 - re-exported
+    VARIABLE_PATTERN,
+    extract_schema_variables,
+    extract_template_variables,
+)
+from app.services.template_fill_loaders import (
+    Loaders,
+    MatterLookupError,
+    load_current_retainer,
+    load_estate_for_matter,
+    load_matter_context,
+    load_matter_parties,
 )
 from app.services.template_labels import unusable_labels
 from app.services.template_ocr import TemplateOcrError, image_to_pdf
@@ -178,7 +182,6 @@ router = APIRouter(prefix="/api/templates", tags=["document-templates"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
 matter_file_store = MatterFileStore()
-VARIABLE_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 _IMAGE_TEMPLATE_EXTENSIONS = (
     ".bmp",
     ".jpeg",
@@ -1818,289 +1821,13 @@ def render_template(
     return VARIABLE_PATTERN.sub(replacer, expanded)
 
 
-def extract_template_variables(template_body: str) -> list[str]:
-    """Return the substitutable variables in a body, in first-seen order.
-
-    Logic markers (``{{#if x}}``, ``{{/each}}``) share the placeholder syntax
-    but are not variables: they are never filled, never smart-filled, and must
-    not be reported to callers that validate a field map against the body.
-    """
-
-    variables: list[str] = []
-    seen: set[str] = set()
-    for match in VARIABLE_PATTERN.finditer(template_body):
-        variable = match.group(1).strip()
-        if variable.startswith(("#", "/")):
-            continue
-        if variable and variable not in seen:
-            variables.append(variable)
-            seen.add(variable)
-    return variables
-
-
-def extract_schema_variables(template: DocumentTemplate) -> list[str]:
-    schema = getattr(template, "variable_schema", None) or {}
-    fields = schema.get("fields") if isinstance(schema, dict) else None
-    variables: list[str] = []
-    seen: set[str] = set()
-    if not isinstance(fields, list):
-        return variables
-    for field in fields:
-        if not isinstance(field, dict):
-            continue
-        variable = field.get("name") or field.get("variable") or field.get("key")
-        if not variable:
-            continue
-        variable = str(variable).strip()
-        if variable and variable not in seen:
-            variables.append(variable)
-            seen.add(variable)
-    return variables
-
-
-def _stringify_suggestion(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, Decimal):
-        return str(value)
-    text = str(value).strip()
-    return text or None
-
-
-def _add_candidate(
-    candidates: dict[str, DocumentTemplateVariableSuggestion],
-    alias: str,
-    value: Any,
-    *,
-    source_type: str,
-    source_field: str,
-    record_id: uuid.UUID | str | None = None,
-    confidence: float = 1.0,
-    review_required: bool = False,
-    provenance: dict[str, Any] | None = None,
-) -> None:
-    suggested_value = _stringify_suggestion(value)
-    if suggested_value is None:
-        return
-    key = _normalize_variable_name(alias)
-    candidate_provenance = {
-        "source_type": source_type,
-        "source_field": source_field,
-        "record_id": str(record_id) if record_id else None,
-        "collected_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if provenance:
-        candidate_provenance.update(provenance)
-    candidates.setdefault(
-        key,
-        DocumentTemplateVariableSuggestion(
-            variable=alias,
-            suggested_value=suggested_value,
-            source_type=source_type,
-            source_field=source_field,
-            provenance=candidate_provenance,
-            confidence=confidence,
-            review_required=review_required,
-        ),
-    )
-
-
-def _mapping_value(mapping: dict | None, key: str) -> str | None:
-    """Read one key out of a JSON contact column (address, emergency contact)."""
-
-    if not isinstance(mapping, dict):
-        return None
-    return _stringify_suggestion(mapping.get(key))
-
-
-def _caption_parties(parties: Sequence[MatterParty], role: str) -> list[MatterParty]:
-    matching: list[MatterParty] = []
-    for party in parties:
-        try:
-            party_role = normalize_matter_party_role(getattr(party, "role", "other"))
-        except ValueError:
-            continue
-        if party_role != role:
-            continue
-        if not _stringify_suggestion(
-            getattr(getattr(party, "contact", None), "display_name", None)
-        ):
-            continue
-        matching.append(party)
-    return sorted(
-        matching,
-        key=lambda party: (
-            not bool(getattr(party, "is_primary", False)),
-            str(getattr(party, "created_at", "")),
-            str(getattr(party, "id", "")),
-        ),
-    )
-
-
-def _collect_caption_party_candidates(
-    candidates: dict[str, DocumentTemplateVariableSuggestion],
-    parties: Sequence[MatterParty],
-) -> None:
-    for role in ("plaintiff", "defendant"):
-        role_parties = _caption_parties(parties, role)
-        if not role_parties:
-            continue
-
-        primary_party = role_parties[0]
-        primary_contact = primary_party.contact
-        primary_name = primary_contact.display_name
-        selection = (
-            "primary"
-            if bool(getattr(primary_party, "is_primary", False))
-            else "first_listed"
-        )
-        singular_provenance = {
-            "party_role": role,
-            "selection": selection,
-            "contact_id": str(primary_contact.id),
-        }
-        for alias in (role, f"{role}_name"):
-            _add_candidate(
-                candidates,
-                alias,
-                primary_name,
-                source_type="matter_party",
-                source_field="contact.display_name",
-                record_id=primary_party.id,
-                provenance=singular_provenance,
-            )
-
-        unique_names = list(
-            dict.fromkeys(party.contact.display_name for party in role_parties)
-        )
-        all_party_ids = [str(party.id) for party in role_parties]
-        for alias in (f"{role}s", f"{role}_names"):
-            _add_candidate(
-                candidates,
-                alias,
-                "; ".join(unique_names),
-                source_type="matter_parties",
-                source_field="contacts.display_name",
-                provenance={
-                    "party_role": role,
-                    "selection": "all",
-                    "record_ids": all_party_ids,
-                },
-            )
-
-        for suffix, value, source_field in (
-            ("email", primary_contact.email, "contact.email"),
-            ("phone", primary_contact.phone, "contact.phone"),
-        ):
-            _add_candidate(
-                candidates,
-                f"{role}_{suffix}",
-                value,
-                source_type="matter_party",
-                source_field=source_field,
-                record_id=primary_party.id,
-                provenance=singular_provenance,
-            )
-        for suffix, address_key in (
-            ("street", "street"),
-            ("city", "city"),
-            ("state", "state"),
-            ("zip", "zip"),
-            ("country", "country"),
-        ):
-            _add_candidate(
-                candidates,
-                f"{role}_{suffix}",
-                _mapping_value(primary_contact.address, address_key),
-                source_type="matter_party",
-                source_field=f"contact.address.{address_key}",
-                record_id=primary_party.id,
-                provenance=singular_provenance,
-            )
-
-        _add_role_instance_candidates(candidates, role, role_parties)
-
-
-def _add_role_instance_candidates(
-    candidates: dict[str, DocumentTemplateVariableSuggestion],
-    role: str,
-    role_parties: Sequence[MatterParty],
-) -> None:
-    """Emit an alias per addressable instance of a role card.
-
-    A caption with two defendants could previously only name the first one; the
-    second existed on the matter and was unreachable from a template.  Instance
-    order is the order ``_load_matter_parties`` already establishes — primary
-    first, then ``created_at``, then id — so the same template fills the same
-    way on two different days.
-
-    Instance 1 is deliberately skipped: it already resolves through the
-    singular alias, and emitting a second key for the same record would let two
-    spellings of one field drift apart.
-    """
-
-    card = template_cards.card(role)
-    if card is None or card.kind is not CardKind.ROLE:
-        return
-    for index, party in enumerate(role_parties[: card.max_instances], start=1):
-        if index == 1:
-            continue
-        contact = party.contact
-        if contact is None:
-            continue
-        provenance = {
-            "party_role": role,
-            "selection": f"instance_{index}",
-            "contact_id": str(contact.id),
-        }
-        for entry, value, source_field in (
-            (card.field("full_name"), contact.display_name, "contact.display_name"),
-            (card.field("email"), contact.email, "contact.email"),
-            (card.field("phone"), contact.phone, "contact.phone"),
-        ):
-            if entry is None:
-                continue
-            _add_candidate(
-                candidates,
-                template_cards.indexed_alias(role, index, entry),
-                value,
-                source_type="matter_party",
-                source_field=source_field,
-                record_id=party.id,
-                provenance=provenance,
-            )
-
-
-def _represented_caption_role(value: Any) -> str | None:
-    tokens = set(_normalize_variable_name(str(value or "")).split("_"))
-    roles = tokens.intersection({"plaintiff", "defendant"})
-    return roles.pop() if len(roles) == 1 else None
-
-
-def _add_inferred_caption_name(
-    candidates: dict[str, DocumentTemplateVariableSuggestion],
-    *,
-    role: str,
-    value: Any,
-    source_type: str,
-    source_field: str,
-    record_id: uuid.UUID | str | None,
-) -> None:
-    for alias in (role, f"{role}_name", f"{role}s", f"{role}_names"):
-        _add_candidate(
-            candidates,
-            alias,
-            value,
-            source_type=source_type,
-            source_field=source_field,
-            record_id=record_id,
-            confidence=0.75,
-            review_required=True,
-            provenance={
-                "party_role": role,
-                "selection": "legacy_matter_role_inference",
-            },
-        )
+# The candidate builder lives in ``app.services.template_fill_engine``; these
+# names stay so callers and tests that reach for the router keep working.
+_stringify_suggestion = template_fill_engine.stringify_suggestion
+_add_candidate = template_fill_engine.add_candidate
+_mapping_value = template_fill_engine.mapping_value
+_caption_parties = template_fill_engine.caption_parties
+_represented_caption_role = template_fill_engine.represented_caption_role
 
 
 def _collect_smart_fill_candidates(
@@ -2111,308 +1838,19 @@ def _collect_smart_fill_candidates(
     retainer: Retainer | None = None,
     estate=None,
 ) -> dict[str, DocumentTemplateVariableSuggestion]:
-    candidates: dict[str, DocumentTemplateVariableSuggestion] = {}
-
-    _add_candidate(
-        candidates,
-        "current_user_name",
-        getattr(current_user, "full_name", None),
-        source_type="current_user",
-        source_field="full_name",
-        record_id=getattr(current_user, "id", None),
-    )
-    _add_candidate(
-        candidates,
-        "current_user_email",
-        getattr(current_user, "email", None),
-        source_type="current_user",
-        source_field="email",
-        record_id=getattr(current_user, "id", None),
-    )
-    _add_candidate(
-        candidates,
-        "prepared_by",
-        getattr(current_user, "full_name", None)
-        or getattr(current_user, "email", None),
-        source_type="current_user",
-        source_field="full_name",
-        record_id=getattr(current_user, "id", None),
-    )
-
-    if not matter:
-        return candidates
-
-    # The estate linked to the matter supplies the ``estate.*`` group: probate
-    # court forms fill from the record the firm keeps, never from a retyped
-    # copy. Values are composed in ``app.services.probate.bindings`` so the
-    # rules (heirs table layout, "None." statements, inventory totals) are
-    # unit-tested away from this router.
-    for alias, value, source_field, record_id in probate_bindings.estate_candidates(
-        estate
-    ):
-        _add_candidate(
-            candidates,
-            alias,
-            value,
-            source_type="estate",
-            source_field=source_field,
-            record_id=record_id,
-        )
-
-    matter_fields = {
-        "matter_id": matter.id,
-        "matter_name": matter.matter_name,
-        "matter_type": matter.matter_type,
-        "matter_description": matter.description,
-        "matter_status": matter.status,
-        "matter_stage": matter.stage,
-        "matter_jurisdiction": matter.jurisdiction,
-        "jurisdiction": matter.jurisdiction,
-        "case_number": matter.case_number,
-        "court": matter.court,
-        "judge": matter.judge,
-        "billing_method": matter.billing_method,
-        "billing_cycle": matter.billing_cycle,
-        "hourly_rate": matter.hourly_rate,
-        "budget_amount": matter.budget_amount,
-        # getattr: fixtures and pre-venue matters may not carry the attribute.
-        "contingency_percentage": getattr(matter, "contingency_percentage", None),
-        "venue": getattr(matter, "venue", None),
-        "matter_role": matter.role,
-        "represented_side": matter.role,
-        "counterparty": matter.counterparty,
-    }
-    for alias, value in matter_fields.items():
-        _add_candidate(
-            candidates,
-            alias,
-            value,
-            source_type="matter",
-            source_field=alias,
-            record_id=matter.id,
-        )
-
-    if retainer is not None:
-        _add_candidate(
-            candidates,
-            "retainer_amount",
-            retainer.amount,
-            source_type="retainer",
-            source_field="amount",
-            record_id=retainer.id,
-        )
-        _add_candidate(
-            candidates,
-            "retainer_minimum_balance",
-            retainer.minimum_balance,
-            source_type="retainer",
-            source_field="minimum_balance",
-            record_id=retainer.id,
-        )
-
-    _collect_caption_party_candidates(candidates, parties)
-
-    client = getattr(matter, "client", None)
-    if client:
-        _add_candidate(
-            candidates,
-            "client_name",
-            client.display_name,
-            source_type="contact",
-            source_field="display_name",
-            record_id=client.id,
-        )
-        _add_candidate(
-            candidates,
-            "client_email",
-            client.email,
-            source_type="contact",
-            source_field="email",
-            record_id=client.id,
-        )
-        _add_candidate(
-            candidates,
-            "client_phone",
-            client.phone,
-            source_type="contact",
-            source_field="phone",
-            record_id=client.id,
-        )
-        address = client.address
-        for alias, key in {
-            "client_street": "street",
-            "client_city": "city",
-            "client_state": "state",
-            "client_zip": "zip",
-            "client_country": "country",
-        }.items():
-            _add_candidate(
-                candidates,
-                alias,
-                _mapping_value(address, key),
-                source_type="contact",
-                source_field=f"address.{key}",
-                record_id=client.id,
-            )
-        for alias, column in {
-            "client_date_of_birth": "date_of_birth",
-            "client_secondary_phone": "secondary_phone",
-            "client_preferred_contact_method": "preferred_contact_method",
-            "client_preferred_contact_window": "preferred_contact_window",
-            "client_preferred_language": "preferred_language",
-            "client_referral_source": "referral_source",
-        }.items():
-            _add_candidate(
-                candidates,
-                alias,
-                getattr(client, column, None),
-                source_type="contact",
-                source_field=column,
-                record_id=client.id,
-            )
-        emergency = getattr(client, "emergency_contact", None)
-        for alias, key in {
-            "emergency_contact_name": "name",
-            "emergency_contact_relationship": "relationship",
-            "emergency_contact_phone": "phone",
-            "emergency_contact_email": "email",
-        }.items():
-            _add_candidate(
-                candidates,
-                alias,
-                _mapping_value(emergency, key),
-                source_type="contact",
-                source_field=f"emergency_contact.{key}",
-                record_id=client.id,
-            )
-
-    represented_role = _represented_caption_role(matter.role)
-    if represented_role:
-        opposing_role = "defendant" if represented_role == "plaintiff" else "plaintiff"
-        if client:
-            _add_inferred_caption_name(
-                candidates,
-                role=represented_role,
-                value=client.display_name,
-                source_type="contact",
-                source_field="display_name",
-                record_id=client.id,
-            )
-        _add_inferred_caption_name(
-            candidates,
-            role=opposing_role,
-            value=matter.counterparty,
-            source_type="matter",
-            source_field="counterparty",
-            record_id=matter.id,
-        )
-
-    attorney = getattr(matter, "attorney_of_record", None)
-    if attorney:
-        _add_candidate(
-            candidates,
-            "attorney_name",
-            attorney.full_name,
-            source_type="user",
-            source_field="full_name",
-            record_id=attorney.id,
-        )
-        _add_candidate(
-            candidates,
-            "attorney_email",
-            attorney.email,
-            source_type="user",
-            source_field="email",
-            record_id=attorney.id,
-        )
-
-    return candidates
-
-
-@functools.lru_cache(maxsize=1)
-def _smart_fill_alias_vocabulary() -> frozenset[str]:
-    """Every alias Smart Fill can ever produce, independent of any matter.
-
-    Computed from the resolver itself against a fully populated probe matter
-    rather than maintained as a second list, so the approval check below can
-    never drift out of sync with the candidate builder. The result depends on
-    nothing but the code, so it is built once per process rather than on every
-    approval.
-    """
-
-    def _contact() -> SimpleNamespace:
-        return SimpleNamespace(
-            id=uuid.uuid4(),
-            display_name="Probe",
-            email="probe@example.com",
-            phone="555-0100",
-            address={
-                "street": "1 Probe St",
-                "city": "Probeville",
-                "state": "PR",
-                "zip": "00000",
-                "country": "US",
-            },
-            date_of_birth="1970-01-01",
-            secondary_phone="555-0101",
-            preferred_contact_method="email",
-            preferred_contact_window="Mornings",
-            preferred_language="English",
-            referral_source="Probe referral",
-            emergency_contact={
-                "name": "Probe Contact",
-                "relationship": "Spouse",
-                "phone": "555-0102",
-                "email": "probe.contact@example.com",
-            },
-        )
-
-    def _party(role: str) -> SimpleNamespace:
-        return SimpleNamespace(
-            id=uuid.uuid4(),
-            role=role,
-            is_primary=True,
-            created_at="",
-            contact=_contact(),
-        )
-
-    matter = SimpleNamespace(
-        id=uuid.uuid4(),
-        matter_name="Probe",
-        matter_type="probe",
-        description="Probe",
-        status="open",
-        stage="probe",
-        jurisdiction="Probe",
-        case_number="PR-0",
-        court="Probe Court",
-        judge="Probe Judge",
-        billing_method="hourly",
-        billing_cycle="monthly",
-        hourly_rate=Decimal("1"),
-        budget_amount=Decimal("1"),
-        contingency_percentage=Decimal("1"),
-        venue="Probe County",
-        role="plaintiff",
-        counterparty="Probe Counterparty",
-        client=_contact(),
-        attorney_of_record=SimpleNamespace(
-            id=uuid.uuid4(), full_name="Probe Attorney", email="probe@firm.com"
-        ),
-    )
-    retainer = SimpleNamespace(
-        id=uuid.uuid4(), amount=Decimal("1"), minimum_balance=Decimal("1")
-    )
-    candidates = _collect_smart_fill_candidates(
+    return template_fill_engine.collect_candidates(
         matter=matter,
-        parties=[_party("plaintiff"), _party("defendant")],
-        current_user=SimpleNamespace(
-            id=uuid.uuid4(), full_name="Probe User", email="probe@user.com"
-        ),
+        parties=parties,
+        current_user=current_user,
         retainer=retainer,
-        estate=probate_bindings.probe_estate(),
+        estate=estate,
     )
-    return frozenset(candidates)
+
+
+def _smart_fill_alias_vocabulary() -> frozenset[str]:
+    """Every alias Smart Fill can ever produce, independent of any matter."""
+
+    return template_fill_engine.vocabulary()
 
 
 def _validate_approval_ready(
@@ -2487,112 +1925,12 @@ def _validate_approval_ready(
         )
 
 
-async def _load_matter_context(
-    *,
-    db: AsyncSession,
-    tenant_id: uuid.UUID,
-    matter_id: str | None,
-) -> Matter | None:
-    if not matter_id:
-        return None
-    try:
-        parsed_matter_id = uuid.UUID(matter_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid matter_id") from exc
-
-    result = await db.execute(
-        select(Matter)
-        .options(
-            selectinload(Matter.client),
-            selectinload(Matter.attorney_of_record),
-        )
-        .where(
-            Matter.id == parsed_matter_id,
-            Matter.tenant_id == tenant_id,
-        )
-    )
-    matter = result.scalar_one_or_none()
-    if not matter:
-        raise HTTPException(status_code=404, detail="Matter not found")
-    return matter
-
-
-async def _load_matter_parties(
-    *,
-    db: AsyncSession,
-    tenant_id: uuid.UUID,
-    matter: Matter | None,
-) -> list[MatterParty]:
-    if matter is None:
-        return []
-    result = await db.execute(
-        select(MatterParty)
-        .where(
-            MatterParty.matter_id == matter.id,
-            MatterParty.tenant_id == tenant_id,
-        )
-        .order_by(
-            MatterParty.is_primary.desc(),
-            MatterParty.created_at,
-            MatterParty.id,
-        )
-    )
-    return list(result.scalars().all())
-
-
-async def _load_estate_for_matter(*, db: AsyncSession, tenant_id: uuid.UUID, matter):
-    """The newest estate record linked to the matter, with its parties loaded."""
-
-    from app.models.plugin import Estate
-
-    return await db.scalar(
-        select(Estate)
-        .options(
-            selectinload(Estate.fiduciaries),
-            selectinload(Estate.beneficiaries),
-            selectinload(Estate.assets),
-            selectinload(Estate.liabilities),
-        )
-        .where(
-            Estate.tenant_id == tenant_id,
-            Estate.matter_id == matter.id,
-            Estate.is_deleted.is_(False),
-        )
-        .order_by(Estate.created_at.desc())
-        .limit(1)
-    )
-
-
-async def _load_current_retainer(
-    *,
-    db: AsyncSession,
-    tenant_id: uuid.UUID,
-    matter: Matter | None,
-) -> Retainer | None:
-    """Return the matter's current retainer, if it has one.
-
-    "Current" is the most recently created *active* retainer; a matter can hold
-    several retainer rows over its life (replenishments, refunds), and the
-    replenishment threshold a template fills is the active agreement's, not a
-    sum across history. When no active row exists, fall back to the most
-    recently created row of any status so a retired retainer's terms do not
-    silently fill from nothing.
-    """
-
-    if matter is None:
-        return None
-    return await db.scalar(
-        select(Retainer)
-        .where(
-            Retainer.matter_id == matter.id,
-            Retainer.tenant_id == tenant_id,
-        )
-        .order_by(
-            case((Retainer.status == "active", 0), else_=1),
-            Retainer.created_at.desc(),
-        )
-        .limit(1)
-    )
+# The four record reads, re-exported under the names tests have always
+# patched. ``build_variable_suggestions`` resolves them at call time.
+_load_matter_context = load_matter_context
+_load_matter_parties = load_matter_parties
+_load_estate_for_matter = load_estate_for_matter
+_load_current_retainer = load_current_retainer
 
 
 def _schema_for_values(variable_schema: Any, variables: dict[str, str]) -> Any:
@@ -2660,59 +1998,7 @@ def _repeat_collections(
     }
 
 
-def _bound_suggestion(
-    variable: str,
-    binding: str,
-    candidates: dict[str, DocumentTemplateVariableSuggestion],
-) -> DocumentTemplateVariableSuggestion:
-    """Resolve one field through its declared binding.
-
-    An unresolved binding is reported with the path that failed, so the user
-    can see the field is bound to a record the current matter does not carry
-    rather than a blank box with no explanation.
-    """
-
-    if binding == MANUAL_BINDING:
-        return DocumentTemplateVariableSuggestion(
-            variable=variable,
-            provenance={"status": "manual_entry", "binding": binding},
-            review_required=True,
-        )
-    if is_item_binding(binding):
-        # Its value comes from whichever item of a repeating section is being
-        # rendered, so there is nothing for a person to fill in once.
-        return DocumentTemplateVariableSuggestion(
-            variable=variable,
-            provenance={
-                "status": "repeat_item",
-                "binding": binding,
-                "binding_label": template_cards.label_for_path(binding),
-            },
-            review_required=False,
-        )
-    alias = template_cards.alias_for_path(binding)
-    candidate = candidates.get(alias) if alias else None
-    if candidate is not None:
-        provenance = {
-            **candidate.provenance,
-            "binding": binding,
-            "binding_label": template_cards.label_for_path(binding),
-        }
-        return candidate.model_copy(
-            update={"variable": variable, "provenance": provenance}
-        )
-    return DocumentTemplateVariableSuggestion(
-        variable=variable,
-        provenance={
-            # A path the catalogue no longer describes has no label; saying so
-            # is more useful than omitting the key.
-            "status": "binding_unresolved",
-            "binding": binding,
-            "binding_label": template_cards.label_for_path(binding)
-            or "Unknown data source",
-        },
-        review_required=True,
-    )
+_bound_suggestion = template_fill_engine.bound_suggestion
 
 
 async def _check_applicability(db, template, matter, user):
@@ -2761,87 +2047,31 @@ async def build_variable_suggestions(
     current_user,
     db: AsyncSession,
 ) -> tuple[str | None, list[DocumentTemplateVariableSuggestion]]:
-    matter = await _load_matter_context(db=db, tenant_id=tenant_id, matter_id=matter_id)
-    parties = await _load_matter_parties(
-        db=db,
-        tenant_id=tenant_id,
-        matter=matter,
-    )
-    if requested_variables is not None:
-        variables = requested_variables
-    else:
-        variables = []
-        for variable in [
-            *extract_template_variables(template.body),
-            *extract_schema_variables(template),
-        ]:
-            if variable not in variables:
-                variables.append(variable)
-    bindings = declared_bindings(getattr(template, "variable_schema", None))
-    # The retainer record is a second query, so read it only when this
-    # template can actually fill from it: a declared retainer binding or an
-    # unbound field named after the retainer aliases.
-    retainer_aliases = {"retainer_amount", "retainer_minimum_balance"}
-    needs_retainer = matter is not None and (
-        any(
-            (alias_for_binding(binding) or "") in retainer_aliases
-            for binding in bindings.values()
-        )
-        or any(
-            _normalize_variable_name(variable) in retainer_aliases
-            for variable in variables
-        )
-    )
-    retainer = (
-        await _load_current_retainer(db=db, tenant_id=tenant_id, matter=matter)
-        if needs_retainer
-        else None
-    )
-    estate = (
-        await _load_estate_for_matter(db=db, tenant_id=tenant_id, matter=matter)
-        if matter is not None
-        and any(binding.startswith("estate.") for binding in bindings.values())
-        else None
-    )
-    candidates = _collect_smart_fill_candidates(
-        matter=matter,
-        parties=parties,
-        current_user=current_user,
-        retainer=retainer,
-        estate=estate,
-    )
+    """Smart Fill ``template`` for the request user; see ``template_fill_engine``.
 
-    custom = await template_custom_fields.suggestions(db, tenant_id, matter, bindings)
-    firm = await template_firm_fields.suggestions(db, tenant_id, bindings)
-    suggestions: list[DocumentTemplateVariableSuggestion] = []
-    for variable in variables:
-        if variable in firm:
-            suggestions.append(firm[variable])
-            continue
-        if variable in custom:
-            suggestions.append(custom[variable])
-            continue
-        binding = bindings.get(variable)
-        if binding:
-            # A declared binding is authoritative. Falling back to name
-            # matching here would reintroduce exactly the surprise bindings
-            # exist to remove: a field the customer bound to one record
-            # silently filling from another because of its name.
-            suggestions.append(_bound_suggestion(variable, binding, candidates))
-            continue
-        candidate = candidates.get(_normalize_variable_name(variable))
-        if candidate:
-            suggestions.append(candidate.model_copy(update={"variable": variable}))
-            continue
-        suggestions.append(
-            DocumentTemplateVariableSuggestion(
-                variable=variable,
-                provenance={"status": "no_deterministic_source"},
-                review_required=True,
-            )
-        )
+    The loaders are looked up on this module at call time so a test that
+    replaces ``_load_matter_context`` and friends keeps steering the engine.
+    """
 
-    return str(matter.id) if matter else None, suggestions
+    loaders = Loaders(
+        matter=lambda **kwargs: _load_matter_context(**kwargs),
+        parties=lambda **kwargs: _load_matter_parties(**kwargs),
+        estate=lambda **kwargs: _load_estate_for_matter(**kwargs),
+        retainer=lambda **kwargs: _load_current_retainer(**kwargs),
+    )
+    try:
+        prepared = await template_fill_engine.prepare_fill(
+            db,
+            template=template,
+            tenant_id=tenant_id,
+            matter_id=matter_id,
+            actor=current_user,
+            requested_variables=requested_variables,
+            loaders=loaders,
+        )
+    except MatterLookupError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return prepared.matter_id, prepared.suggestions
 
 
 @router.get("/cards", response_model=DocumentTemplateCardCatalogue)

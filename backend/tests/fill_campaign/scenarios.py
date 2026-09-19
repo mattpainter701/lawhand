@@ -293,10 +293,7 @@ def probate_estate() -> Scenario:
         matter=matter,
         estate=probate_bindings.probe_estate(),
         notes={
-            "estate_decedent_name": (
-                "unbound: the estate loads only for an estate.* binding, so a "
-                "name match is reported as filling but resolves to nothing"
-            ),
+            "estate_decedent_name": "fills by name: the estate loads for a matching field name",
         },
     )
 

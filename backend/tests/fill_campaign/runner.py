@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 from app.routers import document_templates
 from app.schemas.document_template import DocumentTemplateVariableSuggestion
-from app.services import template_fill_coverage
+from app.services import template_fill_coverage, template_fill_engine
 from app.services.template_bindings import binding_label, custom_binding
 from app.services.docx_templates import TemplateDocxError, fill_docx_template
 from app.services.pdf_templates import (
@@ -99,14 +99,14 @@ def _loader_patches(scenario: Scenario, stack: ExitStack, writes: list) -> None:
     stack.enter_context(
         patch.object(document_templates, "_load_current_retainer", load_retainer)
     )
-    original = document_templates._add_candidate
+    original = template_fill_engine.add_candidate
 
     def recording_add(candidates, alias, value, **kwargs):
-        text = document_templates._stringify_suggestion(value)
+        text = template_fill_engine.stringify_suggestion(value)
         if text is not None:
             writes.append(
                 {
-                    "alias": document_templates._normalize_variable_name(alias),
+                    "alias": template_fill_coverage.normalize_variable_name(alias),
                     "source_type": kwargs.get("source_type"),
                     "source_field": kwargs.get("source_field"),
                     "value": text,
@@ -115,7 +115,7 @@ def _loader_patches(scenario: Scenario, stack: ExitStack, writes: list) -> None:
         return original(candidates, alias, value, **kwargs)
 
     stack.enter_context(
-        patch.object(document_templates, "_add_candidate", recording_add)
+        patch.object(template_fill_engine, "add_candidate", recording_add)
     )
 
     # The firm-profile and custom-field resolvers query the database. Stand in
@@ -174,12 +174,14 @@ def _loader_patches(scenario: Scenario, stack: ExitStack, writes: list) -> None:
 
     stack.enter_context(
         patch.object(
-            document_templates.template_firm_fields, "suggestions", firm_suggestions
+            template_fill_engine.template_firm_fields, "suggestions", firm_suggestions
         )
     )
     stack.enter_context(
         patch.object(
-            document_templates.template_custom_fields, "suggestions", custom_suggestions
+            template_fill_engine.template_custom_fields,
+            "suggestions",
+            custom_suggestions,
         )
     )
 

@@ -224,15 +224,20 @@ class TestFormattingAndRendering:
 class TestCoverageParity:
     """``template_fill_coverage`` predicts the fill; where it cannot, say so."""
 
-    async def test_estate_alias_is_reported_as_filling_but_never_loads(
+    async def test_estate_alias_fills_by_name_now_that_the_estate_loads(
         self, convention_pdf
     ):
+        """Before the engine extraction the estate loaded only for an
+        ``estate.`` binding, so this unbound field was reported as filling by
+        coverage and rendered blank. The engine loads a source whenever a
+        field name matches one of its aliases."""
+
         scenario = scenarios.probate_estate()
         unbound = await _pdf(scenario, convention_pdf, bound=False)
         outcome = unbound.by_name()["estate_decedent_name"]
         assert outcome.coverage_state == "name_matched"
-        assert outcome.state == BLANK
-        assert outcome.provenance_status == "no_deterministic_source"
+        assert outcome.state == FILLED
+        assert outcome.value == "Probe Decedent"
         bound = await _pdf(scenario, convention_pdf, bound=True)
         assert bound.by_name()["estate_decedent_name"].value == "Probe Decedent"
 
