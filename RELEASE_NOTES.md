@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.19.01 — Assistant drafts keep their formatting, and can update tasks
+
+Released September 19, 2026.
+
+Documents drafted in ChatGPT, Claude, or Codex now arrive in LawHand with their headings, emphasis, and lists intact, and a connected assistant can propose a task update for a person to approve.
+
+- **Draft formatting survives the push.** Headings, bold and italic text, bullet and numbered lists, quotes, code, and tables from an external assistant arrive in the matter as real Word formatting.
+- **Task updates, still approved by a person.** A connected assistant can propose a status, assignee, priority, due-date, or note change on a task; a reviewer approves it before LawHand applies it.
+- **Clearer limits when a draft is too big.** If a pushed document or citation list is over the limit, the error now names the submitted size and the allowed limit instead of a generic rejection.
+
 ## 2026.09.18.01 — North Dakota probate: intake picks the proceeding, forms pre-fill
 
 Released September 18, 2026.
