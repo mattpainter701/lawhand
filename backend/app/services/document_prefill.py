@@ -161,6 +161,26 @@ async def _candidate_templates(
     return [(template, reasons) for _, template, reasons in ranked[:MAX_TEMPLATES]]
 
 
+def _prepared_counts(prepared) -> tuple[int, int]:
+    """``(fields, filled)`` over the fields the coverage read-out enumerates.
+
+    ``PreparedFill.values`` also carries body-only placeholders and copied
+    (``value_from``) fields that the coverage split deliberately leaves out of
+    its total, so ``len(values)`` can exceed ``coverage.total`` and report more
+    than 100% filled. Count the numerator over the same field set the
+    denominator describes.
+    """
+
+    fields = prepared.coverage.total
+    filled = sum(
+        1
+        for name in prepared.coverage.states
+        if (item := prepared.by_variable.get(name))
+        and item.suggested_value not in (None, "")
+    )
+    return fields, filled
+
+
 async def prepare_matter_documents(
     db: AsyncSession, *, matter: Matter, actor: User | None
 ) -> list[dict[str, Any]]:
@@ -198,8 +218,7 @@ async def prepare_matter_documents(
             summaries.append(entry)
             continue
         coverage = prepared.coverage
-        total = coverage.total
-        filled = len(prepared.values)
+        fields, filled = _prepared_counts(prepared)
         review = sorted(
             item.variable
             for item in prepared.suggestions
@@ -208,9 +227,9 @@ async def prepare_matter_documents(
         entry.update(
             {
                 "status": "ready" if filled else "empty",
-                "fields": total,
+                "fields": fields,
                 "filled": filled,
-                "percent": round(100 * filled / total) if total else 100,
+                "percent": round(100 * filled / fields) if fields else 100,
                 "missing_required": len(prepared.missing_required),
                 "missing_required_names": prepared.missing_required[:MAX_NAMED_FIELDS],
                 "review": len(review),

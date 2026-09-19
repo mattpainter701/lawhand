@@ -118,6 +118,39 @@ async def _events(db, matter_id):
     ).all()
 
 
+class TestFillCounts:
+    async def test_filled_is_counted_over_the_same_fields_as_the_total(self):
+        """A body-only variable or a copied field must not push filled past
+        fields: ``PreparedFill.values`` is wider than the coverage split."""
+
+        from app.schemas.document_template import DocumentTemplateVariableSuggestion
+        from app.services.template_fill_coverage import FillCoverage
+
+        prepared = prefill.engine.PreparedFill(
+            matter_id=None,
+            suggestions=[
+                DocumentTemplateVariableSuggestion(
+                    variable="body_only", suggested_value="BODY"
+                ),
+                DocumentTemplateVariableSuggestion(
+                    variable="client_name", suggested_value="Ada Lovelace"
+                ),
+                DocumentTemplateVariableSuggestion(
+                    variable="sig", suggested_value=None
+                ),
+            ],
+            values={"body_only": "BODY", "client_name": "Ada Lovelace"},
+            coverage=FillCoverage(
+                total=2,
+                counts={},
+                states={"client_name": "name_matched", "sig": "signature"},
+            ),
+            missing_required=[],
+        )
+
+        assert prefill._prepared_counts(prepared) == (2, 1)
+
+
 class TestEnqueue:
     async def test_creating_a_matter_queues_one_prefill_run(
         self, client, db_session, test_tenant, test_user
