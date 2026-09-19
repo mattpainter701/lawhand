@@ -680,42 +680,103 @@ async def record_internal_chat_mcp_usage(
     )
 
 
+def _summarize_usage_rows(rows: list[Any], *, days: int) -> dict[str, Any]:
+    """Split billable external calls from internal, never-billed RAG calls.
+
+    Internal chat reads the same corpus and writes the same usage rows, but it
+    is not invoiced. Reporting one blended ``total_calls`` made the tenant's
+    billable volume impossible to reconcile against the Stripe meter, so keep
+    the billed and unbilled counts explicit.
+    """
+
+    total_calls = 0
+    total_results = 0
+    billable_calls = 0
+    failed_calls = 0
+    by_key: dict[Any, dict[str, Any]] = {}
+    by_auth: dict[str, dict[str, int]] = {}
+    for key_id, grant_id, auth_type, status_code, count, results in rows:
+        call_count = int(count or 0)
+        result_count = int(results or 0)
+        succeeded = int(status_code) < 400
+        billable = succeeded and (key_id is not None or grant_id is not None)
+        total_calls += call_count
+        total_results += result_count
+        if billable:
+            billable_calls += call_count
+        if not succeeded:
+            failed_calls += call_count
+
+        key_bucket = by_key.setdefault(
+            key_id,
+            {
+                "product_key_id": str(key_id) if key_id else None,
+                "calls": 0,
+                "results": 0,
+                "billable_calls": 0,
+            },
+        )
+        key_bucket["calls"] += call_count
+        key_bucket["results"] += result_count
+        if billable:
+            key_bucket["billable_calls"] += call_count
+
+        auth_bucket = by_auth.setdefault(
+            str(auth_type or "unknown"), {"calls": 0, "results": 0, "billable_calls": 0}
+        )
+        auth_bucket["calls"] += call_count
+        auth_bucket["results"] += result_count
+        if billable:
+            auth_bucket["billable_calls"] += call_count
+
+    return {
+        "days": days,
+        "total_calls": total_calls,
+        "total_results": total_results,
+        "billable_calls": billable_calls,
+        "unbilled_calls": total_calls - billable_calls,
+        "failed_calls": failed_calls,
+        "by_key": sorted(
+            by_key.values(), key=lambda item: item["product_key_id"] or ""
+        ),
+        "by_auth": [
+            {"auth_type": auth_type, **counts}
+            for auth_type, counts in sorted(by_auth.items())
+        ],
+    }
+
+
 async def usage_summary(
     db: AsyncSession,
     tenant_id: uuid.UUID,
     *,
     days: int = 30,
 ) -> dict[str, Any]:
-    since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 366)))
-    total_result = await db.execute(
-        select(
-            func.count(MCPUsageEvent.id),
-            func.coalesce(func.sum(MCPUsageEvent.result_count), 0),
-        ).where(MCPUsageEvent.tenant_id == tenant_id, MCPUsageEvent.created_at >= since)
-    )
-    total_calls, total_results = total_result.one()
-    by_key_result = await db.execute(
-        select(
-            MCPUsageEvent.product_key_id,
-            func.count(MCPUsageEvent.id),
-            func.coalesce(func.sum(MCPUsageEvent.result_count), 0),
+    bounded_days = max(1, min(days, 366))
+    since = datetime.now(timezone.utc) - timedelta(days=bounded_days)
+    rows = (
+        await db.execute(
+            select(
+                MCPUsageEvent.product_key_id,
+                MCPUsageEvent.oauth_grant_id,
+                MCPUsageEvent.auth_type,
+                MCPUsageEvent.status_code,
+                func.count(MCPUsageEvent.id),
+                func.coalesce(func.sum(MCPUsageEvent.result_count), 0),
+            )
+            .where(
+                MCPUsageEvent.tenant_id == tenant_id,
+                MCPUsageEvent.created_at >= since,
+            )
+            .group_by(
+                MCPUsageEvent.product_key_id,
+                MCPUsageEvent.oauth_grant_id,
+                MCPUsageEvent.auth_type,
+                MCPUsageEvent.status_code,
+            )
         )
-        .where(MCPUsageEvent.tenant_id == tenant_id, MCPUsageEvent.created_at >= since)
-        .group_by(MCPUsageEvent.product_key_id)
-    )
-    return {
-        "days": days,
-        "total_calls": int(total_calls or 0),
-        "total_results": int(total_results or 0),
-        "by_key": [
-            {
-                "product_key_id": str(key_id) if key_id else None,
-                "calls": int(calls or 0),
-                "results": int(results or 0),
-            }
-            for key_id, calls, results in by_key_result.all()
-        ],
-    }
+    ).all()
+    return _summarize_usage_rows(list(rows), days=bounded_days)
 
 
 async def monthly_key_usage(
