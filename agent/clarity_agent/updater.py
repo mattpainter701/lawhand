@@ -21,10 +21,10 @@ from urllib.parse import urlparse
 from clarity_agent import __version__
 from clarity_agent.config import CONFIG_DIR
 
-RELEASE_MANIFEST_URL = "https://github.com/mattpainter701/lawhand/releases/latest/download/agent-update.json"
-RELEASE_ASSET_BASE = (
-    "https://github.com/mattpainter701/lawhand/releases/download/agent-v"
-)
+RELEASE_REPOSITORY = "mattpainter701/lawhand"
+RELEASE_BASE_URL = f"https://github.com/{RELEASE_REPOSITORY}/releases"
+RELEASE_MANIFEST_URL = f"{RELEASE_BASE_URL}/latest/download/agent-update.json"
+RELEASE_ASSET_BASE = f"{RELEASE_BASE_URL}/download/agent-v"
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 ASSETS = {
     "win32": "lawhand-agent-x64.msi",
@@ -44,7 +44,7 @@ OFFICIAL_REDIRECT_HOSTS = {
     "github-releases.githubusercontent.com",
 }
 GITHUB_RELEASE_PATH = re.compile(
-    r"^/mattpainter701/lawhand/releases/(?:latest/download/agent-update\.json|"
+    rf"^/{re.escape(RELEASE_REPOSITORY)}/releases/(?:latest/download/agent-update\.json|"
     r"download/agent-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/"
     r"(?:agent-update\.json|lawhand-agent-x64\.msi|"
     r"lawhand-agent-linux-x86_64\.tar\.gz))$"
@@ -136,7 +136,7 @@ def _official_url(url: str) -> bool:
         return False
     return bool(
         re.fullmatch(
-            r"/mattpainter701/lawhand/releases/download/agent-v"
+            rf"/{re.escape(RELEASE_REPOSITORY)}/releases/download/agent-v"
             r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/"
             r"(?:lawhand-agent-x64\.msi|lawhand-agent-linux-x86_64\.tar\.gz)",
             parsed.path,

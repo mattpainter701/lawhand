@@ -18,6 +18,12 @@ def _one_version_newer(version: str) -> str:
 NEWER_VERSION = _one_version_newer(__version__)
 
 
+def test_release_repository_identity_is_literal_and_single_source():
+    assert updater.RELEASE_REPOSITORY == "mattpainter701/lawhand"
+    source = Path(updater.__file__).read_text(encoding="utf-8")
+    assert source.count("mattpainter701/lawhand") == 1
+
+
 def _manifest():
     return {
         "schema_version": 1,

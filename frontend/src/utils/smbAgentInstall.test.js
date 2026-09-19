@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AGENT_RELEASE_REPOSITORY,
   buildWindowsInstallCommand,
   formatSmbDiagnostic,
   isPairingPlaceholder,
@@ -8,6 +9,10 @@ import {
 } from './smbAgentInstall'
 
 describe('file-share agent install command', () => {
+  it('pins the literal release repository identity', () => {
+    expect(AGENT_RELEASE_REPOSITORY).toBe('mattpainter701/lawhand')
+  })
+
   it('uses a raw immutable HTTPS download and separates MSI install from pairing', () => {
     const command = buildWindowsInstallCommand('ABCD-EFGH-JKLM-NPQR')
 

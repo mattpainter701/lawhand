@@ -1,24 +1,22 @@
-"""The seam between FM-05 extraction records and the FM-03 serving engine.
+"""The seam between isolated extraction records and the serving engine.
 
-FM-03 (`opensearch_engine`), FM-04 (`crawl_control`) and FM-05 (`search-node`)
-each landed with their own vocabulary and no adapter joined them, so the
-OpenSearch path indexes nothing. This module is that adapter's translation half:
-it turns one extraction record into the document envelope the engine accepts.
+The search node and OpenSearch engine use separate contracts. This module is
+their translation boundary: it turns one extraction record into the document
+envelope the engine accepts.
 
 It deliberately does not import `search_node`. That package is a separate
 distribution which must not run in the agent process, and it states that it
 contains no OpenSearch client. The record is therefore consumed structurally —
 by the attributes `search_node.contracts.ExtractionRecord` defines — so the
-worker and the engine stay in separate processes with the transport between
-them chosen later.
+worker and the engine stay in separate processes.
 
 ## Two fields the FM-05 contract does not carry
 
 `ExtractionRecord` has no `modified_at` and no `mutation_generation`, but the
 engine requires both: `modified_at` backs the date filter, and the generation is
 what fences a delayed worker's write against a newer one. They are therefore
-explicit arguments here, and whatever wires the queue must supply them from the
-crawl manifest's `FileStat`/`LeasedJob`, which is where both actually live.
+explicit arguments here, and the live queue supplies them from its durable
+manifest, which is where both actually live.
 Inventing either at this boundary would silently break generation fencing.
 """
 

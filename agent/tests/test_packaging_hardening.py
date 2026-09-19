@@ -69,6 +69,12 @@ def test_release_workflow_publishes_update_manifest():
     assert "agent-update.json" in workflow
 
 
+def test_linux_updater_pins_one_literal_release_repository_identity():
+    updater = (LINUX_PACKAGING / "lawhand-agent-update").read_text(encoding="utf-8")
+    assert 'RELEASE_REPOSITORY="mattpainter701/lawhand"' in updater
+    assert updater.count("mattpainter701/lawhand") == 1
+
+
 def test_release_workflow_requires_and_verifies_windows_signatures():
     workflow = (ROOT.parent / ".github" / "workflows" / "agent-release.yml").read_text(
         encoding="utf-8"
