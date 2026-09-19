@@ -69,6 +69,7 @@ const TeamsTabPage = lazy(() => import('./pages/TeamsTabPage'))
 const TeamsTabConfigPage = lazy(() => import('./pages/TeamsTabConfigPage'))
 const CommunicationsPage = lazy(() => import('./pages/CommunicationsPage'))
 const TemplatesPage = lazy(() => import('./pages/TemplatesPage'))
+const TemplatePreparePage = lazy(() => import('./pages/TemplatePreparePage'))
 const TimeTrackingPage = lazy(() => import('./pages/TimeTrackingPage'))
 const InvoicesPage = lazy(() => import('./pages/InvoicesPage'))
 const InvoiceDetailPage = lazy(() => import('./pages/InvoiceDetailPage'))
@@ -373,6 +374,10 @@ export default function App() {
         <Route
           path="/templates"
           element={<ShellRoute title="Template Studio" module="templates"><TemplatesPage /></ShellRoute>}
+        />
+        <Route
+          path="/templates/prepare"
+          element={<ShellRoute title="Prepare document" module="templates"><TemplatePreparePage /></ShellRoute>}
         />
         {TEMPLATE_STUDIO_ROUTES.map((path) => (
           <Route

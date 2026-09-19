@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ProbateTab, { factsToForm, formToFacts, printHint } from './ProbateTab'
@@ -136,4 +136,17 @@ it('round-trips facts through the form helpers', () => {
   ])
   expect(printHint({ pages: [31, 31] })).toBe('print page 31')
   expect(printHint({ pages: null })).toBe('')
+})
+
+it('sends a published packet to the Prepare route with the estate\'s matter chosen', async () => {
+  const T = '11111111-1111-4111-8111-111111111111'
+  const M = '22222222-2222-4222-8222-222222222222'
+  const published = forms.map(row => row.number ? { ...row, template_id: T, template_status: 'published', published: true } : row)
+  getProbate.mockResolvedValue({ ...state, matter_id: M, forms: published })
+  function Location() { const loc = useLocation(); return <output aria-label="Location">{loc.pathname}{loc.search}</output> }
+  render(<MemoryRouter><ProbateTab estate={{ id: 'estate-1', matter_id: M }} onChanged={() => {}} /><Location /></MemoryRouter>)
+  const button = await screen.findByRole('button', { name: /Generate filled packet/ })
+  expect(button).toBeEnabled()
+  fireEvent.click(button)
+  expect(screen.getByLabelText('Location')).toHaveTextContent(`/templates/prepare?template=${T}&matter=${M}&return=${encodeURIComponent(`/matters/${M}?tab=documents`)}`)
 })

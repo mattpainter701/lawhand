@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { buildPrepareTarget } from '../components/prepare/prepareRouting'
 import CaseSetupCard from '../components/casesetup/CaseSetupCard'
 import ClientConversation from '../components/casesetup/ClientConversation'
 import CloseMatterDialog from '../components/casesetup/CloseMatterDialog'
@@ -1640,6 +1641,7 @@ function MatterWorkspace() {
             <MatterDocumentsTab
               matterId={id}
               onReviseDocument={(document) => navigate(`/matters/${id}/documents/${document.id}/revise`)}
+              onPrepareTemplate={(templateId, folderId) => navigate(buildPrepareTarget({ templateId, matterId: id, folderId, returnTo: `/matters/${id}?tab=documents` }).url)}
               onCloudFolderChange={(providers) => {
                 setMatter(prev => prev ? { ...prev, cloud_folder: providers || {} } : prev)
                 setEditData(prev => ({ ...prev, cloud_folder: providers || {} }))

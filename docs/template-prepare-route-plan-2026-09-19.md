@@ -1,7 +1,7 @@
 # Phase 3: Prepare route, from Studio to signature, with set fan-out
 
 **Date:** 2026-09-19
-**Status:** Proposed. Nothing here is a shipped-capability claim.
+**Status:** 3a shipped on `claude/pdf-auto-filing-mechanism-e5tqb5` (see CHANGELOG 2026.09.19.03); 3b, 3c, 3d proposed.
 **Builds on:** [`smart-fill-engine.md`](smart-fill-engine.md) (engine, Phase 2
 readiness record), the Clio-parity plan's W3 (Sets) and W7.3 (`/templates/prepare`).
 
@@ -45,7 +45,7 @@ step needs no second fetch.
 page. `RenderModal` stays exported from `TemplatesPage.jsx` as a thin dialog
 around the same body, so its three consumers and 25 tests keep working.
 
-## Phase 3a: the route, single template (one PR, no migration)
+## Phase 3a: the route, single template (shipped)
 
 Route: `/templates/prepare?template=<id>&matter=<id>&folder=<id>&return=<path>`.
 Steps: Select, Matter, Populate, Review, Save.

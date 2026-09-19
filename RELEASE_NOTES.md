@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.19.03 — Prepare a document from Studio, straight into the matter
+
+Released September 19, 2026.
+
+A published template can be taken from Template Studio to a matter in one guided page: choose the matter, review the filled fields and the exact preview, and save it into that matter's documents.
+
+- **Use on a matter, from Studio.** A published template in Studio has a Use on a matter button. It opens a guided page: Template, Matter, Populate, Review, Save. A draft says to publish a tested version first.
+- **Same review, wherever you start.** The page is the Generate dialog's own fill and preview logic, so a document prepared here is reviewed under exactly the same rules before it is saved.
+- **Lands on the matter with the document open.** Saving takes you to the matter's Case Documents with the new document's preview open. Ready-to-review documents and the probate packet open the same page with the matter chosen.
+
 ## 2026.09.19.02 — Documents are prepared the moment a matter has data
 
 Released September 19, 2026.

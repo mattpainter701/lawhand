@@ -9,6 +9,7 @@ import TemplateFieldLibrary from '../components/templates/TemplateFieldLibrary'
 import useBindingCatalogue from '../components/templates/useBindingCatalogue'
 import { buildOpenStudioTarget, canonicalStudioServerId, OPEN_STUDIO_EVENT, readStudioFocus } from '../components/templates/studioRouting'
 import usePrepareFill from '../components/prepare/usePrepareFill'
+import { buildPrepareTarget } from '../components/prepare/prepareRouting'
 import PrepareDocumentBody from '../components/prepare/PrepareDocumentBody'
 import { downloadRenderedText, getErrorMessage, getTemplateVariables } from '../components/prepare/prepareHelpers'
 import {
@@ -1697,6 +1698,16 @@ export default function TemplatesPage() {
                         {tpl.is_active ? <Sparkles size={14} /> : <Eye size={14} />}
                         {tpl.is_active ? 'Generate' : 'Preview draft'}
                       </button>
+                      {tpl.is_active && !sourceMissing && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(buildPrepareTarget({ templateId: tpl.id }).url)}
+                          title="Fill this template from a matter, review it, and save it there"
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-brand-accent px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-bg"
+                        >
+                          Prepare on a matter
+                        </button>
+                      )}
                       <button
                         onClick={() => setEditTemplate(tpl)}
                         className="inline-flex items-center justify-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-bg"
@@ -1863,6 +1874,7 @@ export default function TemplatesPage() {
           statusMessage={routeStatus}
           onEdit={() => setEditTemplate(workspaceTemplate)}
           onGenerate={() => openRender(workspaceTemplate)}
+          onUseOnMatter={() => navigate(buildPrepareTarget({ templateId: workspaceTemplate.id }).url)}
           onTest={() => setRenderTarget({ ...workspaceTemplate, is_active: false })}
           onPublish={handlePublishWorkspace}
           source={workspaceSource}
