@@ -1,8 +1,8 @@
 # Smart Fill engine
 
 **Date:** 2026-09-19
-**Status:** shipped on `claude/pdf-auto-filing-mechanism-e5tqb5`; Phase 2
-(auto-initiation) is a follow-up, see the end of this page.
+**Status:** shipped on `claude/pdf-auto-filing-mechanism-e5tqb5`, including
+Phase 2 (auto-initiation of document prefill); Phase 3 is logged at the end.
 
 Smart Fill is the mechanism that fills a template's fields from a matter. This
 page says what it is now that it lives in one place, what the quirk campaign
