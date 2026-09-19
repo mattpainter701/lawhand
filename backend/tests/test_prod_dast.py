@@ -185,8 +185,10 @@ class _FakeGitHub:
         self.issues = [dict(issue) for issue in (issues or [])]
         self.calls: list[tuple[str, str, dict | None]] = []
 
-    def ensure_label(self) -> None:
-        self.calls.append(("ENSURE", reconcile.LABEL, None))
+    def ensure_label(self, name: str, color: str, description: str) -> None:
+        self.calls.append(
+            ("ENSURE", name, {"color": color, "description": description})
+        )
 
     def list_labeled_issues(self) -> list[dict]:
         return [dict(issue) for issue in self.issues]
@@ -207,14 +209,17 @@ class _FakeGitHub:
                     "state": "open",
                     "title": payload["title"],
                     "body": payload["body"],
-                    "labels": payload.get("labels", []),
+                    "labels": [{"name": n} for n in payload.get("labels", [])],
                 }
             )
         elif method == "PATCH":
             number = int(path.rsplit("/", 1)[1])
             for issue in self.issues:
                 if issue["number"] == number:
-                    issue.update(payload)
+                    update = dict(payload)
+                    if "labels" in update:
+                        update["labels"] = [{"name": n} for n in update["labels"]]
+                    issue.update(update)
         return None
 
 
@@ -224,7 +229,7 @@ def _issue(body: str, *, state: str = "open", number: int = 1) -> dict:
         "state": state,
         "title": "[dast] Missing Anti-clickjacking Header — https://getlawhand.com/",
         "body": body,
-        "labels": [reconcile.LABEL],
+        "labels": [{"name": reconcile.LABEL}],
     }
 
 
@@ -269,6 +274,61 @@ def test_reconcile_reopens_a_closed_finding() -> None:
     result = reconcile.reconcile(closed, findings, "https://run/5", zap_exit_code=1)
     assert result["reopened"] == 1
     assert closed.issues[0]["state"] == "open"
+
+
+def test_criticality_confidence_and_cve_are_defined() -> None:
+    report = _report("2")
+    alert = report["site"][0]["alerts"][0]
+    alert["wascid"] = "15"
+    alert["reference"] = "<p>See CVE-2021-44228 and cve-2022-1234.</p>"
+    finding = reconcile.normalize_report(report, min_risk=1)[0]
+
+    assert finding.criticality == "Medium"
+    assert finding.confidence == "Medium"
+    assert finding.cwe == "1021"
+    assert finding.wasc == "15"
+    assert finding.cves == ("CVE-2021-44228", "CVE-2022-1234")
+    assert reconcile.severity_labels(finding) == ["dast", "severity:medium"]
+    assert reconcile.render_title(finding).startswith("[dast][Medium]")
+
+    body = reconcile.render_body(finding, "https://run/x")
+    assert "| Criticality | Confidence | CWE | WASC | CVE |" in body
+    assert "| Medium | Medium | 1021 | 15 | CVE-2021-44228, CVE-2022-1234 |" in body
+
+
+def test_missing_cve_is_stated_not_faked() -> None:
+    finding = reconcile.normalize_report(_report("3"), min_risk=1)[0]
+    assert finding.cves == ()
+    body = reconcile.render_body(finding, "https://run/x")
+    assert "| High | Medium | 1021 | n/a | None |" in body
+    assert "not a known CVE" in body
+
+    # A negative WASC sentinel is not rendered as an ID.
+    report = _report("1")
+    report["site"][0]["alerts"][0]["wascid"] = "-1"
+    assert reconcile.normalize_report(report, min_risk=1)[0].wasc == ""
+
+
+def test_reconcile_labels_criticality_and_repairs_stale_labels() -> None:
+    findings = reconcile.normalize_report(_report("2"), min_risk=1)
+    gh = _FakeGitHub()
+    result = reconcile.reconcile(gh, findings, "https://run/1", zap_exit_code=1)
+    assert result["created"] == 1
+    assert sorted(label["name"] for label in gh.issues[0]["labels"]) == [
+        "dast",
+        "severity:medium",
+    ]
+    assert gh.issues[0]["title"].startswith("[dast][Medium]")
+
+    # An existing open issue with the right fingerprint but the wrong label set
+    # is repaired.
+    stale = _FakeGitHub([_issue(reconcile.render_body(findings[0], "https://run/0"))])
+    result = reconcile.reconcile(stale, findings, "https://run/2", zap_exit_code=1)
+    assert result["updated"] == 1
+    assert sorted(label["name"] for label in stale.issues[0]["labels"]) == [
+        "dast",
+        "severity:medium",
+    ]
 
 
 def test_scan_alert_is_filed_and_resolved() -> None:
