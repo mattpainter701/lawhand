@@ -147,13 +147,13 @@ Follow-ups still open: a rule action that requests a document (a Stack A
 `document_propose` step bridging to `propose_document_from_template`), and the
 Phase 3 guided route below.
 
-## Phase 3 (logged): Studio to signature in one path
+## Phase 3 (planned): Studio to signature in one path, with set fan-out
 
-From Template Studio, selecting a template should offer: auto fill, choose the
-matter, save into that matter's documents so work can continue, review, and
-send for e-signature. The join points exist (`prepare_fill()` for the values,
-the generation preview evidence for the PDF save, the placement review and
-e-sign plan for sending); what is missing is the guided
-`Select -> Populate -> Review -> Send` route the Clio-parity plan names,
-started from a Studio template with the matter chosen there and landing on the
-saved matter document with "Send for signature" as the next step.
+Planned in [`template-prepare-route-plan-2026-09-19.md`](template-prepare-route-plan-2026-09-19.md):
+a `/templates/prepare` route (Select, Matter, Populate, Review, Save, Send)
+reached from Studio's "Use on a matter", the library, the matter page's
+readiness banner and the Probate tab; a Send step reusing the E-Signature
+panel's logic with the client signer prefilled; set fan-out that fills once,
+previews every member in the browser, saves all one document at a time with
+per-document status, and offers Send per PDF member; and, later, a resumable
+fill session and a durable save-all once that session exists.
