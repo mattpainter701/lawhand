@@ -66,17 +66,24 @@ async def test_individual_client_fills_from_persisted_rows(
     # The matter's plaintiff-side role infers the caption from the client.
     assert by_name["plaintiff_name"]["suggested_value"] == "Ada Lovelace"
     assert by_name["plaintiff_name"]["review_required"] is True
-    # Unreachable columns stay unreachable through the route too.
-    for name in ("first_name", "last_name", "matter_number", "opened_on"):
-        assert by_name[name]["suggested_value"] is None
-        assert by_name[name]["provenance"]["status"] == "no_deterministic_source"
+    # Columns the engine made reachable resolve through the route too: the
+    # name parts by synonym (flagged for review), the matter columns by alias.
+    assert by_name["first_name"]["suggested_value"] == "Ada"
+    assert by_name["first_name"]["provenance"]["synonym_of"] == "client_first_name"
+    assert by_name["first_name"]["review_required"] is True
+    assert by_name["last_name"]["suggested_value"] == "Lovelace"
+    assert by_name["matter_number"]["suggested_value"] == "LOV0001"
+    assert by_name["opened_on"]["suggested_value"] == "2026-03-04"
+    # A choice widget gets the option's export value, not the record's code.
+    assert by_name["client_state"]["suggested_value"] == "North Dakota"
+    assert by_name["client_state"]["provenance"]["formatted_from"] == "ND"
     # No branding is configured for the test tenant, and the firm profile
     # falls back to the tenant's name rather than reporting the value missing.
     assert by_name["firm_name"]["source_type"] == "firm_profile"
     assert by_name["firm_name"]["suggested_value"] == test_tenant.name
 
 
-async def test_family_caption_roles_resolve_nothing(
+async def test_family_caption_roles_fill_from_party_rows(
     client, db_session, test_tenant, test_user
 ):
     await _grant_manage_documents(db_session, test_tenant, test_user)
@@ -93,9 +100,13 @@ async def test_family_caption_roles_resolve_nothing(
     assert response.status_code == 200, response.text
     by_name = {item["variable"]: item for item in response.json()["variables"]}
     assert by_name["client_name"]["suggested_value"] == "Mary Somerville"
-    # Two party rows exist, yet neither caption role has a source.
-    assert by_name["petitioner_name"]["suggested_value"] is None
-    assert by_name["respondent_name"]["suggested_value"] is None
+    assert by_name["petitioner_name"]["suggested_value"] == "Mary Somerville"
+    assert by_name["petitioner_name"]["source_type"] == "matter_party"
+    assert by_name["petitioner_name"]["provenance"]["record_id"] == str(
+        scenario.parties[0].id
+    )
+    assert by_name["respondent_name"]["suggested_value"] == "William Somerville"
+    # A petitioner is not a plaintiff: roles are never translated.
     assert by_name["plaintiff_name"]["suggested_value"] is None
 
 

@@ -97,25 +97,52 @@ class TestNamingConventions:
         assert result.state("client_full_name") == BLANK
 
 
-class TestUnreachableRecords:
-    """Columns the matter and contact carry but Smart Fill never reads."""
+class TestReachableRecords:
+    """Columns the matter and contact carry, reachable since the engine."""
 
     @pytest.mark.parametrize(
-        "name",
-        ["first_name", "last_name", "matter_number", "opened_on"],
+        ("name", "value", "how"),
+        [
+            ("first_name", "Ada", "synonym"),
+            ("last_name", "Lovelace", "synonym"),
+            ("matter_number", "LOV0001", "alias"),
+            ("opened_on", "2026-03-04", "alias"),
+        ],
     )
-    async def test_column_has_no_source_bound_or_not(self, convention_pdf, name):
-        scenario = scenarios.individual_client()
-        assert getattr(scenario.matter, "matter_number") == "LOV0001"
-        assert scenario.matter.client.first_name == "Ada"
-        for bound in (False, True):
-            result = await _pdf(scenario, convention_pdf, bound=bound)
-            outcome = result.by_name()[name]
-            assert outcome.state == BLANK, (name, bound)
-            assert outcome.provenance_status == "no_deterministic_source"
-            assert outcome.coverage_state == "unbound"
+    async def test_column_fills_without_a_binding(
+        self, convention_pdf, name, value, how
+    ):
+        result = await _pdf(scenarios.individual_client(), convention_pdf, bound=False)
+        outcome = result.by_name()[name]
+        assert outcome.state == FILLED, name
+        assert outcome.value == value
+        assert outcome.coverage_state == "name_matched"
+        if how == "synonym":
+            # A synonym is a guess about whose first name the form wants, so it
+            # is offered for review rather than asserted.
+            assert outcome.review_required is True
+            assert outcome.confidence == 0.9
+        else:
+            assert outcome.review_required is False
 
-    async def test_family_caption_roles_have_no_source(self, convention_pdf):
+    async def test_a_text_date_stays_iso_and_a_date_field_is_formatted(self):
+        """The formatter follows the field's type, not the value's shape."""
+
+        scenario = scenarios.individual_client()
+        suggestions, _ = await runner.resolve(
+            scenario,
+            {
+                "fields": [
+                    {"name": "opened_on", "type": "text"},
+                    {"name": "opened", "type": "date", "binding": "matter.opened_on"},
+                ]
+            },
+        )
+        assert suggestions["opened_on"].suggested_value == "2026-03-04"
+        assert suggestions["opened"].suggested_value == "03/04/2026"
+        assert suggestions["opened"].provenance["formatted_from"] == "2026-03-04"
+
+    async def test_family_caption_roles_fill_from_party_rows(self, convention_pdf):
         scenario = scenarios.family_petitioner()
         assert [party.role for party in scenario.parties] == [
             "petitioner",
@@ -123,9 +150,10 @@ class TestUnreachableRecords:
         ]
         for bound in (False, True):
             result = await _pdf(scenario, convention_pdf, bound=bound)
-            assert result.state("petitioner_name") == BLANK
-            assert result.state("respondent_name") == BLANK
-            # Not a plaintiff either: the role is not translated.
+            assert result.by_name()["petitioner_name"].value == "Mary Somerville"
+            assert result.by_name()["respondent_name"].value == "William Somerville"
+            assert result.by_name()["petitioner_name"].source_type == "matter_party"
+            # Still not a plaintiff: roles are not translated into one another.
             assert result.state("plaintiff_name") == BLANK
             assert result.state("client_name") == FILLED
 
@@ -185,14 +213,39 @@ class TestCaptionInference:
 
 
 class TestFormattingAndRendering:
-    async def test_decimal_and_choice_values_are_raw(self, convention_pdf):
+    async def test_decimals_are_raw_and_a_state_code_selects_its_option(
+        self, convention_pdf
+    ):
         result = await _pdf(scenarios.individual_client(), convention_pdf, bound=True)
+        # A text field takes the record's text as it is.
         assert result.by_name()["hourly_rate"].value == "250.00"
         assert result.by_name()["retainer_amount"].value == "5000.00"
+        # A choice widget only accepts an export value; ``ND`` is matched to
+        # the ``North Dakota`` option and the page holds it.
         state = result.by_name()["client_state"]
-        assert state.state == CHOICE_MISMATCH
-        assert state.value == "ND"
-        assert "North Dakota" in (state.note or "")
+        assert state.state == FILLED
+        assert state.value == "North Dakota"
+
+    async def test_a_value_no_option_matches_is_withdrawn_not_forced(self):
+        scenario = scenarios.individual_client()
+        scenario.matter.client.address["state"] = "Ontario"
+        suggestions, _ = await runner.resolve(
+            scenario,
+            {
+                "fields": [
+                    {
+                        "name": "client_state",
+                        "field_type": "choice",
+                        "options": ["North Dakota", "Minnesota"],
+                    }
+                ]
+            },
+        )
+        outcome = suggestions["client_state"]
+        assert outcome.suggested_value is None
+        assert outcome.provenance["unformatted_value"] == "Ontario"
+        assert "not one of this field's options" in outcome.provenance["format_warning"]
+        assert outcome.review_required is True
 
     async def test_signature_fields_are_never_filled(
         self, convention_pdf, convention_docx

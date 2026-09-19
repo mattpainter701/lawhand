@@ -5,6 +5,18 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.19.01 — Smart Fill reaches more of the matter and fills the right way
+
+Released September 19, 2026.
+
+Document fill reads the client's name parts, the matter number and opening date, and every party role, fits each value to its field, and is proven against mock and real forms before it reaches a page.
+
+- **Letters can open with a first name.** Fields named first_name or last_name, or bound to the client's name parts, organization or client number, fill from the contact record. Name matches are offered for review.
+- **Every party role fills its caption.** Petitioner, respondent, opposing party, counsel, witness and expert rows fill their own fields, as plaintiff and defendant always did. A family caption no longer stays blank.
+- **Values fit their fields.** A state code selects a court form's dropdown option, a yes checks a box, a date field reads MM/DD/YYYY. A value a field cannot hold is left for you rather than forced in.
+- **Matter number and date opened.** The matter's number, practice area and opening date are available to templates by name or binding.
+- **The estate fills by field name.** A probate form field named after an estate value fills with or without a binding; before, it reported as filled and rendered blank.
+
 ## 2026.09.18.01 — North Dakota probate: intake picks the proceeding, forms pre-fill
 
 Released September 18, 2026.

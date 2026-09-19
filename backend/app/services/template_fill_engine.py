@@ -40,7 +40,12 @@ from typing import Any
 
 from app.schemas.document_template import DocumentTemplateVariableSuggestion
 from app.schemas.matter_party import normalize_matter_party_role
-from app.services import template_cards, template_custom_fields, template_firm_fields
+from app.services import (
+    template_cards,
+    template_custom_fields,
+    template_fill_formatters,
+    template_firm_fields,
+)
 from app.services.probate import bindings as probate_bindings
 from app.services.template_bindings import (
     MANUAL_BINDING,
@@ -440,6 +445,11 @@ MATTER_FIELDS: tuple[tuple[str, str], ...] = (
     ("matter_role", "role"),
     ("represented_side", "role"),
     ("counterparty", "counterparty"),
+    # Reachable since the engine: the human-facing number, the practice the
+    # firm files the matter under, and the day it opened.
+    ("matter_number", "matter_number"),
+    ("practice_area", "practice_area"),
+    ("opened_on", "opened_on"),
 )
 
 
@@ -494,7 +504,21 @@ class RetainerSource(FillSource):
         )
 
 
+#: The two roles ``matter.role`` can stand in for when no party rows exist.
 CAPTION_ROLES: tuple[str, ...] = ("plaintiff", "defendant")
+#: Every party role that gets its own aliases. ``client`` is left out because
+#: the client contact already owns ``client_*`` and a party row would shadow
+#: it; ``other`` names nothing a template could sensibly ask for.
+PARTY_ROLES: tuple[str, ...] = (
+    "plaintiff",
+    "defendant",
+    "petitioner",
+    "respondent",
+    "opposing_party",
+    "counsel",
+    "witness",
+    "expert",
+)
 _ADDRESS_SUFFIXES: tuple[tuple[str, str], ...] = (
     ("street", "street"),
     ("city", "city"),
@@ -617,22 +641,20 @@ def _add_role_instance_candidates(
 
 
 class CaptionPartySource(FillSource):
-    """Structured plaintiff and defendant party rows."""
+    """Structured party rows, one alias family per role."""
 
     key = "matter_party"
 
     @property
     def aliases(self) -> frozenset[str]:
-        return frozenset().union(*(role_aliases(role) for role in CAPTION_ROLES))
+        return frozenset().union(*(role_aliases(role) for role in PARTY_ROLES))
 
     @property
     def instance_aliases(self) -> frozenset[str]:
-        return frozenset().union(
-            *(role_instance_aliases(role) for role in CAPTION_ROLES)
-        )
+        return frozenset().union(*(role_instance_aliases(role) for role in PARTY_ROLES))
 
     def collect(self, index: CandidateIndex, records: FillRecords) -> None:
-        for role in CAPTION_ROLES:
+        for role in PARTY_ROLES:
             role_parties = caption_parties(records.parties, role)
             if not role_parties:
                 continue
@@ -707,6 +729,13 @@ class CaptionPartySource(FillSource):
 
 
 _CLIENT_COLUMNS: tuple[tuple[str, str], ...] = (
+    # The parts behind ``display_name``, and the identity columns.
+    ("client_first_name", "first_name"),
+    ("client_last_name", "last_name"),
+    ("client_preferred_name", "preferred_name"),
+    ("client_organization_name", "organization_name"),
+    ("client_entity_type", "entity_type"),
+    ("client_number", "client_number"),
     ("client_date_of_birth", "date_of_birth"),
     ("client_secondary_phone", "secondary_phone"),
     ("client_preferred_contact_method", "preferred_contact_method"),
@@ -915,15 +944,53 @@ def source(key: str) -> FillSource:
     raise KeyError(key)
 
 
+#: Field names a person types that mean one of the client's aliases. Applied
+#: only on the name-match branch -- a binding is never second-guessed -- and
+#: reported in provenance, at reduced confidence, because "first name" on a
+#: caption form may not be the client's.
+NAME_SYNONYMS: dict[str, str] = {
+    "first_name": "client_first_name",
+    "last_name": "client_last_name",
+    "full_name": "client_name",
+    "name": "client_name",
+    "email": "client_email",
+    "email_address": "client_email",
+    "phone": "client_phone",
+    "phone_number": "client_phone",
+    "telephone": "client_phone",
+    "street": "client_street",
+    "street_address": "client_street",
+    "address": "client_street",
+    "city": "client_city",
+    "state": "client_state",
+    "zip": "client_zip",
+    "zip_code": "client_zip",
+    "postal_code": "client_zip",
+    "date_of_birth": "client_date_of_birth",
+    "dob": "client_date_of_birth",
+    "organization": "client_organization_name",
+    "company": "client_organization_name",
+    "company_name": "client_organization_name",
+}
+
+
 @functools.lru_cache(maxsize=1)
 def vocabulary() -> frozenset[str]:
-    """Every alias Smart Fill can produce for a first-instance fill.
+    """Every field name Smart Fill can fill without a binding.
 
-    The union of what the sources declare. ``tests/test_template_fill_engine``
-    asserts it equals what the resolver actually writes against a fully
-    populated probe, so a source cannot declare an alias it never produces or
-    produce one it never declared.
+    The union of what the sources declare, plus the synonyms the name-match
+    branch understands. ``tests/test_template_fill_engine`` asserts the source
+    part equals what the resolver actually writes against a fully populated
+    probe, so a source cannot declare an alias it never produces or produce
+    one it never declared.
     """
+
+    return source_vocabulary() | frozenset(NAME_SYNONYMS)
+
+
+@functools.lru_cache(maxsize=1)
+def source_vocabulary() -> frozenset[str]:
+    """The aliases the sources write, before synonyms."""
 
     return frozenset().union(*(entry.aliases for entry in SOURCES))
 
@@ -1046,9 +1113,24 @@ def resolve_variables(
             # silently filling from another because of its name.
             suggestions.append(bound_suggestion(variable, binding, candidates))
             continue
-        candidate = candidates.get(normalize_variable_name(variable))
+        key = normalize_variable_name(variable)
+        candidate = candidates.get(key)
         if candidate:
             suggestions.append(candidate.model_copy(update={"variable": variable}))
+            continue
+        synonym = NAME_SYNONYMS.get(key)
+        candidate = candidates.get(synonym) if synonym else None
+        if candidate:
+            suggestions.append(
+                candidate.model_copy(
+                    update={
+                        "variable": variable,
+                        "confidence": min(candidate.confidence, 0.9),
+                        "review_required": True,
+                        "provenance": {**candidate.provenance, "synonym_of": synonym},
+                    }
+                )
+            )
             continue
         suggestions.append(
             DocumentTemplateVariableSuggestion(
@@ -1174,6 +1256,16 @@ async def prepare_fill(
     suggestions = resolve_variables(
         variables, bindings=bindings, candidates=index, firm=firm, custom=custom
     )
+    fields_by_name = {
+        str(entry.get("name") or "").strip(): entry
+        for entry in _schema_fields(template)
+    }
+    suggestions = [
+        template_fill_formatters.format_suggestion(
+            item, fields_by_name.get(item.variable)
+        )
+        for item in suggestions
+    ]
     values, missing_required = render_values(template, suggestions)
     return PreparedFill(
         matter_id=str(matter.id) if matter is not None else None,
@@ -1195,6 +1287,8 @@ __all__ = [
     "FillNeeds",
     "FillRecords",
     "FillSource",
+    "NAME_SYNONYMS",
+    "PARTY_ROLES",
     "PreparedFill",
     "SOURCES",
     "add_candidate",
@@ -1212,6 +1306,7 @@ __all__ = [
     "role_aliases",
     "role_instance_aliases",
     "source",
+    "source_vocabulary",
     "stringify_suggestion",
     "template_variables",
     "vocabulary",

@@ -2,6 +2,35 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.19.01",
+      "version": "2026.09.19.01",
+      "title": "Smart Fill reaches more of the matter and fills the right way",
+      "published_at": "2026-09-19",
+      "summary": "Document fill reads the client's name parts, the matter number and opening date, and every party role, fits each value to its field, and is proven against mock and real forms before it reaches a page.",
+      "highlights": [
+        {
+          "title": "Letters can open with a first name",
+          "description": "Fields named first_name or last_name, or bound to the client's name parts, organization or client number, fill from the contact record. Name matches are offered for review."
+        },
+        {
+          "title": "Every party role fills its caption",
+          "description": "Petitioner, respondent, opposing party, counsel, witness and expert rows fill their own fields, as plaintiff and defendant always did. A family caption no longer stays blank."
+        },
+        {
+          "title": "Values fit their fields",
+          "description": "A state code selects a court form's dropdown option, a yes checks a box, a date field reads MM/DD/YYYY. A value a field cannot hold is left for you rather than forced in."
+        },
+        {
+          "title": "Matter number and date opened",
+          "description": "The matter's number, practice area and opening date are available to templates by name or binding."
+        },
+        {
+          "title": "The estate fills by field name",
+          "description": "A probate form field named after an estate value fills with or without a binding; before, it reported as filled and rendered blank."
+        }
+      ]
+    },
+    {
       "id": "2026.09.18.01",
       "version": "2026.09.18.01",
       "title": "North Dakota probate: intake picks the proceeding, forms pre-fill",

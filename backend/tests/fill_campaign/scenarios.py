@@ -163,10 +163,8 @@ def individual_client() -> Scenario:
             "firm_website": "https://firm.example",
         },
         notes={
-            "first_name": "no source: contact.first_name is not exposed",
-            "last_name": "no source: contact.last_name is not exposed",
-            "matter_number": "no source: matter.matter_number is not exposed",
-            "opened_on": "no source: matter.opened_on is not exposed",
+            "first_name": "synonym of client_first_name, offered for review",
+            "last_name": "synonym of client_last_name, offered for review",
             "plaintiff_name": "inferred from matter.role + client at 0.75",
             "defendant_name": "inferred from matter.counterparty at 0.75",
         },
@@ -254,8 +252,6 @@ def family_petitioner() -> Scenario:
             _party("respondent", respondent, day=2),
         ],
         notes={
-            "petitioner_name": "no source: only plaintiff/defendant roles emit aliases",
-            "respondent_name": "no source: only plaintiff/defendant roles emit aliases",
             "plaintiff_name": "no source: role 'petitioner' is not a plaintiff",
         },
     )
@@ -419,6 +415,7 @@ async def persist(db, tenant_id, user_id, scenario: Scenario) -> dict[str, Any]:
         tenant_id=tenant_id,
         user_id=user_id,
         slug=f"campaign-{uuid.uuid4().hex[:8]}",
+        matter_number=source.matter_number,
         matter_name=source.matter_name,
         matter_type=source.matter_type or "general",
         practice_area=source.practice_area,

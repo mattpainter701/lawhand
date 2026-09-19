@@ -185,11 +185,15 @@ class TestPreparedFill:
                 {"name": "hidden", "type": "text", "included": False},
             ],
         )
-        assert prepared.matter_id == scenarios.individual_client().matter_id or True
-        assert prepared.values == {"client_name": "Ada Lovelace"}
+        assert prepared.values == {"client_name": "Ada Lovelace", "first_name": "Ada"}
+        # ``first_name`` fills through a synonym, at reduced confidence.
+        first = prepared.by_variable["first_name"]
+        assert first.provenance["synonym_of"] == "client_first_name"
+        assert first.confidence == 0.9
+        assert first.review_required is True
         # No actor: the preparer family is empty and, being required, reported.
-        assert prepared.missing_required == ["prepared_by", "first_name"]
-        assert prepared.coverage.states["first_name"] == "unbound"
+        assert prepared.missing_required == ["prepared_by"]
+        assert prepared.coverage.states["first_name"] == "name_matched"
         assert prepared.coverage.states["sig"] == "signature"
         assert "hidden" not in prepared.coverage.states
 

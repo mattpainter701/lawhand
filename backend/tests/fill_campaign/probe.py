@@ -11,6 +11,7 @@ produces (or producing something it never declared).
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -22,6 +23,12 @@ def _contact() -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
         display_name="Probe",
+        first_name="Probe",
+        last_name="Person",
+        preferred_name="P.",
+        organization_name="Probe Org",
+        entity_type="person",
+        client_number="C-0",
         email="probe@example.com",
         phone="555-0100",
         address={
@@ -76,6 +83,9 @@ def probe_matter() -> SimpleNamespace:
         venue="Probe County",
         role="plaintiff",
         counterparty="Probe Counterparty",
+        matter_number="PRB0001",
+        practice_area="Probe practice",
+        opened_on=date(2026, 1, 2),
         client=_contact(),
         attorney_of_record=SimpleNamespace(
             id=uuid.uuid4(), full_name="Probe Attorney", email="probe@firm.com"
@@ -85,7 +95,7 @@ def probe_matter() -> SimpleNamespace:
 
 def probe_records(*, parties_per_role: int = 1) -> template_fill_engine.FillRecords:
     parties = []
-    for role in ("plaintiff", "defendant"):
+    for role in template_fill_engine.PARTY_ROLES:
         parties.extend(_party(role) for _ in range(parties_per_role))
     return template_fill_engine.FillRecords(
         matter=probe_matter(),
@@ -101,6 +111,12 @@ def probe_records(*, parties_per_role: int = 1) -> template_fill_engine.FillReco
 
 
 def probe_vocabulary() -> frozenset[str]:
-    """What the old approval probe computed: every key the resolver writes."""
+    """What the old approval probe computed: every key the resolver writes.
 
-    return frozenset(template_fill_engine.collect(probe_records()))
+    Synonyms are a resolver rule rather than a source, so they are added here
+    the same way ``vocabulary`` adds them.
+    """
+
+    return frozenset(template_fill_engine.collect(probe_records())) | frozenset(
+        template_fill_engine.NAME_SYNONYMS
+    )
