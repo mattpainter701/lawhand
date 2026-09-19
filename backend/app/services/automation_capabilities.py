@@ -47,6 +47,7 @@ from app.schemas.workspace_mcp import (
     ProposeDocumentTemplateArgs,
     ProposeMatterDocumentFileArgs,
     ProposeMatterFileArgs,
+    ProposeTaskUpdateArgs,
     SearchClientsArgs,
     SearchFirmMemoryArgs,
     SearchIntakesArgs,
@@ -77,6 +78,41 @@ class CapabilityError(ValueError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def _argument_error_detail(error: dict[str, Any], raw: dict[str, Any]) -> str:
+    """State the actionable size for a length rejection.
+
+    A language model reading a raw Pydantic "received an invalid body" cannot
+    tell whether it overshot by one character or ten thousand, so it retries
+    blindly. Report the submitted length and the limit. Only lengths are
+    echoed; the offending value itself is never copied into the error.
+    """
+
+    error_type = str(error.get("type") or "")
+    context = error.get("ctx") or {}
+    loc = error.get("loc") or ()
+    unit = "characters" if error_type.startswith("string_") else "items"
+    limit = context.get("max_length")
+    if not isinstance(limit, (int, float)):
+        limit = context.get("limit") if error_type in {"too_long", "too_short"} else None
+    actual = context.get("actual_length")
+    if actual is None and len(loc) == 1:
+        value = raw.get(loc[0])
+        if isinstance(value, (str, list, tuple)):
+            actual = len(value)
+    if error_type in {"string_too_long", "too_long", "list_too_long"}:
+        if actual is not None and limit is not None:
+            return f" (value has {actual} {unit}; the limit is {limit})"
+        if limit is not None:
+            return f" (the limit is {limit} {unit})"
+        return " (value is too long)"
+    if error_type in {"string_too_short", "too_short", "list_too_short"}:
+        minimum = context.get("min_length")
+        if isinstance(minimum, (int, float)):
+            return f" (the minimum is {minimum} {unit})"
+        return " (value is too short)"
+    return ""
 
 
 @dataclass(slots=True)
@@ -163,7 +199,8 @@ class CapabilitySpec:
             )
             raise CapabilityError(
                 "invalid_tool_arguments",
-                f"{self.name} received an invalid {location}",
+                f"{self.name} received an invalid {location}"
+                f"{_argument_error_detail(first, raw)}",
             ) from exc
 
     def mcp_annotations(self) -> dict[str, bool]:
@@ -447,12 +484,29 @@ CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
         required_scopes=("matters:read", "tasks:propose"),
     ),
     CapabilitySpec(
+        name="propose_task_update",
+        description=(
+            "Propose a status, assignee, priority, due-date, or note change to an "
+            "existing task on the firm's work board. Creating the proposal is not "
+            "the update: the assigned reviewer approves it, and only then does "
+            "LawHand apply the change. Use search_tasks or get_task to obtain the "
+            "task_id, and state a reason when moving a task to Waiting or cancelling it."
+        ),
+        args_model=ProposeTaskUpdateArgs,
+        handler_name="propose_task_update",
+        effect=CapabilityEffect.PROPOSE,
+        approval_policy=ApprovalPolicy.LAWHAND_REVIEW,
+        required_scopes=("matters:read", "tasks:propose"),
+        audiences=("workspace_mcp",),
+    ),
+    CapabilitySpec(
         name="propose_client_email",
         description=(
             "Draft a client email as reviewable work on the board. The "
             "assigned reviewer edits and approves it; approval sends it. Recipients "
             "must come from list_matter_recipients. Optionally attach an artifact_id "
-            "from list_matter_documents; only the current attorney-approved file is accepted."
+            "from list_matter_documents; only the current attorney-approved file is accepted. "
+            "The body is limited to 20,000 characters."
         ),
         args_model=ProposeClientEmailArgs,
         handler_name="propose_client_email",
@@ -487,7 +541,8 @@ CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
             "Create a versioned DOCX in the tenant's connected cloud matter folder "
             "and assign it as reviewable matter work. Each LawHand edit creates and "
             "verifies a new cloud revision; approval verifies the exact bound bytes "
-            "and does not send the document."
+            "and does not send the document. Markdown body text is limited to "
+            "50,000 characters and to 10 source_ids; split longer briefs."
         ),
         args_model=ProposeMatterDocumentArgs,
         handler_name="propose_matter_document",

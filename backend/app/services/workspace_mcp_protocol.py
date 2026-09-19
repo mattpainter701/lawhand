@@ -119,6 +119,7 @@ _APP_CAPABILITIES_BY_TOOL: dict[str, frozenset[str]] = {
     "list_matter_tasks": frozenset({"manage_matters"}),
     "list_matter_recipients": frozenset({"manage_matters"}),
     "propose_task": frozenset({"manage_matters"}),
+    "propose_task_update": frozenset({"manage_matters"}),
     "propose_client_email": frozenset({"manage_matters"}),
     "propose_client_sms": frozenset({"manage_matters"}),
     "propose_matter_document": frozenset({"manage_matters", "manage_documents"}),
