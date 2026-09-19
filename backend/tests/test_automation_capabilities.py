@@ -1,5 +1,6 @@
 """Contracts shared by matter chat and the future workspace MCP adapter."""
 
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -41,6 +42,7 @@ def test_chat_catalog_stays_stable_and_workspace_adds_lifecycle_tools():
         "propose_matter_document_file",
         "propose_matter_file",
         "propose_document_template",
+        "propose_task_update",
     }
     assert len({spec.name for spec in CAPABILITY_SPECS}) == len(CAPABILITY_SPECS)
 
@@ -139,6 +141,45 @@ def test_capability_contracts_fail_closed_for_invalid_adapter_input():
     with pytest.raises(CapabilityError, match="Tool name must be a string"):
         resolve_capability_spec(None)
     assert capability_catalog(audience="unknown_adapter") == []
+
+
+def test_invalid_argument_errors_name_the_submitted_size_and_limit():
+    spec = resolve_capability_spec("propose_matter_document")
+    matter_id = uuid.uuid4()
+
+    with pytest.raises(CapabilityError) as too_long:
+        spec.parse_arguments(
+            {
+                "matter_id": str(matter_id),
+                "title": "Long brief",
+                "body": "x" * 61_240,
+            }
+        )
+    assert too_long.value.code == "invalid_tool_arguments"
+    assert "61240 characters" in too_long.value.message
+    assert "limit is 50000" in too_long.value.message
+
+    with pytest.raises(CapabilityError) as too_many:
+        spec.parse_arguments(
+            {
+                "matter_id": str(matter_id),
+                "title": "Many citations",
+                "body": "Draft body",
+                "source_ids": [f"source-{index}" for index in range(11)],
+            }
+        )
+    assert "11 items" in too_many.value.message
+    assert "limit is 10" in too_many.value.message
+
+    find = resolve_capability_spec("find_matter")
+    with pytest.raises(CapabilityError) as too_short_string:
+        find.parse_arguments({"query": ""})
+    assert "the minimum is 1 character" in too_short_string.value.message
+
+    context = resolve_capability_spec("get_matter_context")
+    with pytest.raises(CapabilityError) as too_short_list:
+        context.parse_arguments({"matter_id": str(matter_id), "sections": []})
+    assert "the minimum is 1 item" in too_short_list.value.message
 
 
 def test_document_titles_are_normalized_and_cannot_be_paths():

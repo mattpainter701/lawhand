@@ -106,6 +106,47 @@ class GetTaskArgs(ChatActionModel):
     event_limit: int = Field(default=25, ge=1, le=100)
 
 
+class ProposeTaskUpdateArgs(ChatActionModel):
+    """Ask a reviewer to apply a change to an existing work-board task.
+
+    The proposal is itself a review task; approving it runs the deterministic
+    update. At least one change is required so an empty approval cannot happen.
+    """
+
+    matter_id: UUID
+    task_id: UUID
+    status: (
+        Literal[
+            "pending",
+            "in_progress",
+            "waiting",
+            "review",
+            "completed",
+            "cancelled",
+        ]
+        | None
+    ) = None
+    priority: Literal["low", "medium", "high", "urgent"] | None = None
+    due_date: date | None = None
+    assigned_to_user_id: UUID | None = None
+    note: str | None = Field(default=None, max_length=2_000)
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def at_least_one_change(self) -> "ProposeTaskUpdateArgs":
+        if not any(
+            (
+                self.status,
+                self.priority,
+                self.due_date,
+                self.assigned_to_user_id,
+                self.note,
+            )
+        ):
+            raise ValueError("Provide at least one task field to update")
+        return self
+
+
 class GetDocumentTemplateTextArgs(ChatActionModel):
     matter_id: UUID
     template_id: UUID
