@@ -3,6 +3,7 @@ import MatterTransferSettings from './MatterTransferSettings'
 import MatterImportWizard from './MatterImportWizard'
 import MatterDocumentPreview from './documents/MatterDocumentPreview'
 import MatterTemplatePicker from './templates/MatterTemplatePicker'
+import PreparedDocumentsBanner from './documents/PreparedDocumentsBanner'
 import MatterDocumentFacts from './documents/MatterDocumentFacts'
 import { format, parseISO } from 'date-fns'
 import api, {
@@ -231,7 +232,7 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
   )
 }
 
-export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onReviseDocument }) {
+export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onReviseDocument, onPrepareTemplate }) {
   const confirmAction = useConfirm()
   const toast = useToast()
   const explorer = useMatterDocumentExplorer(matterId)
@@ -270,6 +271,8 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     refreshDocuments,
   } = explorer
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateToOpen, setTemplateToOpen] = useState(null)
+  const [prefillVersion, setPrefillVersion] = useState(0)
   const [documentView, setDocumentView] = useState(() => { try { return localStorage.getItem(`document-view:${matterId}`) === 'folder' ? 'folder' : 'detailed' } catch { return 'detailed' } })
   useEffect(() => { try { localStorage.setItem(`document-view:${matterId}`, documentView) } catch { /* Optional preference. */ } }, [matterId, documentView])
   const [filingMode, setFilingMode] = useState('move')
@@ -293,6 +296,20 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
   }, [documentView, folderId, setFolderId, setIncludeSubfolders])
   function selectFolder(value) { if (value === ALL_DOCUMENTS) setDocumentView('detailed'); setFolderId(value) }
   const [previewDocument, setPreviewDocument] = useState(null)
+  // A document saved on the Prepare route lands here with ``?document=`` in
+  // the address so its preview is already open; the query is read once,
+  // after the list loads, and cleared so a reload does not reopen it.
+  useEffect(() => {
+    if (!docs.length) return
+    const params = new URLSearchParams(window.location.search)
+    const wanted = params.get('document')
+    if (!wanted) return
+    params.delete('document')
+    const rest = params.toString()
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`)
+    const match = docs.find((doc) => String(doc.id) === wanted)
+    if (match) setPreviewDocument(match)
+  }, [docs])
   const [filingDocument, setFilingDocument] = useState(null)
   const [cloudFiles, setCloudFiles] = useState(null)
 
@@ -596,7 +613,18 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
         </div>
       </div>
 
-      {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} onClose={() => setTemplateOpen(false)} onSaved={() => { refreshDocuments(); refreshFolders() }} />}
+      <PreparedDocumentsBanner
+        matterId={matterId}
+        version={prefillVersion}
+        onOpen={(templateId) => {
+          // The matter page routes a prepared document to the guided Prepare
+          // route; without that hook (older mounts, tests) the dialog stays.
+          if (onPrepareTemplate) { onPrepareTemplate(templateId, folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId); return }
+          setTemplateToOpen(templateId); setTemplateOpen(true)
+        }}
+      />
+
+      {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} initialTemplateId={templateToOpen} onClose={() => { setTemplateOpen(false); setTemplateToOpen(null) }} onSaved={() => { refreshDocuments(); refreshFolders(); setPrefillVersion((v) => v + 1) }} />}
 
       {/* Folder name entry — create or rename */}
       {folderDraft && (

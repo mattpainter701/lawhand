@@ -1,13 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CalendarClock, CheckCircle2, ClipboardList, FileText, Printer, RefreshCw, Send, Upload } from 'lucide-react'
 import {
-  getProbate, getTemplate, installProbateForms, pullProbateFactsFromIntake,
+  getProbate, installProbateForms, pullProbateFactsFromIntake,
   recomputeProbate, saveProbateAnchors, saveProbateFacts, syncProbateDeadlines,
 } from '../../api'
 import { reportError } from '../../utils/reportError'
+import { buildPrepareTarget } from '../prepare/prepareRouting'
 
-const RenderModal = lazy(() => import('../../pages/TemplatesPage').then(module => ({ default: module.RenderModal })))
 
 const CARD = 'bg-brand-surface border border-brand-line rounded-2xl p-6 shadow-sm'
 const INPUT = 'w-full border border-brand-line rounded-lg px-3 py-2 text-[14px] font-sans text-brand-ink focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent bg-brand-surface'
@@ -291,7 +291,6 @@ export default function ProbateTab({ estate, onChanged }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [generating, setGenerating] = useState(null)
 
   const load = useCallback(async () => {
     try { setState(await getProbate(estate.id)); setError('') }
@@ -317,12 +316,11 @@ export default function ProbateTab({ estate, onChanged }) {
 
   const templateId = useMemo(() => state?.forms?.find(row => row.number && row.template_id)?.template_id, [state])
 
-  async function generate() {
-    if (!templateId) return
-    setBusy(true); setError('')
-    try { setGenerating(await getTemplate(templateId)) }
-    catch (err) { setError('Could not open the packet template.'); reportError(err) }
-    finally { setBusy(false) }
+  // The packet is filled on the Prepare route with this estate's matter
+  // chosen, and comes back here once it is saved to the matter.
+  function generate() {
+    if (!templateId || !estate.matter_id) return
+    navigate(buildPrepareTarget({ templateId, matterId: estate.matter_id, returnTo: `/matters/${estate.matter_id}?tab=documents` }).url)
   }
 
   function sendIntake() {
@@ -366,11 +364,6 @@ export default function ProbateTab({ estate, onChanged }) {
       <Section icon={CalendarClock} title="Deadline clock">
         <Clock state={state} busy={busy} onSaveAnchors={anchors => run(() => saveProbateAnchors(estate.id, anchors), 'Dates saved.')} onBuild={mirror => run(async () => { const result = await syncProbateDeadlines(estate.id, { mirror_tasks: mirror }); const next = await getProbate(estate.id); setNotice(`${result.created.length} deadline(s) created, ${result.updated.length} moved.`); return next })} />
       </Section>
-      {generating && (
-        <Suspense fallback={<p role="status">Opening document editor…</p>}>
-          <RenderModal key={`${estate.matter_id}:${generating.id}`} template={generating} fixedMatterId={estate.matter_id} onSaved={() => { setGenerating(null); onChanged?.() }} onClose={() => setGenerating(null)} />
-        </Suspense>
-      )}
     </div>
   )
 }

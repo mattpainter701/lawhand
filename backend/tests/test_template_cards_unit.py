@@ -43,10 +43,7 @@ class TestCatalogueShape:
         # Two card fields sharing an alias would resolve to the same record
         # while claiming to name different subjects.
         aliases = [
-            item.alias
-            for entry in cards()
-            for item in entry.fields
-            if item.alias
+            item.alias for entry in cards() for item in entry.fields if item.alias
         ]
         assert len(aliases) == len(set(aliases))
 
@@ -63,7 +60,16 @@ class TestCatalogueShape:
             assert entry.max_instances == expected
 
     def test_role_cards_name_a_party_role(self):
-        assert {entry.key for entry in role_cards()} == {"plaintiff", "defendant"}
+        assert {entry.key for entry in role_cards()} == {
+            "plaintiff",
+            "defendant",
+            "petitioner",
+            "respondent",
+            "opposing_party",
+            "counsel",
+            "witness",
+            "expert",
+        }
         assert all(entry.party_role for entry in role_cards())
 
 
@@ -85,7 +91,10 @@ class TestLegacyCompatibility:
 
     def test_canonical_path_translates_without_rewriting(self):
         assert canonical_path("party.defendant.name") == "defendant.full_name"
-        assert canonical_path("party.defendant.names") == f"defendant.{ALL_INSTANCES}.full_name"
+        assert (
+            canonical_path("party.defendant.names")
+            == f"defendant.{ALL_INSTANCES}.full_name"
+        )
         assert canonical_path("client.address.city") == "client.city"
 
     def test_canonical_path_passes_through_unknown_paths(self):
@@ -112,10 +121,15 @@ class TestResolution:
         assert ref.label == "Defendant 2 — Full name"
 
     def test_first_instance_is_addressable_both_ways(self):
-        assert resolve("defendant.1.full_name").field == resolve("defendant.full_name").field
+        assert (
+            resolve("defendant.1.full_name").field
+            == resolve("defendant.full_name").field
+        )
         # …and resolves through the same alias, so the two spellings cannot
         # disagree about which record they name.
-        assert alias_for(resolve("defendant.1.full_name")) == alias_for(resolve("defendant.full_name"))
+        assert alias_for(resolve("defendant.1.full_name")) == alias_for(
+            resolve("defendant.full_name")
+        )
 
     def test_resolves_every_instance(self):
         ref = resolve(f"defendant.{ALL_INSTANCES}.full_name")
@@ -165,7 +179,13 @@ class TestInstanceAliases:
         assert indexed_alias("defendant", 3, entry) == "defendant_3_email"
 
     def test_indexed_aliases_never_collide_with_singular_or_plural(self):
-        reserved = {"defendant_name", "defendant_names", "defendants", "defendant_email", "defendant_phone"}
+        reserved = {
+            "defendant_name",
+            "defendant_names",
+            "defendants",
+            "defendant_email",
+            "defendant_phone",
+        }
         for instance in range(2, MAX_ROLE_INSTANCES + 1):
             for entry in card("defendant").fields:
                 assert indexed_alias("defendant", instance, entry) not in reserved

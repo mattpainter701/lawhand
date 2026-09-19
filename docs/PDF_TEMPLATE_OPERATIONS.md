@@ -61,8 +61,11 @@ regions must be compared with the source before the template is activated.
 9. Download the stored matter document and inspect it before use or signature.
 
 Smart-fill is a suggestion system. It can populate deterministic matter,
-contact, firm, and user values when available, but every suggested value is
-marked for review. It does not make a legal or factual approval decision.
+contact, party, estate, firm, and user values when available, fits a value to
+a choice, checkbox or date field, and marks every suggested value for review.
+It does not make a legal or factual approval decision. How it resolves a
+field, what the quirk campaign found, and how to rerun it are in
+[smart-fill-engine.md](smart-fill-engine.md).
 
 ## OCR provider and privileged documents
 

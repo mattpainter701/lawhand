@@ -720,6 +720,12 @@ def _template_automation_ready(template: DocumentTemplate) -> bool:
     return True
 
 
+#: Public names for the two template checks the document-prefill job shares
+#: with the agent-facing recommender, so both rank and gate the same way.
+template_rank = _template_rank
+template_automation_ready = _template_automation_ready
+
+
 async def list_document_templates(
     context: CapabilityContext, args: ListDocumentTemplatesArgs
 ) -> dict[str, Any]:

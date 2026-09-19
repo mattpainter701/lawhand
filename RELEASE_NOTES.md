@@ -5,6 +5,49 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.19.04 — Send for signature right after you prepare a document
+
+Released September 19, 2026.
+
+A PDF prepared from a template with signature fields now offers Send for signature on the same page, with the matter's client filled in as the signer and the same checks the matter's E-Signature panel applies.
+
+- **A Send step after Save.** When the saved PDF has signature fields, the Prepare page stays open with signers, dates and reminders ready. The client's name and email come from the matter.
+- **One form, wherever you send from.** The matter's E-Signature panel and the Prepare page use the same request form, so placement review, role checks and the signing-plan acknowledgement behave the same.
+- **Word templates with signature fields default to PDF.** Only a PDF can be sent for signature, so a Word template with signature fields is generated as PDF unless you choose the editable Word document, and the page says why.
+
+## 2026.09.19.03 — Prepare a document from Studio, straight into the matter
+
+Released September 19, 2026.
+
+A published template can be taken from Template Studio to a matter in one guided page: choose the matter, review the filled fields and the exact preview, and save it into that matter's documents.
+
+- **Use on a matter, from Studio.** A published template in Studio has a Use on a matter button. It opens a guided page: Template, Matter, Populate, Review, Save. A draft says to publish a tested version first.
+- **Same review, wherever you start.** The page is the Generate dialog's own fill and preview logic, so a document prepared here is reviewed under exactly the same rules before it is saved.
+- **Lands on the matter with the document open.** Saving takes you to the matter's Case Documents with the new document's preview open. Ready-to-review documents and the probate packet open the same page with the matter chosen.
+
+## 2026.09.19.02 — Documents are prepared the moment a matter has data
+
+Released September 19, 2026.
+
+When a matter is created, converted from a lead, or receives intake answers, LawHand fills every published template from it in the background and the matter page shows what is ready to review.
+
+- **Ready to review, without a click.** Case Documents shows how many published templates fill from this matter and how much of each is filled, with what still needs a person. Open one and it is already filled in.
+- **Nothing is generated or sent on its own.** The background run records counts and field names only. Reviewing, previewing and saving a document stay yours, and sending for signature is a separate step.
+- **Refreshes as the matter grows.** A questionnaire coming back or accepted intake updates queue a fresh run. If details changed since the last run, the panel says so; opening a document always fills from live data.
+- **Converted leads count as new matters.** Opening a matter from a lead now fires the same matter-created trigger as creating one directly, so firm workflow rules and document preparation both see it.
+
+## 2026.09.19.01 — Smart Fill reaches more of the matter and fills the right way
+
+Released September 19, 2026.
+
+Document fill reads the client's name parts, the matter number and opening date, and every party role, fits each value to its field, and is proven against mock and real forms before it reaches a page.
+
+- **Letters can open with a first name.** Fields named first_name or last_name, or bound to the client's name parts, organization or client number, fill from the contact record. Name matches are offered for review.
+- **Every party role fills its caption.** Petitioner, respondent, opposing party, counsel, witness and expert rows fill their own fields, as plaintiff and defendant always did. A family caption no longer stays blank.
+- **Values fit their fields.** A state code selects a court form's dropdown option, a yes checks a box, a date field reads MM/DD/YYYY. A value a field cannot hold is left for you rather than forced in.
+- **Matter number and date opened.** The matter's number, practice area and opening date are available to templates by name or binding.
+- **The estate fills by field name.** A probate form field named after an estate value fills with or without a binding; before, it reported as filled and rendered blank.
+
 ## 2026.09.18.01 — North Dakota probate: intake picks the proceeding, forms pre-fill
 
 Released September 18, 2026.

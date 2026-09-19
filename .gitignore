@@ -89,3 +89,6 @@ htmlcov/
 
 # Local archive of removed/questionable files (see review 2026-09)
 _archive/
+
+# Local virtualenv for running the backend suite outside Docker
+backend/.venv/

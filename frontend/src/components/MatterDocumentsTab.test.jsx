@@ -20,6 +20,8 @@ const apiMocks = vi.hoisted(() => ({
   getMatterDocumentDownloadUrl: vi.fn(),
   getMatterDocumentFolders: vi.fn(),
   getMatterDocuments: vi.fn(),
+  getMatterDocumentPrefill: vi.fn().mockResolvedValue(null),
+  getMatterDocumentSigningSource: vi.fn().mockResolvedValue(null),
   moveMatterDocuments: vi.fn(),
   provisionMatterCloudFolder: vi.fn(),
   setMatterDocumentTags: vi.fn(),
@@ -488,5 +490,50 @@ describe('MatterDocumentsTab signing-grant labelling', () => {
     expect(screen.getAllByText('Shared with client').length).toBeGreaterThan(0)
     // The genuinely private document keeps the private label.
     expect(screen.getAllByText('Private').length).toBeGreaterThan(0)
+  })
+})
+
+describe('MatterDocumentsTab prepared documents', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    apiMocks.getMatterDocuments.mockResolvedValue({ items: documents, total: documents.length })
+    apiMocks.getMatterCloudFiles.mockResolvedValue({ files: [] })
+    apiMocks.getMatterCloudFolder.mockResolvedValue(null)
+    apiMocks.getMatterDocumentFolders.mockResolvedValue({ items: folders, total: folders.length, root_document_count: 1 })
+    apiMocks.getDocumentTags.mockResolvedValue({ items: tags, total: tags.length })
+    apiMocks.getMatterDocumentDownloadUrl.mockImplementation((matterId, documentId) => `/api/matters/${matterId}/documents/${documentId}/download`)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/')
+  })
+
+  it('opens the document named in the address once, then clears it from the address', async () => {
+    window.history.replaceState(null, '', '/matters/matter-1?tab=documents&document=pdf-1')
+    renderDocuments()
+    await screen.findAllByText('Filed pleading.pdf')
+    const preview = await screen.findByRole('region', { name: 'Document preview' })
+    expect(preview).toHaveTextContent('Filed pleading.pdf')
+    expect(window.location.search).toBe('?tab=documents')
+  })
+
+  it('routes a prepared document to the Prepare page when the matter page provides the route', async () => {
+    apiMocks.getMatterDocumentPrefill.mockResolvedValue({
+      event_id: 'e', prepared_at: '2026-09-19T10:00:00Z', stale: false, ready: 1,
+      templates: [{ template_id: 't-1', title: 'Fee agreement', status: 'ready', fields: 4, filled: 3, percent: 75, missing_required: 0, review: 0 }],
+    })
+    const onPrepareTemplate = vi.fn()
+    render(
+      <ToastProvider>
+        <ConfirmProvider>
+          <MatterDocumentsTab matterId="matter-1" onReviseDocument={vi.fn()} onPrepareTemplate={onPrepareTemplate} />
+        </ConfirmProvider>
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Review and save' }))
+    expect(onPrepareTemplate).toHaveBeenCalledWith('t-1', null)
+    expect(screen.queryByRole('dialog', { name: 'Attach template' })).not.toBeInTheDocument()
   })
 })

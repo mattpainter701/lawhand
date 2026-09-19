@@ -2105,6 +2105,12 @@ export const removeMatterParty = (matterId, partyId) =>
 
 // ── Matter Documents ────────────────────────────────────────────────────────
 
+// What the last unattended Smart Fill run prepared for this matter: per
+// template, how many fields fill and what still needs a person. Counts and
+// field names only; values are recomputed when a document is opened.
+export const getMatterDocumentPrefill = (matterId) =>
+  api.get(`/matters/${matterId}/document-prefill`).then((r) => r.data)
+
 export const getMatterDocuments = (matterId, params = {}) =>
   api.get(`/matters/${matterId}/documents`, {
     params,

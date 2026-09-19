@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, CircleCheck, Clock3, Eye, FileText, FlaskConical, History, Loader2, Pencil, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CircleCheck, Clock3, Eye, FileText, FlaskConical, History, Loader2, Pencil, Sparkles, FolderInput } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -21,6 +21,7 @@ export default function TemplateStudioWorkspace({
   statusMessage,
   onEdit,
   onGenerate,
+  onUseOnMatter,
   onTest,
   onPublish,
   source,
@@ -81,6 +82,17 @@ export default function TemplateStudioWorkspace({
                 {template.is_active ? <Sparkles size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
                 {template.is_active ? 'Generate' : 'Preview draft'}
               </button>
+              {onUseOnMatter && (
+                <button
+                  type="button"
+                  onClick={onUseOnMatter}
+                  disabled={!template.is_active || sourceMissing || hasChanges}
+                  title={template.is_active ? 'Fill this template from a matter, review it, and save it there' : 'Publish a tested version first.'}
+                  className="inline-flex items-center gap-2 rounded-lg border border-brand-accent px-3 py-2 text-sm font-semibold text-brand-ink disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FolderInput size={16} aria-hidden="true" /> Use on a matter
+                </button>
+              )}
               {template.published_version_no !== template.current_version_no && template.tested_version_no === template.current_version_no && template.current_version_no > 0 && (
                 <button type="button" onClick={onPublish} disabled={hasChanges} className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
                   <CircleCheck size={16} aria-hidden="true" /> Publish tested version

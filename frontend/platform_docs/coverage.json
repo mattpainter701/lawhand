@@ -76,6 +76,11 @@
       "chapter": "document-automation-and-esignature"
     },
     {
+      "id": "template-prepare",
+      "route": "/templates/prepare",
+      "chapter": "document-automation-and-esignature"
+    },
+    {
       "id": "contacts",
       "route": "/contacts",
       "chapter": "contacts-and-client-relationships"

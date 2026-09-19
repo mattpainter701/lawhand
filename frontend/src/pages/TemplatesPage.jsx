@@ -1,18 +1,17 @@
-import { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useId, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useLocation, useNavigate } from 'react-router-dom'
 import TemplateStudioHome from '../components/templates/TemplateStudioHome'
 import TemplateStudioWorkspace from '../components/templates/TemplateStudioWorkspace'
 import WordImportWorkspace from '../components/templates/WordImportWorkspace'
-import TemplateTestSummary from '../components/templates/TemplateTestSummary'
-import TemplateFactReview from '../components/templates/TemplateFactReview'
-import TemplateFillProgress from '../components/templates/TemplateFillProgress'
-import TemplateFillSource from '../components/templates/TemplateFillSource'
-import GeneratedPdfPreview from '../components/templates/GeneratedPdfPreview'
-import { applyFillSuggestions, discoverySuggestions, fillReview, fillValue, initialFillValues, isSigningField, suggestionConfidenceLabel } from '../components/templates/templateFillReview'
+import {} from '../components/templates/templateFillReview'
 import TemplateFieldLibrary from '../components/templates/TemplateFieldLibrary'
 import useBindingCatalogue from '../components/templates/useBindingCatalogue'
 import { buildOpenStudioTarget, canonicalStudioServerId, OPEN_STUDIO_EVENT, readStudioFocus } from '../components/templates/studioRouting'
+import usePrepareFill from '../components/prepare/usePrepareFill'
+import { buildPrepareTarget } from '../components/prepare/prepareRouting'
+import PrepareDocumentBody from '../components/prepare/PrepareDocumentBody'
+import { downloadRenderedText, getErrorMessage, getTemplateVariables } from '../components/prepare/prepareHelpers'
 import {
   getTemplate,
   getTemplateSource,
@@ -25,12 +24,7 @@ import {
   updateTemplate,
   publishTemplate,
   deleteTemplate,
-  renderTemplate,
-  renderTemplateFile,
   getMattersV2,
-  discoverTemplateVariables,
-  getMatterDocumentDownloadUrl,
-  triggerBlobDownload,
 } from '../api'
 import {
   FileText,
@@ -38,7 +32,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Send,
   Eye,
   Sparkles,
   Check,
@@ -100,43 +93,12 @@ const formatUpdatedAt = (value) => {
 
 const normalizeItems = (data) => (Array.isArray(data) ? data : (data?.items || []))
 
-const getErrorMessage = (err, fallback) => (
-  err?.response?.data?.detail || err?.message || fallback
-)
-
-const getTemplateVariables = (template) => {
-  const matches = template?.body?.match(/\{\{(.+?)\}\}/g) || []
-  const schemaFields = template?.variable_schema?.fields || []
-  const excludedNames = new Set(schemaFields
-    .filter((field) => field?.included === false)
-    .map((field) => field?.name)
-    .filter(Boolean))
-  const bodyNames = matches
-    .map((m) => m.slice(2, -2).trim())
-    .filter((name) => name && !excludedNames.has(name))
-  const schemaNames = schemaFields
-    .filter((field) => field?.included !== false)
-    .map((field) => field?.name)
-    .filter(Boolean)
-  return [...new Set([...bodyNames, ...schemaNames])]
-}
-
-const friendlyVariableLabel = (name) => name
-  .replace(/[_-]+/g, ' ')
-  .replace(/\b\w/g, (c) => c.toUpperCase())
-
 const CAPTION_VARIABLE_HELP = (
   <>
     Caption fields use matter parties: <code>{'{{plaintiff_name}}'}</code> and <code>{'{{defendant_name}}'}</code> use the primary contact for that role;
     {' '}<code>{'{{plaintiff_names}}'}</code> and <code>{'{{defendant_names}}'}</code> include the primary first, then every remaining listed contact.
   </>
 )
-
-const formatMatterLabel = (matter) => {
-  if (!matter) return ''
-  const name = matter.matter_name || matter.title || matter.name || 'Untitled matter'
-  return [name, matter.client_name, matter.practice_area, matter.status].filter(Boolean).join(' - ')
-}
 
 const IMAGE_SAMPLE_PATTERN = /\.(png|jpe?g|tiff?|webp)$/i
 const isImageSample = (sample) => Boolean(
@@ -418,11 +380,6 @@ const workspaceFieldIdentity = (field, index = 0) => (
   || field?._bodyName
   || `${field?.name || 'field'}:${index}`
 )
-
-export const downloadRenderedText = (rendered, title) => {
-  const filename = `${String(title || 'generated-document').replace(/[^a-z0-9._-]+/gi, '_')}.md`
-  triggerBlobDownload(new Blob([String(rendered || '')], { type: 'text/markdown;charset=utf-8' }), filename)
-}
 
 function replaceSourceText(body, sourceText, token) {
   // Existing placeholders are template instructions, not sample wording.
@@ -1161,460 +1118,11 @@ function UploadTemplateForm({ onCreated, onCancel }) {
   )
 }
 
-function MatterPicker({ matters, selectedMatterId, onSelect, loading, disabled = false }) {
-  const [query, setQuery] = useState('')
-  const [choosing, setChoosing] = useState(false)
-  const selected = matters.find((matter) => matter.id === selectedMatterId)
-  const filtered = matters.filter((matter) => {
-    const q = query.trim().toLowerCase()
-    if (!q) return true
-    return (
-      matter.matter_name?.toLowerCase().includes(q) ||
-      matter.client_name?.toLowerCase().includes(q) ||
-      matter.practice_area?.toLowerCase().includes(q) ||
-      matter.id?.toLowerCase().includes(q)
-    )
-  }).slice(0, 8)
-
-  if (selected && !choosing) return <div className="flex items-center justify-between gap-3 rounded border border-brand-line bg-brand-bg px-3 py-2 text-sm">
-    <span className="min-w-0 truncate"><span className="mr-2 text-brand-muted">Matter</span>{formatMatterLabel(selected)}</span>
-    <button type="button" disabled={disabled} onClick={() => setChoosing(true)} className="shrink-0 rounded border border-brand-line px-2 py-1 text-xs">Change matter</button>
-  </div>
-
-  return (
-    <div className="border border-brand-line rounded bg-brand-bg p-3">
-      <label htmlFor="templatespage-matter" className="block text-sm font-medium text-brand-ink mb-2">
-        Matter
-      </label>
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-2.5 text-brand-muted" />
-        <input id="templatespage-matter"
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          disabled={disabled}
-          className="w-full pl-9 pr-3 py-2 border border-brand-line rounded text-sm bg-brand-surface-2 text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-          placeholder={loading ? 'Loading matters...' : 'Search by matter, client, or practice area'}
-        />
-      </div>
-      {selected && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-xs bg-brand-surface-2 border border-brand-line rounded px-3 py-2">
-          <span className="text-brand-ink truncate">{formatMatterLabel(selected)}</span>
-          <button
-            type="button"
-            onClick={() => onSelect('')}
-            disabled={disabled}
-            className="text-brand-muted hover:text-brand-ink"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-      <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
-        {filtered.map((matter) => (
-          <button
-            key={matter.id}
-            type="button"
-            onClick={() => { onSelect(matter.id); setChoosing(false) }}
-            disabled={disabled}
-            className={`w-full text-left px-3 py-2 rounded border text-sm transition-colors ${
-              selectedMatterId === matter.id
-                ? 'border-brand-accent bg-brand-accent/10 text-brand-ink'
-                : 'border-transparent hover:border-brand-line hover:bg-brand-surface-2 text-brand-ink'
-            }`}
-          >
-            <span className="block font-medium truncate">{matter.matter_name || 'Untitled matter'}</span>
-            <span className="block text-xs text-brand-muted truncate">
-              {[matter.client_name, matter.practice_area, matter.status].filter(Boolean).join(' - ') || matter.id}
-            </span>
-          </button>
-        ))}
-        {!loading && filtered.length === 0 && (
-          <p className="text-xs text-brand-muted px-1 py-2">
-            No matching matters. Paste a matter UUID below if needed.
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
+export { downloadRenderedText }
 
 export function RenderModal({ template, matters = [], matterLoading = false, onClose, fixedMatterId, folderId, onSaved }) {
-  const [variables, setVariables] = useState({})
-  const [matterId, setMatterId] = useState(fixedMatterId || '')
-  const [rendered, setRendered] = useState(null)
-  const [matterDocId, setMatterDocId] = useState(null)
-  const [savedDownloadUrl, setSavedDownloadUrl] = useState('')
-  const [outputFilename, setOutputFilename] = useState('')
-  const [outputFormat, setOutputFormat] = useState('')
-  const [storageBackend, setStorageBackend] = useState('')
-  const [storageWarning, setStorageWarning] = useState('')
-  const [filePreview, setFilePreview] = useState(null)
-  const [filePreviewUrl, setFilePreviewUrl] = useState('')
-  const [previewId, setPreviewId] = useState('')
-  const [previewPurpose, setPreviewPurpose] = useState('')
-  const [convertDocxToPdf, setConvertDocxToPdf] = useState(false)
-  const [rendering, setRendering] = useState(false)
-  const [renderPurpose, setRenderPurpose] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState(null)
-  const [smartFillState, setSmartFillState] = useState('idle')
-  const [smartFillMessage, setSmartFillMessage] = useState('')
-  const [fieldSources, setFieldSources] = useState({})
-  const [latestSuggestions, setLatestSuggestions] = useState({})
-  const [reviewedValues, setReviewedValues] = useState({})
-  const [fieldFilter, setFieldFilter] = useState('all')
-  const [focusedFillName, setFocusedFillName] = useState(null)
-  const pendingFocus = useRef(null)
-  const previewRequestGenerationRef = useRef(0)
-  const smartFillRequestGenerationRef = useRef(0)
-  const formRevisionRef = useRef(0)
-  const smartFillRef = useRef(null)
-  const smartFillAutoKeyRef = useRef('')
-
-  const names = useMemo(() => getTemplateVariables(template), [template])
-  const fieldDefinitions = useMemo(() => Object.fromEntries(
-    (template?.variable_schema?.fields || [])
-      .filter((field) => field?.name && field?.included !== false)
-      .map((field) => [field.name, field]),
-  ), [template])
-  const isPdfTemplate = String(template?.format || '').toLowerCase() === 'pdf'
-  const isDocxTemplate = String(template?.format || '').toLowerCase() === 'docx' && Boolean(template?.source_sha256)
-  const isFileTemplate = isPdfTemplate || isDocxTemplate
-  const isPdfOutput = isPdfTemplate || (isDocxTemplate && convertDocxToPdf)
-  const canSaveToMatter = Boolean(template?.is_active)
-  const fillableNames = useMemo(
-    () => names.filter((name) => !isSigningField(fieldDefinitions[name]) && !fieldDefinitions[name]?.value_from),
-    [names, fieldDefinitions],
-  )
-  const progress = fillReview(names, fieldDefinitions, variables, fieldSources, reviewedValues)
-  const hasFirmFields = fillableNames.some(name => fieldDefinitions[name]?.binding?.startsWith('firm.'))
-  const filteredNames = fieldFilter === 'all' ? names : (fieldFilter === 'remaining' ? progress.remaining : progress.review).map(row => row.name)
-  // Keep the current input mounted until the reviewer moves on; typing the
-  // first character must not remove it from a missing-only queue.
-  const visibleNames = focusedFillName && !filteredNames.includes(focusedFillName) ? [...filteredNames, focusedFillName] : filteredNames
-  const lastAttentionField = useRef(null)
-  const nextField = () => {
-    const missing = [...progress.remaining].sort((a, b) => Number(Boolean(fieldDefinitions[b.name]?.required)) - Number(Boolean(fieldDefinitions[a.name]?.required)))
-    const queue = fieldFilter === 'review' ? progress.review : fieldFilter === 'remaining' ? missing : [...missing, ...progress.review]
-    const index = queue.findIndex(row => row.name === lastAttentionField.current)
-    const name = queue[(index + 1) % queue.length]?.name
-    if (!name) return
-    lastAttentionField.current = name
-    const input = document.getElementById(`template-variable-${name}`)
-    input?.scrollIntoView?.({ block: 'center' })
-    input?.focus({ preventScroll: true })
-  }
-  useEffect(() => {
-    if (pendingFocus.current) {
-      document.getElementById(`template-variable-${pendingFocus.current}`)?.focus()
-      pendingFocus.current = null
-    }
-  }, [fieldFilter])
-  const requiredUnresolvedNames = fillableNames.filter((name) => {
-    const field = fieldDefinitions[name]
-    if (!field?.required) return false
-    if (field.field_type === 'checkbox') return variables[name] !== 'true'
-    return !String(variables[name] || '').trim()
-  })
-  const optionalUnfilledNames = fillableNames.filter((name) => {
-    const field = fieldDefinitions[name]
-    if (field?.required) return false
-    if (field?.field_type === 'checkbox') return variables[name] === ''
-    return !String(variables[name] || '').trim()
-  })
-  const activationUnresolvedNames = fillableNames.filter((name) => (
-    fieldDefinitions[name]?.field_type !== 'checkbox'
-    && !String(variables[name] || '').trim()
-  ))
-
-  useEffect(() => {
-    setVariables(initialFillValues(fillableNames, fieldDefinitions))
-    setFieldSources({})
-    setLatestSuggestions({})
-    setReviewedValues({})
-    setFieldFilter('all')
-    setFocusedFillName(null)
-    lastAttentionField.current = null
-    setSaved(false)
-    setRendered(null)
-    setMatterDocId(null)
-    setSavedDownloadUrl('')
-    setOutputFilename('')
-    setOutputFormat('')
-    setStorageBackend('')
-    setStorageWarning('')
-    setFilePreview(null)
-    setFilePreviewUrl('')
-    setPreviewId('')
-    setPreviewPurpose('')
-    previewRequestGenerationRef.current += 1
-    smartFillRequestGenerationRef.current += 1
-    formRevisionRef.current += 1
-  }, [fillableNames, fieldDefinitions])
-
-  useEffect(() => () => {
-    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl)
-  }, [filePreviewUrl])
-
-  useEffect(() => () => {
-    previewRequestGenerationRef.current += 1
-    smartFillRequestGenerationRef.current += 1
-  }, [])
-
-  const invalidatePreview = () => {
-    previewRequestGenerationRef.current += 1
-    smartFillRequestGenerationRef.current += 1
-    formRevisionRef.current += 1
-    setRendered(null)
-    setFilePreview(null)
-    setFilePreviewUrl('')
-    setPreviewId('')
-    setPreviewPurpose('')
-    setRendering(false)
-    setOutputFilename('')
-    setOutputFormat('')
-  }
-
-  const setVariable = (name, value) => {
-    setSaved(false)
-    invalidatePreview()
-    setFieldSources(prev => { const next = { ...prev }; delete next[name]; return next })
-    setVariables((prev) => {
-      const next = { ...prev, [name]: value }
-      const choice = fieldDefinitions[name]?.docx_choice
-      if (choice?.exclusive && value === 'true') {
-        for (const [other, field] of Object.entries(fieldDefinitions)) {
-          if (other !== name && field.docx_choice?.group === choice.group) next[other] = 'false'
-        }
-      }
-      for (const [other, field] of Object.entries(fieldDefinitions)) {
-        if (field.value_from) next[other] = next[field.value_from] || ''
-      }
-      return next
-    })
-  }
-
-  const selectMatter = (id) => {
-    setFocusedFillName(null)
-    lastAttentionField.current = null
-    if (id === matterId) return
-    setMatterId(id)
-    setVariables(initialFillValues(fillableNames, fieldDefinitions))
-    setFieldSources({})
-    setLatestSuggestions({})
-    setReviewedValues({})
-    setSmartFillState('idle')
-    setSmartFillMessage('')
-    setSaved(false)
-    setMatterDocId(null)
-    setSavedDownloadUrl('')
-    invalidatePreview()
-  }
-
-  const handleSmartFill = async () => {
-    if (!matterId.trim() && !hasFirmFields) {
-      setSmartFillState('error')
-      setSmartFillMessage('Choose a matter before smart fill.')
-      return
-    }
-    const requestGeneration = smartFillRequestGenerationRef.current + 1
-    smartFillRequestGenerationRef.current = requestGeneration
-    const requestRevision = formRevisionRef.current
-    const requestMatterId = matterId.trim() || null
-    setSmartFillState('loading')
-    setSmartFillMessage('')
-    try {
-      const res = await discoverTemplateVariables(template.id, {
-        matter_id: requestMatterId,
-        published: Boolean(template.is_active),
-        variables: fillableNames,
-      })
-      if (
-        smartFillRequestGenerationRef.current !== requestGeneration
-        || formRevisionRef.current !== requestRevision
-      ) {
-        setSmartFillState('idle')
-        setSmartFillMessage('Smart-fill results were not applied because the matter or fields changed. Run Smart Fill again if needed.')
-        return
-      }
-      const discovered = discoverySuggestions(res)
-      if (Object.keys(discovered).length === 0) {
-        setSmartFillState('empty')
-        setSmartFillMessage('No smart-fill values were returned for this template yet.')
-        return
-      }
-      const applied = applyFillSuggestions(fillableNames, fieldDefinitions, variables, fieldSources, discovered)
-      setLatestSuggestions(discovered)
-      setFieldSources(applied.sources)
-      setVariables(applied.values)
-      invalidatePreview()
-      setSaved(false)
-      setSmartFillState('ready')
-      setSmartFillMessage('Available values refreshed. Your entries were kept.')
-    } catch (err) {
-      if (smartFillRequestGenerationRef.current !== requestGeneration) return
-      if ([404, 405, 501].includes(err?.response?.status)) {
-        setSmartFillState('unavailable')
-        setSmartFillMessage('Smart fill is not enabled on this server yet. Manual fields are ready for review.')
-      } else {
-        setSmartFillState('error')
-        setSmartFillMessage(getErrorMessage(err, 'Smart fill failed.'))
-      }
-    }
-  }
-
-  // Keep the latest closure for the auto-fill effect without making it a
-  // dependency that would re-run it on every keystroke.
-  useEffect(() => { smartFillRef.current = handleSmartFill })
-
-  // Auto-fill the moment there is a record to fill from: a template opened
-  // from inside a matter (fixedMatterId) arrives already populated, and
-  // choosing a matter in this dialog fills it without a second click. The
-  // manual button stays as the explicit refresh. One pass per matter keeps a
-  // late response from clobbering edits the reviewer has since typed.
-  useEffect(() => {
-    if (saving || !fillableNames.length) return
-    const hasMatter = Boolean(matterId.trim())
-    if (!hasMatter && !hasFirmFields) {
-      smartFillAutoKeyRef.current = ''
-      return
-    }
-    const key = `${template?.id || ''}:${matterId.trim()}`
-    if (smartFillAutoKeyRef.current === key) return
-    smartFillAutoKeyRef.current = key
-    smartFillRef.current?.()
-  }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving])
-
-  const handleRender = async (requestedPdfPurpose = null) => {
-    const previewPurpose = requestedPdfPurpose || (canSaveToMatter ? 'generation' : 'draft')
-    if (isPdfOutput && canSaveToMatter && !matterId.trim()) {
-      setError('Choose the destination matter before previewing the exact PDF values for save.')
-      return
-    }
-    if (isPdfTemplate && previewPurpose === 'activation' && activationUnresolvedNames.length > 0) {
-      setError(`Enter representative values for every non-signature PDF field before the activation preview. Missing: ${activationUnresolvedNames.join(', ')}.`)
-      return
-    }
-    const requestGeneration = previewRequestGenerationRef.current + 1
-    previewRequestGenerationRef.current = requestGeneration
-    const requestVariables = { ...variables }
-    const requestMatterId = isPdfOutput && canSaveToMatter ? matterId.trim() : null
-    setRendering(true)
-    setRenderPurpose(previewPurpose)
-    setError(null)
-    try {
-      const payload = {
-        variables: requestVariables,
-        matter_id: requestMatterId,
-        preview_purpose: previewPurpose,
-        ...(isDocxTemplate ? { convert_to_pdf: convertDocxToPdf } : {}),
-      }
-      if (isFileTemplate) {
-        const result = await renderTemplateFile(template.id, payload)
-        const nextUrl = URL.createObjectURL(result.blob)
-        if (previewRequestGenerationRef.current !== requestGeneration) {
-          URL.revokeObjectURL(nextUrl)
-          return
-        }
-        if (isPdfOutput && !result.previewId) {
-          URL.revokeObjectURL(nextUrl)
-          throw new Error('The server did not return PDF preview evidence. Preview again before saving or activating.')
-        }
-        if (isPdfOutput && result.previewPurpose !== previewPurpose) {
-          URL.revokeObjectURL(nextUrl)
-          throw new Error('The server returned preview evidence for a different review purpose. Preview again.')
-        }
-        setFilePreview({ blob: result.blob, filename: result.filename, contentType: result.contentType })
-        setFilePreviewUrl(nextUrl)
-        setPreviewId(result.previewId)
-        setPreviewPurpose(result.previewPurpose)
-        setOutputFilename(result.filename)
-        setOutputFormat(isPdfOutput ? 'pdf' : 'docx')
-        setRendered(null)
-      } else {
-        const res = await renderTemplate(template.id, payload)
-        if (previewRequestGenerationRef.current !== requestGeneration) return
-        setRendered(res.rendered)
-        setFilePreview(null)
-        setFilePreviewUrl('')
-      }
-      setMatterDocId(null)
-      setSaved(false)
-    } catch (err) {
-      if (previewRequestGenerationRef.current === requestGeneration) {
-        setError(getErrorMessage(err, 'Render failed.'))
-      }
-    } finally {
-      if (previewRequestGenerationRef.current === requestGeneration) {
-        setRendering(false)
-      }
-    }
-  }
-
-  const handleSave = async () => {
-    if (!matterId.trim()) return
-    if (!canSaveToMatter) {
-      setError('Activate this template after verifying its preview before saving a generated document to a matter.')
-      return
-    }
-    if (requiredUnresolvedNames.length > 0) {
-      setError(`Complete ${requiredUnresolvedNames.length} required field${requiredUnresolvedNames.length === 1 ? '' : 's'} before saving.`)
-      return
-    }
-    if (isPdfOutput && !previewId) {
-      setError('Preview the exact current PDF values for this matter before saving.')
-      return
-    }
-    if (isDocxTemplate && !filePreview) {
-      setError('Download and review the current Word preview before saving it to the matter.')
-      return
-    }
-    if (smartFillState === 'loading') {
-      setError('Wait for Smart Fill to finish, or change a field to discard it, before saving.')
-      return
-    }
-    const saveRevision = formRevisionRef.current
-    const saveVariables = { ...variables }
-    const saveMatterId = matterId.trim()
-    const savePreviewId = previewId
-    smartFillRequestGenerationRef.current += 1
-    setSaving(true)
-    setError(null)
-    setStorageWarning('')
-    try {
-      const res = await renderTemplate(template.id, {
-        variables: saveVariables,
-        matter_id: saveMatterId,
-        ...(folderId ? { folder_id: folderId } : {}),
-        ...(isDocxTemplate ? { convert_to_pdf: convertDocxToPdf } : {}),
-        ...(isPdfOutput ? { preview_id: savePreviewId } : {}),
-      })
-      if (formRevisionRef.current !== saveRevision) {
-        setError('The form changed while the save was in flight, so this response was not marked Saved. Review the matter document before continuing.')
-        return
-      }
-      setError(null)
-      if (!isPdfOutput) setRendered(res.rendered || rendered)
-      setSavedDownloadUrl(res.download_url || '')
-      setOutputFilename(res.output_filename || res.filename || outputFilename || '')
-      setOutputFormat(res.output_format || res.format || (isPdfOutput ? 'pdf' : 'markdown'))
-      setStorageBackend(res.storage_backend || '')
-      setStorageWarning(res.storage_warning || '')
-      if (res.matter_document_id) {
-        setMatterDocId(res.matter_document_id)
-        setSaved(true)
-        onSaved?.(res)
-      } else {
-        setError('The server rendered the text but did not return a saved matter document.')
-      }
-    } catch (err) {
-      setError(getErrorMessage(err, 'Save failed.'))
-    } finally {
-      setSaving(false)
-    }
-  }
+  const fill = usePrepareFill({ template, initialMatterId: fixedMatterId, folderId, onSaved })
+  const { canSaveToMatter, isPdfOutput, isDocxTemplate, saving, setError } = fill
 
   const handleClose = () => {
     if (saving) {
@@ -1626,351 +1134,7 @@ export function RenderModal({ template, matters = [], matterLoading = false, onC
 
   return (
     <Modal title={`${canSaveToMatter ? (isPdfOutput ? 'Generate PDF' : isDocxTemplate ? 'Generate Word Document' : 'Generate Document') : 'Preview Draft'}: ${template.title}`} onClose={handleClose} wide>
-      <div className="grid gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]"><div className="space-y-4 lg:max-h-[78vh] lg:overflow-y-auto lg:pr-2">
-        {error && (
-          <div className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">
-            {canSaveToMatter ? error : 'The test needs attention. See the results below for the exact issue.'}
-          </div>
-        )}
-
-        {!canSaveToMatter && (
-          <div role="status" className="text-sm text-brand-amber bg-brand-amber/10 border border-brand-amber/30 px-3 py-2">
-            Draft preview. Test and publish before saving to a matter.
-          </div>
-        )}
-
-        {fixedMatterId ? <p className="text-sm font-semibold">Saving to this matter</p> : <><MatterPicker
-          matters={matters}
-          selectedMatterId={matterId}
-          onSelect={selectMatter}
-          loading={matterLoading}
-          disabled={saving}
-        />
-
-
-        <details>
-          <summary className="cursor-pointer text-xs text-brand-muted">Find a matter by ID</summary>
-          <label htmlFor="templatespage-matter-uuid-fallback" className="block text-xs font-medium text-brand-muted mb-0.5">
-            Matter UUID fallback
-          </label>
-          <input id="templatespage-matter-uuid-fallback"
-            type="text"
-            value={matterId}
-            onChange={(e) => selectMatter(e.target.value)}
-            disabled={saving}
-            className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent font-mono"
-            placeholder="Paste matter UUID if the matter is not listed"
-          />
-        </details>
-
-        </>}
-
-        {names.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-brand-line rounded bg-brand-bg px-3 py-2">
-            <div>
-              <p className="text-sm font-medium text-brand-ink">Smart fill</p>
-              <p className="text-xs text-brand-muted">
-                {hasFirmFields ? 'Uses shared firm details and the selected matter.' : 'Uses the selected matter.'} Your entries are kept on refresh.
-              </p>
-            </div>
-            <button
-              onClick={handleSmartFill}
-              disabled={saving || smartFillState === 'loading' || (!matterId.trim() && !hasFirmFields)}
-              className="flex shrink-0 items-center justify-center gap-2 whitespace-nowrap px-3 py-2 text-sm text-brand-ink border border-brand-line rounded hover:bg-brand-surface-2 disabled:opacity-50"
-            >
-              <Wand2 size={15} />
-              {smartFillState === 'loading' ? 'Filling...' : smartFillState === 'ready' ? (matterId.trim() ? 'Refresh matter values' : 'Refresh firm values') : 'Smart Fill'}
-            </button>
-          </div>
-        )}
-
-        {(matterId.trim() || hasFirmFields) && <div className="rounded border border-brand-line bg-brand-bg p-3 text-xs">
-          <p className="font-semibold">Correct the source once</p>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {matterId.trim() && <a href={`/matters/${encodeURIComponent(matterId.trim())}`} target="_blank" rel="noreferrer" className="underline">Open matter details (new tab)</a>}
-            {hasFirmFields && <a href="/admin?tab=firm" target="_blank" rel="noreferrer" className="underline">Open firm settings (new tab)</a>}
-          </div>
-          <p className="mt-2 text-brand-muted">Keep this document open. After saving changes to the source, return and refresh values. Your entries stay intact; changed suggestions are yours to accept. Firm changes require an administrator.</p>
-        </div>}
-
-        <TemplateFactReview matterId={matterId.trim()} fields={Object.values(fieldDefinitions)} onAccepted={() => { setFieldSources({}); invalidatePreview() }} />
-        {smartFillMessage && (
-          <div className={`text-sm border px-3 py-2 ${
-            smartFillState === 'ready'
-              ? 'text-brand-green bg-brand-green/10 border-brand-green/30'
-              : smartFillState === 'error'
-                ? 'text-brand-rose bg-brand-rose/10 border-brand-rose/30'
-                : 'text-brand-muted bg-brand-bg border-brand-line'
-          }`}>
-            {smartFillMessage}
-          </div>
-        )}
-
-        {names.length > 0 && (
-          <div>
-            <div className="sticky top-0 z-20 bg-brand-surface pb-2">
-              <TemplateFillProgress progress={progress} requiredMissing={requiredUnresolvedNames.length} filter={fieldFilter} onFilter={value => { lastAttentionField.current = null; setFocusedFillName(null); setFieldFilter(value) }} onNext={nextField} />
-            </div>
-            <h3 className="text-sm font-medium text-brand-ink mb-2">
-              Fields
-            </h3>
-            <div className="space-y-2">
-              {visibleNames.map((name) => {
-                const field = fieldDefinitions[name] || {}
-                const review = progress.rows.find(row => row.name === name)
-                const changedSuggestion = latestSuggestions[name]?.suggested_value != null && fillValue(latestSuggestions[name].suggested_value) !== fillValue(variables[name]) ? latestSuggestions[name] : null
-                const fieldType = field.field_type || 'text'
-                const signingField = isSigningField(field)
-                const label = field.label || friendlyVariableLabel(name)
-                const inputId = `template-variable-${name}`
-                const options = (field.options || []).map((option) => (
-                  typeof option === 'object'
-                    ? { value: option.value ?? option.name ?? option.label ?? '', label: option.label ?? option.name ?? option.value ?? '' }
-                    : { value: option, label: option }
-                ))
-                return (
-                <div key={name} onFocus={() => setFocusedFillName(name)} className={signingField ? 'border border-brand-line rounded bg-brand-bg px-3 py-2' : ''}>
-                  {signingField ? (
-                    <p className="block text-xs font-medium text-brand-muted mb-0.5">
-                      {label}
-                    </p>
-                  ) : (
-                    <label htmlFor={inputId} className="block text-xs font-medium text-brand-muted mb-0.5">
-                      {label}{field.required ? ' *' : ''}
-                    </label>
-                  )}
-                  {review && !review.present && <p className={`mb-1 text-xs font-semibold ${field.required ? 'text-brand-rose' : 'text-brand-amber'}`}>{field.required ? 'Required — missing' : 'Optional — not filled'}</p>}
-                  {fieldSources[name] && <p className="mb-1 text-xs text-brand-muted">{fieldSources[name].suggested_value == null ? 'Missing: review or enter a value' : `From ${fieldSources[name].provenance?.binding_label || fieldSources[name].source_type || 'record'} · verify current accuracy`}{fieldSources[name].provenance?.updated_at ? ` · Updated ${new Date(fieldSources[name].provenance.updated_at).toLocaleDateString()}` : ''}</p>}
-                  {field.binding?.startsWith('firm.') && <p className="mb-1 text-xs text-brand-muted">Shared firm profile. Missing or outdated details can be updated once by a firm administrator in Firm settings, then refreshed here with Smart Fill.</p>}
-                  {fieldSources[name]?.provenance?.source_document_id && <a className="block mb-1 text-xs underline" href={getMatterDocumentDownloadUrl(matterId, fieldSources[name].provenance.source_document_id)} target="_blank" rel="noreferrer">Open reviewed source document</a>}
-                  {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span>{suggestionConfidenceLabel(review)}</span>
-                    {review.needsReview ? <button type="button" disabled={saving} className="rounded border border-brand-line px-2 py-1" onClick={() => setReviewedValues(prev => ({ ...prev, [name]: fillValue(variables[name]) }))}>Confirm {label}</button> : <span className="text-brand-green">Reviewed</span>}
-                  </div>}
-                  {changedSuggestion && <div className="mb-2 rounded border border-brand-amber/40 bg-brand-amber/10 p-2 text-xs">
-                    <p>{changedSuggestion.source_type === 'firm_profile' ? 'Firm profile now suggests' : 'Matter now suggests'}: {fillValue(changedSuggestion.suggested_value)}</p>
-                    <button type="button" disabled={saving} className="mt-1 rounded border border-brand-line px-2 py-1" onClick={() => { setVariable(name, fillValue(changedSuggestion.suggested_value)); setFieldSources(prev => ({ ...prev, [name]: changedSuggestion })); setReviewedValues(prev => ({ ...prev, [name]: undefined })) }}>Use updated {label}</button>
-                  </div>}
-                  {field.value_from ? <p id={inputId} className="text-sm text-brand-muted">Uses {fieldDefinitions[field.value_from]?.label || field.value_from}</p> : signingField ? (
-                    <p className="text-sm text-brand-muted">
-                      {fieldType === 'date' ? `Signing date is completed by ${field.signer_role} during e-signing.` : 'Signature area is left blank for signing; it is not populated during document generation.'}
-                      {field.pdf_field_name ? ` PDF field: ${field.pdf_field_name}.` : ''}
-                    </p>
-                  ) : fieldType === 'checkbox' ? (
-                    <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1">
-                      <input
-                        id={inputId}
-                        type="checkbox"
-                        checked={variables[name] === 'true'}
-                        onChange={(e) => setVariable(name, e.target.checked ? 'true' : 'false')}
-                        disabled={saving}
-                        className="h-4 w-4 rounded border-brand-line text-brand-accent focus:ring-brand-accent"
-                      />
-                      Checked
-                    </label>
-                  ) : (fieldType === 'choice' || fieldType === 'radio') && options.length > 0 ? (
-                    <select
-                      id={inputId}
-                      value={variables[name] || ''}
-                      onChange={(e) => setVariable(name, e.target.value)}
-                      disabled={saving}
-                      className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-                    >
-                      <option value="">Select {label}</option>
-                      {options.map((option) => <option key={String(option.value)} value={option.value}>{option.label}</option>)}
-                    </select>
-                  ) : fieldType === 'multiline' || field.multiline ? (
-                    <textarea
-                      id={inputId}
-                      rows={3}
-                      value={variables[name] || ''}
-                      onChange={(e) => setVariable(name, e.target.value)}
-                      disabled={saving}
-                      className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-                      placeholder={`Enter ${label}`}
-                    />
-                  ) : (
-                    <input
-                      id={inputId}
-                      type="text"
-                      value={variables[name] || ''}
-                      onChange={(e) => setVariable(name, e.target.value)}
-                      disabled={saving}
-                      className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-                      placeholder={`Enter ${label}`}
-                    />
-                  )}
-                  {field.pdf_field_name && !signingField && (
-                    <p className="mt-1 text-[11px] text-brand-muted">PDF field: {field.pdf_field_name}{field.page ? ` · Page ${field.page}` : ''}</p>
-                  )}
-                </div>
-                )
-              })}
-            </div>
-            {visibleNames.length === 0 && <p role="status" className="py-3 text-sm text-brand-muted">{fieldFilter === 'remaining' ? 'No missing fields.' : 'No suggestions waiting for review.'}</p>}
-            <p className={`mt-2 text-xs ${requiredUnresolvedNames.length ? 'text-brand-amber' : 'text-brand-green'}`} role="status">
-              {requiredUnresolvedNames.length
-                ? `${requiredUnresolvedNames.length} required field${requiredUnresolvedNames.length === 1 ? '' : 's'} still need review before saving.`
-                : 'All required fields are ready.'}
-            </p>
-            {optionalUnfilledNames.length > 0 && (
-              <p className="mt-1 text-xs text-brand-muted">
-                {optionalUnfilledNames.length} optional field{optionalUnfilledNames.length === 1 ? '' : 's'} left unfilled; saving is still allowed.
-              </p>
-            )}
-          </div>
-        )}
-
-        {names.length === 0 && (
-          <p className="text-sm text-brand-muted italic">
-            This template has no variables. Preview or save it directly.
-          </p>
-        )}
-
-        {isDocxTemplate && (
-          <fieldset className="rounded border border-brand-line bg-brand-bg px-3 py-2">
-            <legend className="px-1 text-sm font-medium text-brand-ink">Output format</legend>
-            <div className="flex flex-wrap gap-2">
-              <label className={`cursor-pointer rounded border px-3 py-2 ${convertDocxToPdf ? 'border-brand-accent bg-brand-accent/5' : 'border-brand-line bg-brand-surface'}`}>
-                <span className="flex items-start gap-2">
-                  <input type="radio" name="template-output-format" checked={convertDocxToPdf} onChange={() => { setConvertDocxToPdf(true); setSaved(false); invalidatePreview() }} disabled={saving} className="mt-1" />
-                  <span><span className="block text-sm font-semibold text-brand-ink">PDF for signature</span><span className="sr-only">Preserves the Word layout in a review-bound PDF ready for the e-signing workflow.</span></span>
-                </span>
-              </label>
-              <label className={`cursor-pointer rounded border px-3 py-2 ${!convertDocxToPdf ? 'border-brand-accent bg-brand-accent/5' : 'border-brand-line bg-brand-surface'}`}>
-                <span className="flex items-start gap-2">
-                  <input type="radio" name="template-output-format" checked={!convertDocxToPdf} onChange={() => { setConvertDocxToPdf(false); setSaved(false); invalidatePreview() }} disabled={saving} className="mt-1" />
-                  <span><span className="block text-sm font-semibold text-brand-ink">Editable Word document</span><span className="sr-only">Keep DOCX output when another editing pass is still required.</span></span>
-                </span>
-              </label>
-            </div>
-          </fieldset>
-        )}
-
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          {!canSaveToMatter ? (
-            <>
-              <button
-                onClick={() => handleRender('draft')}
-                disabled={rendering || saving}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-brand-ink border border-brand-line bg-brand-surface hover:bg-brand-surface-2 rounded disabled:opacity-50"
-              >
-                <Eye size={16} />
-                {rendering && renderPurpose === 'draft' ? 'Preparing preview…' : 'Preview draft'}
-              </button>
-              <button
-                onClick={() => handleRender('activation')}
-                disabled={rendering || saving}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-white bg-brand-ink hover:bg-brand-ink-2 rounded disabled:opacity-50"
-              >
-                <Check size={16} />
-                {rendering && renderPurpose === 'activation' ? 'Testing this draft…' : 'Test this draft'}
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => handleRender()}
-              disabled={rendering || saving}
-              className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-white bg-brand-ink hover:bg-brand-ink-2 rounded disabled:opacity-50"
-            >
-              <Eye size={16} />
-              {rendering ? 'Rendering...' : 'Preview'}
-            </button>
-          )}
-          <button
-            onClick={handleSave}
-            disabled={saving || smartFillState === 'loading' || saved || !matterId.trim() || !canSaveToMatter || (isPdfOutput && !previewId) || (isDocxTemplate && !filePreview)}
-            title={!canSaveToMatter
-              ? 'Activate this verified template before saving to a matter'
-              : (isPdfOutput && !previewId)
-                ? 'Preview the exact current PDF values before saving'
-                : (isDocxTemplate && !filePreview)
-                  ? 'Download and review the current Word preview before saving'
-                : undefined}
-            className="flex items-center justify-center gap-2 px-4 py-2 text-sm text-white bg-brand-accent hover:opacity-90 rounded disabled:opacity-50"
-          >
-            {saved ? (
-              <>
-                <Check size={16} /> Saved
-              </>
-            ) : (
-              <>
-                <Send size={16} />
-                {saving ? 'Saving...' : 'Render & Save to Matter'}
-              </>
-            )}
-          </button>
-        </div>
-
-        {!canSaveToMatter && <TemplateTestSummary template={template} error={error} rendering={rendering} outputReady={Boolean(filePreview || rendered)} missing={requiredUnresolvedNames} diagnostic={renderPurpose !== 'activation'} />}
-
-        </div><section aria-label="Document preview" className="min-w-0 rounded-xl border border-brand-line bg-brand-bg p-4 lg:max-h-[78vh] lg:overflow-auto">
-        {!filePreview && !rendered && <><div className="mb-3"><h3 className="text-sm font-semibold text-brand-ink">Document reference</h3><p className="mt-1 text-xs text-brand-muted">Click a highlighted field to complete it. Choose Preview to check the generated document with your current values.</p></div><TemplateFillSource template={template} fields={Object.values(fieldDefinitions).filter(field => field.included !== false)} values={variables} onSelectField={name => { pendingFocus.current = name; setFieldFilter('all'); requestAnimationFrame(() => document.getElementById(`template-variable-${name}`)?.focus()) }} /></>}
-        {rendered && (
-          <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-medium text-brand-ink">
-              {outputFormat === 'pdf' ? 'PDF Preview' : 'Text Preview'}
-            </h3>
-              <button type="button" onClick={() => downloadRenderedText(rendered, template.title)} className="inline-flex items-center gap-1.5 rounded border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-surface-2">
-                <Download size={14} /> Download preview
-              </button>
-            </div>
-            <div className="bg-brand-bg border border-brand-line rounded p-4 whitespace-pre-wrap font-mono text-sm text-brand-ink max-h-96 overflow-y-auto">
-              {rendered}
-            </div>
-          </div>
-        )}
-
-        {filePreview && (
-          <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-medium text-brand-ink">{isPdfOutput ? 'PDF Preview' : 'Generated Word Preview'}</h3>
-                <p className="text-xs text-brand-muted">{filePreview.filename}</p>
-              </div>
-              <button type="button" onClick={() => triggerBlobDownload(filePreview.blob, filePreview.filename)} className="inline-flex items-center gap-1.5 rounded border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-surface-2">
-                <Download size={14} /> Download preview
-              </button>
-            </div>
-            {isPdfOutput ? (
-              <>
-                <GeneratedPdfPreview key={filePreviewUrl} source={filePreview.blob} title={template.title} />
-                <p className="mt-2 text-xs font-medium text-brand-green" role="status">
-                  {previewPurpose === 'generation'
-                    ? 'These exact values and this matter are previewed. Inspect every page, then save without changing the fields.'
-                    : previewPurpose === 'activation'
-                      ? 'Representative activation preview recorded. Inspect every page, then activate this unchanged template.'
-                      : 'Draft preview only. To record a publication test, choose Test this draft after entering representative values. Review every generated page before publishing.'}
-                </p>
-              </>
-            ) : (
-              <div className="rounded border border-brand-green/30 bg-brand-green/10 px-4 py-3 text-sm text-brand-ink">
-                Word formatting was preserved. Download and open this generated DOCX to inspect its exact pagination, tables, headers, and footers.
-              </div>
-            )}
-          </div>
-        )}
-
-        {matterDocId && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-brand-green/30 bg-brand-green/10 px-3 py-2">
-              <p className="text-xs text-brand-green">
-                Saved to the matter{outputFilename ? ` as ${outputFilename}` : ''}{outputFormat ? ` (${outputFormat.toUpperCase()})` : ''}{storageBackend ? ` in ${storageBackend.replaceAll('_', ' ')}` : ''}.
-              </p>
-              <a href={savedDownloadUrl || getMatterDocumentDownloadUrl(matterId.trim(), matterDocId)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-accent-2 underline">
-                <Download size={14} /> Download saved document
-              </a>
-            </div>
-            {storageWarning && (
-              <div role="alert" className="rounded border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-xs text-brand-ink">
-                {storageWarning}
-              </div>
-            )}
-          </div>
-        )}
-      </section></div>
+      <PrepareDocumentBody fill={fill} template={template} matters={matters} matterLoading={matterLoading} fixedMatterId={fixedMatterId} layout="modal" />
     </Modal>
   )
 }
@@ -2534,6 +1698,16 @@ export default function TemplatesPage() {
                         {tpl.is_active ? <Sparkles size={14} /> : <Eye size={14} />}
                         {tpl.is_active ? 'Generate' : 'Preview draft'}
                       </button>
+                      {tpl.is_active && !sourceMissing && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(buildPrepareTarget({ templateId: tpl.id }).url)}
+                          title="Fill this template from a matter, review it, and save it there"
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-brand-accent px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-bg"
+                        >
+                          Prepare on a matter
+                        </button>
+                      )}
                       <button
                         onClick={() => setEditTemplate(tpl)}
                         className="inline-flex items-center justify-center gap-1 rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-bg"
@@ -2700,6 +1874,7 @@ export default function TemplatesPage() {
           statusMessage={routeStatus}
           onEdit={() => setEditTemplate(workspaceTemplate)}
           onGenerate={() => openRender(workspaceTemplate)}
+          onUseOnMatter={() => navigate(buildPrepareTarget({ templateId: workspaceTemplate.id }).url)}
           onTest={() => setRenderTarget({ ...workspaceTemplate, is_active: false })}
           onPublish={handlePublishWorkspace}
           source={workspaceSource}
