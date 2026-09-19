@@ -44,6 +44,7 @@ def test_renderer_parses_markdown_structure_and_inline_emphasis() -> None:
         content=(
             "## ARGUMENT\n"
             "**Bold point** and *italic* text\n"
+            "~~struck~~ and a [link](https://example.test/page)\n"
             "- first item\n"
             "- second item\n"
             "1. numbered\n"
@@ -68,6 +69,10 @@ def test_renderer_parses_markdown_structure_and_inline_emphasis() -> None:
     )
     assert any(run.bold for run in emphasized.runs)
     assert any(run.italic for run in emphasized.runs)
+
+    struck = next(p for p in paragraphs if p.text.startswith("struck and a link"))
+    assert any(run.font.strike for run in struck.runs)
+    assert "https://example.test/page" in struck.text
 
     bullets = [p for p in paragraphs if p.style.name == "List Bullet"]
     assert [p.text for p in bullets] == ["first item", "second item"]

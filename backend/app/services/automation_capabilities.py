@@ -92,7 +92,13 @@ def _argument_error_detail(error: dict[str, Any], raw: dict[str, Any]) -> str:
     error_type = str(error.get("type") or "")
     context = error.get("ctx") or {}
     loc = error.get("loc") or ()
-    unit = "characters" if error_type.startswith("string_") else "items"
+    string_error = error_type.startswith("string_")
+
+    def unit_word(count: Any) -> str:
+        if string_error:
+            return "character" if count == 1 else "characters"
+        return "item" if count == 1 else "items"
+
     limit = context.get("max_length")
     if not isinstance(limit, (int, float)):
         limit = context.get("limit") if error_type in {"too_long", "too_short"} else None
@@ -103,14 +109,17 @@ def _argument_error_detail(error: dict[str, Any], raw: dict[str, Any]) -> str:
             actual = len(value)
     if error_type in {"string_too_long", "too_long", "list_too_long"}:
         if actual is not None and limit is not None:
-            return f" (value has {actual} {unit}; the limit is {limit})"
+            return (
+                f" (value has {actual} {unit_word(actual)}; "
+                f"the limit is {limit} {unit_word(limit)})"
+            )
         if limit is not None:
-            return f" (the limit is {limit} {unit})"
+            return f" (the limit is {limit} {unit_word(limit)})"
         return " (value is too long)"
     if error_type in {"string_too_short", "too_short", "list_too_short"}:
         minimum = context.get("min_length")
         if isinstance(minimum, (int, float)):
-            return f" (the minimum is {minimum} {unit})"
+            return f" (the minimum is {minimum} {unit_word(minimum)})"
         return " (value is too short)"
     return ""
 

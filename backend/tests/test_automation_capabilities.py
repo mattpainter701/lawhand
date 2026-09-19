@@ -171,6 +171,16 @@ def test_invalid_argument_errors_name_the_submitted_size_and_limit():
     assert "11 items" in too_many.value.message
     assert "limit is 10" in too_many.value.message
 
+    find = resolve_capability_spec("find_matter")
+    with pytest.raises(CapabilityError) as too_short_string:
+        find.parse_arguments({"query": ""})
+    assert "the minimum is 1 character" in too_short_string.value.message
+
+    context = resolve_capability_spec("get_matter_context")
+    with pytest.raises(CapabilityError) as too_short_list:
+        context.parse_arguments({"matter_id": str(matter_id), "sections": []})
+    assert "the minimum is 1 item" in too_short_list.value.message
+
 
 def test_document_titles_are_normalized_and_cannot_be_paths():
     action = MatterDocumentDraftAction.model_validate(
