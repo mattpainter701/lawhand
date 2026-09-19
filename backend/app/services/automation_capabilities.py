@@ -101,7 +101,9 @@ def _argument_error_detail(error: dict[str, Any], raw: dict[str, Any]) -> str:
 
     limit = context.get("max_length")
     if not isinstance(limit, (int, float)):
-        limit = context.get("limit") if error_type in {"too_long", "too_short"} else None
+        limit = (
+            context.get("limit") if error_type in {"too_long", "too_short"} else None
+        )
     actual = context.get("actual_length")
     if actual is None and len(loc) == 1:
         value = raw.get(loc[0])
