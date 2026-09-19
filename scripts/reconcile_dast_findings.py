@@ -42,7 +42,13 @@ MAX_AFFECTED_URLS = 50
 _EDGE_MANAGED_PATH_RE = re.compile(r"^https?://[^/]+/cdn-cgi/", re.IGNORECASE)
 
 _RISK_NAMES = {"0": "Informational", "1": "Low", "2": "Medium", "3": "High"}
-_MIN_RISK = {"informational": 0, "low": 1, "medium": 2, "high": 3}
+_MIN_RISK = {
+    "informational": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
 _CONFIDENCE_NAMES = {
     "0": "False Positive",
     "1": "Low",
@@ -52,18 +58,24 @@ _CONFIDENCE_NAMES = {
 }
 # A filterable criticality label per scanner risk level.
 _SEVERITY_LABELS = {
+    "Critical": "severity:critical",
     "High": "severity:high",
     "Medium": "severity:medium",
     "Low": "severity:low",
     "Informational": "severity:informational",
 }
 _SEVERITY_COLORS = {
+    "severity:critical": "6e0000",
     "severity:high": "b60205",
     "severity:medium": "d93f0b",
     "severity:low": "fbca04",
     "severity:informational": "0e8a16",
 }
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
+_SOURCE_LABELS = {
+    "zap": "the scheduled OWASP ZAP baseline scan",
+    "nuclei": "the scheduled Nuclei active scan",
+}
 _FINGERPRINT_RE = re.compile(r"<!-- dast-fingerprint: ([0-9a-f]{40}) -->")
 _CONTENT_RE = re.compile(r"<!-- dast-content: ([0-9a-f]{40}) -->")
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -88,18 +100,20 @@ class Finding:
     solution: str
     reference: str
     param: str
+    source: str = "zap"
     affected: dict[str, set[str]] = field(default_factory=dict)
 
     @property
     def criticality(self) -> str:
-        # ZAP's risk rating is the criticality: High, Medium, Low, Informational.
+        # The scanner's risk rating is the criticality.
         return self.risk
 
     @property
     def fingerprint(self) -> str:
         # Rule-scoped, not URL-scoped. The baseline spider discovers a slightly
         # different URL set each run; a per-URL fingerprint turned that variance
-        # into a storm of opened and closed issues.
+        # into a storm of opened and closed issues. Source is deliberately not
+        # part of the key so the existing ZAP issue fingerprints stay stable.
         key = f"{self.plugin_id}|{self.param}"
         return hashlib.sha1(key.encode("utf-8")).hexdigest()
 
@@ -110,6 +124,7 @@ class Finding:
         }
         key = json.dumps(
             [
+                self.source,
                 self.name,
                 self.risk,
                 self.confidence,
@@ -145,7 +160,15 @@ def extract_cves(*values: object) -> tuple[str, ...]:
     return tuple(found)
 
 
-def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
+def _excluded(uri: str, exclude_substrings: tuple[str, ...]) -> bool:
+    return any(part and part in uri for part in exclude_substrings)
+
+
+def normalize_report(
+    report: dict,
+    min_risk: int = 1,
+    exclude_substrings: tuple[str, ...] = (),
+) -> list[Finding]:
     findings: dict[tuple[str, str], Finding] = {}
     for site in report.get("site", []) or []:
         default_uri = site.get("@name", "") or ""
@@ -185,13 +208,84 @@ def normalize_report(report: dict, min_risk: int = 1) -> list[Finding]:
                     )
                     findings[key] = finding
                 uri = str(instance.get("uri") or default_uri)
-                if _EDGE_MANAGED_PATH_RE.match(uri):
+                if _EDGE_MANAGED_PATH_RE.match(uri) or _excluded(
+                    uri, exclude_substrings
+                ):
                     continue
                 method = str(instance.get("method", "GET") or "GET").upper()
                 finding.affected.setdefault(uri, set()).add(method)
     return sorted(
         (finding for finding in findings.values() if finding.affected),
         key=lambda finding: (finding.name, finding.param),
+    )
+
+
+def _nuclei_ids(value: object) -> tuple[str, ...]:
+    """Nuclei classification IDs are null, a string, or a list of strings."""
+    if value is None:
+        return ()
+    values = value if isinstance(value, list) else [value]
+    return tuple(str(item) for item in values if item)
+
+
+def normalize_nuclei_report(
+    lines: list[str],
+    min_risk: int = 1,
+    exclude_substrings: tuple[str, ...] = (),
+) -> list[Finding]:
+    findings: dict[tuple[str, str], Finding] = {}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        info = record.get("info") or {}
+        if not isinstance(info, dict):
+            info = {}
+        severity = str(info.get("severity", "info")).strip().lower()
+        risk = severity.capitalize() if severity in _MIN_RISK else "Informational"
+        if _MIN_RISK.get(severity, 0) < min_risk:
+            continue
+        template_id = str(record.get("template-id") or record.get("template") or "")
+        classification = info.get("classification") or {}
+        if not isinstance(classification, dict):
+            classification = {}
+        cves = _nuclei_ids(classification.get("cve-id"))
+        cwe = ", ".join(_nuclei_ids(classification.get("cwe-id")))
+        reference = info.get("reference")
+        if isinstance(reference, list):
+            reference = "\n".join(str(item) for item in reference)
+        uri = str(record.get("matched-at") or record.get("host") or "")
+        if _excluded(uri, exclude_substrings):
+            continue
+        key = (template_id, "")
+        finding = findings.get(key)
+        if finding is None:
+            finding = Finding(
+                plugin_id=template_id,
+                name=str(info.get("name") or template_id or "Unknown"),
+                risk=risk,
+                confidence="",
+                cwe=cwe,
+                wasc="",
+                cves=cves,
+                description=str(info.get("description", "") or ""),
+                solution=str(info.get("remediation", "") or ""),
+                reference=reference or "",
+                param="",
+                source="nuclei",
+            )
+            findings[key] = finding
+        method = "GET" if str(record.get("type", "")).lower() == "http" else ""
+        finding.affected.setdefault(uri, set()).add(method)
+    return sorted(
+        (finding for finding in findings.values() if any(finding.affected)),
+        key=lambda finding: (finding.name, finding.plugin_id),
     )
 
 
@@ -232,21 +326,22 @@ def render_body(finding: Finding, run_url: str) -> str:
         "",
         finding.reference or "_None._",
         "",
-        "**CVSS:** _Not provided by the OWASP ZAP baseline scanner._",
+        "**CVSS:** _Not provided by the scanner._",
         "",
         "**Affected URLs**",
         "",
     ]
     uris = sorted(finding.affected)
     for uri in uris[:MAX_AFFECTED_URLS]:
-        methods = ", ".join(sorted(finding.affected[uri]))
-        lines.append(f"- `{methods} {uri}`")
+        methods = ", ".join(sorted(m for m in finding.affected[uri] if m))
+        lines.append(f"- `{f'{methods} {uri}'.strip()}`")
     if len(uris) > MAX_AFFECTED_URLS:
         lines.append(f"- ...and {len(uris) - MAX_AFFECTED_URLS} more")
+    source = _SOURCE_LABELS.get(finding.source, finding.source)
     lines += [
         "",
         "---",
-        "Detected by the scheduled OWASP ZAP baseline scan.",
+        f"Detected by {source}.",
         f"- Target: `{TARGET}`",
         f"- Run: {run_url or '_n/a_'}",
     ]
@@ -486,6 +581,13 @@ def close_scan_alert(gh: GitHub, run_url: str, *, dry_run: bool = False) -> None
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", help="Path to the ZAP JSON report")
+    parser.add_argument("--nuclei-report", help="Path to the Nuclei JSONL report")
+    parser.add_argument(
+        "--exclude-uri-substring",
+        action="append",
+        default=[],
+        help="Drop findings whose URL contains this substring (repeatable)",
+    )
     parser.add_argument("--run-url", default="", help="URL of the scan workflow run")
     parser.add_argument(
         "--min-risk",
@@ -518,11 +620,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.scan_missing:
         result = reconcile_scan_alert(gh, args.run_url, dry_run=args.dry_run)
     else:
-        if not args.report or not os.path.isfile(args.report):
-            raise SystemExit(f"report not found: {args.report!r}")
-        with open(args.report, encoding="utf-8") as handle:
-            report = json.load(handle)
-        findings = normalize_report(report, _MIN_RISK[args.min_risk])
+        if not args.report and not args.nuclei_report:
+            raise SystemExit("provide --report and/or --nuclei-report")
+        min_risk = _MIN_RISK[args.min_risk]
+        excludes = tuple(args.exclude_uri_substring)
+        findings: list[Finding] = []
+        if args.report:
+            if not os.path.isfile(args.report):
+                raise SystemExit(f"ZAP report not found: {args.report!r}")
+            with open(args.report, encoding="utf-8") as handle:
+                findings.extend(normalize_report(json.load(handle), min_risk, excludes))
+        if args.nuclei_report:
+            if not os.path.isfile(args.nuclei_report):
+                raise SystemExit(f"Nuclei report not found: {args.nuclei_report!r}")
+            with open(args.nuclei_report, encoding="utf-8") as handle:
+                findings.extend(
+                    normalize_nuclei_report(handle.readlines(), min_risk, excludes)
+                )
         result = reconcile(
             gh,
             findings,

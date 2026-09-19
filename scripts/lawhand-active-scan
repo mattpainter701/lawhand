@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Root-owned boundary between GitHub Actions and the container runtime for the
+# scheduled Nuclei active scan. Install as /usr/local/sbin/lawhand-active-scan;
+# the Skynet lawhand-runner may sudo only this command.
+#
+# Argument-free by design: the target, the image (pinned by digest), the
+# template selection, and the report path are fixed here, so the narrow sudo
+# rule cannot be turned into a general-purpose scanner. Intrusive, DoS, and
+# fuzzing templates are excluded; this is vulnerability detection, not
+# exploitation.
+set -Eeuo pipefail
+umask 077
+
+readonly TARGET="https://getlawhand.com"
+readonly RUNNER_USER="${LAWHAND_DAST_RUNNER_USER:-lawhand-runner}"
+readonly REPORT_DIR="/var/lib/lawhand-dast"
+readonly NUCLEI_HOME="$REPORT_DIR/nuclei-home"
+readonly IMAGE="projectdiscovery/nuclei@sha256:9fd705284ac4b5f721fa1e23bf366f26e985cd4ec65927fe9a53cb3fcb0417a6"
+readonly LOCK_FILE="/run/lock/lawhand-active-scan.lock"
+readonly SCAN_TIMEOUT="${LAWHAND_ACTIVE_TIMEOUT_SECONDS:-1800}"
+
+[[ "$#" -eq 0 ]] || {
+  echo "ERROR: this entrypoint takes no arguments" >&2
+  exit 2
+}
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "ERROR: this entrypoint must run through its restricted sudo rule" >&2
+  exit 2
+}
+id -u "$RUNNER_USER" >/dev/null 2>&1 || {
+  echo "ERROR: runner account $RUNNER_USER does not exist" >&2
+  exit 2
+}
+command -v docker >/dev/null 2>&1 || {
+  echo "ERROR: docker is not available to this entrypoint" >&2
+  exit 2
+}
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "ERROR: another active scan is already running" >&2
+  exit 75
+fi
+
+# Root-owned directories the runner cannot write or swap, so a compromised
+# runner cannot plant a symlink for the root container to follow. The Nuclei
+# template cache lives here and persists between runs.
+install -d -m 0755 -o root -g root "$REPORT_DIR" "$NUCLEI_HOME"
+[[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" ]] || {
+  echo "ERROR: report directory is not a real root-owned directory" >&2
+  exit 2
+}
+[[ -d "$NUCLEI_HOME" && ! -L "$NUCLEI_HOME" ]] || {
+  echo "ERROR: nuclei home is not a real root-owned directory" >&2
+  exit 2
+}
+
+report="$REPORT_DIR/nuclei-report.jsonl"
+rm -f "$report"
+
+echo "==> Pulling pinned Nuclei image"
+timeout "$SCAN_TIMEOUT" docker pull "$IMAGE"
+
+echo "==> Running Nuclei active scan against $TARGET"
+set +e
+timeout "$SCAN_TIMEOUT" docker run --rm \
+  --user 0:0 \
+  --cap-drop ALL --cap-add DAC_OVERRIDE \
+  --security-opt no-new-privileges \
+  --memory 2g \
+  --pids-limit 1024 \
+  -e HOME=/reports/nuclei-home \
+  -e TMPDIR=/tmp \
+  -v "$REPORT_DIR:/reports:rw" \
+  "$IMAGE" \
+  -u "$TARGET" \
+  -jsonl \
+  -severity low,medium,high,critical \
+  -tags cve,exposure \
+  -etags intrusive,dos,fuzz \
+  -rl 50 -c 25 -timeout 10 -retries 1 \
+  -o /reports/nuclei-report.jsonl \
+  -silent
+nuclei_rc=$?
+set -e
+
+# An empty report is a valid "no findings" result when the engine ran cleanly.
+if [[ ! -s "$report" ]]; then
+  if [[ "$nuclei_rc" -ne 0 ]]; then
+    echo "ERROR: Nuclei exited $nuclei_rc and produced no report" >&2
+    exit 3
+  fi
+  : >"$report"
+fi
+chmod 0644 "$report" 2>/dev/null || true
+
+echo "NUCLEI_SCAN_EXIT=$nuclei_rc"
+echo "NUCLEI_REPORT_JSONL=$report"
