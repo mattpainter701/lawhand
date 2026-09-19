@@ -285,13 +285,34 @@ def test_nginx_operator_routes_and_pdf_csp_are_consistent() -> None:
     # enter the policy through a request-scoped variable rather than being
     # granted to every response. An inline snippet is never allowed.
     assert "script-src 'self'$csp_analytics_script$csp_platform_payments;" in csp_lines[0]
-    assert "'unsafe-inline'" not in csp_lines[0].split("style-src")[0]
+    # No inline scripts and no inline styles. The crawler-only server shell
+    # loads its fallback CSS from /server-shell.css instead of a <style> block,
+    # so style-src no longer needs 'unsafe-inline' (ZAP rule 10055).
+    assert "'unsafe-inline'" not in csp_lines[0]
     public_routes = (
         "privacy|terms|pricing|request-demo|trust-center|support|requirements"
         "|product(?:/(?:chat|mcp))?"
     )
     assert nginx.count(f"location ~ ^/({public_routes})/?$ {{") == 2
     assert nginx.count(f"rewrite ^/({public_routes})/?$ /$1/index.html break;") == 2
+
+
+def test_server_shell_styles_are_external_not_inline() -> None:
+    """The no-JavaScript shell must not carry an inline <style> block.
+
+    style-src cannot omit 'unsafe-inline' while the shell ships an inline
+    stylesheet, so the fallback CSS lives at /server-shell.css and the shell
+    only links it. This is what lets the CSP drop 'unsafe-inline'.
+    """
+    index_html = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "<style" not in index_html.lower()
+    assert 'href="/server-shell.css"' in index_html
+
+    stylesheet = (ROOT / "frontend" / "public" / "server-shell.css").read_text(
+        encoding="utf-8"
+    )
+    assert ".server-marketing" in stylesheet
+    assert ".server-legal" in stylesheet
 
 
 def test_nginx_allows_analytics_hosts_only_on_public_marketing_pages() -> None:

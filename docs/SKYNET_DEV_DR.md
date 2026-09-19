@@ -38,10 +38,11 @@ workspace MCP, and research MCP product surfaces are disabled.
    repository variables `LAWHAND_DEV1_ENABLED=true` and
    `LAWHAND_SKYNET_DR_ENABLED=true`. Until then, their scheduled workflows are
    intentionally dormant and manual dispatch remains available for acceptance.
-8. Install the production DAST boundary:
-   `sudo bash scripts/install_dast_scan_entrypoint.sh`. It adds exactly one
-   path-scoped sudo rule (`lawhand-runner` may run only
-   `/usr/local/sbin/lawhand-dast-scan`) and does not grant Docker membership.
+8. Install the production DAST boundaries:
+   `sudo bash scripts/install_dast_scan_entrypoint.sh`. It adds two path-scoped
+   sudo rules (`lawhand-runner` may run only
+   `/usr/local/sbin/lawhand-dast-scan` and `/usr/local/sbin/lawhand-active-scan`)
+   and does not grant Docker membership.
 The deployment workflow pins current `origin/main`, requires CI for that exact
 SHA, and calls a root-owned entrypoint. The entrypoint refuses a dirty checkout,
 non-main commit, wrong origin, or non-isolated environment.
@@ -75,6 +76,14 @@ into a general network scanner. A separate GitHub-hosted job parses the report
 and files, updates, or closes `dast`-labeled GitHub issues. It is report-only: a
 finding never fails the run, but a scan that produces no report opens a
 `[dast-alert]` issue.
+
+A second root-owned entrypoint, `/usr/local/sbin/lawhand-active-scan`, runs a
+digest-pinned Nuclei scan for CVE and exposure detection. It is
+detection-only (intrusive, dos, and fuzz templates are excluded) and is gated by
+the repository variable `LAWHAND_DAST_ACTIVE_ENABLED`, so clearing that variable
+stops the active job without a code change. Findings from both scanners are
+reconciled together, the `/cdn-cgi/` Cloudflare surface is excluded, and
+criticality, CWE/WASC, and CVE are recorded on each issue.
 
 ## DR backup and rehearsal
 
