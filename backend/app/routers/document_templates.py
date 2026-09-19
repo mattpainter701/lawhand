@@ -5130,7 +5130,9 @@ async def render_template_endpoint(
         storage_provider=storage_provider,
         storage_warning=storage_warning,
         signing_roles=list(signing_roles) if matter_document_id else [],
-        signing_placement_required=bool(signing_required) if matter_document_id else False,
+        signing_placement_required=bool(signing_required)
+        if matter_document_id
+        else False,
         positioned_fields=list(positioned_fields) if matter_document_id else [],
         signing_placement_problems=(
             placement_report.as_dicts()
