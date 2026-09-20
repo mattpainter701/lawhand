@@ -4,6 +4,8 @@ import { ArrowLeft } from 'lucide-react'
 import { getMattersV2, getTemplate } from '../api'
 import usePrepareFill, { templateHasSigningFields } from '../components/prepare/usePrepareFill'
 import SendStep, { renderIsSendable, savedDocumentFromRender } from '../components/prepare/SendStep'
+import usePrepareSet from '../components/prepare/usePrepareSet'
+import PrepareSetBody from '../components/prepare/PrepareSetBody'
 import PrepareDocumentBody from '../components/prepare/PrepareDocumentBody'
 import PrepareStepper, { prepareSteps } from '../components/prepare/PrepareStepper'
 import { buildSavedTarget, readPrepareQuery } from '../components/prepare/prepareRouting'
@@ -67,6 +69,29 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   )
 }
 
+// A set: one interview, many documents, saved one at a time from here.
+function PrepareSet({ query, matters, matterLoading }) {
+  const prep = usePrepareSet({ setId: query.setId, initialMatterId: query.matterId || '', folderId: query.folderId || null })
+  const anyPdfSigning = prep.availableMembers.some((member) => member.output?.format === 'pdf')
+  const steps = prepareSteps({
+    template: prep.set ? { title: prep.set.title } : null,
+    matterId: prep.matterId,
+    progress: prep.progress,
+    requiredMissing: prep.requiredUnresolvedNames.length,
+    previewReady: prep.allPreviewed,
+    saved: prep.allSaved,
+    signing: anyPdfSigning ? { pdf: true, sent: false } : null,
+  })
+  if (prep.loading) return <p role="status" className="text-sm text-brand-muted">Loading the set…</p>
+  if (!prep.set) return <p role="alert" className="text-sm text-brand-rose">{prep.error || 'This set could not be loaded.'}</p>
+  return (
+    <>
+      <PrepareStepper steps={steps} />
+      <PrepareSetBody prep={prep} matters={matters} matterLoading={matterLoading} fixedMatterId={query.matterId && query.returnTo ? query.matterId : ''} returnTo={query.returnTo} />
+    </>
+  )
+}
+
 // The guided route: Template, Matter, Populate, Review, Save. It reuses the
 // Generate dialog's hook and body, so a document prepared here is reviewed
 // under exactly the same rules, and lands on the matter's Documents tab.
@@ -105,7 +130,7 @@ export default function TemplatePreparePage() {
     navigate(buildSavedTarget({ matterId: String(matterId || query.matterId || '').trim(), documentId: res?.matter_document_id, returnTo: query.returnTo }))
   }, [navigate, query.matterId, query.returnTo])
 
-  const backTarget = query.returnTo || (template ? `/templates/${encodeURIComponent(template.id)}/studio` : '/templates')
+  const backTarget = query.returnTo || (template ? `/templates/${encodeURIComponent(template.id)}/studio` : query.setId ? '/templates/sets' : '/templates')
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-4 px-3 py-3">
@@ -113,11 +138,14 @@ export default function TemplatePreparePage() {
         <Link to={backTarget} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-muted hover:text-brand-ink">
           <ArrowLeft size={16} aria-hidden="true" /> Back
         </Link>
-        <h1 className="text-lg font-semibold text-brand-ink">{template ? `Prepare: ${template.title}` : 'Prepare a document'}</h1>
+        <h1 className="text-lg font-semibold text-brand-ink">{template ? `Prepare: ${template.title}` : query.setId ? 'Prepare a packet' : 'Prepare a document'}</h1>
       </div>
       {loading && <p role="status" className="text-sm text-brand-muted">Loading the template…</p>}
       {templateError && <p role="alert" className="text-sm text-brand-rose">{templateError}</p>}
-      {!loading && !query.templateId && (
+      {query.setId && (
+        <PrepareSet key={`${query.setId}:${query.matterId || ''}`} query={query} matters={matters} matterLoading={matterLoading} />
+      )}
+      {!loading && !query.templateId && !query.setId && (
         <section className="rounded-xl border border-brand-line bg-brand-surface-2 p-4 text-sm">
           <p className="font-semibold text-brand-ink">Choose a template to prepare</p>
           <p className="mt-1 text-brand-muted">Open a published template in <Link className="underline" to="/templates">Template Studio</Link> and choose <strong>Use on a matter</strong>, or start from a matter's Case Documents.</p>

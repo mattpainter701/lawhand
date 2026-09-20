@@ -36,6 +36,8 @@ from app.schemas.document_template_set import (
     DocumentTemplateSetItemResponse,
     DocumentTemplateSetListResponse,
     DocumentTemplateSetResponse,
+    DocumentTemplateSetVariablesRequest,
+    DocumentTemplateSetVariablesResponse,
     DocumentTemplateSetWrite,
     InterviewQuestionPlacement,
     InterviewQuestionResponse,
@@ -407,6 +409,50 @@ async def set_interview(
             for question in questions
         ],
         unavailable=unavailable,
+    )
+
+
+@router.post(
+    "/{set_id}/documents-variables",
+    response_model=DocumentTemplateSetVariablesResponse,
+)
+async def set_documents_variables(
+    set_id: uuid.UUID,
+    payload: DocumentTemplateSetVariablesRequest,
+    current_user=Depends(require_capability("manage_documents")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fan one interview's answers out to each member's own field names.
+
+    The client renders each document through the per-template routes
+    afterwards, so the preview evidence gate and the save path stay exactly
+    what they are for a single template. A member that cannot be drafted is
+    reported with its reason and receives no variables.
+    """
+
+    tenant_id = uuid.UUID(str(current_user.tenant_id))
+    await set_tenant_context(db, str(tenant_id))
+    record = await _load_set(db, tenant_id, set_id)
+    members, unavailable, resolved_versions = await _member_snapshots(
+        db, tenant_id, record
+    )
+    questions = template_sets.build_interview(members)
+    answers = {str(key): str(value) for key, value in payload.answers.items()}
+    documents = template_sets.answers_for_documents(questions, answers)
+    # Every available member appears, so a document with no answered field is
+    # still listed (and renders blank) rather than silently vanishing.
+    for member in members:
+        documents.setdefault(member.template_id, {})
+    return DocumentTemplateSetVariablesResponse(
+        set_id=record.id,
+        matter_id=payload.matter_id,
+        documents=documents,
+        unanswered_required=[
+            question.key
+            for question in template_sets.unanswered_required(questions, answers)
+        ],
+        unavailable=unavailable,
+        resolved_versions=dict(resolved_versions or {}),
     )
 
 

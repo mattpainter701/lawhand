@@ -49,7 +49,7 @@ then by the quirk campaign):
 | 3a | `/templates/prepare` route (Template, Matter, Populate, Review, Save), Studio "Use on a matter", library and probate entry points | Shipped | `a7c9010`, `031d3b7`, `29d1f1e` | `TemplatePreparePage.test.jsx`, `PrepareStepper.test.jsx`, `prepareRouting.test.js`; Generate dialog's 25 tests unchanged |
 | 3b | Send step: signing descriptor on the render response, shared signature request form, DOCX-with-signatures defaults to PDF | Shipped | `c2c5a54` | `MatterSigningPlacements.test.jsx` (26) unchanged; `signatureRequestRules.test.js`; Send-step page cases; backend descriptor test extended |
 | 2c | Rules can request a document (Stack A `document_propose` step) | Planned | — | needs a product decision on the run's actor |
-| 3c | Sets: `documents-variables` endpoint, RLS test, sets library, prepare route for sets (browser-driven sequential save-all) | Planned, two PRs | — | design in the Phase 3 plan |
+| 3c | Sets: `documents-variables` endpoint, RLS test, sets library, prepare route for sets (browser-driven sequential save-all) | Shipped | CHANGELOG 2026.09.20.03 | `test_template_set_routes.py` (fan-out), `test_template_sets_rls.py` (live RLS), vitest sets page and Prepare set case |
 | 3d | Service extraction, `document_fill_sessions` (migration now 197), durable `template_set_render` | Planned, three PRs | — | |
 | 4a/4b | Click-through verification in Populate; verified names on the saved document | Shipped | see CHANGELOG 2026.09.20.01 | `templateFillReview.test.js`, Prepare page verification case, Generate dialog payload; `test_document_templates.py` descriptor test (event, row, list, response, 422) |
 | 4c/4d | Verification persisted per session; readiness record counts | Planned with 3d | — | |

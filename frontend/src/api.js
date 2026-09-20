@@ -2527,6 +2527,10 @@ export const deleteTemplateSet = (id) =>
 
 export const getTemplateSetInterview = (id, matterId) =>
   api.get(`/template-sets/${id}/interview`, { params: matterId ? { matter_id: matterId } : {} }).then(r => r.data)
+// Fan one interview's answers out to each member's own field names; the
+// merge rule stays on the server.
+export const getTemplateSetDocumentsVariables = (id, data) =>
+  api.post(`/template-sets/${id}/documents-variables`, data).then(r => r.data)
 
 export const getTemplateFieldLibrary = () =>
   api.get('/templates/field-library').then(r => r.data)

@@ -1540,6 +1540,7 @@ export default function TemplatesPage() {
                 className="w-full rounded-lg border border-brand-line bg-brand-bg py-2.5 pl-10 pr-3 text-sm text-brand-ink outline-none transition focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/15"
               />
             </label>
+            <button type="button" onClick={() => navigate('/templates/sets')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-bg">Template sets</button>
             <div className="grid grid-cols-2 gap-2 sm:flex">
               <label>
                 <span className="sr-only">Filter by status</span>

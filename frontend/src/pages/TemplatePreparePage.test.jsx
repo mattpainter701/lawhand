@@ -20,6 +20,9 @@ const api = vi.hoisted(() => ({
   sendSignatureRequest: vi.fn(),
   voidSignatureRequest: vi.fn(),
   getMatterDocumentSigningSource: vi.fn(),
+  getTemplateSet: vi.fn(),
+  getTemplateSetInterview: vi.fn(),
+  getTemplateSetDocumentsVariables: vi.fn(),
 }))
 vi.mock('../api', () => api)
 vi.mock('../components/templates/GeneratedPdfPreview', () => ({ default: ({ title }) => <section aria-label={`Preview of ${title}`} /> }))
@@ -204,6 +207,69 @@ describe('the Prepare route', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Editable Word document/ }))
     expect(screen.getByText(/A Word document cannot be sent for signature/)).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('Needs PDF output to send for signature')
+  })
+
+  it('prepares a set: one answer reaches every document, previews retry alone, saves run one at a time', async () => {
+    const S = '55555555-5555-4555-8555-555555555555'
+    const A = '66666666-6666-4666-8666-666666666666'
+    const B = '77777777-7777-4777-8777-777777777777'
+    const C = '88888888-8888-4888-8888-888888888888'
+    api.getTemplateSet.mockResolvedValue({ id: S, title: 'Motion packet', items: [
+      { template_id: A, title: 'Motion', position: 0, resolved_version_no: 2 },
+      { template_id: B, title: 'Order', position: 1, resolved_version_no: 1 },
+      { template_id: C, title: 'Old form', position: 2, unavailable_reason: 'Publish a tested version first.' },
+    ] })
+    api.getTemplate.mockImplementation(async (id) => id === A
+      ? { id: A, title: 'Motion', format: 'pdf', source_sha256: 'a', is_active: true, variable_schema: { fields: [{ name: 'def_name', binding: 'defendant.full_name' }, { name: 'sig', field_type: 'signature', signer_role: 'client' }] } }
+      : { id: B, title: 'Order', format: 'markdown', body: '{{DEFENDANT}} {{hearing}}', is_active: true, variable_schema: { fields: [{ name: 'DEFENDANT', binding: 'defendant.full_name' }, { name: 'hearing', label: 'Hearing date', required: true }] } })
+    api.getTemplateSetInterview.mockResolvedValue({ set_id: S, title: 'Motion packet', questions: [
+      { key: 'defendant.full_name', label: 'Defendant', value_kind: 'text', required: true, card: 'defendant', binding: 'defendant.full_name', shared: true, appears_in: [{ template_id: A, template_title: 'Motion', field_name: 'def_name', label: 'Defendant' }, { template_id: B, template_title: 'Order', field_name: 'DEFENDANT', label: 'Defendant' }], suggested_value: 'Ada Lovelace', provenance: { source_type: 'matter_party', confidence: 1 }, review_required: false },
+      { key: `manual:${B}:hearing`, label: 'Hearing date', value_kind: 'text', required: true, card: '', binding: '', shared: false, appears_in: [{ template_id: B, template_title: 'Order', field_name: 'hearing', label: 'Hearing date' }] },
+    ], unavailable: [{ template_id: C, title: 'Old form', position: 2, unavailable_reason: 'Publish a tested version first.' }] })
+    api.getTemplateSetDocumentsVariables.mockResolvedValue({ set_id: S, documents: { [A]: { def_name: 'Ada Lovelace' }, [B]: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' } }, unanswered_required: [], unavailable: [], resolved_versions: { [A]: 2, [B]: 1 } })
+    let motionPreviews = 0
+    api.renderTemplateFile.mockImplementation(async () => { motionPreviews += 1; if (motionPreviews === 1) throw new Error('Renderer busy'); return { blob: new Blob(['%PDF']), previewId: 'prev-a', previewPurpose: 'generation', filename: 'motion.pdf' } })
+    const saves = []
+    api.renderTemplate.mockImplementation(async (id, payload) => {
+      if (!payload.matter_id) return { rendered: 'Ada Lovelace 2026-10-01', output_format: 'markdown', output_filename: 'order.md' }
+      saves.push(id)
+      if (id === B && saves.filter((s) => s === B).length === 1) { const err = new Error('Storage unavailable'); err.response = { status: 500, data: { detail: 'Storage unavailable' } }; throw err }
+      return id === A
+        ? { rendered: 'PDF saved', matter_document_id: DOC, output_format: 'pdf', output_filename: 'motion.pdf', signing_roles: ['client'], positioned_fields: [{ field_id: 'sig', role: 'client' }], signing_placement_problems: [] }
+        : { rendered: 'saved', matter_document_id: '99999999-9999-4999-8999-999999999999', output_format: 'markdown', output_filename: 'order.md' }
+    })
+    api.getMatterV2.mockResolvedValue({ id: M, client_name: 'Ada Lovelace', client_email: 'ada@example.test' })
+    renderAt(`?set=${S}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare a packet' })
+    await screen.findByText('Old form')
+    expect(screen.getByRole('alert')).toHaveTextContent('Publish a tested version first.')
+    expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('Motion packet')
+    // The shared question was suggested by the matter and appears in both documents.
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Defendant/ })).toHaveValue('Ada Lovelace'))
+    expect(screen.getByText(/Appears in 2 documents/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save all to matter' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: /Hearing date/ }), { target: { value: '2026-10-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate all' }))
+    await waitFor(() => expect(api.getTemplateSetDocumentsVariables).toHaveBeenCalledWith(S, { matter_id: M, answers: { 'defendant.full_name': 'Ada Lovelace', [`manual:${B}:hearing`]: '2026-10-01' } }))
+    await screen.findByText('Preview failed: Renderer busy')
+    expect(screen.getByText('Preview ready')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry failed previews' }))
+    await waitFor(() => expect(screen.getAllByText('Preview ready')).toHaveLength(2))
+    expect(api.renderTemplateFile).toHaveBeenCalledTimes(2)
+    expect(api.renderTemplateFile).toHaveBeenLastCalledWith(A, { variables: { def_name: 'Ada Lovelace' }, matter_id: M, preview_purpose: 'generation' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save all to matter' }))
+    await screen.findByText('Save failed: Storage unavailable')
+    expect(saves).toEqual([A, B])
+    expect(api.renderTemplate).toHaveBeenCalledWith(A, { matter_id: M, preview_id: 'prev-a', variables: { def_name: 'Ada Lovelace' } })
+    // The typed hearing date is verified by the act of typing it; the suggested defendant was not ticked.
+    expect(api.renderTemplate).toHaveBeenCalledWith(B, { matter_id: M, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, verified_fields: ['hearing'] })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry failed saves' }))
+    await waitFor(() => expect(screen.getAllByText('Saved')).toHaveLength(2))
+    expect(saves).toEqual([A, B, B])
+    // Every document is saved; the PDF with a signing role gets a Send card.
+    await screen.findByText('Every document is saved to the matter.')
+    await screen.findByRole('heading', { name: 'Send for signature' })
+    expect(screen.getByPlaceholderText('Signer 1 full name')).toHaveValue('Ada Lovelace')
   })
 
   it('explains itself without a template and reports a load failure', async () => {

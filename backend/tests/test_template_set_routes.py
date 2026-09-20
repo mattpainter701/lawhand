@@ -258,3 +258,100 @@ class TestReplace:
             record.id, _write(title=record.title), current_user=USER, db=db
         )
         assert record.title == "Motion packet"
+
+
+class TestDocumentsVariables:
+    async def test_one_answer_reaches_every_document_and_required_gaps_are_named(
+        self, monkeypatch
+    ):
+        from app.schemas.document_template_set import DocumentTemplateSetVariablesRequest
+        from app.services import template_sets
+
+        record = _record()
+        first, second = uuid.uuid4(), uuid.uuid4()
+        members = [
+            template_sets.TemplateMember(
+                template_id=str(first),
+                title="Motion",
+                variable_schema={"fields": [
+                    {"name": "def_name", "binding": "defendant.full_name", "required": True},
+                    {"name": "motion_note", "label": "Note"},
+                ]},
+            ),
+            template_sets.TemplateMember(
+                template_id=str(second),
+                title="Order",
+                variable_schema={"fields": [
+                    {"name": "DEFENDANT", "binding": "defendant.full_name"},
+                    {"name": "hearing_date", "label": "Hearing date", "required": True},
+                ]},
+            ),
+        ]
+        unavailable = [
+            router._item_response(
+                _item(uuid.uuid4(), 2), "Old form", unavailable_reason="unpublished"
+            )
+        ]
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=record)
+        monkeypatch.setattr(
+            router,
+            "_member_snapshots",
+            AsyncMock(return_value=(members, unavailable, {str(first): 3, str(second): 1})),
+        )
+        questions = template_sets.build_interview(members)
+        shared = next(q for q in questions if q.binding == "defendant.full_name")
+        note = next(q for q in questions if q.appears_in[0].field_name == "motion_note")
+        matter_id = uuid.uuid4()
+        response = await router.set_documents_variables(
+            record.id,
+            DocumentTemplateSetVariablesRequest(
+                matter_id=matter_id,
+                answers={shared.key: "Ada Lovelace", note.key: "Filed by counsel", "unknown": "x"},
+            ),
+            current_user=USER,
+            db=db,
+        )
+        assert response.matter_id == matter_id
+        assert response.documents[str(first)] == {
+            "def_name": "Ada Lovelace",
+            "motion_note": "Filed by counsel",
+        }
+        assert response.documents[str(second)] == {"DEFENDANT": "Ada Lovelace"}
+        hearing = next(q for q in questions if q.appears_in[0].field_name == "hearing_date")
+        assert response.unanswered_required == [hearing.key]
+        assert [item.title for item in response.unavailable] == ["Old form"]
+        assert response.resolved_versions == {str(first): 3, str(second): 1}
+
+    async def test_an_available_member_with_no_answers_is_still_listed(self, monkeypatch):
+        from app.schemas.document_template_set import DocumentTemplateSetVariablesRequest
+        from app.services import template_sets
+
+        record = _record()
+        only = uuid.uuid4()
+        members = [
+            template_sets.TemplateMember(
+                template_id=str(only), title="Cover", variable_schema={"fields": [{"name": "x"}]}
+            )
+        ]
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=record)
+        monkeypatch.setattr(
+            router, "_member_snapshots", AsyncMock(return_value=(members, [], {str(only): 1}))
+        )
+        response = await router.set_documents_variables(
+            record.id, DocumentTemplateSetVariablesRequest(), current_user=USER, db=db
+        )
+        assert response.documents == {str(only): {}}
+        assert response.unanswered_required == []
+
+    async def test_a_missing_set_is_a_404_here_too(self):
+        from app.schemas.document_template_set import DocumentTemplateSetVariablesRequest
+
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=None)
+        with pytest.raises(HTTPException) as caught:
+            await router.set_documents_variables(
+                uuid.uuid4(), DocumentTemplateSetVariablesRequest(), current_user=USER, db=db
+            )
+        assert caught.value.status_code == 404

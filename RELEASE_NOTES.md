@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.20.03 — Template sets: one interview, a whole packet
+
+Released September 20, 2026.
+
+Group the templates you file together into a set, answer the shared questions once, preview every document, save them all to the matter one after another, and send the signable ones, all from the Prepare page.
+
+- **Sets in Template Studio.** Name a set, choose published templates in the order they are produced, and pin a version where a filed packet needs one. Prepare on a matter starts the packet from there.
+- **Asked once, filled everywhere.** A question bound to the same record in several documents is asked once and says how many documents it fills. Smart Fill answers it from the matter.
+- **Preview, save and send the packet.** Generate all previews (a failed one retries alone), save all to the matter one document at a time with each result shown, then send each signable PDF from the same page.
+
 ## 2026.09.20.02 — Fill from the matter's documents, and AI for unreadable handwriting
 
 Released September 20, 2026.

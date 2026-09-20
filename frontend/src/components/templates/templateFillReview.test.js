@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fillReview, suggestionConfidenceLabel, suggestionOriginLabel } from './templateFillReview'
+import { fillReview, interviewReview, suggestionConfidenceLabel, suggestionOriginLabel } from './templateFillReview'
 
 const fields = {
   client_name: { name: 'client_name', label: 'Client name' },
@@ -39,5 +39,26 @@ describe('document evidence labels', () => {
   it('keeps the record wording for other sources', () => {
     expect(suggestionOriginLabel({ source_type: 'contact', suggested_value: 'Ada', provenance: { binding_label: 'Client name' } })).toBe('From Client name · verify current accuracy')
     expect(suggestionOriginLabel({ suggested_value: null })).toBe('Missing: review or enter a value')
+  })
+})
+
+describe('interviewReview', () => {
+  const questions = [
+    { key: 'defendant.full_name', label: 'Defendant', value_kind: 'text', required: true, appears_in: [{ template_id: 'a' }, { template_id: 'b' }], suggested_value: 'Ada', provenance: { source_type: 'matter_party', confidence: 0.8 }, review_required: true },
+    { key: 'manual:a:note', label: 'Note', value_kind: 'text', required: false, appears_in: [{ template_id: 'a' }] },
+  ]
+  it('reviews a packet the way one document is reviewed', () => {
+    const review = interviewReview(questions, { 'defendant.full_name': 'Ada' }, {}, {})
+    expect(review.total).toBe(2)
+    expect(review.completed).toBe(1)
+    expect(review.rows[0]).toMatchObject({ present: true, needsReview: true, confidence: 80, documents: 2, required: true })
+    expect(review.review.map((row) => row.name)).toEqual(['defendant.full_name'])
+    expect(review.remaining.map((row) => row.name)).toEqual(['manual:a:note'])
+    expect(review.verified).toBe(0)
+    const confirmed = interviewReview(questions, { 'defendant.full_name': 'Ada' }, { 'defendant.full_name': 'Ada' }, { 'defendant.full_name': true })
+    expect(confirmed.review).toEqual([])
+    expect(confirmed.verified).toBe(1)
+    // A typed value that differs from the suggestion is not a suggestion any more.
+    expect(interviewReview(questions, { 'defendant.full_name': 'Grace' }).rows[0].source).toBeNull()
   })
 })

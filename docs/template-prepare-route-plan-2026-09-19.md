@@ -156,7 +156,7 @@ Acceptance: a DOCX fee agreement with signing fields defaults to PDF, saves,
 shows the Send step with the client prefilled, placement reviewed when
 required, sends, and the matter Overview shows the request.
 
-## Phase 3c: sets (two PRs: backend plus library, then the route; no migration)
+## Phase 3c: sets (shipped 2026-09-20 as one commit; no migration; card grouping is by card key headers rather than `TemplateCardRail`)
 
 Backend:
 
