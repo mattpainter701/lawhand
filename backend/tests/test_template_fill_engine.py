@@ -249,6 +249,19 @@ class TestPreparedFill:
         assert prepared.sources_loaded == ()
 
 
+class TestRepeatItemRequired:
+    def test_item_bound_required_field_is_not_reported_missing(self):
+        template = _template(
+            [{"name": "party_name", "binding": "item.party_name", "required": True}]
+        )
+        suggestions = [engine.bound_suggestion("party_name", "item.party_name", {})]
+
+        values, missing = engine.render_values(template, suggestions)
+
+        assert values == {}
+        assert missing == []
+
+
 class TestTemplateVariables:
     def test_body_placeholders_then_schema_fields_once_each(self):
         template = SimpleNamespace(

@@ -1208,7 +1208,13 @@ def render_values(
         value = suggestion.suggested_value
         if value not in (None, ""):
             values[variable] = str(value)
-        elif spec.get("required"):
+        elif (
+            spec.get("required")
+            and (suggestion.provenance or {}).get("status") != "repeat_item"
+        ):
+            # A repeating-section field is supplied per item when the section
+            # renders; requiring one value here would report a blank that no
+            # person can fill on this form.
             missing_required.append(variable)
     return values, missing_required
 
