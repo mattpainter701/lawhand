@@ -823,6 +823,23 @@ def test_workflow_automation_tables_are_purged_but_never_cloned():
     )
 
 
+def test_workflow_document_definitions_purge_before_their_stage():
+    """The document requests FK their stage with ON DELETE RESTRICT.
+
+    A purge that deletes the stage first would fail the whole demo purge, so
+    the child must be in the ordered chain ahead of its parent.
+    """
+    from app.services.demo_purge import _CONFIG_WORKFLOW_PURGE_ORDER
+    from app.services.demo_registry import DEMO_TABLE_REGISTRY
+
+    table = "matter_workflow_document_definitions"
+    policy = DEMO_TABLE_REGISTRY[table]
+    assert policy.purge is True
+    assert policy.clone is False
+    order = list(_CONFIG_WORKFLOW_PURGE_ORDER)
+    assert order.index(table) < order.index("matter_workflow_stage_definitions")
+
+
 def test_tenant_guc_nullif_migration_rewrites_only_known_unsafe_policies():
     """Migration 173 must fail closed on an empty tenant setting, never widen access.
 
