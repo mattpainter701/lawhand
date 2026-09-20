@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -91,6 +91,9 @@ async def billing_status(
                 func.count(MCPUsageEvent.id)
                 .filter(MCPUsageEvent.status_code >= 400)
                 .label("failed_calls"),
+                func.count(MCPUsageEvent.id)
+                .filter(MCPUsageEvent.oauth_grant_id.is_not(None))
+                .label("oauth_calls"),
                 func.coalesce(func.sum(MCPUsageEvent.result_count), 0).label("results"),
                 func.coalesce(
                     func.sum(
@@ -111,7 +114,13 @@ async def billing_status(
                 ).label("charge_cents"),
             ).where(
                 MCPUsageEvent.tenant_id == tenant.id,
-                MCPUsageEvent.product_key_id.is_not(None),
+                # Research OAuth calls are billed through the same meter as
+                # product-key calls; a product-key-only filter under-reported
+                # the tenant's metered volume on the billing page.
+                or_(
+                    MCPUsageEvent.product_key_id.is_not(None),
+                    MCPUsageEvent.oauth_grant_id.is_not(None),
+                ),
                 MCPUsageEvent.created_at >= since,
             )
         )
@@ -146,6 +155,7 @@ async def billing_status(
             "calls_30d": int(mcp_usage.calls or 0),
             "successful_calls_30d": int(mcp_usage.successful_calls or 0),
             "failed_calls_30d": int(mcp_usage.failed_calls or 0),
+            "oauth_calls_30d": int(mcp_usage.oauth_calls or 0),
             "results_30d": int(mcp_usage.results or 0),
             "unit_price_usd": settings.MCP_PRODUCT_CALL_PRICE_CENTS / 100,
             "estimated_charges_usd_30d": (int(mcp_usage.charge_cents or 0) / 100),

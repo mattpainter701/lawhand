@@ -1,9 +1,16 @@
 import pytest
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import app.services.smb as smb
+
+
+def test_agent_release_repository_identity_is_literal_and_single_source():
+    assert smb.AGENT_RELEASE_REPOSITORY == "mattpainter701/lawhand"
+    source = Path(smb.__file__).read_text(encoding="utf-8")
+    assert source.count("mattpainter701/lawhand") == 1
 
 
 def _manifest(**overrides):
@@ -333,9 +340,7 @@ async def test_manifest_rejects_urls_and_bad_assets(monkeypatch):
 def test_manifest_redirect_allowlist_rejects_downgrade_and_untrusted_hosts():
     assert not smb._is_official_manifest_redirect("http://github.com/release")
     assert not smb._is_official_manifest_redirect("https://evil.example/release")
-    assert not smb._is_official_manifest_redirect(
-        "https://github.com/release#fragment"
-    )
+    assert not smb._is_official_manifest_redirect("https://github.com/release#fragment")
     assert smb._is_official_manifest_redirect(
         "https://release-assets.githubusercontent.com/release/asset"
     )

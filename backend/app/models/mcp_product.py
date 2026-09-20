@@ -1,7 +1,17 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -114,6 +124,14 @@ class MCPUsageEvent(Base):
     error_class: Mapped[str | None] = mapped_column(String(120), nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     query_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Request-level idempotency for billable calls. A client retry that reuses
+    # the same key must not create a second billable event; credential_scope
+    # keeps two different keys or grants from colliding on a shared key value.
+    request_idempotency_key: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    credential_scope: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    request_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -136,4 +154,14 @@ Index(
     "ix_mcp_usage_events_key_created",
     MCPUsageEvent.product_key_id,
     MCPUsageEvent.created_at,
+)
+# One billable event per (tenant, credential, client key). Partial so the many
+# keyless rows are not bounded by a NULL-inclusive constraint.
+Index(
+    "uq_mcp_usage_request_idempotency",
+    MCPUsageEvent.tenant_id,
+    MCPUsageEvent.credential_scope,
+    MCPUsageEvent.request_idempotency_key,
+    unique=True,
+    postgresql_where=text("request_idempotency_key IS NOT NULL"),
 )

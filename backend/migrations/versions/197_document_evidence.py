@@ -19,16 +19,16 @@ checked document can be told from an unchecked one.
 Both tables are tenant-isolated the way 192 established. Downgrade drops the
 cache table and the column; nothing else depends on either.
 
-Revision ID: 196_document_evidence
-Revises: 195_probate_track
+Revision ID: 197_document_evidence
+Revises: 196_mcp_usage_idempotency
 """
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "196_document_evidence"
-down_revision = "195_probate_track"
+revision = "197_document_evidence"
+down_revision = "196_mcp_usage_idempotency"
 branch_labels = None
 depends_on = None
 

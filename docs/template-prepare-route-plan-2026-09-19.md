@@ -302,7 +302,7 @@ verification affordance and a record that survives the page.
   tell a checked document from an unchecked one. No new table: names in
   event metadata, as 2b did for readiness.
 - **4c: persisted per-session state** lands with 3d's
-  `document_fill_sessions` (migration 196): verified names and reviewed
+  `document_fill_sessions` (migration 198): verified names and reviewed
   values are saved per (template, matter, user) so leaving the page and
   coming back, or moving to the next document in a set, does not lose the
   pass. The set route then supports "click through docs": the Send/Save
@@ -363,7 +363,7 @@ Handwriting is handled the way template intake already handles it: label
 and value on one row; a low-confidence line is proposed with the
 confidence shown, never dropped silently.
 
-**5b: the extraction cache (one PR; migration 196 or 197, after 3d claims
+**5b: the extraction cache (one PR; migration 198, after 3d claims
 its number).** `document_text_extractions(tenant_id, document_sha256,
 engine, engine_version, text, pages_json, ocr_confidence, extracted_at)`,
 RLS like every tenant table. Keyed by the document's bytes, so a re-upload

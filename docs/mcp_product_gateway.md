@@ -154,6 +154,8 @@ successful-call quota or create a Stripe meter unit.
 - `transport`: `streamable_http`, `rest`, or `internal`
 - `tool_name`, `status_code`, `result_count`, `latency_ms`
 - IP/user-agent for external calls
+- `request_idempotency_key`, `credential_scope`, and `request_sha256` for
+  client retry de-duplication (null when the client sent no key)
 
 Quota enforcement counts successful calls in the current calendar month. API
 token quotas remain token-bound; OAuth allowance is bound to tenant + user
@@ -185,6 +187,25 @@ There is no prepaid-credit product today. Marketing and UI must describe usage
 as metered only after commercial terms are finalized; a call is never represented
 as drawing down credits unless a real credit ledger and pre-call balance gate ship.
 
+Billing is **per successful call**: a call is metered after the upstream
+retrieval succeeds, so a process crash in the narrow window between a successful
+retrieval and the usage commit under-counts that call rather than billing a
+failure. This at-most-once choice is deliberate — a failed or crashed call is
+never charged, and no reconciliation credit is required.
+
+A client may send an `Idempotency-Key` (or `X-Idempotency-Key`) header. The
+gateway serializes on `(tenant, credential, key)` for the request, so a
+concurrent or repeated retry cannot also pass the usage lookup. A retry that
+reuses the key with the same tool and arguments is rejected with `409` and is
+not retrieved or billed again; reusing one key for a different request is a
+`409` conflict. Keys are optional, and calls without one keep the pre-existing
+behavior. Request idempotency is separate from the durable `mcp_stripe_meter`
+job, which already makes Stripe delivery retries safe.
+
+Portal usage and the billing estimate include both product-key and Research
+OAuth calls, priced with the key's snapshot or the current default when a call
+has no key-specific price.
+
 ## Deployment Notes
 
 Migration `070_mcp_product_gateway.py` creates product keys and usage. Migration
@@ -192,7 +213,9 @@ Migration `070_mcp_product_gateway.py` creates product keys and usage. Migration
 and adds explicit tenant entitlement/billing states. Migration
 `127_research_mcp_oauth_usage.py` correlates OAuth usage with its durable grant.
 Migration `138_research_key_controls.py` adds staff custody, purpose, expiration,
-dollar budgets, and per-key price snapshots.
+dollar budgets, and per-key price snapshots. Migration
+`196_mcp_usage_idempotency.py` adds the nullable request-key columns and the
+partial unique index that de-duplicates a client retry.
 
 ### Required configuration and topology
 

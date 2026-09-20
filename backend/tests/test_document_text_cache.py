@@ -26,7 +26,9 @@ def _blank_pdf() -> bytes:
 
 
 def _ocr_result(text="Client name: Ada Lovelace", score=0.82) -> PdfOcrResult:
-    line = OcrLine(page_index=0, text=text, score=score, rect=(72.0, 690.0, 350.0, 710.0))
+    line = OcrLine(
+        page_index=0, text=text, score=score, rect=(72.0, 690.0, 350.0, 710.0)
+    )
     return PdfOcrResult(
         text=text,
         lines=(line,),
@@ -38,7 +40,9 @@ def _ocr_result(text="Client name: Ada Lovelace", score=0.82) -> PdfOcrResult:
 
 
 def test_extract_reads_a_text_layer_without_ocr(monkeypatch):
-    monkeypatch.setattr(cache, "_ocr_pdf", lambda content: pytest.fail("OCR must not run"))
+    monkeypatch.setattr(
+        cache, "_ocr_pdf", lambda content: pytest.fail("OCR must not run")
+    )
     extraction = cache.extract("notes.txt", "text/plain", b"Client: Ada\n")
     assert extraction.engine == cache.ENGINE_TEXT_LAYER
     assert extraction.text == "Client: Ada\n" and not extraction.used_ocr
@@ -94,41 +98,65 @@ async def test_get_or_extract_reads_once_per_digest_and_tenant(
 
     def fake_extract(filename, content_type, content):
         calls.append(filename)
-        return cache.Extraction(text="Client: Ada", engine=cache.ENGINE_TEXT_LAYER, page_count=1)
+        return cache.Extraction(
+            text="Client: Ada", engine=cache.ENGINE_TEXT_LAYER, page_count=1
+        )
 
     monkeypatch.setattr(cache, "extract", fake_extract)
     await set_tenant_context(db_session, str(test_tenant.id))
     first = await cache.get_or_extract(
-        db_session, tenant_id=test_tenant.id, content=b"same bytes", filename="a.txt", content_type="text/plain"
+        db_session,
+        tenant_id=test_tenant.id,
+        content=b"same bytes",
+        filename="a.txt",
+        content_type="text/plain",
     )
     second = await cache.get_or_extract(
-        db_session, tenant_id=test_tenant.id, content=b"same bytes", filename="renamed.txt", content_type="text/plain"
+        db_session,
+        tenant_id=test_tenant.id,
+        content=b"same bytes",
+        filename="renamed.txt",
+        content_type="text/plain",
     )
     assert calls == ["a.txt"]
     assert not first.cached and second.cached and second.text == "Client: Ada"
     digest = hashlib.sha256(b"same bytes").hexdigest()
     row = await db_session.scalar(
-        select(DocumentTextExtraction).where(DocumentTextExtraction.document_sha256 == digest)
+        select(DocumentTextExtraction).where(
+            DocumentTextExtraction.document_sha256 == digest
+        )
     )
     assert row is not None and row.engine_version == cache.ENGINE_VERSION
     # Another tenant's lookup of the same digest sees nothing; the key is
     # tenant plus digest, never the digest alone.
-    assert await cache.lookup(db_session, tenant_id=uuid.uuid4(), document_sha256=digest) is None
+    assert (
+        await cache.lookup(db_session, tenant_id=uuid.uuid4(), document_sha256=digest)
+        is None
+    )
     # Different bytes miss by construction.
     await cache.get_or_extract(
-        db_session, tenant_id=test_tenant.id, content=b"other bytes", filename="b.txt", content_type="text/plain"
+        db_session,
+        tenant_id=test_tenant.id,
+        content=b"other bytes",
+        filename="b.txt",
+        content_type="text/plain",
     )
     assert calls == ["a.txt", "b.txt"]
 
 
-def test_migration_196_isolates_the_cache_by_tenant():
+def test_migration_197_isolates_the_cache_by_tenant():
     from pathlib import Path
 
     source = (
-        Path(__file__).resolve().parents[1] / "migrations" / "versions" / "196_document_evidence.py"
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "197_document_evidence.py"
     ).read_text(encoding="utf-8")
-    assert 'down_revision = "195_probate_track"' in source
-    assert "ENABLE ROW LEVEL SECURITY" in source and "FORCE ROW LEVEL SECURITY" in source
+    assert 'down_revision = "196_mcp_usage_idempotency"' in source
+    assert (
+        "ENABLE ROW LEVEL SECURITY" in source and "FORCE ROW LEVEL SECURITY" in source
+    )
     assert "document_text_extractions_tenant_isolation" in source
     assert "NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in source
     assert "generation_summary" in source

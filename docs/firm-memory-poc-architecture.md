@@ -43,10 +43,9 @@ pipeline, none of which serve a query yet:
 | --- | --- |
 | `agent/clarity_agent/opensearch_engine.py` | Default-off OpenSearch serving engine. Started by the agent when `search_node_enabled=true`, but nothing writes to or reads from it. |
 | `search-node/` | Isolated Tika/OCR extraction workers. No queue or sink adapter, so no worker runs in any shipped process. |
-| `agent/clarity_agent/crawl_control.py` | Durable crawl freshness control plane. Not yet wired to a source adapter or an index sink. |
 
-> **Status — the scale pipeline is present but not connected:** these three
-> components were built against three different sets of contracts and no
+> **Status — the scale pipeline is present but not connected:** these
+> components were built against different sets of contracts and no
 > adapter joins them. Until that adapter exists, `local_search` is served
 > entirely by the SQLite index and the OpenSearch path indexes nothing. Read
 > any claim below about Tika, OCR, OpenSearch, or crawl-time ACL trimming as

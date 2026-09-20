@@ -46,7 +46,8 @@ already solves correctly. The choice:
 Doing neither — patching `local_index.py` while a better scheduler sits unused —
 is the expensive option, and it is the current trajectory.
 
-**Recommendation: (b) delete, fix forward.** The live path needs four targeted
+**Decision: (b) delete, fix forward.** The unused module and its isolated test
+suite were removed in the week-one implementation. The live path needs four targeted
 fixes (§4 items 1, 2, 3, 6) that are each smaller than the integration risk of
 swapping the scheduler underneath a default-off pilot. Revisit (a) only if the
 first real customer share proves the live path structurally unfixable.
@@ -448,11 +449,11 @@ retrieval on the file-share path, and a mobile document viewer.
 
 ## 10. Checklist
 
-- [ ] Decision 1 made and executed (`crawl_control`: wire or delete)
+- [x] Decision 1 made and executed (`crawl_control` deleted)
 - [ ] Decision 2 — Azure Trusted Signing configured
 - [ ] Decision 3 — >250k-file share behaviour chosen
-- [ ] Repo-identity constants collapsed + literal-string test
-- [ ] Ingest/query instrumentation landed
+- [x] Repo-identity constants collapsed + literal-string test
+- [x] Ingest/query instrumentation landed
 - [ ] `agent-v0.17.0` tagged, signed, published, assets verified
 - [ ] ACL-only refresh job
 - [ ] Query-path connection reuse + bounded concurrency without positive-decision caching

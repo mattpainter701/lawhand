@@ -465,6 +465,87 @@ async def test_product_key_usage_enqueues_durable_stripe_meter_event(
     assert job.payload["identifier"] == f"mcp_usage_{event.id}"
 
 
+def _idempotent_event(tenant_id, *, key: str, scope: str) -> MCPUsageEvent:
+    return MCPUsageEvent(
+        tenant_id=tenant_id,
+        auth_type="product_key",
+        transport="rest",
+        tool_name="search_caselaw",
+        status_code=200,
+        result_count=1,
+        request_idempotency_key=key,
+        credential_scope=scope,
+        request_sha256="a" * 64,
+    )
+
+
+@pytest.mark.asyncio
+async def test_usage_idempotency_index_is_unique_per_tenant_and_credential(
+    db_session, test_tenant
+):
+    from sqlalchemy.exc import IntegrityError
+
+    # Snapshot before any rollback expires the persistent tenant object.
+    tenant_id = test_tenant.id
+
+    db_session.add(_idempotent_event(tenant_id, key="same-key", scope="key:one"))
+    await db_session.commit()
+
+    db_session.add(_idempotent_event(tenant_id, key="same-key", scope="key:one"))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+    # A different credential may reuse the same client key string, and the same
+    # credential may use a different key.
+    db_session.add_all(
+        [
+            _idempotent_event(tenant_id, key="same-key", scope="oauth:two"),
+            _idempotent_event(tenant_id, key="other-key", scope="key:one"),
+        ]
+    )
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_find_and_lock_idempotent_usage_event(db_session, test_tenant):
+    from app.services.mcp_product import (
+        find_idempotent_usage_event,
+        lock_mcp_idempotency_key,
+    )
+
+    tenant_id = test_tenant.id
+    db_session.add(
+        _idempotent_event(tenant_id, key="lookup-key", scope="key:lookup")
+    )
+    await db_session.commit()
+
+    found = await find_idempotent_usage_event(
+        db_session,
+        tenant_id=tenant_id,
+        credential_scope="key:lookup",
+        request_idempotency_key="lookup-key",
+    )
+    assert found is not None
+    assert found.request_sha256 == "a" * 64
+
+    missing = await find_idempotent_usage_event(
+        db_session,
+        tenant_id=tenant_id,
+        credential_scope="key:lookup",
+        request_idempotency_key="absent",
+    )
+    assert missing is None
+
+    # The lock is transaction-scoped; acquiring it must not raise.
+    await lock_mcp_idempotency_key(
+        db_session,
+        tenant_id=tenant_id,
+        credential_scope="key:lookup",
+        key="lookup-key",
+    )
+
+
 def test_mcp_messages_accepts_jsonrpc_tools_call_shape():
     body = {
         "jsonrpc": "2.0",

@@ -54,7 +54,7 @@ then by the quirk campaign):
 | 4a/4b | Click-through verification in Populate; verified names on the saved document | Shipped | see CHANGELOG 2026.09.20.01 | `templateFillReview.test.js`, Prepare page verification case, Generate dialog payload; `test_document_templates.py` descriptor test (event, row, list, response, 422) |
 | 4c/4d | Verification persisted per session; readiness record counts | Planned with 3d | — | |
 | 5a | OCR reaches matter documents (images accepted, confidence carried) | Shipped | CHANGELOG 2026.09.20.01 | `test_matter_fact_extraction_unit.py` (OCR candidates), `_postgres.py` (PNG source, empty scan, unsupported type) |
-| 5b | `document_text_extractions` cache keyed by `document_sha256` (migration 196, new head) | Shipped | CHANGELOG 2026.09.20.01 | `test_document_text_cache.py` (once per digest and tenant, OCR path, image path, engine unavailable, migration RLS text); cache hit in `_postgres.py`; migration applied up, down and up on a scratch database |
+| 5b | `document_text_extractions` cache keyed by `document_sha256` (migration 197, new head) | Shipped | CHANGELOG 2026.09.20.01 | `test_document_text_cache.py` (once per digest and tenant, OCR path, image path, engine unavailable, migration RLS text); cache hit in `_postgres.py`; migration applied up, down and up on a scratch database |
 | 5c | Template-anchored reading of a printed, hand-filled form (v1: scaled alignment, OCR per field crop, thumbnails; vision fallback deferred as 5c-2) | Shipped (v1) | CHANGELOG 2026.09.20.01 | `test_template_form_reading.py` (windows, crop geometry, page-size scaling, thumbnails, failures), `test_matter_document_form_reading_postgres.py` (both routes, matched and unmatched readings, 404s) |
 | 5d | `DocumentEvidenceSource` in the engine, lowest precedence, `review_required` | Planned | — | |
 | 5e | Matter-scoped index over cached text | Planned, later | — | |
@@ -132,8 +132,8 @@ record of what was built against.
   total, filled, verified, verified_fields}`, set beside `positioned_fields`,
   exposed on `MatterDocumentResponse` and on the render response (first save
   and idempotent replay).
-- **5b.** Migration `196_document_evidence.py` (`down_revision =
-  "195_probate_track"`): table `document_text_extractions(id, tenant_id FK,
+- **5b.** Migration `197_document_evidence.py` (`down_revision =
+  "196_mcp_usage_idempotency"`): table `document_text_extractions(id, tenant_id FK,
   document_sha256 char(64) with the matter_documents regex check, engine
   {text_layer|ocr_local|ocr_azure|mixed}, engine_version, text, lines_json,
   page_count, ocr_confidence, truncated, created_at)`, unique
@@ -241,14 +241,15 @@ npx vitest run && npx eslint src
   (0 errors; 3 pre-existing `no-alert` warnings in ChatPage and ProfilePage).
 - Backend suites run in this branch's sessions: template suites (718), matters
   and intake and durable (256), template and e-sign (165 at `c2c5a54`).
-- Migration head after the Phase 4/5 commit: `196_document_evidence` (the branch's only migration).
+- Migration head after the Phase 4/5 commit: `197_document_evidence` (the branch's only migration).
 
 ## 8. Open risks and recommended order
 
-1. Merge this branch as one unit. It carries one migration, `196_document_evidence`,
-   pinned to `195_probate_track`; confirm the head on `origin/main` before
-   merging, per `AGENTS.md` §1, and renumber if another migration landed.
-2. 3d takes migration 197.
+1. Merge this branch as one unit. It carries one migration, `197_document_evidence`,
+   pinned to `196_mcp_usage_idempotency` after main's `#574` claimed 196 first
+   (renumbered from 196 per `AGENTS.md` §1; the head on `origin/main` was
+   confirmed before this change).
+2. 3d takes migration 198.
 3. The DOCX-to-PDF default for templates with signature fields changes a
    default; a firm that wanted Word output must choose it. The reason is shown
    beside the choice.
