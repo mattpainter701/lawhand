@@ -40,6 +40,8 @@ from app.services.matter_workspace_capabilities import (
     template_rank,
 )
 from app.services.template_fill_loaders import (
+    load_document_evidence,
+    memoized,
     MatterLookupError,
     load_current_retainer,
     load_estate_for_matter,
@@ -60,6 +62,8 @@ TRIGGER_EVENTS = (
     "matter_created",
     "intake_submitted",
     "intake_writeback_accepted",
+    # A document was read (a scan through OCR included) and yielded values.
+    "document_extracted",
 )
 
 
@@ -124,6 +128,7 @@ async def matter_facts_digest(db: AsyncSession, matter: Matter) -> str:
     parties = await load_matter_parties(db=db, tenant_id=tenant_id, matter=matter)
     retainer = await load_current_retainer(db=db, tenant_id=tenant_id, matter=matter)
     estate = await load_estate_for_matter(db=db, tenant_id=tenant_id, matter=matter)
+    evidence = await load_document_evidence(db=db, tenant_id=tenant_id, matter=matter)
     index = engine.collect(
         engine.FillRecords(
             matter=matter,
@@ -131,6 +136,7 @@ async def matter_facts_digest(db: AsyncSession, matter: Matter) -> str:
             current_user=None,
             retainer=retainer,
             estate=estate,
+            document_evidence=evidence,
         )
     )
     return digest_payload(
@@ -253,6 +259,9 @@ async def prepare_matter_documents(
     from app.services.document_template_versions import published_template_view
 
     summaries: list[dict[str, Any]] = []
+    # One read of each record family for the whole run, however many
+    # templates the matter has.
+    loaders = memoized()
     for template, reasons in await _candidate_templates(db, matter):
         entry: dict[str, Any] = {
             "template_id": str(template.id),
@@ -269,6 +278,7 @@ async def prepare_matter_documents(
                 tenant_id=matter.tenant_id,
                 matter=matter,
                 actor=actor,
+                loaders=loaders,
             )
         except (ValueError, MatterLookupError) as exc:
             entry["status"] = "unavailable"

@@ -156,3 +156,65 @@ async def test_form_sources_is_empty_for_a_matter_that_generated_nothing(
     )
     sources = await client.get(f"/api/matters/{matter.id}/documents/{document_id}/facts/form-sources")
     assert sources.status_code == 200 and sources.json() == {"sources": []}
+
+
+async def test_unreadable_clips_go_to_the_vision_model_only_when_allowed_and_asked(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    from app.services import intake_extraction_ai, matter_form_reading
+
+    template_id, matter, _values, _preview = await _prepare_active_pdf_generation(
+        client=client,
+        db_session=db_session,
+        test_tenant=test_tenant,
+        test_user=test_user,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slug="form-vision",
+    )
+    scan = _fillable_pdf()
+    document_id = await _scan_document(
+        db_session, tenant_id=test_tenant.id, matter_id=matter.id, filename="scan.pdf", content=scan
+    )
+
+    async def read_file(_store, **kwargs):
+        return scan
+
+    monkeypatch.setattr(facts.MatterFileStore, "read_matter_file_bytes", read_file)
+    monkeypatch.setattr(reading, "_default_ocr", lambda png: ("", 0.0))
+    url = f"/api/matters/{matter.id}/documents/{document_id}/facts/from-form"
+
+    # Not asked: nothing is sent, every field is simply unread.
+    plain = await client.post(url, json={"template_id": template_id})
+    assert plain.status_code == 200, plain.text
+    assert all(item["read_by"] == "ocr" and item["text"] == "" for item in plain.json()["readings"])
+
+    # Asked, but the firm has not allowed the model to read its documents.
+    monkeypatch.setattr(matter_form_reading.facts, "ai_extraction_enabled", lambda row: False)
+    refused = await client.post(url, json={"template_id": template_id, "use_ai": True})
+    assert refused.status_code == 200, refused.text
+    assert "not enabled for this firm" in " ".join(refused.json()["warnings"])
+    assert all(item["read_by"] == "ocr" for item in refused.json()["readings"])
+
+    # Allowed: each unreadable clip is one metered read, and the value is
+    # proposed at the vision confidence with the clip still beside it.
+    monkeypatch.setattr(matter_form_reading.facts, "ai_extraction_enabled", lambda row: True)
+    sent: list = []
+
+    async def fake_clip(*, db, user, png_bytes, label, document_sha256):
+        sent.append((label, len(png_bytes)))
+        return "Ada Lovelace" if label == "Client Name" else None
+
+    monkeypatch.setattr(intake_extraction_ai, "read_field_clip", fake_clip)
+    read = await client.post(url, json={"template_id": template_id, "use_ai": True})
+    assert read.status_code == 200, read.text
+    body = read.json()
+    assert len(sent) == 3 and all(size > 0 for _label, size in sent)
+    name = next(entry for entry in body["candidates"] if entry["target_key"] == "client.name")
+    assert name["value"] == "Ada Lovelace" and name["source_kind"] == "ocr_field_vision"
+    assert name["confidence"] == pytest.approx(matter_form_reading.VISION_CONFIDENCE)
+    assert name["thumbnail_png_b64"]
+    by_name = {item["name"]: item for item in body["readings"]}
+    assert by_name["client_name"]["read_by"] == "vision"
+    assert by_name["notes"]["read_by"] == "ocr" and by_name["notes"]["text"] == ""
+    assert any("AI read 1 field(s)" in warning for warning in body["warnings"])

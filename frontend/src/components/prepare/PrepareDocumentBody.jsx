@@ -5,7 +5,7 @@ import TemplateFillProgress from '../templates/TemplateFillProgress'
 import TemplateFillSource from '../templates/TemplateFillSource'
 import TemplateTestSummary from '../templates/TemplateTestSummary'
 import GeneratedPdfPreview from '../templates/GeneratedPdfPreview'
-import { fillValue, isSigningField, suggestionConfidenceLabel } from '../templates/templateFillReview'
+import { fillValue, isSigningField, suggestionConfidenceLabel, suggestionOriginLabel } from '../templates/templateFillReview'
 import { getMatterDocumentDownloadUrl, triggerBlobDownload } from '../../api'
 import { downloadRenderedText, friendlyVariableLabel } from './prepareHelpers'
 
@@ -184,7 +184,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                     </label>
                   )}
                   {review && !review.present && <p className={`mb-1 text-xs font-semibold ${field.required ? 'text-brand-rose' : 'text-brand-amber'}`}>{field.required ? 'Required — missing' : 'Optional — not filled'}</p>}
-                  {fieldSources[name] && <p className="mb-1 text-xs text-brand-muted">{fieldSources[name].suggested_value == null ? 'Missing: review or enter a value' : `From ${fieldSources[name].provenance?.binding_label || fieldSources[name].source_type || 'record'} · verify current accuracy`}{fieldSources[name].provenance?.updated_at ? ` · Updated ${new Date(fieldSources[name].provenance.updated_at).toLocaleDateString()}` : ''}</p>}
+                  {fieldSources[name] && <p className="mb-1 text-xs text-brand-muted">{suggestionOriginLabel(fieldSources[name])}{fieldSources[name].provenance?.updated_at ? ` · Updated ${new Date(fieldSources[name].provenance.updated_at).toLocaleDateString()}` : ''}</p>}
                   {field.binding?.startsWith('firm.') && <p className="mb-1 text-xs text-brand-muted">Shared firm profile. Missing or outdated details can be updated once by a firm administrator in Firm settings, then refreshed here with Smart Fill.</p>}
                   {fieldSources[name]?.provenance?.source_document_id && <a className="block mb-1 text-xs underline" href={getMatterDocumentDownloadUrl(matterId, fieldSources[name].provenance.source_document_id)} target="_blank" rel="noreferrer">Open reviewed source document</a>}
                   {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">

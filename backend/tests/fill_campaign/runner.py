@@ -99,6 +99,13 @@ def _loader_patches(scenario: Scenario, stack: ExitStack, writes: list) -> None:
     stack.enter_context(
         patch.object(document_templates, "_load_current_retainer", load_retainer)
     )
+
+    async def load_evidence(**_):
+        return tuple(getattr(scenario, "document_evidence", ()) or ())
+
+    stack.enter_context(
+        patch.object(document_templates, "_load_document_evidence", load_evidence)
+    )
     original = template_fill_engine.add_candidate
 
     def recording_add(candidates, alias, value, **kwargs):

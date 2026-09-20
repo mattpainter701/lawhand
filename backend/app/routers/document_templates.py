@@ -160,6 +160,7 @@ from app.services.template_fill_engine import (  # noqa: F401 - re-exported
     extract_template_variables,
 )
 from app.services.template_fill_loaders import (
+    load_document_evidence,
     Loaders,
     MatterLookupError,
     load_current_retainer,
@@ -1937,6 +1938,7 @@ _load_matter_context = load_matter_context
 _load_matter_parties = load_matter_parties
 _load_estate_for_matter = load_estate_for_matter
 _load_current_retainer = load_current_retainer
+_load_document_evidence = load_document_evidence
 
 
 def _schema_for_values(variable_schema: Any, variables: dict[str, str]) -> Any:
@@ -2064,6 +2066,7 @@ async def build_variable_suggestions(
         parties=lambda **kwargs: _load_matter_parties(**kwargs),
         estate=lambda **kwargs: _load_estate_for_matter(**kwargs),
         retainer=lambda **kwargs: _load_current_retainer(**kwargs),
+        document_evidence=lambda **kwargs: _load_document_evidence(**kwargs),
     )
     try:
         prepared = await template_fill_engine.prepare_fill(

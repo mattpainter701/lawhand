@@ -57,6 +57,10 @@ class FieldReading:
     confidence: float
     thumbnail_png_b64: str | None = None
     binding: str | None = None
+    #: The clip itself, kept only for readings OCR could not read when the
+    #: caller asked for it, so a vision model can try. Never serialised.
+    clip_png: bytes | None = None
+    read_by: str = "ocr"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +72,7 @@ class FieldReading:
             "text": self.text,
             "confidence": self.confidence,
             "thumbnail_png_b64": self.thumbnail_png_b64,
+            "read_by": self.read_by,
         }
 
 
@@ -143,6 +148,23 @@ def _thumbnail(image) -> str:
         copy.close()
 
 
+CLIP_WIDTH = 600
+
+
+def _clip(image):
+    """A clip a vision model can read: wider than a thumbnail, still bounded."""
+
+    from PIL import Image
+
+    copy = image.copy()
+    if copy.width > CLIP_WIDTH:
+        ratio = CLIP_WIDTH / copy.width
+        copy = copy.resize(
+            (CLIP_WIDTH, max(1, int(copy.height * ratio))), Image.LANCZOS
+        )
+    return copy
+
+
 def _default_ocr(png: bytes) -> tuple[str, float]:
     result = ocr_image(png)
     return result.text, float(result.average_confidence)
@@ -163,6 +185,8 @@ def read_scan(
     template_page_sizes: dict[int, tuple[float, float]],
     ocr: Callable[[bytes], tuple[str, float]] | None = None,
     thumbnails: int = MAX_THUMBNAILS,
+    keep_clips_below: float | None = None,
+    max_clips: int = 40,
 ) -> list[FieldReading]:
     """Read each field window out of the scanned pages.
 
@@ -184,6 +208,7 @@ def read_scan(
         by_page.setdefault(window.page, []).append(window)
     readings: list[FieldReading] = []
     thumbnails_left = max(0, int(thumbnails))
+    clips_left = max(0, int(max_clips)) if keep_clips_below is not None else 0
     remaining_pixels = MAX_RENDERED_PIXELS
     try:
         document = pdfium.PdfDocument(scan_pdf)
@@ -242,6 +267,14 @@ def read_scan(
                         if thumbnails_left > 0:
                             thumbnail = _thumbnail(crop)
                             thumbnails_left -= 1
+                        clip = None
+                        if (
+                            clips_left > 0
+                            and keep_clips_below is not None
+                            and float(confidence) < keep_clips_below
+                        ):
+                            clip = _png_bytes(_clip(crop))
+                            clips_left -= 1
                     finally:
                         crop.close()
                     readings.append(
@@ -254,6 +287,7 @@ def read_scan(
                             confidence=round(max(0.0, min(1.0, float(confidence))), 4),
                             thumbnail_png_b64=thumbnail,
                             binding=window.binding,
+                            clip_png=clip,
                         )
                     )
             finally:

@@ -5,7 +5,22 @@ export const isSigningField = field => ['signature', 'initials'].includes(field?
 
 export function suggestionConfidenceLabel(review) {
   if (review.source?.source_type === 'firm_profile') return 'Saved firm profile value'
+  if (review.source?.source_type === 'document_evidence') {
+    const ocr = review.source?.provenance?.ocr_confidence
+    return typeof ocr === 'number' ? `Read from a document · ${Math.round(ocr * 100)}% OCR confidence` : 'Read from a document'
+  }
   return review.confidence == null ? 'Confidence unavailable' : `${review.confidence}% match confidence`
+}
+
+// The one-line origin shown above a filled field.
+export function suggestionOriginLabel(source) {
+  if (!source) return ''
+  if (source.suggested_value == null) return 'Missing: review or enter a value'
+  if (source.source_type === 'document_evidence') {
+    const filename = source.provenance?.source_filename || source.source_field?.split('#')[0]
+    return `From ${filename || 'a document'} in this matter's documents · check it against the page`
+  }
+  return `From ${source.provenance?.binding_label || source.source_type || 'record'} · verify current accuracy`
 }
 
 export function initialFillValues(names, fields) {

@@ -136,3 +136,22 @@ it('reads a scan field by field against the form the matter printed', async () =
     replace_existing: false,
   }))
 })
+
+it('sends the unreadable clips to AI only when the reviewer opts in', async () => {
+  getMatterDocumentFormSources.mockResolvedValue({ sources: [{ template_id: 't-1', template_title: 'Intake form', version_no: 2 }] })
+  readMatterDocumentAgainstForm.mockResolvedValue({
+    source_document_id: 'scan',
+    candidates: [{ target_key: 'client.name', label: 'Client name', source_kind: 'ocr_field_vision', confidence: 0.6, value: 'Ada', current_value: null, status: 'suggested' }],
+    readings: [],
+    warnings: [],
+  })
+  render(<MatterDocumentFacts matterId="matter" documentId="scan" />)
+  fireEvent.click(screen.getByText('Read details from a document'))
+  await screen.findByLabelText('Printed form')
+  fireEvent.click(screen.getByText('Read against the printed form'))
+  await waitFor(() => expect(readMatterDocumentAgainstForm).toHaveBeenCalledWith('matter', 'scan', { template_id: 't-1', version_no: 2 }))
+  fireEvent.click(screen.getByLabelText('Use AI for unreadable fields'))
+  fireEvent.click(screen.getByText('Read against the printed form'))
+  await waitFor(() => expect(readMatterDocumentAgainstForm).toHaveBeenLastCalledWith('matter', 'scan', { template_id: 't-1', version_no: 2, use_ai: true }))
+  expect(await screen.findByText('Read from the scan by AI · check the clip')).toBeInTheDocument()
+})

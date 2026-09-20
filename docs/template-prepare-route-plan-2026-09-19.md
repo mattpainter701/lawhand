@@ -316,7 +316,7 @@ still re-derived on refresh and marked "changed since verified" if the
 matter moved; the generation preview evidence stays the only gate to a
 saved PDF.
 
-## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; 5a, 5b and 5c v1 shipped 2026-09-20; 5c-2 vision fallback, 5d and 5e planned)
+## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; 5a, 5b, 5c v1, 5c-2 and 5d shipped 2026-09-20; 5e planned)
 
 > "as documents get entered into the matters > doc that's the 'repo' of
 > knowledge outside of matter fields ... a mechanism to read those

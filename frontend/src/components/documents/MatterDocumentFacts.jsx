@@ -17,6 +17,7 @@ const formKey = (source) => `${source.template_id}:${source.version_no ?? ''}`
 export function sourceLabel(entry) {
   const percent = typeof entry.confidence === 'number' ? Math.round(entry.confidence * 100) : null
   if (entry.source_kind === 'ocr_field') return `Read from the scan, field by field${percent == null ? '' : ` · ${percent}% OCR confidence`}`
+  if (entry.source_kind === 'ocr_field_vision') return 'Read from the scan by AI · check the clip'
   if (entry.source_kind === 'ocr') return `From the scan${percent == null ? '' : ` · ${percent}% OCR confidence`}`
   if (entry.source_kind === 'acroform') return 'From the form'
   if (entry.source_kind === 'regex') return 'From the text'
@@ -41,6 +42,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
   const [useAi, setUseAi] = useState(false)
   const [formSources, setFormSources] = useState([])
   const [formChoice, setFormChoice] = useState('')
+  const [useVision, setUseVision] = useState(false)
   const documents = providedDocuments || fetched
   const documentId = providedDocumentId || pickedId
 
@@ -103,6 +105,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
       const result = await readMatterDocumentAgainstForm(matterId, documentId, {
         template_id: source.template_id,
         ...(source.version_no ? { version_no: source.version_no } : {}),
+        ...(useVision ? { use_ai: true } : {}),
       })
       applyResult(version, result)
     } catch (error) {
@@ -110,7 +113,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
     } finally {
       if (version === requestVersion.current) setBusy(false)
     }
-  }, [matterId, documentId, formSources, formChoice, applyResult])
+  }, [matterId, documentId, formSources, formChoice, useVision, applyResult])
 
   const read = useCallback(async () => {
     const version = ++requestVersion.current
@@ -199,6 +202,10 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
             <select aria-label="Printed form" value={formChoice} disabled={busy} onChange={event => setFormChoice(event.target.value)} className="block w-full border rounded p-2 text-brand-ink bg-brand-bg">
               {formSources.map(source => <option key={formKey(source)} value={formKey(source)}>{source.template_title || source.template_id}{source.version_no ? ` v${source.version_no}` : ''}{source.output_filename ? ` — ${source.output_filename}` : ''}</option>)}
             </select>
+          </label>
+          <label className="mt-2 flex items-center gap-2">
+            <input type="checkbox" aria-label="Use AI for unreadable fields" checked={useVision} disabled={busy} onChange={event => setUseVision(event.target.checked)} />
+            Use AI for fields OCR could not read (sends only those clips to the AI provider)
           </label>
           <button type="button" onClick={readAgainstForm} disabled={busy || !documentId || !formChoice} className="mt-2 border rounded p-2 text-sm">
             {busy ? 'Reading…' : 'Read against the printed form'}

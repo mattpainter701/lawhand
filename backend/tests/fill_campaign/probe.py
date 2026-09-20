@@ -16,6 +16,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from app.services import template_fill_engine
+from app.services.template_fill_loaders import DocumentEvidence
 from app.services.probate import bindings as probate_bindings
 
 
@@ -93,6 +94,25 @@ def probe_matter() -> SimpleNamespace:
     )
 
 
+def probe_document_evidence() -> tuple[DocumentEvidence, ...]:
+    """One value per alias the document evidence source declares."""
+
+    document_id = uuid.uuid4()
+    return tuple(
+        DocumentEvidence(
+            alias=alias,
+            value=f"Probe {alias}",
+            confidence=0.5,
+            document_id=document_id,
+            filename="probe-scan.pdf",
+            source_kind="ocr",
+            source_locator="ocr:1:1",
+            document_sha256="0" * 64,
+        )
+        for alias in sorted(template_fill_engine.source("document_evidence").aliases)
+    )
+
+
 def probe_records(*, parties_per_role: int = 1) -> template_fill_engine.FillRecords:
     parties = []
     for role in template_fill_engine.PARTY_ROLES:
@@ -107,6 +127,7 @@ def probe_records(*, parties_per_role: int = 1) -> template_fill_engine.FillReco
             id=uuid.uuid4(), amount=Decimal("1"), minimum_balance=Decimal("1")
         ),
         estate=probate_bindings.probe_estate(),
+        document_evidence=probe_document_evidence(),
     )
 
 

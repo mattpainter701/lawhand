@@ -847,6 +847,8 @@ async def propose_matter_document_facts(
 class FormReadRequest(BaseModel):
     template_id: uuid.UUID
     version_no: int | None = Field(default=None, ge=1)
+    # Send the clips OCR could not read to the vision model (opt-in, metered).
+    use_ai: bool = False
 
 
 @router.get("/matters/{matter_id}/documents/{doc_id}/facts/form-sources")
@@ -890,6 +892,7 @@ async def read_matter_document_against_form(
         uuid.UUID(doc_id),
         template_id=payload.template_id,
         version_no=payload.version_no,
+        use_ai=payload.use_ai,
     )
 
 

@@ -95,18 +95,33 @@ async def _run_matter_fact_extraction(row: DurableJob) -> dict:
 
     from app.services.matter_fact_extraction import extract_and_queue
 
+    from app.services.document_prefill import enqueue_document_prefill
+
     payload = row.payload or {}
     async with async_session_maker() as session:
         await set_tenant_context(session, str(row.tenant_id))
         try:
-            return await extract_and_queue(
+            matter_id = uuid.UUID(str(payload["matter_id"]))
+            result = await extract_and_queue(
                 db=session,
                 tenant_id=row.tenant_id,
-                matter_id=uuid.UUID(str(payload["matter_id"])),
+                matter_id=matter_id,
                 document_id=uuid.UUID(str(payload["document_id"])),
             )
         except (KeyError, TypeError, ValueError):
             return {"status": "skipped", "reason": "malformed payload"}
+        if result.get("status") == "queued":
+            # The document said something a template could use; the matter's
+            # readiness is recomputed so the banner reflects it.
+            await enqueue_document_prefill(
+                session,
+                tenant_id=row.tenant_id,
+                matter_id=matter_id,
+                trigger_event="document_extracted",
+                actor_user_id=None,
+            )
+            await session.commit()
+        return result
 
 
 async def _run_cloud_sync(row: DurableJob) -> dict:

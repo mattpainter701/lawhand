@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.20.02 — Fill from the matter's documents, and AI for unreadable handwriting
+
+Released September 20, 2026.
+
+A blank template field can now be filled from what the matter's documents say, marked for review with the source one click away. When a hand-filled form has fields OCR cannot read, an opt-in AI read can try each clip.
+
+- **Documents as a fill source.** Values read from the matter's documents fill fields nothing else filled. They never replace a matter or client value, are marked for review, and link to the document.
+- **A new scan refreshes readiness.** When an uploaded document yields values, the matter's ready-to-review documents are recomputed, so the Case Documents banner reflects the scan.
+- **AI for unreadable handwriting, opt-in.** Reading a printed form against its template can send only the clips OCR could not read to the AI provider, one metered call each, when the firm allows it.
+
 ## 2026.09.20.01 — Verify filled fields quickly, and read scanned or hand-filled forms
 
 Released September 20, 2026.

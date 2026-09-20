@@ -105,3 +105,29 @@ def test_normalize_scan_rasterises_images_and_passes_pdfs_through():
     assert reading.normalize_scan(png, "scan.png").startswith(b"%PDF")
     pdf = acroform_pdf()
     assert reading.normalize_scan(pdf, "scan.pdf") is pdf
+
+
+def test_read_scan_keeps_clips_only_for_unreadable_fields_when_asked():
+    pdf = acroform_pdf()
+    windows = reading.field_windows(_schema_from(pdf))
+    names = [window.name for window in windows]
+
+    seen: list = []
+
+    def fake_ocr(png: bytes):
+        # The first window reads well; the rest are below the floor.
+        seen.append(1)
+        return ("Ada", 0.9) if len(seen) == 1 else ("", 0.1)
+    readings = reading.read_scan(
+        pdf, windows, template_page_sizes=reading.page_sizes(pdf), ocr=fake_ocr,
+        keep_clips_below=0.35, max_clips=2,
+    )
+    assert readings[0].clip_png is None
+    kept = [item for item in readings if item.clip_png]
+    assert len(kept) == 2 and all(item.clip_png.startswith(b"\x89PNG") for item in kept)
+    assert all(item.read_by == "ocr" for item in readings)
+    assert "clip_png" not in readings[0].as_dict() and readings[0].as_dict()["read_by"] == "ocr"
+    # Without the flag nothing is retained, however low the confidence.
+    plain = reading.read_scan(pdf, windows, template_page_sizes=reading.page_sizes(pdf), ocr=lambda png: ("", 0.0))
+    assert all(item.clip_png is None for item in plain)
+    assert len(names) >= 3

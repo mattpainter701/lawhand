@@ -55,8 +55,8 @@ then by the quirk campaign):
 | 4c/4d | Verification persisted per session; readiness record counts | Planned with 3d | — | |
 | 5a | OCR reaches matter documents (images accepted, confidence carried) | Shipped | CHANGELOG 2026.09.20.01 | `test_matter_fact_extraction_unit.py` (OCR candidates), `_postgres.py` (PNG source, empty scan, unsupported type) |
 | 5b | `document_text_extractions` cache keyed by `document_sha256` (migration 197, new head) | Shipped | CHANGELOG 2026.09.20.01 | `test_document_text_cache.py` (once per digest and tenant, OCR path, image path, engine unavailable, migration RLS text); cache hit in `_postgres.py`; migration applied up, down and up on a scratch database |
-| 5c | Template-anchored reading of a printed, hand-filled form (v1: scaled alignment, OCR per field crop, thumbnails; vision fallback deferred as 5c-2) | Shipped (v1) | CHANGELOG 2026.09.20.01 | `test_template_form_reading.py` (windows, crop geometry, page-size scaling, thumbnails, failures), `test_matter_document_form_reading_postgres.py` (both routes, matched and unmatched readings, 404s) |
-| 5d | `DocumentEvidenceSource` in the engine, lowest precedence, `review_required` | Planned | — | |
+| 5c | Template-anchored reading of a printed, hand-filled form (v1: scaled alignment, OCR per field crop, thumbnails); 5c-2 vision fallback per unreadable clip, opt-in and metered, off until `INTAKE_EXTRACTION_VISION_MODEL` is set | Shipped (v1 + 5c-2) | CHANGELOG 2026.09.20.01 | `test_template_form_reading.py` (windows, crop geometry, page-size scaling, thumbnails, failures), `test_matter_document_form_reading_postgres.py` (both routes, matched and unmatched readings, 404s) |
+| 5d | `DocumentEvidenceSource` in the engine, lowest precedence, `review_required`; prefill digest and memoized loaders; `document_extracted` trigger | Shipped | CHANGELOG 2026.09.20.02 | `test_template_fill_evidence_postgres.py`, `TestDocumentEvidence`, all Smart Fill parity suites (255) unchanged |
 | 5e | Matter-scoped index over cached text | Planned, later | — | |
 
 ## 3. What already existed and was reused (so the concern was narrower than feared)

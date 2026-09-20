@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.models.document_template import DocumentTemplate
 from app.models.plugin import MatterEvent
 from app.services import matter_fact_extraction as facts
@@ -26,6 +27,61 @@ from app.services.template_cards import canonical_path
 from app.services.template_ocr import TemplateOcrError
 
 MAX_SOURCES = 25
+#: A crop read below this OCR confidence is offered to the vision model.
+VISION_FLOOR = 0.35
+VISION_CONFIDENCE = 0.6
+
+
+async def _read_unreadable_clips(
+    db, user, readings, *, document_sha256: str
+) -> list[str]:
+    """Send the clips OCR could not read to the vision model, if allowed."""
+
+    from app.database import set_tenant_context
+    from app.models.tenant import TenantSettings
+    from app.services import intake_extraction_ai
+
+    clips = [item for item in readings if item.clip_png]
+    if not clips:
+        return []
+    settings_row = await db.scalar(
+        select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+    )
+    if not facts.ai_extraction_enabled(settings_row):
+        for item in clips:
+            item.clip_png = None
+        return ["AI reading of handwritten fields is not enabled for this firm."]
+    read = 0
+    failure: str | None = None
+    for item in clips:
+        if failure is None:
+            try:
+                value = await intake_extraction_ai.read_field_clip(
+                    db=db,
+                    user=user,
+                    png_bytes=item.clip_png,
+                    label=item.label,
+                    document_sha256=document_sha256,
+                )
+            except intake_extraction_ai.IntakeExtractionUnavailable as exc:
+                failure = str(exc)
+                value = None
+            if value:
+                item.text = value
+                item.confidence = VISION_CONFIDENCE
+                item.read_by = "vision"
+                read += 1
+        item.clip_png = None
+    # The vision read commits its usage rows, which drops the transaction's
+    # tenant context; restore it before the target lookups that follow.
+    await set_tenant_context(db, str(user.tenant_id))
+    if failure:
+        return [failure]
+    return [
+        f"AI read {read} field(s) OCR could not. Check each against its clip before accepting."
+        if read
+        else "AI could not read the remaining fields either."
+    ]
 
 
 async def form_sources(db, *, tenant_id, matter_id) -> list[dict[str, Any]]:
@@ -88,9 +144,22 @@ def _target_for(window: reading.FieldWindow, targets) -> facts.FactTarget | None
 
 
 async def read_against_form(
-    db, user, matter_id, document_id, *, template_id, version_no=None
+    db,
+    user,
+    matter_id,
+    document_id,
+    *,
+    template_id,
+    version_no=None,
+    use_ai: bool = False,
 ) -> dict[str, Any]:
-    """Propose values for a scan by reading each field window of its template."""
+    """Propose values for a scan by reading each field window of its template.
+
+    ``use_ai`` sends the clips OCR could not read to the vision model, one
+    metered call per clip, when the platform has one and the firm allowed the
+    model to read its documents. It only ever adds candidates for the same
+    human review.
+    """
 
     from app.routers.document_templates import _verified_template_source
 
@@ -144,10 +213,21 @@ async def read_against_form(
         )
         sizes = await asyncio.to_thread(reading.page_sizes, source)
         readings = await asyncio.to_thread(
-            reading.read_scan, scan, windows, template_page_sizes=sizes
+            reading.read_scan,
+            scan,
+            windows,
+            template_page_sizes=sizes,
+            keep_clips_below=VISION_FLOOR if use_ai else None,
+            max_clips=int(get_settings().INTAKE_EXTRACTION_VISION_MAX_FIELDS),
         )
     except TemplateOcrError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    vision_notes: list[str] = []
+    if use_ai:
+        vision_notes = await _read_unreadable_clips(
+            db, user, readings, document_sha256=document.document_sha256 or ""
+        )
 
     targets = await facts.build_targets(db, tenant_id)
     candidates: dict[str, list[facts.Candidate]] = {}
@@ -162,7 +242,10 @@ async def read_against_form(
         matched[item.name] = target.key
         candidates.setdefault(target.key, []).append(
             facts.Candidate(
-                str(value), "ocr_field", f"field:{item.name}", item.confidence
+                str(value),
+                "ocr_field_vision" if item.read_by == "vision" else "ocr_field",
+                f"field:{item.name}",
+                item.confidence,
             )
         )
 
@@ -220,6 +303,7 @@ async def read_against_form(
     unread = [item.name for item in readings if not item.text]
     if unread:
         warnings.append(f"{len(unread)} field(s) could not be read from the scan.")
+    warnings.extend(vision_notes)
     return {
         "source_document_id": str(document.id),
         "source_filename": document.filename,

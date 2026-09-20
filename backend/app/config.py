@@ -296,6 +296,10 @@ class Settings(BaseSettings):
     INTAKE_EXTRACTION_INPUT_USD_PER_MILLION: float = 0.30
     INTAKE_EXTRACTION_OUTPUT_USD_PER_MILLION: float = 1.20
     INTAKE_EXTRACTION_MAX_CHARS: int = 12000
+    # A vision-capable gateway alias for reading one handwritten field clip
+    # when OCR could not. Empty (the default) keeps the vision fallback off.
+    INTAKE_EXTRACTION_VISION_MODEL: str = ""
+    INTAKE_EXTRACTION_VISION_MAX_FIELDS: int = 40
     AI_REQUEST_TIMEOUT_SECONDS: float = 30.0
     BACKGROUND_AI_POOL: str = "background-default"
     BACKGROUND_AI_ACCOUNT_FIVE_HOUR_LIMIT: int = 2050

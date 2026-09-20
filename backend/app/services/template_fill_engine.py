@@ -59,7 +59,11 @@ from app.services.template_fill_coverage import (
     is_signing_field,
     normalize_variable_name,
 )
-from app.services.template_fill_loaders import DEFAULT_LOADERS, Loaders
+from app.services.template_fill_loaders import (
+    DEFAULT_LOADERS,
+    DocumentEvidence,
+    Loaders,
+)
 
 VARIABLE_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 
@@ -299,6 +303,8 @@ class FillRecords:
     current_user: Any = None
     retainer: Any = None
     estate: Any = None
+    #: Values the matter's documents support, from the extraction cache.
+    document_evidence: Sequence[DocumentEvidence] = ()
 
 
 @dataclass(frozen=True)
@@ -937,6 +943,68 @@ class AttorneyOfRecordSource(FillSource):
 
 
 #: The registry, in write order. The first source to write an alias wins.
+#: The aliases a fact target may supply, as the fact reader's standard
+#: bindings resolve them. Computed once; every one is already declared by a
+#: record source, so document evidence adds no vocabulary of its own.
+def _document_evidence_aliases() -> frozenset[str]:
+    from app.services import template_cards
+    from app.services.intake_writeback import FIELD_TARGETS
+
+    aliases = set()
+    for binding in FIELD_TARGETS:
+        alias = template_cards.alias_for_path(binding)
+        if alias:
+            aliases.add(normalize_variable_name(alias))
+    return frozenset(aliases)
+
+
+#: Document evidence is offered below every record value, and never at full
+#: confidence: a value read from a page is a suggestion to check against the
+#: page, not a fact the matter holds.
+DOCUMENT_EVIDENCE_CONFIDENCE_CAP = 0.75
+
+
+class DocumentEvidenceSource(FillSource):
+    """What the matter's own documents say, at the lowest precedence.
+
+    Registered last so first-writer-wins gives every record family the alias
+    first; a document value fills a blank and is marked for review, with the
+    source document one click away in the provenance.
+    """
+
+    key = "document_evidence"
+    always = False
+
+    @functools.cached_property
+    def aliases(self) -> frozenset[str]:
+        return _document_evidence_aliases()
+
+    def collect(self, index: CandidateIndex, records: FillRecords) -> None:
+        for item in records.document_evidence or ():
+            alias = normalize_variable_name(item.alias)
+            if alias not in self.aliases:
+                continue
+            add_candidate(
+                index,
+                alias,
+                item.value,
+                source_type="document_evidence",
+                source_field=f"{item.filename}#{item.source_locator}",
+                record_id=item.document_id,
+                confidence=min(
+                    float(item.confidence), DOCUMENT_EVIDENCE_CONFIDENCE_CAP
+                ),
+                review_required=True,
+                provenance={
+                    "source_document_id": str(item.document_id),
+                    "source_filename": item.filename,
+                    "source_kind": item.source_kind,
+                    "ocr_confidence": float(item.confidence),
+                    "read_at": item.read_at,
+                },
+            )
+
+
 SOURCES: tuple[FillSource, ...] = (
     CurrentUserSource(),
     EstateSource(),
@@ -946,6 +1014,7 @@ SOURCES: tuple[FillSource, ...] = (
     ClientContactSource(),
     InferredCaptionSource(),
     AttorneyOfRecordSource(),
+    DocumentEvidenceSource(),
 )
 
 #: Sources that need no matter at all.
@@ -1251,6 +1320,7 @@ async def prepare_fill(
     loaded: list[str] = []
     retainer = None
     estate = None
+    evidence: Sequence[DocumentEvidence] = ()
     if matter is not None:
         loaded.extend(("matter", "matter_party"))
         # The retainer and estate are extra queries, so they are read only
@@ -1262,6 +1332,14 @@ async def prepare_fill(
         if source("estate").needed(needs):
             estate = await loaders.estate(db=db, tenant_id=tenant_id, matter=matter)
             loaded.append("estate")
+        # The matter's documents are read last and only when a field could
+        # take a value from them; they never displace a record value.
+        if source("document_evidence").needed(needs):
+            evidence = await loaders.document_evidence(
+                db=db, tenant_id=tenant_id, matter=matter
+            )
+            if evidence:
+                loaded.append("document_evidence")
 
     index = collect(
         FillRecords(
@@ -1270,6 +1348,7 @@ async def prepare_fill(
             current_user=actor,
             retainer=retainer,
             estate=estate,
+            document_evidence=evidence,
         )
     )
     custom = await template_custom_fields.suggestions(db, tenant_id, matter, bindings)
@@ -1305,6 +1384,8 @@ __all__ = [
     "VARIABLE_PATTERN",
     "CandidateIndex",
     "Collision",
+    "DOCUMENT_EVIDENCE_CONFIDENCE_CAP",
+    "DocumentEvidenceSource",
     "FillNeeds",
     "FillRecords",
     "FillSource",

@@ -1,6 +1,8 @@
 """The Smart Fill engine: declared sources, parity with the router, lazy loads."""
 
 import uuid
+
+import pytest
 from types import SimpleNamespace
 
 from app.services import template_fill_engine as engine
@@ -105,7 +107,10 @@ def _loaders(scenario, calls):
         calls.append("retainer")
         return scenario.retainer
 
-    return Loaders(matter=matter, parties=parties, estate=estate, retainer=retainer)
+    async def no_evidence(**_):
+        return ()
+
+    return Loaders(matter=matter, parties=parties, estate=estate, retainer=retainer, document_evidence=no_evidence)
 
 
 def _template(fields):
@@ -226,6 +231,7 @@ class TestPreparedFill:
                     parties=loaders.parties,
                     estate=loaders.estate,
                     retainer=loaders.retainer,
+                    document_evidence=loaders.document_evidence,
                 ),
             )
         assert prepared.values == {"case_number": "08-2026-CV-00042"}
@@ -273,3 +279,44 @@ class TestTemplateVariables:
             "case_number",
             "court",
         ]
+
+
+class TestDocumentEvidence:
+    def test_is_last_and_declares_only_known_aliases(self):
+        assert engine.SOURCES[-1].key == "document_evidence"
+        evidence = engine.source("document_evidence")
+        assert evidence.always is False
+        others = frozenset().union(*(s.aliases for s in engine.SOURCES[:-1]))
+        assert evidence.aliases <= others
+        assert {"client_email", "case_number", "client_name"} <= evidence.aliases
+
+    def test_fills_a_blank_capped_and_for_review_and_loses_to_a_record(self):
+        from app.services.template_fill_loaders import DocumentEvidence
+
+        item = DocumentEvidence(
+            alias="client_email", value="ada@example.test", confidence=0.95,
+            document_id=uuid.uuid4(), filename="scan.pdf", source_kind="ocr",
+            source_locator="ocr:1:2", document_sha256="0" * 64,
+        )
+        base = probe.probe_records()
+        records = engine.FillRecords(
+            matter=base.matter, parties=base.parties, current_user=None,
+            retainer=None, estate=None, document_evidence=(item,),
+        )
+        index = engine.collect(records)
+        # The probe contact carries an email, so the record wins and the loss is recorded.
+        assert index["client_email"].source_type == "contact"
+        assert any(c.alias == "client_email" and any(loss["source_type"] == "document_evidence" for loss in c.losers) for c in index.collisions())
+        records.matter.client.email = None
+        index = engine.collect(records)
+        won = index["client_email"]
+        assert won.source_type == "document_evidence"
+        assert won.review_required is True
+        assert won.confidence == engine.DOCUMENT_EVIDENCE_CONFIDENCE_CAP
+        assert won.provenance["source_document_id"] == str(item.document_id)
+        assert won.provenance["ocr_confidence"] == pytest.approx(0.95)
+
+    def test_not_needed_when_no_field_could_take_a_document_value(self):
+        needs = engine.FillNeeds.of({}, ["signature_block", "prepared_by"])
+        assert engine.source("document_evidence").needed(needs) is False
+        assert engine.source("document_evidence").needed(engine.FillNeeds.of({}, ["client_email"])) is True

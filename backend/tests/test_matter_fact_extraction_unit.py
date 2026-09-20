@@ -406,3 +406,91 @@ def test_extract_candidates_attributes_ocr_text_to_the_scan():
     plain = extraction.extract_candidates(text=scan.text, form_values=[], targets=[target])
     assert plain["client.name"][0].source_kind == "label_value"
     assert plain["client.name"][0].confidence == 1.0
+
+
+async def test_read_field_clip_sends_the_clip_and_meters_one_vision_call(monkeypatch):
+    monkeypatch.setattr(
+        intake_extraction_ai,
+        "settings",
+        SimpleNamespace(
+            INTAKE_EXTRACTION_ENABLED=True,
+            INTAKE_EXTRACTION_MODEL="lawhand-intake-extraction",
+            INTAKE_EXTRACTION_VISION_MODEL="lawhand-intake-vision",
+            INTAKE_EXTRACTION_INPUT_USD_PER_MILLION=0.30,
+            INTAKE_EXTRACTION_OUTPUT_USD_PER_MILLION=1.20,
+            INTAKE_EXTRACTION_MAX_CHARS=12000,
+        ),
+    )
+
+    async def fake_budget(_db, _user):
+        return None
+
+    monkeypatch.setattr(intake_extraction_ai, "check_token_budget", fake_budget)
+    seen: dict = {}
+
+    class FakeLLM:
+        async def complete(self, **kwargs):
+            seen.update(kwargs)
+            return ('{"value": "  Ada   Lovelace "}', 50, 5)
+
+    added: list = []
+
+    class FakeDB:
+        def add(self, record):
+            added.append(record)
+
+        async def commit(self):
+            return None
+
+    value = await intake_extraction_ai.read_field_clip(
+        db=FakeDB(),
+        user=SimpleNamespace(tenant_id=uuid.uuid4(), id=uuid.uuid4(), tenant=None),
+        png_bytes=b"\x89PNG fake",
+        label="Client name",
+        document_sha256="a" * 64,
+        llm=FakeLLM(),
+    )
+    assert value == "Ada Lovelace"
+    parts = seen["messages"][0]["content"]
+    assert parts[0] == {"type": "text", "text": "Field label: Client name"}
+    assert parts[1]["type"] == "image_url"
+    assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert seen["model"] == "lawhand-intake-vision"
+    assert seen["response_format"] == {"type": "json_object"}
+    assert len(added) == 1
+    assert added[0].operation_type == "intake_extraction_vision"
+    assert added[0].requested_route == "intake-extraction-vision"
+    assert added[0].model_used == "lawhand-intake-vision"
+
+    class BlankLLM:
+        async def complete(self, **_kwargs):
+            return ('{"value": null}', 10, 2)
+
+    assert (
+        await intake_extraction_ai.read_field_clip(
+            db=FakeDB(),
+            user=SimpleNamespace(tenant_id=uuid.uuid4(), id=uuid.uuid4(), tenant=None),
+            png_bytes=b"x",
+            label="Notes",
+            document_sha256="a" * 64,
+            llm=BlankLLM(),
+        )
+        is None
+    )
+
+
+async def test_read_field_clip_is_closed_without_a_vision_model(monkeypatch):
+    monkeypatch.setattr(
+        intake_extraction_ai,
+        "settings",
+        SimpleNamespace(INTAKE_EXTRACTION_ENABLED=True, INTAKE_EXTRACTION_VISION_MODEL=""),
+    )
+    assert intake_extraction_ai.vision_enabled() is False
+    with pytest.raises(intake_extraction_ai.IntakeExtractionUnavailable):
+        await intake_extraction_ai.read_field_clip(
+            db=None,
+            user=SimpleNamespace(tenant_id=uuid.uuid4(), id=uuid.uuid4()),
+            png_bytes=b"x",
+            label="Client name",
+            document_sha256="a" * 64,
+        )
