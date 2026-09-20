@@ -18,6 +18,7 @@ from app.models.configurable_workflow import (
     CustomFieldDefinition,
     MatterCustomFieldValue,
     MatterWorkflowChecklistDefinition,
+    MatterWorkflowDocumentDefinition,
     MatterWorkflowFieldRequirement,
     MatterWorkflowRun,
     MatterWorkflowRunEvent,
@@ -81,7 +82,7 @@ def value_hmac(value: Any) -> str:
 
 
 def definition_payload(body: WorkflowDefinitionInput) -> dict[str, Any]:
-    return {
+    payload = {
         "initial_stage_key": body.initial_stage_key,
         "stages": [
             {"stage_key": stage.stage_key, "label": stage.label}
@@ -104,6 +105,14 @@ def definition_payload(body: WorkflowDefinitionInput) -> dict[str, Any]:
             str(field_id) for field_id in body.required_field_definition_ids
         ),
     }
+    documents = getattr(body, "documents", None) or []
+    if documents:
+        # Only when present: a definition without documents keeps the digest
+        # its approver signed before documents existed.
+        from app.services.workflow_document_requests import input_entries
+
+        payload["documents"] = input_entries(documents)
+    return payload
 
 
 async def load_template_bundle(
@@ -199,8 +208,9 @@ def stored_definition_payload(
     stages: list[MatterWorkflowStageDefinition],
     checklist: list[MatterWorkflowChecklistDefinition],
     fields: list[CustomFieldDefinition],
+    documents: list[MatterWorkflowDocumentDefinition] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "initial_stage_key": version.initial_stage_key,
         "stages": [
             {"stage_key": stage.stage_key, "label": stage.label} for stage in stages
@@ -220,6 +230,11 @@ def stored_definition_payload(
         ],
         "required_field_definition_ids": sorted(str(field.id) for field in fields),
     }
+    if documents:
+        from app.services.workflow_document_requests import definition_entries
+
+        payload["documents"] = definition_entries(documents)
+    return payload
 
 
 async def matter_snapshot(
@@ -331,8 +346,13 @@ async def build_preview(
         raise HTTPException(
             status_code=409, detail="Workflow template is not active and approved"
         )
+    from app.services import workflow_document_requests as document_requests
+
+    document_items = await document_requests.load_definitions(
+        db, matter.tenant_id, version.id, share=lock_dependencies
+    )
     expected_definition = stored_definition_payload(
-        version, stages, checklist, required_fields
+        version, stages, checklist, required_fields, document_items
     )
     definition_sha256 = digest_payload(expected_definition)
     if definition_sha256 != version.definition_sha256:
@@ -377,13 +397,20 @@ async def build_preview(
         }
         for item in checklist
     ]
+    documents = await document_requests.preview_entries(
+        db,
+        matter=matter,
+        items=document_items,
+        stage_labels={key: stage.label for key, stage in stage_by_key.items()},
+        as_of=as_of,
+    )
     missing_assignees = [
         {
             "item_key": item["item_key"],
             "title": item["title"],
             "assignee_role": item["assignee_role"],
         }
-        for item in tasks
+        for item in [*tasks, *documents]
         if item["assignee_role"] == "attorney_of_record"
         and item["assigned_to_user_id"] is None
     ]
@@ -402,6 +429,10 @@ async def build_preview(
         "missing_assignees": missing_assignees,
         "can_apply": not missing and not missing_assignees,
     }
+    if documents:
+        # Present only when the version requests documents, so the preview
+        # digest of every existing run is unchanged.
+        preview["documents"] = documents
     return preview, digest_payload(preview), definition_sha256, matter_sha256
 
 
@@ -561,19 +592,24 @@ async def apply_run(
         )
 
     resolved_assignees: list[tuple[dict[str, Any], uuid.UUID | None]] = []
+    resolved_documents: list[tuple[dict[str, Any], uuid.UUID | None]] = []
     user_ids: set[uuid.UUID] = set()
-    for item in current_preview["tasks"]:
-        assigned_to_user_id: uuid.UUID | None = None
-        preview_assignee = item["assigned_to_user_id"]
-        if preview_assignee == "approval_actor":
-            assigned_to_user_id = actor_user_id
-        elif preview_assignee:
-            assigned_to_user_id = uuid.UUID(preview_assignee)
-        resolved_assignees.append((item, assigned_to_user_id))
-        if assigned_to_user_id:
-            user_ids.add(assigned_to_user_id)
+    for group, items in (
+        (resolved_assignees, current_preview["tasks"]),
+        (resolved_documents, current_preview.get("documents") or []),
+    ):
+        for item in items:
+            assigned_to_user_id: uuid.UUID | None = None
+            preview_assignee = item["assigned_to_user_id"]
+            if preview_assignee == "approval_actor":
+                assigned_to_user_id = actor_user_id
+            elif preview_assignee:
+                assigned_to_user_id = uuid.UUID(preview_assignee)
+            group.append((item, assigned_to_user_id))
+            if assigned_to_user_id:
+                user_ids.add(assigned_to_user_id)
     active_user_ids = await _lock_active_same_tenant_users(db, run.tenant_id, user_ids)
-    for item, assigned_to_user_id in resolved_assignees:
+    for item, assigned_to_user_id in [*resolved_assignees, *resolved_documents]:
         if assigned_to_user_id and assigned_to_user_id not in active_user_ids:
             raise HTTPException(
                 status_code=409,
@@ -654,15 +690,67 @@ async def apply_run(
                 "initial_version": task.version,
             },
         )
+    documents_opened = 0
+    for item, assigned_to_user_id in resolved_documents:
+        if not item.get("available"):
+            await append_run_step(
+                db,
+                run,
+                step_type="document_propose",
+                action_key=item["item_key"],
+                status="blocked",
+                evidence={
+                    "reason": item.get("unavailable_reason")
+                    or "The document template is unavailable.",
+                    "document_template_id": item["template_id"],
+                },
+            )
+            continue
+        from app.services.workflow_document_requests import propose_document
+
+        outcome = await propose_document(
+            db,
+            run=run,
+            matter=matter,
+            entry=item,
+            actor_user_id=actor_user_id,
+            assigned_to_user_id=assigned_to_user_id,
+        )
+        if outcome["status"] != "succeeded":
+            await append_run_step(
+                db,
+                run,
+                step_type="document_propose",
+                action_key=item["item_key"],
+                status="blocked",
+                evidence={
+                    "reason": outcome["reason"],
+                    "document_template_id": item["template_id"],
+                },
+            )
+            continue
+        documents_opened += 1
+        await append_run_step(
+            db,
+            run,
+            step_type="document_propose",
+            action_key=item["item_key"],
+            status="succeeded",
+            task_id=outcome["task_id"],
+            evidence=outcome["evidence"],
+        )
+    detail = {
+        "preview_sha256": run.preview_sha256,
+        "task_count": len(current_preview["tasks"]),
+    }
+    if resolved_documents:
+        detail["document_count"] = documents_opened
     await append_run_event(
         db,
         run,
         event_type="applied",
         actor_user_id=actor_user_id,
-        detail={
-            "preview_sha256": run.preview_sha256,
-            "task_count": len(current_preview["tasks"]),
-        },
+        detail=detail,
     )
     return run
 
@@ -730,7 +818,10 @@ async def rollback_run(
                 .where(
                     MatterWorkflowRunStep.tenant_id == run.tenant_id,
                     MatterWorkflowRunStep.run_id == run.id,
-                    MatterWorkflowRunStep.step_type == "task_create",
+                    MatterWorkflowRunStep.step_type.in_(
+                        ("task_create", "document_propose")
+                    ),
+                    MatterWorkflowRunStep.status == "succeeded",
                 )
                 .order_by(MatterWorkflowRunStep.sequence)
             )
@@ -776,6 +867,12 @@ async def rollback_run(
         )
         if not unchanged:
             blockers.append(f"task {task.id} changed after apply")
+        if step.step_type == "document_propose":
+            from app.services.workflow_document_requests import session_blocker
+
+            blocker = await session_blocker(db, step)
+            if blocker:
+                blockers.append(blocker)
     expected_stage = run.preview_json["initial_stage"]["label"]
     if matter.stage != expected_stage:
         blockers.append("matter stage changed after apply")
@@ -814,6 +911,17 @@ async def rollback_run(
             expected_version=task.version,
             reason=f"Workflow rollback: {reason}",
         )
+        cancel_evidence: dict[str, Any] = {
+            "from_status": "pending",
+            "to_status": "cancelled",
+        }
+        if step.step_type == "document_propose":
+            from app.services.workflow_document_requests import abandon_session
+
+            cancel_evidence["fill_session_id"] = (step.evidence_json or {}).get(
+                "fill_session_id"
+            )
+            cancel_evidence["fill_session_abandoned"] = await abandon_session(db, step)
         await append_run_step(
             db,
             run,
@@ -821,7 +929,7 @@ async def rollback_run(
             action_key=step.action_key,
             status="succeeded",
             task_id=task.id,
-            evidence={"from_status": "pending", "to_status": "cancelled"},
+            evidence=cancel_evidence,
         )
     matter.stage = run.prior_stage
     await append_run_step(

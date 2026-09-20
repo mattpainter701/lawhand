@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 
+from fastapi.encoders import jsonable_encoder
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -17,6 +18,7 @@ from app.models.configurable_workflow import (
     CustomFieldDefinition,
     MatterCustomFieldValue,
     MatterWorkflowChecklistDefinition,
+    MatterWorkflowDocumentDefinition,
     MatterWorkflowFieldRequirement,
     MatterWorkflowRun,
     MatterWorkflowStageDefinition,
@@ -52,6 +54,10 @@ from app.services.configurable_workflows import (
     run_response,
     stored_definition_payload,
     value_hmac,
+)
+from app.services.workflow_document_requests import (
+    definition_entries,
+    load_definitions as load_document_definitions,
 )
 
 
@@ -557,6 +563,20 @@ async def _create_template_version(
                 assignee_role=item.assignee_role,
             )
         )
+    for position, item in enumerate(body.documents):
+        db.add(
+            MatterWorkflowDocumentDefinition(
+                tenant_id=template.tenant_id,
+                template_version_id=version.id,
+                stage_key=item.stage_key,
+                item_key=item.item_key,
+                document_template_id=item.template_id,
+                title=item.title,
+                position=position,
+                due_offset_days=item.due_offset_days,
+                assignee_role=item.assignee_role,
+            )
+        )
     for field in required_fields:
         db.add(
             MatterWorkflowFieldRequirement(
@@ -695,6 +715,9 @@ async def _template_version_response(
             }
             for item in checklist
         ],
+        "documents": definition_entries(
+            await load_document_definitions(db, tenant_id, version.id)
+        ),
         "required_fields": [_field_response(field) for field in fields],
         "created_at": version.created_at,
     }
@@ -754,8 +777,11 @@ async def approve_workflow_template_version(
         return await _template_version_response(db, user.tenant_id, version.id)
     if any(not field.active for field in fields):
         raise HTTPException(status_code=409, detail="A required field is inactive")
+    documents = await load_document_definitions(
+        db, user.tenant_id, version.id, share=True
+    )
     expected = digest_payload(
-        stored_definition_payload(version, stages, checklist, fields)
+        stored_definition_payload(version, stages, checklist, fields, documents)
     )
     if expected != version.definition_sha256:
         raise HTTPException(status_code=409, detail="Workflow definition hash mismatch")
@@ -1060,7 +1086,9 @@ async def rollback_matter_workflow(
             detail={
                 "message": "Rollback requires manual compensation review",
                 "blockers": blockers,
-                "run": response,
+                # The run carries UUIDs and datetimes; an exception detail is
+                # encoded by the plain JSON encoder, not the response model.
+                "run": jsonable_encoder(response),
             },
         )
     return response

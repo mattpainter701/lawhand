@@ -156,6 +156,43 @@ async def upsert(
     return session
 
 
+async def open_prepared_session(
+    db: AsyncSession,
+    *,
+    tenant_id,
+    user_id,
+    template_id,
+    matter_id,
+    title: str,
+    version_no: int,
+    answers: dict[str, str],
+) -> DocumentFillSession:
+    """Open a session on someone's behalf with values Smart Fill prepared.
+
+    Used by a workflow run that asks for a document: the assignee finds it
+    under "Documents in progress" and resumes it. Nothing is verified yet,
+    and the caller owns the transaction (no commit here).
+    """
+
+    session = DocumentFillSession(
+        tenant_id=uuid.UUID(str(tenant_id)),
+        user_id=user_id,
+        template_id=template_id,
+        matter_id=matter_id,
+        title=title[:300],
+        versions_json={str(template_id): int(version_no)},
+        answers_ciphertext=encrypt_answers(answers),
+        answers_sha256=_digest(answers),
+        verified_json=[],
+        members_json=[],
+        status="open",
+        expires_at=_now() + timedelta(days=SESSION_DAYS),
+    )
+    db.add(session)
+    await db.flush()
+    return session
+
+
 async def abandon(db: AsyncSession, user, session_id) -> None:
     session = await _own_session(db, user, session_id)
     session.status = "abandoned"

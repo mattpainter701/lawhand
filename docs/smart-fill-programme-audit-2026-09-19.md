@@ -48,7 +48,7 @@ then by the quirk campaign):
 | 2b | Case Documents banner "N documents ready, X% filled" → review | Shipped | `bc3394f` | vitest banner + picker preselect |
 | 3a | `/templates/prepare` route (Template, Matter, Populate, Review, Save), Studio "Use on a matter", library and probate entry points | Shipped | `a7c9010`, `031d3b7`, `29d1f1e` | `TemplatePreparePage.test.jsx`, `PrepareStepper.test.jsx`, `prepareRouting.test.js`; Generate dialog's 25 tests unchanged |
 | 3b | Send step: signing descriptor on the render response, shared signature request form, DOCX-with-signatures defaults to PDF | Shipped | `c2c5a54` | `MatterSigningPlacements.test.jsx` (26) unchanged; `signatureRequestRules.test.js`; Send-step page cases; backend descriptor test extended |
-| 2c | Rules can request a document (Stack A `document_propose` step) | Planned | — | needs a product decision on the run's actor |
+| 2c | Workflow templates list documents to prepare (migration 199); apply opens a pre-filled fill session and a Prepare task per document as a `document_propose` step; rollback cancels and abandons, a saved document blocks. Actor decided: the run's approver, at apply time | Shipped | CHANGELOG 2026.09.20.05 | `test_workflow_document_requests_postgres.py` (6); workflow suites unchanged (115); vitest settings and panel |
 | 3c | Sets: `documents-variables` endpoint, RLS test, sets library, prepare route for sets (browser-driven sequential save-all) | Shipped | CHANGELOG 2026.09.20.03 | `test_template_set_routes.py` (fan-out), `test_template_sets_rls.py` (live RLS), vitest sets page and Prepare set case |
 | 3d | `document_fill_sessions` (migration 198), durable `template_set_render` saving as the session's user through the render endpoint, resume and background save in the UI (render-handler extraction deferred: the job calls the endpoint directly) | Shipped | CHANGELOG 2026.09.20.04 | `test_fill_sessions_postgres.py`; migration up/down/up; vitest session cases |
 | 4a/4b | Click-through verification in Populate; verified names on the saved document | Shipped | see CHANGELOG 2026.09.20.01 | `templateFillReview.test.js`, Prepare page verification case, Generate dialog payload; `test_document_templates.py` descriptor test (event, row, list, response, 422) |
@@ -241,7 +241,7 @@ npx vitest run && npx eslint src
   (0 errors; 3 pre-existing `no-alert` warnings in ChatPage and ProfilePage).
 - Backend suites run in this branch's sessions: template suites (718), matters
   and intake and durable (256), template and e-sign (165 at `c2c5a54`).
-- Migration head after the Phase 4/5 commit: `197_document_evidence` (the branch's only migration).
+- Migration heads on the branch, in order: `197_document_evidence`, `198_document_fill_sessions` (3d), `199_workflow_document_requests` (2c). Each applied up, down and up on a scratch database.
 
 ## 8. Open risks and recommended order
 
@@ -249,7 +249,7 @@ npx vitest run && npx eslint src
    pinned to `196_mcp_usage_idempotency` after main's `#574` claimed 196 first
    (renumbered from 196 per `AGENTS.md` §1; the head on `origin/main` was
    confirmed before this change).
-2. 3d takes migration 198.
+2. 3d took migration 198 and 2c took 199; 5e takes 200 if it adds a table.
 3. The DOCX-to-PDF default for templates with signature fields changes a
    default; a firm that wanted Word output must choose it. The reason is shown
    beside the choice.

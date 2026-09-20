@@ -143,9 +143,19 @@ Documents shows it as "N documents ready to review, X% filled from this
 matter" and **Review and save** opens the existing review with that template
 preselected, where the values are computed live.
 
-Follow-ups still open: a rule action that requests a document (a Stack A
-`document_propose` step bridging to `propose_document_from_template`), and the
-Phase 3 guided route below.
+Phase 2c (shipped 2026-09-20, release 2026.09.20.05): a workflow template
+lists documents beside its checklist (`documents` on the definition,
+`matter_workflow_document_definitions`, migration 199). Approving a run opens
+one fill session per document, pre-filled by `prepare_fill` from the matter,
+owned by the task's assignee, and a "Prepare" task linking to it; the run
+records a `document_propose` step with counts and names only. Rollback
+cancels the task and abandons the session; a document already saved from its
+session blocks the rollback. Automation rules reach documents through the
+workflow template they plan, so nothing is prepared until a person approves
+the run. This replaced the earlier idea of bridging to
+`propose_document_from_template`, which rejects PDF templates and needs the
+tenant cloud folder; the fill session serves every template format through
+the same Prepare route.
 
 ## Phase 3 (3a and 3b shipped; 3c, 3d planned): Studio to signature in one path, with set fan-out
 

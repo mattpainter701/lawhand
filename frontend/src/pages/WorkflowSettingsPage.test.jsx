@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import WorkflowSettingsPage from "./WorkflowSettingsPage";
 
 const api = vi.hoisted(() => ({
+  getTemplates: vi.fn(() => Promise.resolve({ items: [] })),
   listWorkflowFields: vi.fn(() => Promise.resolve({ items: [] })),
   listWorkflowTemplates: vi.fn(() =>
     Promise.resolve({

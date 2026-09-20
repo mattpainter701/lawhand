@@ -8,6 +8,7 @@ import {
   createWorkflowTemplateVersion,
   approveWorkflowTemplateVersion,
   archiveWorkflowTemplate,
+  getTemplates,
 } from "../api";
 import WorkflowAutomationRules from "../components/workflows/WorkflowAutomationRules";
 import ArtifactReviewPolicy from "../components/workflows/ArtifactReviewPolicy";
@@ -75,6 +76,28 @@ const blankRow = (stageKey = "stage_1") => ({
   due_offset_days: 0,
   assignee_role: "unassigned",
 });
+let documentKey = 0;
+const blankDocument = (stageKey = "stage_1", templateId = "") => ({
+  item_key: `document_${Date.now()}_${++documentKey}`,
+  stage_key: stageKey,
+  template_id: templateId,
+  title: "",
+  due_offset_days: 0,
+  assignee_role: "unassigned",
+});
+// What the API takes: an empty title means "use the template's title", and
+// the template id must be a real published template.
+const documentPayload = (rows) =>
+  rows
+    .filter((row) => row.template_id)
+    .map((row) => ({
+      item_key: row.item_key,
+      stage_key: row.stage_key,
+      template_id: row.template_id,
+      title: row.title?.trim() ? row.title.trim() : null,
+      due_offset_days: Number(row.due_offset_days) || 0,
+      assignee_role: row.assignee_role || "unassigned",
+    }));
 const asItems = (value) =>
   Array.isArray(value)
     ? value
@@ -94,6 +117,7 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
   const Heading = embedded ? "h3" : "h1";
   const [fields, setFields] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [documentTemplates, setDocumentTemplates] = useState([]);
   const [versionSource, setVersionSource] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(canReview);
@@ -112,18 +136,28 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
     initial_stage_key: "stage_1",
     stages: [{ stage_key: "stage_1", label: "Initial" }],
     checklist: [blankRow()],
+    documents: [],
     required_field_definition_ids: [],
   });
   const load = useCallback(async () => {
     try {
-      const [f, t] = await Promise.all([
+      const [f, t, d] = await Promise.all([
         canManage
           ? listWorkflowFields({ include_inactive: true })
           : Promise.resolve({ items: [] }),
         listWorkflowTemplates({}),
+        canManage
+          ? getTemplates({ template_status: "active", limit: 100 }).catch(
+              () => ({ items: [] }),
+            )
+          : Promise.resolve({ items: [] }),
       ]);
       setFields(asItems(f));
       setTemplates(asItems(t));
+      // Only a published document template can be prepared from a matter.
+      setDocumentTemplates(
+        asItems(d).filter((item) => item.published_version_no),
+      );
     } catch (e) {
       setMessage({
         type: "error",
@@ -155,6 +189,7 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
       initial_stage_key: "stage_1",
       stages: [{ stage_key: "stage_1", label: "Initial" }],
       checklist: [blankRow()],
+      documents: [],
       required_field_definition_ids: [],
     });
   };
@@ -175,8 +210,18 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
             ? { ...item, stage_key: stageKey }
             : item,
         ),
+        documents: (current.documents || []).map((item) =>
+          item.stage_key === previousKey
+            ? { ...item, stage_key: stageKey }
+            : item,
+        ),
       };
     });
+  const setDocument = (index, patch) =>
+    setFormValue(
+      "documents",
+      form.documents.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
   const saveField = async (e) => {
     e.preventDefault();
     setMessage(null);
@@ -211,6 +256,8 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
         })),
         required_field_definition_ids: form.required_field_definition_ids,
       };
+      const documents = documentPayload(form.documents || []);
+      if (documents.length) definition.documents = documents;
       if (versionSource) {
         await createWorkflowTemplateVersion(versionSource.template_id, {
           ...definition,
@@ -257,6 +304,10 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
       initial_stage_key: template.initial_stage_key,
       stages: template.stages.map((stage) => ({ ...stage })),
       checklist: template.checklist.map((item) => ({ ...item })),
+      documents: (template.documents || []).map((item) => ({
+        ...item,
+        title: item.title || "",
+      })),
       required_field_definition_ids: (template.required_fields || []).map(
         (item) => item.id,
       ),
@@ -677,6 +728,105 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
                   Add checklist item
                 </button>
               </div>
+              <div>
+                <h3>Documents to prepare</h3>
+                <p className="text-sm">
+                  When a run is applied, each document is pre-filled from the
+                  matter and handed to its assignee as a Prepare task. Nothing
+                  is saved or filed until a person reviews it.
+                </p>
+                {(form.documents || []).map((row, i) => (
+                  <div key={row.item_key} className="grid grid-cols-2 gap-2">
+                    <select
+                      required
+                      aria-label={`Document template ${i + 1}`}
+                      value={row.template_id}
+                      onChange={(e) =>
+                        setDocument(i, { template_id: e.target.value })
+                      }
+                    >
+                      <option value="">Choose a published template</option>
+                      {documentTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.title}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`Document title ${i + 1}`}
+                      placeholder="Title (defaults to the template's)"
+                      value={row.title || ""}
+                      onChange={(e) => setDocument(i, { title: e.target.value })}
+                    />
+                    <select
+                      aria-label={`Document stage ${i + 1}`}
+                      value={row.stage_key}
+                      onChange={(e) =>
+                        setDocument(i, { stage_key: e.target.value })
+                      }
+                    >
+                      {form.stages.map((stage) => (
+                        <option key={stage.stage_key} value={stage.stage_key}>
+                          {stage.label || stage.stage_key}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label={`Document offset ${i + 1}`}
+                      type="number"
+                      min="0"
+                      max="3650"
+                      value={row.due_offset_days}
+                      onChange={(e) =>
+                        setDocument(i, { due_offset_days: e.target.value })
+                      }
+                    />
+                    <select
+                      aria-label={`Document assignee ${i + 1}`}
+                      value={row.assignee_role}
+                      onChange={(e) =>
+                        setDocument(i, { assignee_role: e.target.value })
+                      }
+                    >
+                      {ROLES.map((r) => (
+                        <option key={r}>{r}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      aria-label={`Remove document ${i + 1}`}
+                      onClick={() =>
+                        setFormValue(
+                          "documents",
+                          form.documents.filter((_, j) => j !== i),
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={!documentTemplates.length}
+                  title={
+                    documentTemplates.length
+                      ? undefined
+                      : "Publish a document template first"
+                  }
+                  onClick={() =>
+                    setFormValue("documents", [
+                      ...(form.documents || []),
+                      blankDocument(
+                        form.stages[0]?.stage_key,
+                        documentTemplates[0]?.id || "",
+                      ),
+                    ])
+                  }
+                >
+                  Add document
+                </button>
+              </div>
               <button type="submit">
                 {versionSource ? "Create next version draft" : "Create template draft"}
               </button>
@@ -752,6 +902,19 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
                       ))}
                     </ul>
                   </div>
+                  {(template.documents || []).length > 0 && (
+                    <div>
+                      <strong>Documents to prepare</strong>
+                      <ul>
+                        {template.documents.map((item) => (
+                          <li key={item.item_key}>
+                            {item.title || item.template_id} · {item.stage_key} ·
+                            due +{item.due_offset_days} days · {item.assignee_role}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div>
                     <strong>Required fields</strong>
                     {(template.required_fields || []).length ? (

@@ -450,6 +450,28 @@ export default function MatterWorkflowPanel({
               </li>
             ))}
           </ul>
+          {preview.documents?.length > 0 && (
+            <div>
+              <h4 className="font-medium">Documents to prepare</h4>
+              <ul aria-label="Documents to prepare">
+                {preview.documents.map((item) => (
+                  <li
+                    key={item.item_key}
+                    className={item.available ? undefined : "text-amber-700"}
+                  >
+                    {item.title}
+                    {item.template_version_no
+                      ? ` (v${item.template_version_no})`
+                      : ""}{" "}
+                    · due {item.due_date} · {item.assignee_role || "unassigned"}
+                    {item.available
+                      ? " · pre-filled from this matter for review"
+                      : ` · cannot be prepared: ${item.unavailable_reason}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {canApprove ? (
             <button
               type="button"

@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.20.05",
+      "version": "2026.09.20.05",
+      "title": "Workflows can ask for documents",
+      "published_at": "2026-09-20",
+      "summary": "A workflow template can list documents to prepare. When a run is approved, each one is pre-filled from the matter by Smart Fill and handed to its assignee as a Prepare task. A person still reviews, verifies and saves it.",
+      "highlights": [
+        {
+          "title": "Documents on a workflow template",
+          "description": "Under Workflow settings, add published document templates beside the checklist, with a stage, a due offset and an assignee role. The preview says if one cannot be prepared."
+        },
+        {
+          "title": "Pre-filled and handed over",
+          "description": "Approving the run opens a Smart Fill session per document, filled from the matter, and a Prepare task linking to it. The assignee resumes it from Documents in progress."
+        },
+        {
+          "title": "Rollback keeps saved work",
+          "description": "Rolling a run back cancels the Prepare tasks and discards unsaved sessions. A document already saved from its session blocks the rollback rather than being removed."
+        }
+      ]
+    },
+    {
       "id": "2026.09.20.04",
       "version": "2026.09.20.04",
       "title": "Resume a packet, and save it in the background",

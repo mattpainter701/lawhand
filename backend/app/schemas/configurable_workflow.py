@@ -236,6 +236,34 @@ class WorkflowChecklistInput(BaseModel):
         return clean
 
 
+class WorkflowDocumentInput(BaseModel):
+    """A document the workflow asks to have prepared when a run is applied.
+
+    ``template_id`` names a firm document template. On apply, a Smart Fill
+    session is opened for it, pre-filled from the matter, and a "Prepare"
+    task is created for the assignee. A person still reviews, verifies and
+    saves the document through the Prepare route.
+    """
+
+    item_key: str
+    stage_key: str
+    template_id: uuid.UUID
+    title: str | None = Field(default=None, max_length=300)
+    due_offset_days: int = Field(default=0, ge=0, le=3650)
+    assignee_role: AssigneeRole = "unassigned"
+
+    _validate_item_key = field_validator("item_key")(_clean_key)
+    _validate_stage_key = field_validator("stage_key")(_clean_key)
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        clean = " ".join(value.split())
+        return clean or None
+
+
 class WorkflowDefinitionInput(BaseModel):
     initial_stage_key: str
     stages: list[WorkflowStageInput] = Field(min_length=1, max_length=50)
@@ -243,6 +271,9 @@ class WorkflowDefinitionInput(BaseModel):
     required_field_definition_ids: list[uuid.UUID] = Field(
         default_factory=list, max_length=100
     )
+    #: Documents to prepare on apply. Optional: an existing definition without
+    #: any keeps its approved digest.
+    documents: list[WorkflowDocumentInput] = Field(default_factory=list, max_length=50)
 
     _validate_initial_stage_key = field_validator("initial_stage_key")(_clean_key)
 
@@ -258,6 +289,13 @@ class WorkflowDefinitionInput(BaseModel):
             raise ValueError("initial_stage_key must reference a stage")
         if any(item.stage_key not in stage_keys for item in self.checklist):
             raise ValueError("every checklist item must reference a stage")
+        document_keys = [item.item_key for item in self.documents]
+        if len(document_keys) != len(set(document_keys)):
+            raise ValueError("document keys must be unique")
+        if set(document_keys) & set(item_keys):
+            raise ValueError("a document key may not repeat a checklist key")
+        if any(item.stage_key not in stage_keys for item in self.documents):
+            raise ValueError("every document must reference a stage")
         if len(self.required_field_definition_ids) != len(
             set(self.required_field_definition_ids)
         ):
@@ -311,5 +349,6 @@ class WorkflowPreviewResponse(BaseModel):
     can_apply: bool
     initial_stage: dict
     tasks: list[dict]
+    documents: list[dict] = Field(default_factory=list)
     missing_required_fields: list[dict]
     missing_assignees: list[dict]

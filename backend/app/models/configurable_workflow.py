@@ -556,6 +556,93 @@ class MatterWorkflowChecklistDefinition(Base):
     assignee_role: Mapped[str] = mapped_column(String(30), nullable=False)
 
 
+class MatterWorkflowDocumentDefinition(Base):
+    """One document a workflow template version asks to have prepared.
+
+    Applying a run opens a Smart Fill session for the named firm document
+    template, pre-filled from the matter, and a "Prepare" task for the
+    assignee. The document template is referenced by id without a foreign
+    key: a template that is later archived or unpublished is reported as
+    unavailable at preview time rather than blocking template lifecycle.
+    """
+
+    __tablename__ = "matter_workflow_document_definitions"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "template_version_id",
+            "item_key",
+            name="uq_matter_workflow_document_definitions_key",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "template_version_id",
+            "position",
+            name="uq_matter_workflow_document_definitions_position",
+        ),
+        CheckConstraint(
+            "item_key ~ '^[a-z][a-z0-9_]{0,63}$'",
+            name="ck_matter_workflow_document_definitions_key",
+        ),
+        CheckConstraint(
+            "position BETWEEN 0 AND 49",
+            name="ck_matter_workflow_document_definitions_position",
+        ),
+        CheckConstraint(
+            "due_offset_days BETWEEN 0 AND 3650",
+            name="ck_matter_workflow_document_definitions_offset",
+        ),
+        CheckConstraint(
+            "title IS NULL OR btrim(title) <> ''",
+            name="ck_matter_workflow_document_definitions_title",
+        ),
+        CheckConstraint(
+            "assignee_role IN ('matter_owner', 'attorney_of_record', "
+            "'template_applier', 'unassigned')",
+            name="ck_matter_workflow_document_definitions_assignee",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "template_version_id", "stage_key"],
+            [
+                "matter_workflow_stage_definitions.tenant_id",
+                "matter_workflow_stage_definitions.template_version_id",
+                "matter_workflow_stage_definitions.stage_key",
+            ],
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "ix_matter_workflow_document_definitions_version",
+            "tenant_id",
+            "template_version_id",
+            "position",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default="gen_random_uuid()",
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    template_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    stage_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    title: Mapped[str | None] = mapped_column(String(300))
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    due_offset_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    assignee_role: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="unassigned", server_default="unassigned"
+    )
+
+
 class MatterWorkflowFieldRequirement(Base):
     __tablename__ = "matter_workflow_field_requirements"
     __table_args__ = (
@@ -781,7 +868,7 @@ class MatterWorkflowRunStep(Base):
         CheckConstraint("sequence > 0", name="ck_matter_workflow_run_steps_sequence"),
         CheckConstraint(
             "step_type IN ('matter_stage', 'task_create', 'task_cancel', "
-            "'stage_restore')",
+            "'stage_restore', 'document_propose')",
             name="ck_matter_workflow_run_steps_type",
         ),
         CheckConstraint(
