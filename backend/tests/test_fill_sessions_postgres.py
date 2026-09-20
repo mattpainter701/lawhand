@@ -85,6 +85,33 @@ async def test_a_session_is_created_resumed_listed_without_answers_and_owned(
     assert (await client.get(f"/api/matters/{matter.id}/fill-sessions")).json()["items"] == []
 
 
+async def test_a_finished_session_is_not_reopened_by_a_later_write(client, db_session, test_tenant, test_user):
+    await _grant_manage_documents(db_session, test_tenant, test_user)
+    matter = await _matter(db_session, test_tenant.id, test_user.id)
+    set_id = uuid.uuid4()
+    created = await client.post("/api/fill-sessions", json={
+        "matter_id": str(matter.id), "set_id": str(set_id), "title": "Packet",
+        "answers": {"q": "v"}, "verified": ["q"],
+    })
+    assert created.status_code == 200, created.text
+    session_id = created.json()["id"]
+
+    # The background save finished; a later autosave must not reopen the
+    # session or erase the per-member outcomes.
+    await set_tenant_context(db_session, str(test_tenant.id))
+    row = await db_session.scalar(select(DocumentFillSession).where(DocumentFillSession.id == uuid.UUID(session_id)))
+    row.status = "saved"
+    row.members_json = [{"template_id": "t", "status": "saved", "output_filename": "x.pdf"}]
+    await db_session.commit()
+
+    again = await client.post("/api/fill-sessions", json={
+        "id": session_id, "matter_id": str(matter.id), "set_id": str(set_id), "answers": {"q": "v2"}, "verified": [],
+    })
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "saved"
+    assert again.json()["members"][0]["status"] == "saved"
+
+
 async def test_verified_counts_feed_the_readiness_record(db_session, test_tenant, test_user):
     matter = await _matter(db_session, test_tenant.id, test_user.id)
     template_id = uuid.uuid4()
@@ -112,7 +139,7 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     session = await fill_sessions.upsert(db_session, owner, FillSessionWrite(matter_id=matter.id, set_id=uuid.uuid4(), answers={"q": "v"}, verified=["q"]))
     preview = uuid.uuid4()
     session = await fill_sessions.enqueue_render(db_session, owner, session.id, FillSessionRenderRequest(members=[
-        {"template_id": str(good), "variables": {"client_name": "Ada", "other": "x"}, "preview_id": str(preview), "output_format": "pdf"},
+        {"template_id": str(good), "variables": {"client_name": "Ada", "other": "x"}, "preview_id": str(preview), "output_format": "pdf", "verified_fields": ["client_name"]},
         {"template_id": str(bad), "variables": {"client_name": "Ada"}, "preview_id": None, "output_format": "markdown"},
     ]))
     assert session.status == "saving" and session.job_id is not None
@@ -136,7 +163,7 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     assert result == {"outcome": "partial", "saved": 1, "total": 2}
     assert [call[0] for call in calls] == [good, bad]
     assert calls[0][2] == owner_id
-    assert calls[0][1].preview_id == preview and calls[0][1].verified_fields == []
+    assert calls[0][1].preview_id == preview and calls[0][1].verified_fields == ["client_name"]
     assert calls[0][1].matter_id == str(matter_id)
 
     await set_tenant_context(db_session, str(tenant_id))

@@ -116,6 +116,10 @@ _PURGE_ONLY_TABLES = {
     "document_integrity_events",
     "document_storage_operations",
     "document_template_previews",
+    # A fill session holds the values a person is reviewing for one
+    # (template, matter, user); it is their work product, so purge it with an
+    # expired demo and never clone it into another tenant.
+    "document_fill_sessions",
     # Extracted document text (a PDF text layer or OCR output) is customer
     # content keyed by the document's bytes. Purge it with an expired demo;
     # never clone one tenant's document text into another.

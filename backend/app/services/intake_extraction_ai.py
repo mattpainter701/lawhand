@@ -276,14 +276,18 @@ async def read_field_clip(
     png_bytes: bytes,
     label: str,
     document_sha256: str,
+    tenant_ai_enabled: bool,
     llm: LLMService | None = None,
 ) -> str | None:
     """Read one field clip with the vision model, or raise when unavailable.
 
-    One metered call per clip. The caller bounds how many clips it sends and
-    only sends those OCR could not read. The reply is a closed schema; a
-    value the model invents for a blank clip is still shown to a reviewer
-    with the clip beside it, never written.
+    One metered call per clip. ``tenant_ai_enabled`` is the firm's own opt-in
+    for the model to read its documents; it is required rather than read here
+    so a caller cannot reach the provider without having loaded and checked
+    that flag. The caller also bounds how many clips it sends and only sends
+    those OCR could not read. The reply is a closed schema; a value the model
+    invents for a blank clip is still shown to a reviewer with the clip beside
+    it, never written.
     """
 
     import base64
@@ -291,6 +295,10 @@ async def read_field_clip(
     if not vision_enabled():
         raise IntakeExtractionUnavailable(
             "AI reading of handwritten fields is not enabled on this server."
+        )
+    if not tenant_ai_enabled:
+        raise IntakeExtractionUnavailable(
+            "AI reading of handwritten fields is not enabled for this firm."
         )
     if not png_bytes:
         return None
