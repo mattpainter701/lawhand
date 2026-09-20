@@ -72,6 +72,23 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _seal_members(members: list[dict[str, Any]]) -> str:
+    if not members:
+        return ""
+    return encrypt_token(json.dumps(members, ensure_ascii=False, separators=(",", ":")))
+
+
+def _open_members(ciphertext: str) -> list[dict[str, Any]]:
+    if not ciphertext:
+        return []
+    try:
+        value = json.loads(decrypt_token(ciphertext))
+    except Exception:  # noqa: BLE001 - unreadable evidence is no members, not a crash
+        logger.warning("A fill session's render evidence could not be decrypted")
+        return []
+    return value if isinstance(value, list) else []
+
+
 def response_for(
     session: DocumentFillSession, *, include_answers: bool
 ) -> FillSessionResponse:
@@ -145,7 +162,10 @@ async def upsert(
     session.answers_ciphertext = encrypt_answers(payload.answers)
     session.answers_sha256 = _digest(payload.answers)
     session.verified_json = sorted(set(payload.verified))
-    if session.status in ("saved", "failed", "abandoned"):
+    # A session that finished is not resurrected by a later autosave: reopening
+    # it would erase the per-member outcomes the background save recorded. Only
+    # a failed or abandoned session reopens for another attempt.
+    if session.status in ("failed", "abandoned"):
         session.status = "open"
         session.members_json = []
         session.last_error = None
@@ -261,7 +281,12 @@ async def enqueue_render(
             "matter_id": str(session.matter_id),
             "folder_id": str(payload.folder_id) if payload.folder_id else None,
             "verified": list(session.verified_json or []),
-            "members": members,
+            # The members carry the filled field values. ``durable_jobs.payload``
+            # is a plain JSON column that is not cleared on completion, so the
+            # values are sealed the same way the session's answers are: the job
+            # decrypts them when it runs. Storing them in the clear would outlive
+            # the encrypted session and defeat encrypting it.
+            "members_ciphertext": _seal_members(members),
         },
     )
     session.job_id = job.id
@@ -286,6 +311,11 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
     from app.services.rbac_service import get_user_capabilities
 
     payload = job.payload or {}
+    members = _open_members(payload.get("members_ciphertext") or "")
+    if not members and payload.get("members"):
+        # A job queued before the members were sealed still carries them in the
+        # clear; run it rather than dropping the save.
+        members = list(payload.get("members") or [])
     tenant_id = job.tenant_id
     await set_tenant_context(db, str(tenant_id))
     session = await db.scalar(
@@ -320,7 +350,7 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
     # Snapshotted before any rollback: a rollback expires the row, and an
     # expired attribute read on the async session is a MissingGreenlet.
     session_id, matter_id = session.id, session.matter_id
-    for member in payload.get("members") or []:
+    for member in members:
         template_id = str(member.get("template_id") or "")
         variables = {str(k): str(v) for k, v in (member.get("variables") or {}).items()}
         request = DocumentTemplateRenderRequest(
@@ -378,13 +408,13 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
         session = await db.get(DocumentFillSession, session_id)
         session.members_json = outcomes + [
             {"template_id": str(rest.get("template_id")), "status": "queued"}
-            for rest in (payload.get("members") or [])[len(outcomes) :]
+            for rest in members[len(outcomes) :]
         ]
         await db.commit()
         await set_tenant_context(db, str(tenant_id))
 
     session = await db.get(DocumentFillSession, session_id)
-    total = len(payload.get("members") or [])
+    total = len(members)
     session.members_json = outcomes
     session.status = (
         "saved" if saved == total and total else "open" if saved < total else "saved"

@@ -85,6 +85,33 @@ async def test_a_session_is_created_resumed_listed_without_answers_and_owned(
     assert (await client.get(f"/api/matters/{matter.id}/fill-sessions")).json()["items"] == []
 
 
+async def test_a_finished_session_is_not_reopened_by_a_later_write(client, db_session, test_tenant, test_user):
+    await _grant_manage_documents(db_session, test_tenant, test_user)
+    matter = await _matter(db_session, test_tenant.id, test_user.id)
+    set_id = uuid.uuid4()
+    created = await client.post("/api/fill-sessions", json={
+        "matter_id": str(matter.id), "set_id": str(set_id), "title": "Packet",
+        "answers": {"q": "v"}, "verified": ["q"],
+    })
+    assert created.status_code == 200, created.text
+    session_id = created.json()["id"]
+
+    # The background save finished; a later autosave must not reopen the
+    # session or erase the per-member outcomes.
+    await set_tenant_context(db_session, str(test_tenant.id))
+    row = await db_session.scalar(select(DocumentFillSession).where(DocumentFillSession.id == uuid.UUID(session_id)))
+    row.status = "saved"
+    row.members_json = [{"template_id": "t", "status": "saved", "output_filename": "x.pdf"}]
+    await db_session.commit()
+
+    again = await client.post("/api/fill-sessions", json={
+        "id": session_id, "matter_id": str(matter.id), "set_id": str(set_id), "answers": {"q": "v2"}, "verified": [],
+    })
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "saved"
+    assert again.json()["members"][0]["status"] == "saved"
+
+
 async def test_verified_counts_feed_the_readiness_record(db_session, test_tenant, test_user):
     matter = await _matter(db_session, test_tenant.id, test_user.id)
     template_id = uuid.uuid4()

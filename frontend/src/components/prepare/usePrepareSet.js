@@ -157,7 +157,10 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   // Persist answers, verified names and the matter a moment after they
   // change. Creating the session lazily means an untouched page leaves no row.
   const persistSession = useCallback(async () => {
-    if (!set || !sessionRestored || background === 'saving') return
+    // Do not autosave over a session that is running or finished: a save in
+    // flight owns the answers, and re-posting a completed packet would reopen
+    // it and erase the per-document outcomes.
+    if (!set || !sessionRestored || background === 'saving' || background === 'saved') return
     const keys = Object.keys(answers).filter((key) => fillValue(answers[key]).trim())
     if (!keys.length && !sessionRef.current) return
     try {
