@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getTemplate, getTemplateSet, getTemplateSetDocumentsVariables, getTemplateSetInterview, renderTemplate, renderTemplateFile } from '../../api'
+import { getFillSession, getTemplate, getTemplateSet, getTemplateSetDocumentsVariables, getTemplateSetInterview, renderFillSession, renderTemplate, renderTemplateFile, writeFillSession } from '../../api'
 import { fillValue, interviewReview, isSigningField } from '../templates/templateFillReview'
 import { getErrorMessage } from './prepareHelpers'
 import { renderIsSendable, savedDocumentFromRender } from './SendStep'
@@ -39,10 +39,11 @@ const memberState = (status, extra = {}) => ({ status, ...extra })
 // routes, so the preview evidence gate and the save path are exactly what
 // they are for one document. Save-all runs from the browser, one member at a
 // time, because preview evidence is per user.
-export default function usePrepareSet({ setId, initialMatterId = '', folderId = null }) {
+export default function usePrepareSet({ setId, initialMatterId = '', folderId = null, sessionId = null }) {
   const [set, setSet] = useState(null)
   const [members, setMembers] = useState([])
   const [interview, setInterview] = useState(null)
+  const availableMembersKey = members.filter((member) => member.template && member.output).map((member) => `${member.template_id}:${member.resolved_version_no ?? ''}`).join(',')
   const [matterId, setMatterId] = useState(initialMatterId || '')
   const [answers, setAnswers] = useState({})
   const [reviewedValues, setReviewedValues] = useState({})
@@ -59,6 +60,34 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   const generationRef = useRef(0)
   const mountedRef = useRef(true)
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
+  // The server-side session: created on the first answer, updated a moment
+  // after each change, resumed from `?session=`, and what a background save
+  // runs from.
+  const [session, setSession] = useState(null)
+  const [sessionRestored, setSessionRestored] = useState(!sessionId)
+  const [background, setBackground] = useState(null) // null | 'saving' | 'saved' | 'failed'
+  const sessionRef = useRef(null)
+  const saveTimer = useRef(null)
+  const restoredAnswers = useRef(null)
+  useEffect(() => {
+    if (!sessionId) return undefined
+    let active = true
+    getFillSession(sessionId)
+      .then((value) => {
+        if (!active) return
+        sessionRef.current = value
+        setSession(value)
+        restoredAnswers.current = value.answers || {}
+        setAnswers(value.answers || {})
+        setVerifiedNames(Object.fromEntries((value.verified || []).map((key) => [key, true])))
+        if (value.matter_id) setMatterId(value.matter_id)
+        if (value.status === 'saving') setBackground('saving')
+        else if (value.status === 'saved') setBackground('saved')
+      })
+      .catch(() => { /* A missing session starts fresh. */ })
+      .finally(() => { if (active) setSessionRestored(true) })
+    return () => { active = false }
+  }, [sessionId])
 
   // The set and each available member's release, once per set.
   useEffect(() => {
@@ -124,6 +153,86 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   }, [setId])
 
   useEffect(() => { if (set) loadInterview(matterId.trim()) }, [set, matterId, loadInterview])
+
+  // Persist answers, verified names and the matter a moment after they
+  // change. Creating the session lazily means an untouched page leaves no row.
+  const persistSession = useCallback(async () => {
+    if (!set || !sessionRestored || background === 'saving') return
+    const keys = Object.keys(answers).filter((key) => fillValue(answers[key]).trim())
+    if (!keys.length && !sessionRef.current) return
+    try {
+      const saved = await writeFillSession({
+        ...(sessionRef.current?.id ? { id: sessionRef.current.id } : {}),
+        matter_id: matterId.trim() || null,
+        set_id: setId,
+        title: set.title || '',
+        versions: Object.fromEntries(availableMembers.map((member) => [member.template_id, member.resolved_version_no ?? null])),
+        answers: Object.fromEntries(keys.map((key) => [key, fillValue(answers[key])])),
+        verified: Object.keys(verifiedNames).filter((key) => verifiedNames[key]),
+      })
+      sessionRef.current = saved
+      if (mountedRef.current) setSession(saved)
+    } catch { /* The page keeps working from memory; the next change retries. */ }
+  }, [set, sessionRestored, background, answers, matterId, setId, verifiedNames, availableMembersKey])
+  useEffect(() => {
+    if (!set || !sessionRestored) return undefined
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(persistSession, 800)
+    return () => clearTimeout(saveTimer.current)
+  }, [persistSession, set, sessionRestored])
+
+  // While a background save runs, follow the session until it settles.
+  useEffect(() => {
+    if (background !== 'saving' || !sessionRef.current?.id) return undefined
+    let active = true
+    const tick = async () => {
+      try {
+        const value = await getFillSession(sessionRef.current.id)
+        if (!active) return
+        sessionRef.current = value
+        setSession(value)
+        if (value.status !== 'saving') {
+          setBackground(value.status === 'saved' ? 'saved' : 'failed')
+          setSaves(Object.fromEntries((value.members || []).map((member) => [member.template_id, member.status === 'saved'
+            ? memberState('saved', { response: { matter_document_id: member.matter_document_id, output_filename: member.output_filename, output_format: 'pdf' } })
+            : memberState('failed', { error: member.detail || 'Not saved' })])))
+          if ((value.members || []).some((member) => member.status === 'preview_expired')) {
+            setPreviews((prev) => Object.fromEntries(Object.entries(prev).map(([id, entry]) => [id, (value.members || []).find((member) => member.template_id === id && member.status === 'preview_expired') ? memberState('idle') : entry])))
+          }
+        }
+      } catch { /* keep polling */ }
+    }
+    tick()
+    const timer = setInterval(tick, 3000)
+    return () => { active = false; clearInterval(timer) }
+  }, [background])
+
+  // Save the packet in the background from the previews reviewed here. The
+  // server saves each member as this user with that user's own evidence;
+  // only then does the copy say "Saving in the background".
+  const saveAllInBackground = async () => {
+    if (!matterId.trim()) return
+    const ready = availableMembers.filter((member) => previewOf(member).status === 'ready' && saveOf(member)?.status !== 'saved')
+    if (ready.length !== availableMembers.filter((member) => saveOf(member)?.status !== 'saved').length) { setError('Preview every document before saving the packet.'); return }
+    setError('')
+    try {
+      await persistSession()
+      const current = sessionRef.current
+      if (!current?.id) { setError('The session could not be saved; try again.'); return }
+      const queued = await renderFillSession(current.id, {
+        ...(folderId ? { folder_id: folderId } : {}),
+        members: ready.map((member) => {
+          const preview = previewOf(member)
+          return { template_id: member.template_id, variables: preview.variables || {}, preview_id: member.output.format === 'pdf' ? (preview.previewId || null) : null, convert_to_pdf: Boolean(member.output.convertToPdf), output_format: member.output.format }
+        }),
+      })
+      sessionRef.current = queued
+      setSession(queued)
+      setBackground('saving')
+    } catch (err) {
+      setError(getErrorMessage(err, 'The packet could not be queued.'))
+    }
+  }
 
   const invalidatePreviews = useCallback(() => {
     setPreviews((prev) => Object.fromEntries(Object.entries(prev).map(([id, entry]) => [id, entry.status === 'saved' ? entry : memberState('idle')])))
@@ -243,5 +352,6 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     smartFillState, smartFillMessage, refresh: () => loadInterview(matterId.trim()),
     previews, previewOf, saves, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved,
     savedDocuments, sendable: savedDocuments.filter(renderIsSendable).map(savedDocumentFromRender),
+    session, background, saveAllInBackground,
   }
 }

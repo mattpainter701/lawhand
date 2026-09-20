@@ -258,10 +258,13 @@ async def prepare_matter_documents(
 
     from app.services.document_template_versions import published_template_view
 
+    from app.services.fill_sessions import verified_counts
+
     summaries: list[dict[str, Any]] = []
     # One read of each record family for the whole run, however many
     # templates the matter has.
     loaders = memoized()
+    verified = await verified_counts(db, tenant_id=matter.tenant_id, matter_id=matter.id)
     for template, reasons in await _candidate_templates(db, matter):
         entry: dict[str, Any] = {
             "template_id": str(template.id),
@@ -302,6 +305,7 @@ async def prepare_matter_documents(
                 "missing_required_names": prepared.missing_required[:MAX_NAMED_FIELDS],
                 "review": len(review),
                 "review_names": review[:MAX_NAMED_FIELDS],
+                "verified": int(verified.get(str(template.id), 0)),
                 "coverage": dict(coverage.counts),
                 "sources_loaded": list(prepared.sources_loaded),
                 "collisions": [c.alias for c in prepared.collisions][:MAX_NAMED_FIELDS],

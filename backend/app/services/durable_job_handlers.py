@@ -64,6 +64,9 @@ JOB_HANDLERS = {
     "document_prefill": JobHandler(
         "app.services.document_prefill", "run_prefill_job", "session_row"
     ),
+    "template_set_render": JobHandler(
+        "app.services.fill_sessions", "run_set_render_job", "session_row"
+    ),
 }
 
 

@@ -13,6 +13,7 @@ from app.models.user import User, UserMemory
 from app.models.user_alias import UserAliasAddress
 from app.models.user_invitation import UserInvitation
 from app.models.document_text_extraction import DocumentTextExtraction
+from app.models.document_fill_session import DocumentFillSession
 from app.models.document import Document, Chunk
 from app.models.conversation import Conversation, Message, UsageRecord
 from app.models.plugin import (
@@ -275,6 +276,7 @@ __all__ = [
     "UserAliasAddress",
     "UserInvitation",
     "DocumentTextExtraction",
+    "DocumentFillSession",
     "Document",
     "Chunk",
     "Conversation",

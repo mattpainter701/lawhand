@@ -23,6 +23,9 @@ const api = vi.hoisted(() => ({
   getTemplateSet: vi.fn(),
   getTemplateSetInterview: vi.fn(),
   getTemplateSetDocumentsVariables: vi.fn(),
+  getFillSession: vi.fn(),
+  writeFillSession: vi.fn(),
+  renderFillSession: vi.fn(),
 }))
 vi.mock('../api', () => api)
 vi.mock('../components/templates/GeneratedPdfPreview', () => ({ default: ({ title }) => <section aria-label={`Preview of ${title}`} /> }))
@@ -54,6 +57,8 @@ function renderAt(search) {
 }
 
 beforeEach(() => {
+  api.writeFillSession.mockImplementation(async (data) => ({ id: data.id || '99999999-9999-4999-8999-999999999999', status: 'open', members: [], ...data }))
+  api.getFillSession.mockResolvedValue({ id: '99999999-9999-4999-8999-999999999999', status: 'open', answers: {}, verified: [], members: [] })
   api.getTemplate.mockResolvedValue(published)
   api.getMattersV2.mockResolvedValue({ items: [{ id: M, matter_name: 'Smith Matter', client_name: 'Ada Smith' }] })
   api.discoverTemplateVariables.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false }] })
@@ -271,6 +276,54 @@ describe('the Prepare route', () => {
     await screen.findByRole('heading', { name: 'Send for signature' })
     expect(screen.getByPlaceholderText('Signer 1 full name')).toHaveValue('Ada Lovelace')
   })
+
+  it('keeps typed values in a session and resumes them for a single template', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+      renderAt(`?template=${T}&matter=${M}`)
+      await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+      fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Grace Hopper' } })
+      await vi.advanceTimersByTimeAsync(900)
+      await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ template_id: T, matter_id: M, answers: { client_name: 'Grace Hopper' }, verified: ['client_name'] })))
+    } finally {
+      vi.useRealTimers()
+    }
+    cleanup()
+    const X = '99999999-9999-4999-8999-999999999999'
+    api.getFillSession.mockResolvedValue({ id: X, status: 'open', template_id: T, matter_id: M, answers: { client_name: 'Grace Hopper' }, verified: ['client_name'], members: [] })
+    renderAt(`?template=${T}&session=${X}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Grace Hopper'))
+    expect(screen.getByRole('checkbox', { name: 'Verified: Client name' })).toBeChecked()
+  })
+
+  it('saves a previewed packet in the background and follows the session until it settles', async () => {
+    const S = '55555555-5555-4555-8555-555555555555'
+    const A = '66666666-6666-4666-8666-666666666666'
+    const X = '99999999-9999-4999-8999-999999999999'
+    api.getTemplateSet.mockResolvedValue({ id: S, title: 'Packet', items: [{ template_id: A, title: 'Motion', position: 0, resolved_version_no: 2 }] })
+    api.getTemplate.mockResolvedValue({ id: A, title: 'Motion', format: 'pdf', source_sha256: 'a', is_active: true, variable_schema: { fields: [{ name: 'def_name', binding: 'defendant.full_name' }] } })
+    api.getTemplateSetInterview.mockResolvedValue({ set_id: S, title: 'Packet', questions: [
+      { key: 'defendant.full_name', label: 'Defendant', value_kind: 'text', required: true, card: 'defendant', binding: 'defendant.full_name', shared: false, appears_in: [{ template_id: A, template_title: 'Motion', field_name: 'def_name', label: 'Defendant' }], suggested_value: 'Ada', provenance: { source_type: 'matter_party', confidence: 1 }, review_required: false },
+    ], unavailable: [] })
+    api.getTemplateSetDocumentsVariables.mockResolvedValue({ set_id: S, documents: { [A]: { def_name: 'Ada' } }, unanswered_required: [], unavailable: [], resolved_versions: { [A]: 2 } })
+    api.renderTemplateFile.mockResolvedValue({ blob: new Blob(['%PDF']), previewId: 'prev-a', previewPurpose: 'generation', filename: 'motion.pdf' })
+    api.renderFillSession.mockResolvedValue({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
+    api.getFillSession
+      .mockResolvedValueOnce({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
+      .mockResolvedValue({ id: X, status: 'saved', members: [{ template_id: A, status: 'saved', matter_document_id: DOC, output_filename: 'motion.pdf' }] })
+    renderAt(`?set=${S}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare a packet' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Defendant/ })).toHaveValue('Ada'))
+    fireEvent.click(screen.getByRole('button', { name: 'Generate all' }))
+    await screen.findByText('Preview ready')
+    fireEvent.click(screen.getByRole('button', { name: 'Save all in the background' }))
+    await waitFor(() => expect(api.renderFillSession).toHaveBeenCalledWith(X, { members: [{ template_id: A, variables: { def_name: 'Ada' }, preview_id: 'prev-a', convert_to_pdf: false, output_format: 'pdf' }] }))
+    await screen.findByText(/Saving in the background/)
+    await waitFor(() => expect(screen.getByText('Saved')).toBeInTheDocument(), { timeout: 8000 })
+    await screen.findByText('Every document is saved to the matter.')
+  }, 15000)
 
   it('explains itself without a template and reports a load failure', async () => {
     renderAt('')

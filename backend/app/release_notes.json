@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.20.04",
+      "version": "2026.09.20.04",
+      "title": "Resume a packet, and save it in the background",
+      "published_at": "2026-09-20",
+      "summary": "What you type on the Prepare page is kept for 14 days and can be resumed from the matter's Documents tab. A previewed packet can be saved in the background, and the ready-to-review banner shows how many fields you verified.",
+      "highlights": [
+        {
+          "title": "Pick up where you left off",
+          "description": "Answers and verified ticks are kept server-side, encrypted, for 14 days. The matter's Documents tab lists documents in progress with Resume and Discard."
+        },
+        {
+          "title": "Save all in the background",
+          "description": "Once every document in a packet is previewed, queue the saves on the server and leave the page. Each document reports Saved or why not; an expired preview asks for a new one."
+        },
+        {
+          "title": "Verified counts on the banner",
+          "description": "The ready-to-review banner on Case Documents now shows how many fields you verified for each document."
+        }
+      ]
+    },
+    {
       "id": "2026.09.20.03",
       "version": "2026.09.20.03",
       "title": "Template sets: one interview, a whole packet",

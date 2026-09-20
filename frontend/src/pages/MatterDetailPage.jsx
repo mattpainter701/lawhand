@@ -1642,7 +1642,7 @@ function MatterWorkspace() {
             <MatterDocumentsTab
               matterId={id}
               onReviseDocument={(document) => navigate(`/matters/${id}/documents/${document.id}/revise`)}
-              onPrepareTemplate={(templateId, folderId) => navigate(buildPrepareTarget({ templateId, matterId: id, folderId, returnTo: `/matters/${id}?tab=documents` }).url)}
+              onPrepareTemplate={(templateId, folderId, url) => navigate(url || buildPrepareTarget({ templateId, matterId: id, folderId, returnTo: `/matters/${id}?tab=documents` }).url)}
               onCloudFolderChange={(providers) => {
                 setMatter(prev => prev ? { ...prev, cloud_folder: providers || {} } : prev)
                 setEditData(prev => ({ ...prev, cloud_folder: providers || {} }))

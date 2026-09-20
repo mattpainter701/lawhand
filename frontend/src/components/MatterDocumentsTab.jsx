@@ -5,6 +5,7 @@ import MatterImportWizard from './MatterImportWizard'
 import MatterDocumentPreview from './documents/MatterDocumentPreview'
 import MatterTemplatePicker from './templates/MatterTemplatePicker'
 import PreparedDocumentsBanner from './documents/PreparedDocumentsBanner'
+import FillSessionsList from './documents/FillSessionsList'
 import MatterDocumentFacts from './documents/MatterDocumentFacts'
 import { format, parseISO } from 'date-fns'
 import api, {
@@ -627,6 +628,8 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
           setTemplateToOpen(templateId); setTemplateOpen(true)
         }}
       />
+
+      {onPrepareTemplate && <FillSessionsList matterId={matterId} version={prefillVersion} onResume={(url) => onPrepareTemplate(null, null, url)} />}
 
       {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} initialTemplateId={templateToOpen} onClose={() => { setTemplateOpen(false); setTemplateToOpen(null) }} onSaved={() => { refreshDocuments(); refreshFolders(); setPrefillVersion((v) => v + 1) }} />}
 

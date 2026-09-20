@@ -10,7 +10,7 @@ describe('prepare route addresses', () => {
   it('builds a link from ids and a same-app return path', () => {
     const target = buildPrepareTarget({ templateId: T.toUpperCase(), matterId: M, folderId: F, returnTo: `/matters/${M}?tab=documents` })
     expect(target.pathname).toBe('/templates/prepare')
-    expect(readPrepareQuery(target.search)).toEqual({ templateId: T, setId: null, matterId: M, folderId: F, returnTo: `/matters/${M}?tab=documents` })
+    expect(readPrepareQuery(target.search)).toEqual({ templateId: T, setId: null, matterId: M, folderId: F, sessionId: null, returnTo: `/matters/${M}?tab=documents` })
     expect(target.url).toBe(`/templates/prepare${target.search}`)
   })
 
@@ -33,5 +33,17 @@ describe('prepare route addresses', () => {
     expect(buildSavedTarget({ matterId: M, documentId: D })).toBe(`/matters/${M}?tab=documents&document=${D}`)
     expect(buildSavedTarget({ matterId: M, documentId: D, returnTo: `/matters/${M}?tab=probate` })).toBe(`/matters/${M}?tab=probate&document=${D}`)
     expect(buildSavedTarget({ matterId: M, documentId: 'nope' })).toBe(`/matters/${M}?tab=documents`)
+  })
+})
+
+describe('fill sessions in the address', () => {
+  it('carries a session id and reads it back', async () => {
+    const { buildPrepareTarget, readPrepareQuery } = await import('./prepareRouting')
+    const S = '55555555-5555-4555-8555-555555555555'
+    const X = '99999999-9999-4999-8999-999999999999'
+    const target = buildPrepareTarget({ setId: S, sessionId: X })
+    expect(target.url).toBe(`/templates/prepare?set=${S}&session=${X}`)
+    expect(readPrepareQuery(target.search).sessionId).toBe(X)
+    expect(readPrepareQuery('?session=not-an-id').sessionId).toBeNull()
   })
 })

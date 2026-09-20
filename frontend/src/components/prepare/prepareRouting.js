@@ -20,12 +20,13 @@ export const safeReturnPath = (value) => {
   return text
 }
 
-export function buildPrepareTarget({ templateId, setId, matterId, folderId, returnTo } = {}) {
+export function buildPrepareTarget({ templateId, setId, matterId, folderId, returnTo, sessionId } = {}) {
   const params = new URLSearchParams()
   if (isId(templateId)) params.set('template', String(templateId).toLowerCase())
   else if (isId(setId)) params.set('set', String(setId).toLowerCase())
   if (isId(matterId)) params.set('matter', String(matterId).toLowerCase())
   if (isId(folderId)) params.set('folder', String(folderId).toLowerCase())
+  if (isId(sessionId)) params.set('session', String(sessionId).toLowerCase())
   const back = safeReturnPath(returnTo)
   if (back) params.set('return', back)
   const search = params.toString()
@@ -38,11 +39,13 @@ export function readPrepareQuery(search = '') {
   const set = params.get('set')
   const matter = params.get('matter')
   const folder = params.get('folder')
+  const session = params.get('session')
   return {
     templateId: isId(template) ? template.toLowerCase() : null,
     setId: isId(set) ? set.toLowerCase() : null,
     matterId: isId(matter) ? matter.toLowerCase() : null,
     folderId: isId(folder) ? folder.toLowerCase() : null,
+    sessionId: isId(session) ? session.toLowerCase() : null,
     returnTo: safeReturnPath(params.get('return')),
   }
 }

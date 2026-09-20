@@ -12,7 +12,7 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["197_document_evidence"]
+    assert heads == ["198_document_fill_sessions"]
 
 
 def test_matter_engagement_migration_adds_open_date_and_engagement_columns():

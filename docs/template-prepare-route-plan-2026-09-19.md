@@ -208,7 +208,7 @@ Acceptance: a five-document packet, caption asked once, all five previewed,
 one failing member retried without touching the others, five documents and
 five events saved, three PDFs sendable, RLS test green.
 
-## Phase 3d: durable save-all and a resumable session (later; three PRs; migration 197, since 196 is the document evidence migration)
+## Phase 3d: durable save-all and a resumable session (shipped 2026-09-20 as one commit; migration 198; the render handler is called directly by the job rather than extracted)
 
 1. Extract `save_generated_document(...)` from the render handler into
    `services/generated_documents.py` with no behaviour change: staged
@@ -273,7 +273,7 @@ npx vitest run && npx eslint src
 - Applicability rules stay advisory; templates stay catalogue objects; sets
   stay tenant-scoped lists of template ids with optional pins.
 
-## Phase 4: the verification pass (owner's ask, 2026-09-19; 4a and 4b shipped 2026-09-20, CHANGELOG 2026.09.20.01; 4c and 4d wait on 3d)
+## Phase 4: the verification pass (owner's ask, 2026-09-19; 4a/4b shipped 2026-09-20 in 2026.09.20.01; 4c/4d shipped with 3d in 2026.09.20.04)
 
 > "a review mechanism for confidence in these automations ... presented a
 > box to 'verified' and can click, click, click, change field, click

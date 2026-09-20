@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import { getMattersV2, getTemplate } from '../api'
+import { getFillSession, getMattersV2, getTemplate, writeFillSession } from '../api'
 import usePrepareFill, { templateHasSigningFields } from '../components/prepare/usePrepareFill'
 import SendStep, { renderIsSendable, savedDocumentFromRender } from '../components/prepare/SendStep'
 import usePrepareSet from '../components/prepare/usePrepareSet'
@@ -43,6 +43,45 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   })
   matterRef.current = fill.matterId
   const signing = templateHasSigningFields(template) ? { pdf: fill.isPdfOutput, sent } : null
+  // The values typed here are kept server-side (encrypted) so the page can
+  // be closed and resumed from the matter's Documents tab; created on the
+  // first value, updated a moment after each change, resumed from `?session=`.
+  const sessionRef = useRef(null)
+  const [restored, setRestored] = useState(!query.sessionId)
+  const { setVariables, setVerifiedNames, setMatterId } = fill
+  useEffect(() => {
+    if (!query.sessionId) return undefined
+    let active = true
+    getFillSession(query.sessionId)
+      .then((value) => {
+        if (!active) return
+        sessionRef.current = value
+        if (value.answers && Object.keys(value.answers).length) setVariables((prev) => ({ ...prev, ...value.answers }))
+        setVerifiedNames(Object.fromEntries((value.verified || []).map((name) => [name, true])))
+        if (value.matter_id) setMatterId(value.matter_id)
+      })
+      .catch(() => { /* A missing session starts fresh. */ })
+      .finally(() => { if (active) setRestored(true) })
+    return () => { active = false }
+  }, [query.sessionId, setVariables, setVerifiedNames, setMatterId])
+  const { variables, verifiedNames, matterId, saved } = fill
+  useEffect(() => {
+    if (!restored || !template || saved) return undefined
+    const answers = Object.fromEntries(Object.entries(variables).filter(([, value]) => String(value ?? '').trim()))
+    if (!Object.keys(answers).length && !sessionRef.current) return undefined
+    const timer = setTimeout(() => {
+      writeFillSession({
+        ...(sessionRef.current?.id ? { id: sessionRef.current.id } : {}),
+        matter_id: matterId.trim() || null,
+        template_id: template.id,
+        title: template.title || '',
+        versions: { [template.id]: template.published_version_no ?? null },
+        answers,
+        verified: Object.keys(verifiedNames).filter((name) => verifiedNames[name] && String(variables[name] ?? '').trim()),
+      }).then((value) => { sessionRef.current = value }).catch(() => { /* retried on the next change */ })
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [restored, template, variables, verifiedNames, matterId, saved])
   const steps = prepareSteps({
     template,
     matterId: fill.matterId,
@@ -71,7 +110,7 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
 
 // A set: one interview, many documents, saved one at a time from here.
 function PrepareSet({ query, matters, matterLoading }) {
-  const prep = usePrepareSet({ setId: query.setId, initialMatterId: query.matterId || '', folderId: query.folderId || null })
+  const prep = usePrepareSet({ setId: query.setId, initialMatterId: query.matterId || '', folderId: query.folderId || null, sessionId: query.sessionId || null })
   const anyPdfSigning = prep.availableMembers.some((member) => member.output?.format === 'pdf')
   const steps = prepareSteps({
     template: prep.set ? { title: prep.set.title } : null,

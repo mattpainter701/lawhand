@@ -53,6 +53,7 @@ export default function PreparedDocumentsBanner({ matterId, version = 0, onOpen 
                 {t.filled} of {t.fields} fields
                 {t.missing_required ? ` · ${t.missing_required} required still blank` : ''}
                 {t.review ? ` · ${t.review} to confirm` : ''}
+                {t.verified ? ` · ${t.verified} verified` : ''}
               </span>
             </div>
             <button type="button" onClick={() => onOpen(t.template_id)} className="rounded border border-brand-line px-3 py-1 text-brand-ink hover:border-brand-ink">

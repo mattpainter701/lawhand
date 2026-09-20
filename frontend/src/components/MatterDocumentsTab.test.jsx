@@ -30,6 +30,8 @@ const apiMocks = vi.hoisted(() => ({
   getMatterDocumentSigningSource: vi.fn().mockResolvedValue(null),
   getMatterDocumentFormSources: vi.fn().mockResolvedValue({ sources: [] }),
   readMatterDocumentAgainstForm: vi.fn(),
+  getMatterFillSessions: vi.fn().mockResolvedValue({ items: [] }),
+  abandonFillSession: vi.fn(),
   moveMatterDocuments: vi.fn(),
   provisionMatterCloudFolder: vi.fn(),
   setMatterDocumentTags: vi.fn(),

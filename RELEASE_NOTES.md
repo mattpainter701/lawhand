@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.20.04 — Resume a packet, and save it in the background
+
+Released September 20, 2026.
+
+What you type on the Prepare page is kept for 14 days and can be resumed from the matter's Documents tab. A previewed packet can be saved in the background, and the ready-to-review banner shows how many fields you verified.
+
+- **Pick up where you left off.** Answers and verified ticks are kept server-side, encrypted, for 14 days. The matter's Documents tab lists documents in progress with Resume and Discard.
+- **Save all in the background.** Once every document in a packet is previewed, queue the saves on the server and leave the page. Each document reports Saved or why not; an expired preview asks for a new one.
+- **Verified counts on the banner.** The ready-to-review banner on Case Documents now shows how many fields you verified for each document.
+
 ## 2026.09.20.03 — Template sets: one interview, a whole packet
 
 Released September 20, 2026.

@@ -21,6 +21,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
     smartFillState, smartFillMessage, refresh, previewOf, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved, sendable,
+    session, background, saveAllInBackground,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
   const groups = []
@@ -98,10 +99,14 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => generateAll()} disabled={generating || saving || !matterId.trim() || !availableMembers.length || allSaved} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">{generating ? 'Generating…' : allPreviewed ? 'Generate all again' : 'Generate all'}</button>
               {failedPreviews.length > 0 && !generating && <button type="button" onClick={() => generateAll(failedPreviews)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed previews</button>}
-              <button type="button" onClick={() => saveAll()} disabled={saving || generating || !allPreviewed || allSaved} className="rounded-lg bg-brand-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save all to matter'}</button>
+              <button type="button" onClick={() => saveAll()} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} className="rounded-lg bg-brand-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save all to matter'}</button>
+              <button type="button" onClick={saveAllInBackground} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} title="Queue the saves on the server so you can leave this page" className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">Save all in the background</button>
               {failedSaves.length > 0 && !saving && <button type="button" onClick={() => saveAll(failedSaves)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed saves</button>}
             </div>
           </div>
+          {background === 'saving' && <p role="status" className="mt-2 text-xs text-brand-muted">Saving in the background. You can leave this page; the matter's Documents tab shows the packet under "in progress" until every document is saved.</p>}
+          {background === 'failed' && session?.last_error && <p role="alert" className="mt-2 text-xs text-brand-rose">{session.last_error}</p>}
+          {session?.id && background !== 'saving' && <p className="mt-2 text-xs text-brand-muted">Your answers are kept for 14 days; resume from the matter's Documents tab.</p>}
           <ul className="mt-3 space-y-2">
             {availableMembers.map((member) => {
               const preview = previewOf(member)

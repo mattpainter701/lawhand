@@ -2532,6 +2532,19 @@ export const getTemplateSetInterview = (id, matterId) =>
 export const getTemplateSetDocumentsVariables = (id, data) =>
   api.post(`/template-sets/${id}/documents-variables`, data).then(r => r.data)
 
+// Resumable fill sessions: a preparer's answers kept server-side, and the
+// background save of a previewed packet.
+export const writeFillSession = (data) =>
+  api.post('/fill-sessions', data).then(r => r.data)
+export const getFillSession = (id) =>
+  api.get(`/fill-sessions/${id}`).then(r => r.data)
+export const abandonFillSession = (id) =>
+  api.delete(`/fill-sessions/${id}`).then(r => r.data)
+export const renderFillSession = (id, data) =>
+  api.post(`/fill-sessions/${id}/render`, data).then(r => r.data)
+export const getMatterFillSessions = (matterId) =>
+  api.get(`/matters/${matterId}/fill-sessions`).then(r => r.data)
+
 export const getTemplateFieldLibrary = () =>
   api.get('/templates/field-library').then(r => r.data)
 

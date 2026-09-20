@@ -21,6 +21,8 @@ class DocumentPrefillTemplate(BaseModel):
     missing_required_names: list[str] = Field(default_factory=list)
     review: int = 0
     review_names: list[str] = Field(default_factory=list)
+    #: Names the latest fill session for this matter marked verified.
+    verified: int = 0
     rank_reasons: list[str] = Field(default_factory=list)
     coverage: dict[str, Any] = Field(default_factory=dict)
 
