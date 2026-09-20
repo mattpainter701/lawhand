@@ -448,6 +448,7 @@ async def test_read_field_clip_sends_the_clip_and_meters_one_vision_call(monkeyp
         png_bytes=b"\x89PNG fake",
         label="Client name",
         document_sha256="a" * 64,
+        tenant_ai_enabled=True,
         llm=FakeLLM(),
     )
     assert value == "Ada Lovelace"
@@ -473,6 +474,7 @@ async def test_read_field_clip_sends_the_clip_and_meters_one_vision_call(monkeyp
             png_bytes=b"x",
             label="Notes",
             document_sha256="a" * 64,
+            tenant_ai_enabled=True,
             llm=BlankLLM(),
         )
         is None
@@ -493,4 +495,5 @@ async def test_read_field_clip_is_closed_without_a_vision_model(monkeypatch):
             png_bytes=b"x",
             label="Client name",
             document_sha256="a" * 64,
+            tenant_ai_enabled=True,
         )

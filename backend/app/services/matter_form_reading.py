@@ -11,6 +11,7 @@ writes to a record.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any
 
@@ -30,6 +31,11 @@ MAX_SOURCES = 25
 #: A crop read below this OCR confidence is offered to the vision model.
 VISION_FLOOR = 0.35
 VISION_CONFIDENCE = 0.6
+#: Wall-clock ceiling for the whole vision pass in one request. The clips are
+#: read sequentially and each is a metered provider call, so without a budget a
+#: slow provider could hold the request for many minutes. Fields left unread
+#: past the budget stay blank for a manual read.
+VISION_TIME_BUDGET_SECONDS = 90
 
 
 async def _read_unreadable_clips(
@@ -47,14 +53,13 @@ async def _read_unreadable_clips(
     settings_row = await db.scalar(
         select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
     )
-    if not facts.ai_extraction_enabled(settings_row):
-        for item in clips:
-            item.clip_png = None
-        return ["AI reading of handwritten fields is not enabled for this firm."]
+    allowed = facts.ai_extraction_enabled(settings_row)
     read = 0
+    skipped = 0
     failure: str | None = None
+    deadline = time.monotonic() + VISION_TIME_BUDGET_SECONDS
     for item in clips:
-        if failure is None:
+        if failure is None and time.monotonic() < deadline:
             try:
                 value = await intake_extraction_ai.read_field_clip(
                     db=db,
@@ -62,6 +67,7 @@ async def _read_unreadable_clips(
                     png_bytes=item.clip_png,
                     label=item.label,
                     document_sha256=document_sha256,
+                    tenant_ai_enabled=allowed,
                 )
             except intake_extraction_ai.IntakeExtractionUnavailable as exc:
                 failure = str(exc)
@@ -71,17 +77,27 @@ async def _read_unreadable_clips(
                 item.confidence = VISION_CONFIDENCE
                 item.read_by = "vision"
                 read += 1
+        elif failure is None:
+            skipped += 1
         item.clip_png = None
     # The vision read commits its usage rows, which drops the transaction's
     # tenant context; restore it before the target lookups that follow.
     await set_tenant_context(db, str(user.tenant_id))
     if failure:
         return [failure]
-    return [
-        f"AI read {read} field(s) OCR could not. Check each against its clip before accepting."
-        if read
-        else "AI could not read the remaining fields either."
-    ]
+    notes = []
+    if read:
+        notes.append(
+            f"AI read {read} field(s) OCR could not. Check each against its clip before accepting."
+        )
+    else:
+        notes.append("AI could not read the remaining fields either.")
+    if skipped:
+        notes.append(
+            f"{skipped} field(s) were left blank because the AI read reached its "
+            "time budget; read them by hand."
+        )
+    return notes
 
 
 async def form_sources(db, *, tenant_id, matter_id) -> list[dict[str, Any]]:
