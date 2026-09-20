@@ -64,6 +64,10 @@ Smart Fill and AI analysis accelerate assembly; they do not approve legal conten
 
 After the save, the same page can create and send an e-signature request for the new document. Recipients, roles, and dates come from the same signature form used on the matter, so check every signer and the placement plan before sending. A request is only sent when you confirm it.
 
+## Template sets
+
+A [template set](/templates/sets) groups the templates one matter's packet needs, such as a fee agreement, an engagement letter, and an intake form, so a single interview fills them all. Preparing a set runs the same fill, review, preview, and save steps as a single template, once per member; each member is saved to the matter on its own and can be sent for signature from the set. Nothing is generated or sent without a person reviewing and confirming each document.
+
 ## Version and activation discipline
 
 When source language changes, create or update the controlled template through the supported workflow. Record what changed and re-test representative scenarios. Do not replace a template file in a way that makes prior generated documents impossible to explain.

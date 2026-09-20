@@ -81,6 +81,11 @@
       "chapter": "document-automation-and-esignature"
     },
     {
+      "id": "template-sets",
+      "route": "/templates/sets",
+      "chapter": "document-automation-and-esignature"
+    },
+    {
       "id": "contacts",
       "route": "/contacts",
       "chapter": "contacts-and-client-relationships"
