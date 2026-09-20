@@ -17,6 +17,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +42,7 @@ from app.schemas.matter_document import (
     MatterDocumentUpdate,
 )
 from app.services.document_accountability import append_document_integrity_event
-from app.services import matter_fact_extraction
+from app.services import matter_fact_extraction, matter_form_reading
 from app.services.durable_jobs import enqueue_job
 from app.services.matter_document_organization import (
     DocumentOrganizationError,
@@ -840,6 +841,55 @@ async def propose_matter_document_facts(
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return await matter_fact_extraction.propose(
         db, user, uuid.UUID(matter_id), uuid.UUID(doc_id), use_ai=ai
+    )
+
+
+class FormReadRequest(BaseModel):
+    template_id: uuid.UUID
+    version_no: int | None = Field(default=None, ge=1)
+
+
+@router.get("/matters/{matter_id}/documents/{doc_id}/facts/form-sources")
+async def list_matter_document_form_sources(
+    matter_id: str,
+    doc_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """The forms this matter has generated, so a scan can be read against one."""
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    return {
+        "sources": await matter_form_reading.form_sources(
+            db, tenant_id=user.tenant_id, matter_id=uuid.UUID(matter_id)
+        )
+    }
+
+
+@router.post("/matters/{matter_id}/documents/{doc_id}/facts/from-form")
+async def read_matter_document_against_form(
+    matter_id: str,
+    doc_id: str,
+    payload: FormReadRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Read a scanned, hand-filled copy field by field against its template.
+
+    Same review shape as ``facts``: every reading is a candidate for a person
+    to accept through ``facts/accept``; nothing is written here.
+    """
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    return await matter_form_reading.read_against_form(
+        db,
+        user,
+        uuid.UUID(matter_id),
+        uuid.UUID(doc_id),
+        template_id=payload.template_id,
+        version_no=payload.version_no,
     )
 
 

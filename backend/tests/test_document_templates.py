@@ -230,6 +230,7 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
     import app.routers.esignature as esign
     from app.models.document_template import DocumentTemplate
     from app.models.matter_document import MatterDocument
+    from app.models.plugin import MatterEvent
     from sqlalchemy import select
 
     template_id, matter, values, _ = await _prepare_active_pdf_generation(
@@ -290,7 +291,13 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
         "matter_id": str(matter.id),
         "preview_id": preview.headers["x-clarity-preview-id"],
         "folder_id": folder.json()["id"],
+        "verified_fields": ["client_name", "notes", "client_name"],
     }
+    unknown_verified = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={**payload, "verified_fields": ["client_name", "not_a_variable"]},
+    )
+    assert unknown_verified.status_code == 422
     missing_matter = await client.post(
         f"/api/templates/{template_id}/render", json={**payload, "matter_id": None}
     )
@@ -321,11 +328,18 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
     assert generated.json()["signing_placement_required"] is True
     assert generated.json()["positioned_fields"] == document.positioned_fields
     assert generated.json()["signing_placement_problems"] == []
+    # What the preparer checked before saving travels with the document.
+    summary = generated.json()["generation_summary"]
+    assert summary["verified_fields"] == ["client_name", "notes"]
+    assert summary["verified"] == 2 and summary["filled"] == 3
+    assert summary["total"] == 3 and summary["template_id"] == template_id
+    assert document.generation_summary == summary
     replay = await client.post(f"/api/templates/{template_id}/render", json=payload)
     assert replay.status_code == 200, replay.text
     assert replay.json()["matter_document_id"] == str(document.id)
     assert replay.json()["signing_roles"] == ["attorney", "client"]
     assert replay.json()["positioned_fields"] == document.positioned_fields
+    assert replay.json()["generation_summary"] == summary
     wrong_destination = await client.post(
         f"/api/templates/{template_id}/render", json={**payload, "folder_id": None}
     )
@@ -337,10 +351,22 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
     assert document.document_sha256 == hashlib.sha256(preview.content).hexdigest()
     listed = await client.get(f"/api/matters/{matter.id}/documents")
     assert listed.status_code == 200, listed.text
-    manifest = next(
+    listed_document = next(
         item for item in listed.json()["items"] if item["id"] == str(document.id)
-    )["positioned_fields"]
+    )
+    manifest = listed_document["positioned_fields"]
     assert manifest == document.positioned_fields
+    assert listed_document["generation_summary"]["verified_fields"] == ["client_name", "notes"]
+    generated_event = (
+        await db_session.execute(
+            select(MatterEvent).where(
+                MatterEvent.matter_id == matter.id,
+                MatterEvent.event_type == "document_generated",
+            )
+        )
+    ).scalars().first()
+    assert generated_event.metadata_json["verified_fields"] == ["client_name", "notes"]
+    assert generated_event.metadata_json["verified_count"] == 2
 
     monkeypatch.setattr(esign, "notify_actionable_signers", AsyncMock())
     body = {

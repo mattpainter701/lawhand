@@ -22,6 +22,8 @@ const apiMocks = vi.hoisted(() => ({
   getMatterDocuments: vi.fn(),
   getMatterDocumentPrefill: vi.fn().mockResolvedValue(null),
   getMatterDocumentSigningSource: vi.fn().mockResolvedValue(null),
+  getMatterDocumentFormSources: vi.fn().mockResolvedValue({ sources: [] }),
+  readMatterDocumentAgainstForm: vi.fn(),
   moveMatterDocuments: vi.fn(),
   provisionMatterCloudFolder: vi.fn(),
   setMatterDocumentTags: vi.fn(),
@@ -49,6 +51,7 @@ const documents = [
     id: 'pdf-1',
     filename: 'Filed pleading.pdf',
     content_type: 'application/pdf',
+    generation_summary: { template_id: 't-1', template_title: 'Pleading form', template_version_no: 2, total: 19, filled: 17, verified: 12, verified_fields: [] },
     document_category: 'pleading',
     file_size: 4096,
     portal_visible: false,
@@ -516,6 +519,7 @@ describe('MatterDocumentsTab prepared documents', () => {
     await screen.findAllByText('Filed pleading.pdf')
     const preview = await screen.findByRole('region', { name: 'Document preview' })
     expect(preview).toHaveTextContent('Filed pleading.pdf')
+    expect(preview).toHaveTextContent('12 of 19 fields verified when generated · from Pleading form v2')
     expect(window.location.search).toBe('?tab=documents')
   })
 

@@ -73,7 +73,7 @@ describe('the Prepare route', () => {
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     await waitFor(() => expect(api.discoverTemplateVariables).toHaveBeenCalledTimes(1))
     expect(api.discoverTemplateVariables).toHaveBeenCalledWith(T, { matter_id: M, published: true, variables: ['client_name'] })
-    await waitFor(() => expect(screen.getByLabelText(/Client name/)).toHaveValue('Ada Smith'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
     expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('1 of 1 filled')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
@@ -82,10 +82,53 @@ describe('the Prepare route', () => {
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M })
   })
 
+  it('lets the preparer verify a filled row and sends the verified names with the save', async () => {
+    api.getTemplate.mockResolvedValue({
+      ...published,
+      body: 'Dear {{client_name}} re {{matter_name}}',
+      variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }, { name: 'matter_name', label: 'Matter name' }] },
+    })
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [
+      { variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false },
+      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: false },
+    ] })
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
+    const completion = screen.getByRole('region', { name: 'Document completion' })
+    expect(completion).toHaveTextContent('0 of 2 verified')
+    expect(screen.getByRole('button', { name: 'Unverified (2)' })).toBeInTheDocument()
+    // Enter on the first row's Verified control verifies it and moves on to the next unverified row.
+    const first = screen.getByRole('checkbox', { name: 'Verified: Client name' })
+    first.focus()
+    fireEvent.keyDown(first, { key: 'Enter' })
+    await waitFor(() => expect(first).toBeChecked())
+    expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    expect(completion).toHaveTextContent('1 of 2 verified')
+    // Typing a value counts as checking it; clearing it does not.
+    fireEvent.change(screen.getByRole('textbox', { name: /Matter name/ }), { target: { value: 'Smith v. Jones (2026)' } })
+    expect(screen.getByRole('checkbox', { name: 'Verified: Matter name' })).toBeChecked()
+    expect(completion).toHaveTextContent('2 of 2 verified')
+    fireEvent.click(screen.getByRole('button', { name: 'Unverified (0)' }))
+    expect(screen.getByText('Every filled field is verified.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'All fields (2)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    expect(completion).toHaveTextContent('1 of 2 verified')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('Dear Ada Smith')
+    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await waitFor(() => expect(api.renderTemplate).toHaveBeenCalled())
+    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, {
+      variables: { client_name: 'Ada Smith', matter_name: 'Smith v. Jones (2026)' },
+      matter_id: M,
+      verified_fields: ['client_name'],
+    })
+  })
+
   it('honours a return path and a destination folder', async () => {
     const F = '33333333-3333-4333-8333-333333333333'
     renderAt(`?template=${T}&matter=${M}&folder=${F}&return=${encodeURIComponent(`/matters/${M}?tab=probate`)}`)
-    await waitFor(() => expect(screen.getByLabelText(/Client name/)).toHaveValue('Ada Smith'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', `/matters/${M}?tab=probate`)
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
@@ -122,7 +165,7 @@ describe('the Prepare route', () => {
     renderAt(`?template=${T}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('6. Send')
-    await waitFor(() => expect(screen.getByLabelText(/Client name/)).toHaveValue('Ada Smith'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await waitFor(() => expect(api.renderTemplateFile).toHaveBeenCalled())
     await waitFor(() => expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).not.toBeDisabled())

@@ -3059,6 +3059,12 @@ export const proposeMatterDocumentFacts = (matterId, documentId, ai = false) =>
   api.post(`/matters/${matterId}/documents/${documentId}/facts`, null, { params: ai ? { ai: true } : {} }).then(r => r.data)
 export const acceptMatterDocumentFact = (matterId, documentId, payload) =>
   api.post(`/matters/${matterId}/documents/${documentId}/facts/accept`, payload).then(r => r.data)
+// The forms this matter generated, so a scanned, hand-filled copy can be read
+// field by field against the one it was printed from.
+export const getMatterDocumentFormSources = (matterId, documentId) =>
+  api.get(`/matters/${matterId}/documents/${documentId}/facts/form-sources`).then(r => r.data)
+export const readMatterDocumentAgainstForm = (matterId, documentId, payload) =>
+  api.post(`/matters/${matterId}/documents/${documentId}/facts/from-form`, payload).then(r => r.data)
 
 export const getTemplateAIProfile = (key) =>
   platformApi(key).get('/platform/llm/template-profile').then((r) => r.data)

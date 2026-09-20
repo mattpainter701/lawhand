@@ -58,6 +58,7 @@ class MatterDocumentResponse(BaseModel):
     signing_placement_required: bool = False
     signing_roles: list[str] = Field(default_factory=list)
     signing_placement_problems: list[dict] = Field(default_factory=list)
+    generation_summary: dict | None = None
 
     @field_validator(
         "positioned_fields",

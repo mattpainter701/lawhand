@@ -368,3 +368,41 @@ def test_ai_extraction_flag_is_separate_from_the_automatic_flag():
     assert extraction.ai_extraction_enabled(
         SimpleNamespace(custom_config={"intake_fact_extraction": {"ai_enabled": True}})
     )
+
+
+def test_ocr_line_candidates_pair_a_label_with_its_handwritten_value():
+    target = standard_target("client.name", label="Client name")
+    lines = [
+        {"page_index": 0, "text": "Client name:", "score": 0.95, "rect": [72, 690, 150, 710]},
+        {"page_index": 0, "text": "Ada Lovelace", "score": 0.61, "rect": [155, 690, 300, 710]},
+        {"page_index": 1, "text": "Unrelated line", "score": 0.9, "rect": [72, 600, 300, 620]},
+        {"page_index": 1, "text": "bad", "score": "x", "rect": [1]},
+    ]
+    found = extraction._ocr_line_candidates(lines, [target])
+    (candidate,) = found["client.name"]
+    assert candidate.value == "Ada Lovelace"
+    assert candidate.source_kind == "ocr"
+    assert candidate.source_locator.startswith("ocr:1:")
+    # A pair is only as sure as its weaker read.
+    assert candidate.confidence == pytest.approx(0.61)
+    assert extraction._ocr_line_candidates([], [target]) == {}
+
+
+def test_extract_candidates_attributes_ocr_text_to_the_scan():
+    from app.services import document_text_cache as cache
+
+    target = standard_target("client.name", label="Client name")
+    scan = cache.Extraction(
+        text="Client name: Ada Lovelace",
+        engine=cache.ENGINE_OCR_LOCAL,
+        ocr_confidence=0.7,
+        lines=[],
+    )
+    found = extraction.extract_candidates(
+        text=scan.text, form_values=[], targets=[target], extraction=scan
+    )
+    (candidate,) = found["client.name"]
+    assert candidate.source_kind == "ocr" and candidate.confidence == pytest.approx(0.7)
+    plain = extraction.extract_candidates(text=scan.text, form_values=[], targets=[target])
+    assert plain["client.name"][0].source_kind == "label_value"
+    assert plain["client.name"][0].confidence == 1.0

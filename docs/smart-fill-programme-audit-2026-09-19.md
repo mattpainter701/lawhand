@@ -1,6 +1,6 @@
 # Auto pre-fill programme: audit status and handoff
 
-**Date:** 2026-09-19 (updated 2026-09-20)
+**Date:** 2026-09-19 (updated 2026-09-20 after the Phase 4/5 commit)
 **Branch:** `claude/pdf-auto-filing-mechanism-e5tqb5` (draft PR #572, base `main`)
 **Companion docs:** [`smart-fill-engine.md`](smart-fill-engine.md) (the engine and Phase 2),
 [`template-prepare-route-plan-2026-09-19.md`](template-prepare-route-plan-2026-09-19.md)
@@ -51,11 +51,11 @@ then by the quirk campaign):
 | 2c | Rules can request a document (Stack A `document_propose` step) | Planned | — | needs a product decision on the run's actor |
 | 3c | Sets: `documents-variables` endpoint, RLS test, sets library, prepare route for sets (browser-driven sequential save-all) | Planned, two PRs | — | design in the Phase 3 plan |
 | 3d | Service extraction, `document_fill_sessions` (migration now 197), durable `template_set_render` | Planned, three PRs | — | |
-| 4a/4b | Click-through verification in Populate; verified names on the saved document | Planned; implementation plan in §6 | — | |
+| 4a/4b | Click-through verification in Populate; verified names on the saved document | Shipped | see CHANGELOG 2026.09.20.01 | `templateFillReview.test.js`, Prepare page verification case, Generate dialog payload; `test_document_templates.py` descriptor test (event, row, list, response, 422) |
 | 4c/4d | Verification persisted per session; readiness record counts | Planned with 3d | — | |
-| 5a | OCR reaches matter documents (images accepted, confidence carried) | Planned; §6 | — | OCR engine exists (`template_ocr.py`), wired only into template uploads |
-| 5b | `document_text_extractions` cache keyed by `document_sha256` (migration 196) | Planned; §6 | — | |
-| 5c | Template-anchored reading of a printed, hand-filled form (v1: scaled alignment, OCR per field crop, thumbnails; vision fallback deferred as 5c-2) | Planned; §6 | — | field rects come from `discover_pdf_fields` / `pdf_overlay`; pairing key is the `document_generated` event |
+| 5a | OCR reaches matter documents (images accepted, confidence carried) | Shipped | CHANGELOG 2026.09.20.01 | `test_matter_fact_extraction_unit.py` (OCR candidates), `_postgres.py` (PNG source, empty scan, unsupported type) |
+| 5b | `document_text_extractions` cache keyed by `document_sha256` (migration 196, new head) | Shipped | CHANGELOG 2026.09.20.01 | `test_document_text_cache.py` (once per digest and tenant, OCR path, image path, engine unavailable, migration RLS text); cache hit in `_postgres.py`; migration applied up, down and up on a scratch database |
+| 5c | Template-anchored reading of a printed, hand-filled form (v1: scaled alignment, OCR per field crop, thumbnails; vision fallback deferred as 5c-2) | Shipped (v1) | CHANGELOG 2026.09.20.01 | `test_template_form_reading.py` (windows, crop geometry, page-size scaling, thumbnails, failures), `test_matter_document_form_reading_postgres.py` (both routes, matched and unmatched readings, 404s) |
 | 5d | `DocumentEvidenceSource` in the engine, lowest precedence, `review_required` | Planned | — | |
 | 5e | Matter-scoped index over cached text | Planned, later | — | |
 
@@ -116,10 +116,11 @@ From the Phase 3 and 5 work:
 - No sweep job pre-extracts old documents; the cache fills from the upload
   job.
 
-## 6. Implementation plan for the next commit (Phases 4a, 4b, 5a, 5b, 5c)
+## 6. Implementation plan for Phases 4a, 4b, 5a, 5b, 5c (shipped 2026-09-20 as planned; departures in the Phase 3 plan doc)
 
 Scope confirmed with the owner on 2026-09-19: one commit; 5c included in a
-first version; 5d/5e planned; vision fallback deferred.
+first version; 5d/5e planned; vision fallback deferred. Kept here as the
+record of what was built against.
 
 ### Backend
 
@@ -240,14 +241,14 @@ npx vitest run && npx eslint src
   (0 errors; 3 pre-existing `no-alert` warnings in ChatPage and ProfilePage).
 - Backend suites run in this branch's sessions: template suites (718), matters
   and intake and durable (256), template and e-sign (165 at `c2c5a54`).
-- Migration head at `c2c5a54`: `195_probate_track` (unchanged by this branch).
+- Migration head after the Phase 4/5 commit: `196_document_evidence` (the branch's only migration).
 
 ## 8. Open risks and recommended order
 
-1. Merge this branch as one unit; it carries no migration and no schema
-   change, so it can land ahead of anything else.
-2. Next commit (§6) claims migration 196; 3d then takes 197. Confirm the head
-   on `origin/main` before starting, per `AGENTS.md` §1.
+1. Merge this branch as one unit. It carries one migration, `196_document_evidence`,
+   pinned to `195_probate_track`; confirm the head on `origin/main` before
+   merging, per `AGENTS.md` §1, and renumber if another migration landed.
+2. 3d takes migration 197.
 3. The DOCX-to-PDF default for templates with signature fields changes a
    default; a firm that wanted Word output must choose it. The reason is shown
    beside the choice.

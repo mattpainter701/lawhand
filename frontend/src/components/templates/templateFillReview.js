@@ -24,7 +24,10 @@ export function discoverySuggestions(response) {
   ]))
 }
 
-export function fillReview(names, fields, values, sources, reviewed) {
+// `verified` is the set of names the preparer has checked, by hand or by
+// typing the value. It is advisory: nothing waits on it, and a verified row
+// stays verified until its value changes.
+export function fillReview(names, fields, values, sources, reviewed, verified = {}) {
   const rows = names.filter(name => !isSigningField(fields[name]) && !fields[name]?.value_from).map(name => {
     const field = fields[name] || {}
     const value = fillValue(values[name])
@@ -36,11 +39,14 @@ export function fillReview(names, fields, values, sources, reviewed) {
     const rawConfidence = fromSource ? source.confidence : null
     const confidence = typeof rawConfidence === 'number' && Number.isFinite(rawConfidence) && rawConfidence >= 0 && rawConfidence <= 1 ? Math.round(rawConfidence * 100) : null
     const needsReview = present && fromSource && reviewed[name] !== value
-    return { name, present, confidence, needsReview, source: fromSource ? source : null }
+    const isVerified = present && Boolean(verified[name])
+    return { name, present, confidence, needsReview, verified: isVerified, source: fromSource ? source : null }
   })
   const completed = rows.filter(row => row.present).length
+  const unverified = rows.filter(row => row.present && !row.verified)
   return { rows, completed, total: rows.length, percent: rows.length ? Math.round(completed / rows.length * 100) : 100,
-    remaining: rows.filter(row => !row.present), review: rows.filter(row => row.needsReview) }
+    remaining: rows.filter(row => !row.present), review: rows.filter(row => row.needsReview),
+    verified: completed - unverified.length, unverified }
 }
 
 export function applyFillSuggestions(names, fields, values, sources, suggestions) {

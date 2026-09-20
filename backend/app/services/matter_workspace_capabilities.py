@@ -585,6 +585,34 @@ def _extract_bounded_document_text(
     return extracted[:max_characters], truncated, page_count
 
 
+async def _cached_document_text(
+    context: CapabilityContext, document_format: str, args, content_sha256: str
+) -> tuple[str, bool, int | None] | None:
+    """The cached extraction for these bytes, bounded like a fresh one, or None."""
+
+    from app.services import document_text_cache
+
+    try:
+        cached = await document_text_cache.lookup(
+            context.db, tenant_id=context.tenant_id, document_sha256=content_sha256
+        )
+    except Exception:  # pragma: no cover - a cache fault must not block the read
+        return None
+    if cached is None:
+        return None
+    if (
+        document_format == "pdf"
+        and cached.page_count is not None
+        and cached.page_count > args.max_pdf_pages
+    ):
+        # The cache holds more pages than this caller allows; the bounded
+        # extractor decides what such a caller may see.
+        return None
+    text = cached.text[: args.max_characters]
+    truncated = bool(cached.truncated) or len(cached.text) > args.max_characters
+    return text, truncated, cached.page_count
+
+
 async def get_matter_document_text(
     context: CapabilityContext, args: GetMatterDocumentTextArgs
 ) -> dict[str, Any]:
@@ -615,24 +643,31 @@ async def get_matter_document_text(
             "Document content is currently unavailable",
         ) from exc
 
-    try:
-        text, truncated, page_count = await asyncio.to_thread(
-            _extract_bounded_document_text,
-            file_bytes,
-            document=document,
-            document_format=document_format,
-            max_characters=args.max_characters,
-            max_pdf_pages=args.max_pdf_pages,
-        )
-    except CapabilityError:
-        raise
-    except Exception as exc:
-        raise CapabilityError(
-            "document_extraction_failed",
-            "Document text could not be safely extracted",
-        ) from exc
-
     content_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    # The extraction cache remembers what these exact bytes say (OCR
+    # included). It is read here, not written: this tool is read-only and
+    # the cache fills from the upload job and the fact-review reads.
+    cached = await _cached_document_text(context, document_format, args, content_sha256)
+    if cached is not None:
+        text, truncated, page_count = cached
+    else:
+        try:
+            text, truncated, page_count = await asyncio.to_thread(
+                _extract_bounded_document_text,
+                file_bytes,
+                document=document,
+                document_format=document_format,
+                max_characters=args.max_characters,
+                max_pdf_pages=args.max_pdf_pages,
+            )
+        except CapabilityError:
+            raise
+        except Exception as exc:
+            raise CapabilityError(
+                "document_extraction_failed",
+                "Document text could not be safely extracted",
+            ) from exc
+
     return {
         "matter_id": str(args.matter_id),
         "document": _document_summary(document),

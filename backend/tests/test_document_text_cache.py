@@ -1,0 +1,134 @@
+"""The extraction cache: one read per digest, OCR where the text layer is missing."""
+
+import hashlib
+import uuid
+from io import BytesIO
+
+import pytest
+from sqlalchemy import select
+
+from app.database import set_tenant_context
+from app.models.document_text_extraction import DocumentTextExtraction
+from app.services import document_text_cache as cache
+from app.services.template_ocr import OcrLine, PdfOcrResult, TemplateOcrError
+from tests.esign_pdf_fixtures import acroform_pdf
+
+
+def _blank_pdf() -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+def _ocr_result(text="Client name: Ada Lovelace", score=0.82) -> PdfOcrResult:
+    line = OcrLine(page_index=0, text=text, score=score, rect=(72.0, 690.0, 350.0, 710.0))
+    return PdfOcrResult(
+        text=text,
+        lines=(line,),
+        pages_analyzed=1,
+        pages_total=1,
+        average_confidence=score,
+        truncated=False,
+    )
+
+
+def test_extract_reads_a_text_layer_without_ocr(monkeypatch):
+    monkeypatch.setattr(cache, "_ocr_pdf", lambda content: pytest.fail("OCR must not run"))
+    extraction = cache.extract("notes.txt", "text/plain", b"Client: Ada\n")
+    assert extraction.engine == cache.ENGINE_TEXT_LAYER
+    assert extraction.text == "Client: Ada\n" and not extraction.used_ocr
+    pdf = cache.extract("form.pdf", "application/pdf", acroform_pdf())
+    assert pdf.engine == cache.ENGINE_TEXT_LAYER and "Client name" in pdf.text
+    assert pdf.page_count == 1
+
+
+def test_extract_falls_back_to_ocr_for_a_page_with_no_text(monkeypatch):
+    monkeypatch.setattr(cache, "_ocr_pdf", lambda content: _ocr_result())
+    extraction = cache.extract("scan.pdf", "application/pdf", _blank_pdf())
+    assert extraction.engine == cache.ENGINE_OCR_LOCAL and extraction.used_ocr
+    assert "Ada Lovelace" in extraction.text
+    assert extraction.ocr_confidence == pytest.approx(0.82)
+    assert extraction.lines[0]["score"] == pytest.approx(0.82)
+    assert extraction.lines[0]["page_index"] == 0
+
+
+def test_extract_reports_an_unavailable_engine_and_keeps_the_text_layer(monkeypatch):
+    def unavailable(content):
+        raise TemplateOcrError(cache.OCR_UNAVAILABLE)
+
+    monkeypatch.setattr(cache, "_ocr_pdf", unavailable)
+    extraction = cache.extract("scan.pdf", "application/pdf", _blank_pdf())
+    assert extraction.engine == cache.ENGINE_TEXT_LAYER
+    assert extraction.warnings == [cache.OCR_UNAVAILABLE]
+    assert extraction.text == ""
+
+
+def test_extract_rasterises_an_image_before_ocr(monkeypatch):
+    from PIL import Image
+
+    seen = {}
+
+    def fake_ocr(content):
+        seen["pdf"] = content
+        return _ocr_result("Case number: 2024-CV-9", 0.6)
+
+    monkeypatch.setattr(cache, "_ocr_pdf", fake_ocr)
+    buffer = BytesIO()
+    Image.new("RGB", (300, 200), "white").save(buffer, format="PNG")
+    extraction = cache.extract("scan.png", "image/png", buffer.getvalue())
+    assert seen["pdf"].startswith(b"%PDF")
+    assert extraction.used_ocr and "2024-CV-9" in extraction.text
+    assert cache.is_image_filename("a.JPG") and not cache.is_image_filename("a.pdf")
+
+
+@pytest.mark.asyncio
+async def test_get_or_extract_reads_once_per_digest_and_tenant(
+    db_session, test_tenant, monkeypatch
+):
+    calls = []
+
+    def fake_extract(filename, content_type, content):
+        calls.append(filename)
+        return cache.Extraction(text="Client: Ada", engine=cache.ENGINE_TEXT_LAYER, page_count=1)
+
+    monkeypatch.setattr(cache, "extract", fake_extract)
+    await set_tenant_context(db_session, str(test_tenant.id))
+    first = await cache.get_or_extract(
+        db_session, tenant_id=test_tenant.id, content=b"same bytes", filename="a.txt", content_type="text/plain"
+    )
+    second = await cache.get_or_extract(
+        db_session, tenant_id=test_tenant.id, content=b"same bytes", filename="renamed.txt", content_type="text/plain"
+    )
+    assert calls == ["a.txt"]
+    assert not first.cached and second.cached and second.text == "Client: Ada"
+    digest = hashlib.sha256(b"same bytes").hexdigest()
+    row = await db_session.scalar(
+        select(DocumentTextExtraction).where(DocumentTextExtraction.document_sha256 == digest)
+    )
+    assert row is not None and row.engine_version == cache.ENGINE_VERSION
+    # Another tenant's lookup of the same digest sees nothing; the key is
+    # tenant plus digest, never the digest alone.
+    assert await cache.lookup(db_session, tenant_id=uuid.uuid4(), document_sha256=digest) is None
+    # Different bytes miss by construction.
+    await cache.get_or_extract(
+        db_session, tenant_id=test_tenant.id, content=b"other bytes", filename="b.txt", content_type="text/plain"
+    )
+    assert calls == ["a.txt", "b.txt"]
+
+
+def test_migration_196_isolates_the_cache_by_tenant():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1] / "migrations" / "versions" / "196_document_evidence.py"
+    ).read_text(encoding="utf-8")
+    assert 'down_revision = "195_probate_track"' in source
+    assert "ENABLE ROW LEVEL SECURITY" in source and "FORCE ROW LEVEL SECURITY" in source
+    assert "document_text_extractions_tenant_isolation" in source
+    assert "NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in source
+    assert "generation_summary" in source

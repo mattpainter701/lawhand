@@ -43,6 +43,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     setFieldSources,
     latestSuggestions,
     setReviewedValues,
+    toggleVerified,
+    verifyAndAdvance,
     fieldFilter,
     setFieldFilter,
     setFocusedFillName,
@@ -215,6 +217,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                       id={inputId}
                       value={variables[name] || ''}
                       onChange={(e) => setVariable(name, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); verifyAndAdvance(name) } }}
                       disabled={saving}
                       className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
                     >
@@ -237,10 +240,26 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                       type="text"
                       value={variables[name] || ''}
                       onChange={(e) => setVariable(name, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); verifyAndAdvance(name) } }}
                       disabled={saving}
                       className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
                       placeholder={`Enter ${label}`}
                     />
+                  )}
+                  {review?.present && !signingField && !field.value_from && (
+                    <label className={`mt-1 inline-flex items-center gap-2 text-xs ${review.verified ? 'text-brand-green' : 'text-brand-muted'}`}>
+                      <input
+                        id={`template-verified-${name}`}
+                        type="checkbox"
+                        aria-label={`Verified: ${label}`}
+                        checked={Boolean(review.verified)}
+                        onChange={() => toggleVerified(name)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyAndAdvance(name) } }}
+                        disabled={saving}
+                        className="h-3.5 w-3.5 rounded border-brand-line text-brand-green focus:ring-brand-green"
+                      />
+                      {review.verified ? 'Verified' : 'Verify'}
+                    </label>
                   )}
                   {field.pdf_field_name && !signingField && (
                     <p className="mt-1 text-[11px] text-brand-muted">PDF field: {field.pdf_field_name}{field.page ? ` · Page ${field.page}` : ''}</p>
@@ -249,7 +268,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                 )
               })}
             </div>
-            {visibleNames.length === 0 && <p role="status" className="py-3 text-sm text-brand-muted">{fieldFilter === 'remaining' ? 'No missing fields.' : 'No suggestions waiting for review.'}</p>}
+            {visibleNames.length === 0 && <p role="status" className="py-3 text-sm text-brand-muted">{fieldFilter === 'remaining' ? 'No missing fields.' : fieldFilter === 'unverified' ? 'Every filled field is verified.' : 'No suggestions waiting for review.'}</p>}
             <p className={`mt-2 text-xs ${requiredUnresolvedNames.length ? 'text-brand-amber' : 'text-brand-green'}`} role="status">
               {requiredUnresolvedNames.length
                 ? `${requiredUnresolvedNames.length} required field${requiredUnresolvedNames.length === 1 ? '' : 's'} still need review before saving.`

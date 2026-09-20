@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { applyFillSuggestions, discoverySuggestions, fillReview, initialFillValues, isSigningField } from '../templates/templateFillReview'
+import { applyFillSuggestions, discoverySuggestions, fillReview, fillValue, initialFillValues, isSigningField } from '../templates/templateFillReview'
 import { discoverTemplateVariables, renderTemplate, renderTemplateFile } from '../../api'
 import { getErrorMessage, getTemplateVariables } from './prepareHelpers'
 
@@ -39,6 +39,8 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const [fieldSources, setFieldSources] = useState({})
   const [latestSuggestions, setLatestSuggestions] = useState({})
   const [reviewedValues, setReviewedValues] = useState({})
+  // Names the preparer has checked (by ticking, or by typing the value).
+  const [verifiedNames, setVerifiedNames] = useState({})
   const [fieldFilter, setFieldFilter] = useState('all')
   const [focusedFillName, setFocusedFillName] = useState(null)
   const pendingFocus = useRef(null)
@@ -68,16 +70,16 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     () => names.filter((name) => !isSigningField(fieldDefinitions[name]) && !fieldDefinitions[name]?.value_from),
     [names, fieldDefinitions],
   )
-  const progress = fillReview(names, fieldDefinitions, variables, fieldSources, reviewedValues)
+  const progress = fillReview(names, fieldDefinitions, variables, fieldSources, reviewedValues, verifiedNames)
   const hasFirmFields = fillableNames.some(name => fieldDefinitions[name]?.binding?.startsWith('firm.'))
-  const filteredNames = fieldFilter === 'all' ? names : (fieldFilter === 'remaining' ? progress.remaining : progress.review).map(row => row.name)
+  const filteredNames = fieldFilter === 'all' ? names : (fieldFilter === 'remaining' ? progress.remaining : fieldFilter === 'unverified' ? progress.unverified : progress.review).map(row => row.name)
   // Keep the current input mounted until the reviewer moves on; typing the
   // first character must not remove it from a missing-only queue.
   const visibleNames = focusedFillName && !filteredNames.includes(focusedFillName) ? [...filteredNames, focusedFillName] : filteredNames
   const lastAttentionField = useRef(null)
   const nextField = () => {
     const missing = [...progress.remaining].sort((a, b) => Number(Boolean(fieldDefinitions[b.name]?.required)) - Number(Boolean(fieldDefinitions[a.name]?.required)))
-    const queue = fieldFilter === 'review' ? progress.review : fieldFilter === 'remaining' ? missing : [...missing, ...progress.review]
+    const queue = fieldFilter === 'review' ? progress.review : fieldFilter === 'remaining' ? missing : fieldFilter === 'unverified' ? progress.unverified : [...missing, ...progress.review]
     const index = queue.findIndex(row => row.name === lastAttentionField.current)
     const name = queue[(index + 1) % queue.length]?.name
     if (!name) return
@@ -85,6 +87,26 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     const input = document.getElementById(`template-variable-${name}`)
     input?.scrollIntoView?.({ block: 'center' })
     input?.focus({ preventScroll: true })
+  }
+  const toggleVerified = (name) => setVerifiedNames(prev => {
+    const next = { ...prev }
+    if (next[name]) delete next[name]
+    else next[name] = true
+    return next
+  })
+  // Verify this row and move to the next filled row that is not yet verified,
+  // so a preparer can walk a document with Enter alone.
+  const verifyAndAdvance = (name) => {
+    setVerifiedNames(prev => ({ ...prev, [name]: true }))
+    const order = progress.rows.map(row => row.name)
+    const start = order.indexOf(name)
+    const candidates = progress.unverified.map(row => row.name).filter(other => other !== name)
+    const following = candidates.filter(other => order.indexOf(other) > start)
+    const target = following[0] || candidates[0]
+    if (!target) return
+    const control = document.getElementById(`template-verified-${target}`)
+    control?.scrollIntoView?.({ block: 'center' })
+    control?.focus({ preventScroll: true })
   }
   useEffect(() => {
     if (pendingFocus.current) {
@@ -114,6 +136,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setFieldSources({})
     setLatestSuggestions({})
     setReviewedValues({})
+    setVerifiedNames({})
     setFieldFilter('all')
     setFocusedFillName(null)
     lastAttentionField.current = null
@@ -161,6 +184,13 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setSaved(false)
     invalidatePreview()
     setFieldSources(prev => { const next = { ...prev }; delete next[name]; return next })
+    // A value the preparer typed is a value they looked at.
+    setVerifiedNames(prev => {
+      const next = { ...prev }
+      if (String(value ?? '').trim()) next[name] = true
+      else delete next[name]
+      return next
+    })
     setVariables((prev) => {
       const next = { ...prev, [name]: value }
       const choice = fieldDefinitions[name]?.docx_choice
@@ -185,6 +215,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setFieldSources({})
     setLatestSuggestions({})
     setReviewedValues({})
+    setVerifiedNames({})
     setSmartFillState('idle')
     setSmartFillMessage('')
     setSaved(false)
@@ -232,6 +263,12 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
       setLatestSuggestions(discovered)
       setFieldSources(applied.sources)
       setVariables(applied.values)
+      // A refreshed value has not been checked, whatever its predecessor was.
+      setVerifiedNames(prev => {
+        const next = { ...prev }
+        for (const name of Object.keys(next)) if (fillValue(applied.values[name]) !== fillValue(variables[name])) delete next[name]
+        return next
+      })
       invalidatePreview()
       setSaved(false)
       setSmartFillState('ready')
@@ -368,6 +405,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     }
     const saveRevision = formRevisionRef.current
     const saveVariables = { ...variables }
+    const saveVerified = fillableNames.filter((name) => verifiedNames[name] && String(variables[name] ?? '').trim())
     const saveMatterId = matterId.trim()
     const savePreviewId = previewId
     smartFillRequestGenerationRef.current += 1
@@ -381,6 +419,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         ...(folderId ? { folder_id: folderId } : {}),
         ...(isDocxTemplate ? { convert_to_pdf: convertDocxToPdf } : {}),
         ...(isPdfOutput ? { preview_id: savePreviewId } : {}),
+        ...(saveVerified.length ? { verified_fields: saveVerified } : {}),
       })
       if (formRevisionRef.current !== saveRevision) {
         setError('The form changed while the save was in flight, so this response was not marked Saved. Review the matter document before continuing.')
@@ -409,6 +448,6 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
 
 
   return {
-    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
+    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, verifiedNames, setVerifiedNames, toggleVerified, verifyAndAdvance, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
   }
 }

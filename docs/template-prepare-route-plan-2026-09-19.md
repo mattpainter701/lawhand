@@ -208,7 +208,7 @@ Acceptance: a five-document packet, caption asked once, all five previewed,
 one failing member retried without touching the others, five documents and
 five events saved, three PDFs sendable, RLS test green.
 
-## Phase 3d: durable save-all and a resumable session (later; three PRs; migration 196)
+## Phase 3d: durable save-all and a resumable session (later; three PRs; migration 197, since 196 is the document evidence migration)
 
 1. Extract `save_generated_document(...)` from the render handler into
    `services/generated_documents.py` with no behaviour change: staged
@@ -273,7 +273,7 @@ npx vitest run && npx eslint src
 - Applicability rules stay advisory; templates stay catalogue objects; sets
   stay tenant-scoped lists of template ids with optional pins.
 
-## Phase 4: the verification pass (owner's ask, 2026-09-19; not started)
+## Phase 4: the verification pass (owner's ask, 2026-09-19; 4a and 4b shipped 2026-09-20, CHANGELOG 2026.09.20.01; 4c and 4d wait on 3d)
 
 > "a review mechanism for confidence in these automations ... presented a
 > box to 'verified' and can click, click, click, change field, click
@@ -316,7 +316,7 @@ still re-derived on refresh and marked "changed since verified" if the
 matter moved; the generation preview evidence stays the only gate to a
 saved PDF.
 
-## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; not started)
+## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; 5a, 5b and 5c v1 shipped 2026-09-20; 5c-2 vision fallback, 5d and 5e planned)
 
 > "as documents get entered into the matters > doc that's the 'repo' of
 > knowledge outside of matter fields ... a mechanism to read those
@@ -430,4 +430,18 @@ fields OCR could not read. The local OCR engine has no per-call cost. Both
 respect the existing tenant `intake_fact_extraction` settings and the
 per-user `premium_ai_enabled` flag; the button is hidden, not disabled,
 when the tenant has neither.
+
+### Departures in what shipped (2026-09-20)
+
+- The `from-form` route carries no extra tenant gate: the existing `facts`
+  route has none, and the local OCR engine has no per-call cost. The AI pass
+  keeps its gate.
+- The MCP document text tool reads the cache but never writes it, because
+  the tool is read-only; the cache fills from the upload job and the fact
+  reads. A sweep job was not added.
+- Alignment in 5c is by page size only (`alignment: "scaled"` in the
+  response). A skewed or cropped scan reads with low confidence and says so;
+  deskew and feature alignment are 5c-3.
+- A typed value counts as verified (the preparer looked at it to type it), so
+  a save after hand edits carries those names without a tick.
 

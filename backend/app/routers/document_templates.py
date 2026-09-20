@@ -148,6 +148,7 @@ from app.services.template_bindings import (
 from app.services import pdf_source_review
 from app.services import template_cards
 from app.services.template_fill_coverage import (
+    is_signing_field,
     binding_is_resolvable as _binding_is_resolvable,
     coverage as fill_coverage,
     normalize_variable_name as _normalize_variable_name,
@@ -655,6 +656,7 @@ def _existing_document_response(
         signing_placement_required=bool(document.signing_placement_required),
         positioned_fields=list(document.positioned_fields or []),
         signing_placement_problems=list(document.signing_placement_problems or []),
+        generation_summary=dict(document.generation_summary or {}) or None,
     )
 
 
@@ -4666,6 +4668,7 @@ async def render_template_endpoint(
         output_bytes = rendered.encode("utf-8")
     output_sha256 = hashlib.sha256(output_bytes).hexdigest()
     positioned_fields = []
+    generation_summary = None
     signing_required = False
     signing_roles = []
     placement_report = None
@@ -4926,6 +4929,30 @@ async def render_template_endpoint(
         doc.signing_placement_problems = (
             placement_report.as_dicts() if placement_report else []
         )
+        filled_variables = sorted(
+            name for name, value in payload.variables.items() if value
+        )
+        verified_fields = sorted(
+            name for name in payload.verified_fields if name in payload.variables
+        )
+        generation_summary = {
+            "template_id": str(template.id),
+            "template_title": template.title,
+            "template_version_no": template.published_version_no,
+            "total": sum(
+                1
+                for field in (template.variable_schema or {}).get("fields", [])
+                if isinstance(field, dict)
+                and field.get("name")
+                and field.get("included") is not False
+                and not is_signing_field(field)
+                and not field.get("value_from")
+            ),
+            "filled": len(filled_variables),
+            "verified": len(verified_fields),
+            "verified_fields": verified_fields,
+        }
+        doc.generation_summary = generation_summary
         event = MatterEvent(
             tenant_id=parsed_tenant_id,
             matter_id=parsed_matter_id,
@@ -4942,9 +4969,9 @@ async def render_template_endpoint(
                 "output_filename": output_filename,
                 "output_format": output_format,
                 "output_sha256": output_sha256,
-                "filled_variables": sorted(
-                    name for name, value in payload.variables.items() if value
-                ),
+                "filled_variables": filled_variables,
+                "verified_fields": verified_fields,
+                "verified_count": len(verified_fields),
                 "flatten_pdf": payload.flatten_pdf if output_format == "pdf" else None,
                 "renderer_version": (
                     _DOCX_PDF_RENDERER_VERSION
@@ -5139,6 +5166,7 @@ async def render_template_endpoint(
             if matter_document_id and placement_report is not None
             else []
         ),
+        generation_summary=generation_summary if matter_document_id else None,
     )
 
 

@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.20.01 — Verify filled fields quickly, and read scanned or hand-filled forms
+
+Released September 20, 2026.
+
+Tick or press Enter to verify each filled field before saving, and the names travel with the document. Matter documents can now be read by OCR, and a printed, hand-filled form is read field by field against the template that printed it.
+
+- **Click through and verify.** Each filled field has a Verified tick. Press Enter to verify and move to the next. Typing a value counts as checking it. Optional, never a gate; the Documents tab shows the count.
+- **Scans and photos are read too.** Find details now reads a scanned PDF or an image through OCR when there is no text layer, and shows how sure the reader was for each value. Re-reading the same file is instant.
+- **Read a hand-filled form against its template.** A scan of a form the matter printed can be read field by field against that form, with a clip of the handwriting beside each value. Nothing is saved until you accept it.
+
 ## 2026.09.19.04 — Send for signature right after you prepare a document
 
 Released September 19, 2026.
