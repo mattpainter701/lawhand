@@ -210,6 +210,17 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     return () => { active = false; clearInterval(timer) }
   }, [background])
 
+  // The interview verifies a shared question once, but each document spells the
+  // value under its own field name. Map the verified interview keys to one
+  // member's field names so the background save records the same verified
+  // fields the browser save does.
+  const verifiedFieldNames = (member, variables) => questions
+    .filter((question) => verifiedNames[question.key] && fillValue(answers[question.key]).trim())
+    .flatMap((question) => (question.appears_in || [])
+      .filter((ref) => String(ref.template_id) === String(member.template_id))
+      .map((ref) => ref.field_name))
+    .filter((name) => name in (variables || {}))
+
   // Save the packet in the background from the previews reviewed here. The
   // server saves each member as this user with that user's own evidence;
   // only then does the copy say "Saving in the background".
@@ -226,7 +237,8 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         ...(folderId ? { folder_id: folderId } : {}),
         members: ready.map((member) => {
           const preview = previewOf(member)
-          return { template_id: member.template_id, variables: preview.variables || {}, preview_id: member.output.format === 'pdf' ? (preview.previewId || null) : null, convert_to_pdf: Boolean(member.output.convertToPdf), output_format: member.output.format }
+          const verifiedFields = verifiedFieldNames(member, preview.variables)
+          return { template_id: member.template_id, variables: preview.variables || {}, preview_id: member.output.format === 'pdf' ? (preview.previewId || null) : null, convert_to_pdf: Boolean(member.output.convertToPdf), output_format: member.output.format, ...(verifiedFields.length ? { verified_fields: verifiedFields } : {}) }
         }),
       })
       sessionRef.current = queued

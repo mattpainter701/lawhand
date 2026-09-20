@@ -139,7 +139,7 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     session = await fill_sessions.upsert(db_session, owner, FillSessionWrite(matter_id=matter.id, set_id=uuid.uuid4(), answers={"q": "v"}, verified=["q"]))
     preview = uuid.uuid4()
     session = await fill_sessions.enqueue_render(db_session, owner, session.id, FillSessionRenderRequest(members=[
-        {"template_id": str(good), "variables": {"client_name": "Ada", "other": "x"}, "preview_id": str(preview), "output_format": "pdf"},
+        {"template_id": str(good), "variables": {"client_name": "Ada", "other": "x"}, "preview_id": str(preview), "output_format": "pdf", "verified_fields": ["client_name"]},
         {"template_id": str(bad), "variables": {"client_name": "Ada"}, "preview_id": None, "output_format": "markdown"},
     ]))
     assert session.status == "saving" and session.job_id is not None
@@ -163,7 +163,7 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     assert result == {"outcome": "partial", "saved": 1, "total": 2}
     assert [call[0] for call in calls] == [good, bad]
     assert calls[0][2] == owner_id
-    assert calls[0][1].preview_id == preview and calls[0][1].verified_fields == []
+    assert calls[0][1].preview_id == preview and calls[0][1].verified_fields == ["client_name"]
     assert calls[0][1].matter_id == str(matter_id)
 
     await set_tenant_context(db_session, str(tenant_id))

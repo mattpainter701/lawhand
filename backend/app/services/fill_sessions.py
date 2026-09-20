@@ -262,6 +262,9 @@ async def enqueue_render(
             "preview_id": str(member.preview_id) if member.preview_id else None,
             "convert_to_pdf": bool(member.convert_to_pdf),
             "output_format": member.output_format,
+            # Carried per member: the interview verifies a shared question once,
+            # but each document spells the value under its own field name.
+            "verified_fields": list(member.verified_fields),
         }
         for member in payload.members
     ]
@@ -280,7 +283,6 @@ async def enqueue_render(
             "user_id": str(user.id),
             "matter_id": str(session.matter_id),
             "folder_id": str(payload.folder_id) if payload.folder_id else None,
-            "verified": list(session.verified_json or []),
             # The members carry the filled field values. ``durable_jobs.payload``
             # is a plain JSON column that is not cleared on completion, so the
             # values are sealed the same way the session's answers are: the job
@@ -345,7 +347,6 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
         return {"outcome": "blocked", "failure_code": "actor_unavailable"}
 
     outcomes: list[dict[str, Any]] = []
-    verified = set(payload.get("verified") or [])
     saved = 0
     # Snapshotted before any rollback: a rollback expires the row, and an
     # expired attribute read on the async session is a MissingGreenlet.
@@ -363,7 +364,9 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
             if member.get("preview_id")
             else None,
             convert_to_pdf=bool(member.get("convert_to_pdf")),
-            verified_fields=sorted(name for name in variables if name in verified),
+            verified_fields=sorted(
+                str(name) for name in (member.get("verified_fields") or [])
+            ),
         )
         try:
             response = await render_template_endpoint(

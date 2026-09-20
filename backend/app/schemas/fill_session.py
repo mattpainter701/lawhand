@@ -16,6 +16,10 @@ class FillSessionMemberInput(BaseModel):
     preview_id: Optional[uuid.UUID] = None
     convert_to_pdf: bool = False
     output_format: Optional[str] = Field(default=None, max_length=20)
+    #: The field names of this document that the preparer verified in the
+    #: interview, mapped by the client from the shared interview key. Each must
+    #: be a key of ``variables``; the render endpoint validates that.
+    verified_fields: list[str] = Field(default_factory=list, max_length=400)
 
 
 class FillSessionWrite(BaseModel):
