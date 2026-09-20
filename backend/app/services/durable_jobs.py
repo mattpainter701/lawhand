@@ -18,6 +18,7 @@ async def enqueue_job(
     kind: str,
     idempotency_key: str,
     payload: dict,
+    requeue_failed: bool = False,
 ) -> DurableJob:
     tenant_id = uuid.UUID(str(tenant_id))
     existing = await db.scalar(
@@ -28,6 +29,20 @@ async def enqueue_job(
         )
     )
     if existing:
+        if requeue_failed and existing.status == "failed":
+            # The same facts are being seen again. A job that exhausted its
+            # attempts would otherwise never run for them, leaving the work
+            # undone until an unrelated fact changed.
+            existing.status = "pending"
+            existing.attempts = 0
+            existing.available_at = datetime.now(timezone.utc)
+            existing.last_error = None
+            existing.completed_at = None
+            existing.result = None
+            existing.leased_at = None
+            existing.lease_owner = None
+            existing.payload = payload
+            await db.flush()
         return existing
     row = DurableJob(
         tenant_id=tenant_id, kind=kind, idempotency_key=idempotency_key, payload=payload

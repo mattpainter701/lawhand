@@ -1,10 +1,16 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MatterDocumentsTab, { canReviseWithAssistant, isAssistantRevisionDocument } from './MatterDocumentsTab'
 import { ConfirmProvider } from './dialog/ConfirmProvider'
 import { ToastProvider } from './toast/ToastProvider'
+
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="location-search">{location.search}</span>
+}
 
 const apiMocks = vi.hoisted(() => ({
   default: { post: vi.fn() },
@@ -117,15 +123,18 @@ const tags = [
   { id: 'tag-privileged', name: 'Privileged', color: 'rose' },
 ]
 
-function renderDocuments(onReviseDocument = vi.fn()) {
+function renderDocuments(onReviseDocument = vi.fn(), { initialEntries = ['/matters/matter-1'] } = {}) {
   return {
     onReviseDocument,
     ...render(
-      <ToastProvider>
-        <ConfirmProvider>
-          <MatterDocumentsTab matterId="matter-1" onReviseDocument={onReviseDocument} />
-        </ConfirmProvider>
-      </ToastProvider>,
+      <MemoryRouter initialEntries={initialEntries}>
+        <ToastProvider>
+          <ConfirmProvider>
+            <MatterDocumentsTab matterId="matter-1" onReviseDocument={onReviseDocument} />
+            <LocationProbe />
+          </ConfirmProvider>
+        </ToastProvider>
+      </MemoryRouter>,
     ),
   }
 }
@@ -514,13 +523,12 @@ describe('MatterDocumentsTab prepared documents', () => {
   })
 
   it('opens the document named in the address once, then clears it from the address', async () => {
-    window.history.replaceState(null, '', '/matters/matter-1?tab=documents&document=pdf-1')
-    renderDocuments()
+    renderDocuments(vi.fn(), { initialEntries: ['/matters/matter-1?tab=documents&document=pdf-1'] })
     await screen.findAllByText('Filed pleading.pdf')
     const preview = await screen.findByRole('region', { name: 'Document preview' })
     expect(preview).toHaveTextContent('Filed pleading.pdf')
     expect(preview).toHaveTextContent('12 of 19 fields verified when generated · from Pleading form v2')
-    expect(window.location.search).toBe('?tab=documents')
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?tab=documents')
   })
 
   it('routes a prepared document to the Prepare page when the matter page provides the route', async () => {
@@ -530,11 +538,13 @@ describe('MatterDocumentsTab prepared documents', () => {
     })
     const onPrepareTemplate = vi.fn()
     render(
-      <ToastProvider>
-        <ConfirmProvider>
-          <MatterDocumentsTab matterId="matter-1" onReviseDocument={vi.fn()} onPrepareTemplate={onPrepareTemplate} />
-        </ConfirmProvider>
-      </ToastProvider>,
+      <MemoryRouter initialEntries={['/matters/matter-1']}>
+        <ToastProvider>
+          <ConfirmProvider>
+            <MatterDocumentsTab matterId="matter-1" onReviseDocument={vi.fn()} onPrepareTemplate={onPrepareTemplate} />
+          </ConfirmProvider>
+        </ToastProvider>
+      </MemoryRouter>,
     )
     fireEvent.click(await screen.findByRole('button', { name: 'Review and save' }))
     expect(onPrepareTemplate).toHaveBeenCalledWith('t-1', null)

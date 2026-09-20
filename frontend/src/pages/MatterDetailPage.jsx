@@ -2618,6 +2618,9 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
     matterId,
     document: selectedDocument,
     onSent: () => { setDocId(''); load() },
+    // A created draft is pending immediately; reload so the queue lists it
+    // without waiting for a send or discard.
+    onDraftCreated: () => { load() },
   })
 
   // A PDF prepared outside the matter (filled in Acrobat, scanned, exported

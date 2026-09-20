@@ -25,6 +25,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.configurable_workflow import (
+    ContactCustomFieldValue,
+    MatterCustomFieldValue,
+)
 from app.models.document_template import DocumentTemplate
 from app.models.plugin import Matter, MatterEvent
 from app.models.user import User
@@ -59,12 +63,61 @@ TRIGGER_EVENTS = (
 )
 
 
+async def _custom_field_evidence(
+    db: AsyncSession, matter: Matter
+) -> list[tuple[str, str]]:
+    """The matter's and its client's custom-field values, for the digest.
+
+    ``custom.*`` bindings are fill sources too, and the template is not known
+    when the digest is computed, so every set value is included rather than
+    only the fields some template happens to bind. Over-including can only
+    schedule an advisory run; under-including would leave a changed value
+    reporting as fresh.
+    """
+
+    evidence: list[tuple[str, str]] = []
+    matter_rows = await db.scalars(
+        select(MatterCustomFieldValue).where(
+            MatterCustomFieldValue.tenant_id == matter.tenant_id,
+            MatterCustomFieldValue.matter_id == matter.id,
+        )
+    )
+    for row in matter_rows:
+        evidence.append((f"matter:{row.field_definition_id}", str(row.value_json)))
+    client_id = getattr(matter, "client_contact_id", None)
+    if client_id:
+        contact_rows = await db.scalars(
+            select(ContactCustomFieldValue).where(
+                ContactCustomFieldValue.tenant_id == matter.tenant_id,
+                ContactCustomFieldValue.contact_id == client_id,
+            )
+        )
+        for row in contact_rows:
+            evidence.append((f"contact:{row.field_definition_id}", str(row.value_json)))
+    return sorted(evidence)
+
+
+async def _firm_profile_evidence(db: AsyncSession, tenant_id) -> list[tuple[str, str]]:
+    """The firm profile values a ``firm.*`` binding can fill, for the digest."""
+
+    from app.models.tenant import Tenant
+    from app.routers.firm import get_firm_branding
+
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    if tenant is None:
+        return []
+    branding = await get_firm_branding(db, tenant) or {}
+    return sorted((str(key), str(value)) for key, value in branding.items() if value)
+
+
 async def matter_facts_digest(db: AsyncSession, matter: Matter) -> str:
     """A digest of every value Smart Fill could draw from this matter.
 
     Computed from the engine's own candidate index, so it changes exactly
     when a fill would: a renamed client, a new party row, an opened retainer.
-    Field names and values feed the hash; nothing is stored.
+    Custom-field values and the firm profile are fill sources the index does
+    not carry, so they are hashed beside it. Field names and values feed the
+    hash; nothing is stored.
     """
 
     tenant_id = matter.tenant_id
@@ -81,7 +134,11 @@ async def matter_facts_digest(db: AsyncSession, matter: Matter) -> str:
         )
     )
     return digest_payload(
-        sorted((alias, item.suggested_value) for alias, item in index.items())
+        [
+            sorted((alias, item.suggested_value) for alias, item in index.items()),
+            await _custom_field_evidence(db, matter),
+            await _firm_profile_evidence(db, tenant_id),
+        ]
     )
 
 
@@ -114,6 +171,7 @@ async def enqueue_document_prefill(
                 tenant_id=tenant_uuid,
                 kind=JOB_KIND,
                 idempotency_key=f"{matter.id}:{facts_sha256}",
+                requeue_failed=True,
                 payload={
                     "matter_id": str(matter.id),
                     "actor_user_id": str(actor_user_id) if actor_user_id else None,
@@ -275,22 +333,31 @@ async def run_prefill_job(db: AsyncSession, job) -> dict[str, Any]:
     actor = None
     actor_id = payload.get("actor_user_id")
     if actor_id:
-        actor = await db.scalar(
-            select(User).where(
-                User.id == uuid.UUID(actor_id),
-                User.tenant_id == tenant_id,
-                User.is_active.is_(True),
+        try:
+            actor_uuid = uuid.UUID(str(actor_id))
+        except (ValueError, TypeError, AttributeError):
+            actor_uuid = None
+        if actor_uuid is not None:
+            actor = await db.scalar(
+                select(User).where(
+                    User.id == actor_uuid,
+                    User.tenant_id == tenant_id,
+                    User.is_active.is_(True),
+                )
             )
-        )
     created_by = actor.id if actor is not None else matter.user_id
 
+    # Record the digest of the facts this run actually read, not the digest
+    # captured when the job was enqueued: facts can move between the two, and
+    # the readiness record must describe the run, not the request that queued it.
+    facts_sha256 = await matter_facts_digest(db, matter)
     summaries = await prepare_matter_documents(db, matter=matter, actor=actor)
     ready = [s for s in summaries if s.get("status") == "ready"]
     prepared_at = datetime.now(timezone.utc)
     metadata = {
         "job_id": str(job.id),
         "trigger_event": payload.get("trigger_event"),
-        "facts_sha256": payload.get("facts_sha256"),
+        "facts_sha256": facts_sha256,
         "prepared_at": prepared_at.isoformat(),
         "ready": len(ready),
         "templates": summaries,

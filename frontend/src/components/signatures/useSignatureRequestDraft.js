@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createSignatureRequest, getMatterDocumentSigningSource, getSignatureRequestFields, sendSignatureRequest, voidSignatureRequest } from '../../api'
 import { placementBlockMessage, placementProblemLines, placementReviewPossible } from '../templates/signingPlacementProblems'
 import {
@@ -11,7 +11,7 @@ import {
 // returns with where each signer will sign, then send or discard. The panel on
 // the matter and the Send step of the Prepare route share it, so a document
 // generated a moment ago is sent under the same rules as one chosen later.
-export default function useSignatureRequestDraft({ matterId, document, initialSigners, onSent }) {
+export default function useSignatureRequestDraft({ matterId, document, initialSigners, onSent, onDraftCreated }) {
   const [signers, setSigners] = useState(() => (initialSigners?.length ? initialSigners : [newSignerRow()]))
   const [positionedFields, setPositionedFields] = useState(() => document?.positioned_fields || EMPTY_SIGNING_FIELDS)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -29,6 +29,13 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
   const [noticeDelivered, setNoticeDelivered] = useState(true)
 
   const documentId = document?.id ? String(document.id) : ''
+  // False once the host unmounts, so a create/send/discard that finishes after
+  // the user has navigated away cannot set state or run a caller callback.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   // Choosing another document starts its placement over: the fields belong
   // to the document's bytes, not to the form.
   useEffect(() => {
@@ -79,6 +86,7 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
   const openDraft = async (request) => {
     let manifest = null
     try { manifest = await getSignatureRequestFields(matterId, request.id) } catch { manifest = null }
+    if (!mountedRef.current) return
     setDraft({ request, fields: Array.isArray(manifest?.fields) ? manifest.fields : [], acknowledged: false })
   }
 
@@ -94,12 +102,15 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
         documentId, preparedSigners, positionedFields, dueOn, expiresOn, reminderDays, enforceSigningOrder,
       }))
       await openDraft(request)
+      // The request now exists and is pending, so the queue that lists it is
+      // stale until it is reloaded.
+      if (mountedRef.current) onDraftCreated?.(request)
       return true
     } catch (err) {
-      setError(err?.response?.data?.detail || 'Failed to create signature request.')
+      if (mountedRef.current) setError(err?.response?.data?.detail || 'Failed to create signature request.')
       return false
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 
@@ -113,6 +124,7 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
       const sent = draft.acknowledged
         ? await sendSignatureRequest(matterId, draft.request.id, { acknowledge_review: true })
         : await sendSignatureRequest(matterId, draft.request.id)
+      if (!mountedRef.current) return sent
       setDraft(null)
       resetForm()
       const outcome = signatureSendNotice(sent)
@@ -121,10 +133,10 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
       onSent?.(sent, outcome)
       return sent
     } catch (err) {
-      setError(err?.response?.data?.detail || 'Failed to send the signature request.')
+      if (mountedRef.current) setError(err?.response?.data?.detail || 'Failed to send the signature request.')
       return null
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 
@@ -134,12 +146,13 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
     setBusy(true)
     try {
       await voidSignatureRequest(matterId, draft.request.id, { reason: 'Discarded before sending' })
+      if (!mountedRef.current) return
       setDraft(null)
       onSent?.(null, null)
     } catch (err) {
-      setError(err?.response?.data?.detail || 'Failed to discard the draft.')
+      if (mountedRef.current) setError(err?.response?.data?.detail || 'Failed to discard the draft.')
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 

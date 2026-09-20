@@ -53,6 +53,9 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const formRevisionRef = useRef(0)
   const smartFillRef = useRef(null)
   const smartFillAutoKeyRef = useRef('')
+  // False once the host unmounts, so a save that finishes after the user has
+  // navigated away cannot set state or run the caller's post-save callback.
+  const mountedRef = useRef(true)
 
   const names = useMemo(() => getTemplateVariables(template), [template])
   const fieldDefinitions = useMemo(() => Object.fromEntries(
@@ -152,18 +155,25 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setFilePreviewUrl('')
     setPreviewId('')
     setPreviewPurpose('')
+    // Re-derive the Word-to-PDF default for the template now in the host; a
+    // swapped template must not keep the previous one's output choice.
+    setConvertDocxToPdf(hasSigningFields && isDocxTemplate)
     previewRequestGenerationRef.current += 1
     smartFillRequestGenerationRef.current += 1
     formRevisionRef.current += 1
-  }, [fillableNames, fieldDefinitions])
+  }, [fillableNames, fieldDefinitions, hasSigningFields, isDocxTemplate])
 
   useEffect(() => () => {
     if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl)
   }, [filePreviewUrl])
 
-  useEffect(() => () => {
-    previewRequestGenerationRef.current += 1
-    smartFillRequestGenerationRef.current += 1
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      previewRequestGenerationRef.current += 1
+      smartFillRequestGenerationRef.current += 1
+      mountedRef.current = false
+    }
   }, [])
 
   const invalidatePreview = () => {
@@ -421,6 +431,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         ...(isPdfOutput ? { preview_id: savePreviewId } : {}),
         ...(saveVerified.length ? { verified_fields: saveVerified } : {}),
       })
+      if (!mountedRef.current) return
       if (formRevisionRef.current !== saveRevision) {
         setError('The form changed while the save was in flight, so this response was not marked Saved. Review the matter document before continuing.')
         return
@@ -440,9 +451,9 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         setError('The server rendered the text but did not return a saved matter document.')
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Save failed.'))
+      if (mountedRef.current) setError(getErrorMessage(err, 'Save failed.'))
     } finally {
-      setSaving(false)
+      if (mountedRef.current) setSaving(false)
     }
   }
 

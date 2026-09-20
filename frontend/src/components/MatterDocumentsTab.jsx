@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import MatterTransferSettings from './MatterTransferSettings'
 import MatterImportWizard from './MatterImportWizard'
 import MatterDocumentPreview from './documents/MatterDocumentPreview'
@@ -296,20 +297,23 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
   }, [documentView, folderId, setFolderId, setIncludeSubfolders])
   function selectFolder(value) { if (value === ALL_DOCUMENTS) setDocumentView('detailed'); setFolderId(value) }
   const [previewDocument, setPreviewDocument] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   // A document saved on the Prepare route lands here with ``?document=`` in
-  // the address so its preview is already open; the query is read once,
-  // after the list loads, and cleared so a reload does not reopen it.
+  // the address so its preview is already open; the query is read once, after
+  // the list loads, and cleared so a reload does not reopen it. The clear goes
+  // through the router, not ``window.history``: a raw replaceState leaves the
+  // router's cached search holding ``document=``, which would come back on the
+  // next tab switch and reopen the preview.
   useEffect(() => {
     if (!docs.length) return
-    const params = new URLSearchParams(window.location.search)
-    const wanted = params.get('document')
+    const wanted = searchParams.get('document')
     if (!wanted) return
-    params.delete('document')
-    const rest = params.toString()
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`)
     const match = docs.find((doc) => String(doc.id) === wanted)
+    const next = new URLSearchParams(searchParams)
+    next.delete('document')
+    setSearchParams(next, { replace: true })
     if (match) setPreviewDocument(match)
-  }, [docs])
+  }, [docs, searchParams, setSearchParams])
   const [filingDocument, setFilingDocument] = useState(null)
   const [cloudFiles, setCloudFiles] = useState(null)
 
