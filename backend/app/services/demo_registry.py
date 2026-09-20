@@ -116,6 +116,10 @@ _PURGE_ONLY_TABLES = {
     "document_integrity_events",
     "document_storage_operations",
     "document_template_previews",
+    # Extracted document text (a PDF text layer or OCR output) is customer
+    # content keyed by the document's bytes. Purge it with an expired demo;
+    # never clone one tenant's document text into another.
+    "document_text_extractions",
     # A set is a firm's own decision about which templates it drafts together,
     # and its rows reference that firm's template ids. Purge it with an expired
     # demo, but never clone it: a demo tenant gets the cloned templates and
