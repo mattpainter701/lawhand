@@ -234,9 +234,7 @@ async def load_document_evidence(
     # conflicting answer for all of them. Evidence for a fill needs the
     # field named, so those tokens are dropped from the match keys here.
     targets = [
-        dataclasses.replace(
-            target, match_keys=target.match_keys - _BARE_ENTITY_KEYS
-        )
+        dataclasses.replace(target, match_keys=target.match_keys - _BARE_ENTITY_KEYS)
         for target in await facts.build_targets(db, tenant_id)
         if target.kind == "standard"
     ]

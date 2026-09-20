@@ -264,7 +264,9 @@ async def prepare_matter_documents(
     # One read of each record family for the whole run, however many
     # templates the matter has.
     loaders = memoized()
-    verified = await verified_counts(db, tenant_id=matter.tenant_id, matter_id=matter.id)
+    verified = await verified_counts(
+        db, tenant_id=matter.tenant_id, matter_id=matter.id
+    )
     for template, reasons in await _candidate_templates(db, matter):
         entry: dict[str, Any] = {
             "template_id": str(template.id),
