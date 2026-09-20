@@ -1,7 +1,7 @@
 # Phase 3: Prepare route, from Studio to signature, with set fan-out
 
 **Date:** 2026-09-19
-**Status:** 3a and 3b shipped on `claude/pdf-auto-filing-mechanism-e5tqb5` (CHANGELOG 2026.09.19.03 and .04); 3c, 3d proposed. Phases 4 (verification pass) and 5 (documents as evidence) added 2026-09-19 from the owner's follow-up asks; see the end of this document.
+**Status:** 3a and 3b shipped on `claude/pdf-auto-filing-mechanism-e5tqb5` (CHANGELOG 2026.09.19.03 and .04); 3c, 3d proposed. Audit status and the next-commit implementation plan for Phases 4 and 5: [`smart-fill-programme-audit-2026-09-19.md`](smart-fill-programme-audit-2026-09-19.md). Phases 4 (verification pass) and 5 (documents as evidence) added 2026-09-19 from the owner's follow-up asks; see the end of this document.
 **Builds on:** [`smart-fill-engine.md`](smart-fill-engine.md) (engine, Phase 2
 readiness record), the Clio-parity plan's W3 (Sets) and W7.3 (`/templates/prepare`).
 
