@@ -22,11 +22,12 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.database import set_tenant_context
+from app.database import async_session_maker, set_tenant_context
 from app.models.document_text_extraction import DocumentTextExtraction
+from app.models.matter_document import MatterDocument
 from app.utils.text_processing import extract_text
 
 logger = logging.getLogger(__name__)
@@ -209,6 +210,13 @@ async def lookup(db, *, tenant_id, document_sha256: str) -> Extraction | None:
     return _from_row(row) if row is not None else None
 
 
+#: The session the cache row is written through. Derived data gets its own
+#: unit of work so the caller's transaction never commits, and never has to
+#: re-apply its transaction-scoped tenant context, on account of a cache
+#: write. A module attribute so tests bind it to their engine.
+session_factory = async_session_maker
+
+
 async def get_or_extract(
     db,
     *,
@@ -216,14 +224,14 @@ async def get_or_extract(
     content: bytes,
     filename: str,
     content_type: str | None,
-    commit: bool = True,
 ) -> Extraction:
     """Serve the document's text from the cache, extracting and storing on a miss.
 
-    The row is committed so the next reader (a different request, the durable
-    job, the assistant) finds it; the transaction-local tenant context is
-    restored afterwards, as the file store read already requires. Two readers
-    racing on the same digest both extract; the second insert loses and re-reads.
+    The row is written and committed through ``session_factory`` so the next
+    reader (a different request, the durable job, the assistant) finds it
+    while ``db`` stays exactly as the caller left it: nothing committed, no
+    tenant context to restore. Two readers racing on the same digest both
+    extract; the second insert loses and re-reads the winner.
     """
 
     tenant = uuid.UUID(str(tenant_id))
@@ -244,17 +252,46 @@ async def get_or_extract(
         truncated=extraction.truncated,
     )
     try:
-        async with db.begin_nested():
-            db.add(row)
-            await db.flush()
+        async with session_factory() as own:
+            await set_tenant_context(own, str(tenant))
+            own.add(row)
+            await own.commit()
     except IntegrityError:
         logger.info("document text extraction raced for %s; reusing the winner", digest)
         winner = await lookup(db, tenant_id=tenant, document_sha256=digest)
         if winner is not None:
             winner.warnings = list(extraction.warnings)
             return winner
-        return extraction
-    if commit:
-        await db.commit()
-        await set_tenant_context(db, str(tenant))
     return extraction
+
+
+async def forget_if_unreferenced(
+    db, *, tenant_id, document_sha256: str | None, except_document_id
+) -> int:
+    """Drop the tenant's cache rows for ``document_sha256`` once no document carries it.
+
+    Called from a document delete, in the caller's transaction, with the
+    deleted document excluded: the row is the document's text, and it lives
+    exactly as long as some document of the tenant has those bytes. Returns
+    the number of rows removed.
+    """
+
+    if not document_sha256:
+        return 0
+    tenant = uuid.UUID(str(tenant_id))
+    still_held = await db.scalar(
+        select(func.count(MatterDocument.id)).where(
+            MatterDocument.tenant_id == tenant,
+            MatterDocument.document_sha256 == document_sha256,
+            MatterDocument.id != except_document_id,
+        )
+    )
+    if still_held:
+        return 0
+    result = await db.execute(
+        delete(DocumentTextExtraction).where(
+            DocumentTextExtraction.tenant_id == tenant,
+            DocumentTextExtraction.document_sha256 == document_sha256,
+        )
+    )
+    return int(result.rowcount or 0)

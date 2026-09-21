@@ -144,6 +144,109 @@ async def test_get_or_extract_reads_once_per_digest_and_tenant(
     assert calls == ["a.txt", "b.txt"]
 
 
+@pytest.mark.asyncio
+async def test_the_cache_row_is_committed_without_committing_the_caller(
+    db_session, test_engine, test_tenant, monkeypatch
+):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    monkeypatch.setattr(
+        cache,
+        "extract",
+        lambda filename, content_type, content: cache.Extraction(
+            text="Client: Ada", engine=cache.ENGINE_TEXT_LAYER, page_count=1
+        ),
+    )
+    await set_tenant_context(db_session, str(test_tenant.id))
+    tenant_id = test_tenant.id
+    digest = hashlib.sha256(b"own unit").hexdigest()
+    await cache.get_or_extract(
+        db_session,
+        tenant_id=tenant_id,
+        content=b"own unit",
+        filename="a.txt",
+        content_type="text/plain",
+    )
+    # The caller's transaction is still open and untouched...
+    assert db_session.in_transaction()
+    # ...while another session already sees the committed row.
+    other = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with other() as peer:
+        await set_tenant_context(peer, str(tenant_id))
+        assert (
+            await cache.lookup(peer, tenant_id=tenant_id, document_sha256=digest)
+        ) is not None
+    # Rolling the caller back does not lose the cache.
+    await db_session.rollback()
+    await set_tenant_context(db_session, str(tenant_id))
+    assert (
+        await cache.lookup(db_session, tenant_id=tenant_id, document_sha256=digest)
+    ) is not None
+
+
+@pytest.mark.asyncio
+async def test_forget_if_unreferenced_keeps_shared_bytes_and_other_tenants(
+    db_session, test_tenant, test_user
+):
+    from app.models.matter_document import MatterDocument
+    from app.models.plugin import Matter
+
+    tenant_id = test_tenant.id
+    matter = Matter(
+        id=uuid.uuid4(), tenant_id=tenant_id, user_id=test_user.id,
+        slug=f"cache-{uuid.uuid4()}", matter_name="Cache", stage="New",
+    )
+    db_session.add(matter)
+    await db_session.flush()
+    digest = hashlib.sha256(b"shared").hexdigest()
+    ids = []
+    for name in ("a.txt", "b.txt"):
+        document = MatterDocument(
+            id=uuid.uuid4(), tenant_id=tenant_id, matter_id=matter.id,
+            filename=name, content_type="text/plain", file_size=6,
+            storage_state="verified", document_sha256=digest,
+            provider_version_id="v1",
+        )
+        db_session.add(document)
+        ids.append(document.id)
+    from app.models.tenant import Tenant
+
+    other = Tenant(name="Other firm", domain=f"other-{uuid.uuid4().hex[:8]}.example")
+    db_session.add(other)
+    await db_session.flush()
+    other_tenant = other.id
+    for tenant in (tenant_id, other_tenant):
+        db_session.add(
+            DocumentTextExtraction(
+                tenant_id=tenant, document_sha256=digest, engine=cache.ENGINE_TEXT_LAYER,
+                engine_version=cache.ENGINE_VERSION, text="shared",
+            )
+        )
+    await db_session.flush()
+
+    # One holder remains: nothing is dropped.
+    assert await cache.forget_if_unreferenced(
+        db_session, tenant_id=tenant_id, document_sha256=digest, except_document_id=ids[0]
+    ) == 0
+    await db_session.delete(await db_session.get(MatterDocument, ids[0]))
+    await db_session.flush()
+    # The last holder goes: this tenant's row goes, the other tenant's stays.
+    assert await cache.forget_if_unreferenced(
+        db_session, tenant_id=tenant_id, document_sha256=digest, except_document_id=ids[1]
+    ) == 1
+    remaining = (
+        await db_session.execute(
+            select(DocumentTextExtraction.tenant_id).where(
+                DocumentTextExtraction.document_sha256 == digest
+            )
+        )
+    ).scalars().all()
+    assert remaining == [other_tenant]
+    assert await cache.forget_if_unreferenced(
+        db_session, tenant_id=tenant_id, document_sha256=None, except_document_id=ids[1]
+    ) == 0
+
+
 def test_migration_197_isolates_the_cache_by_tenant():
     from pathlib import Path
 

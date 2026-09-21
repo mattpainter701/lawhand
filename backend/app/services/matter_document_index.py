@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, null, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import set_tenant_context
+from app.database import async_session_maker, set_tenant_context
 from app.models.matter_document import MatterDocument
 from app.models.matter_document_chunk import MatterDocumentChunk
 from app.services.document_text_cache import ENGINE_VERSION
@@ -49,6 +49,13 @@ SNIPPET_CHARS = 280
 #: Reciprocal-rank fusion constant: the usual 60 keeps a top full-text hit
 #: and a top semantic hit on equal footing.
 RRF_K = 60
+#: The durable job that builds a document's rows; one per (document, bytes,
+#: engine version) ever, because the job key carries all three.
+JOB_KIND = "matter_document_index"
+#: The session an index request is queued through, so the caller's own
+#: transaction is never committed on account of derived data. A module
+#: attribute so tests bind it to their engine.
+session_factory = async_session_maker
 
 _BREAK = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 
@@ -186,6 +193,43 @@ async def index_document(
     await db.commit()
     await set_tenant_context(db, str(tenant_uuid))
     return len(pieces)
+
+
+def job_key(document_id, document_sha256: str) -> str:
+    return f"{document_id}:{document_sha256}:{ENGINE_VERSION}"
+
+
+async def enqueue_index(*, tenant_id, document_id, document_sha256: str | None) -> bool:
+    """Queue the index build for a document, in its own committed unit of work.
+
+    Idempotent: ``enqueue_job`` keeps one row per key, and a failed build is
+    requeued on the next request. Returns True when a job row exists after
+    the call. Never raises into the caller: indexing is a convenience.
+    """
+
+    from app.services.durable_jobs import enqueue_job
+
+    if not document_sha256:
+        return False
+    try:
+        async with session_factory() as own:
+            await set_tenant_context(own, str(tenant_id))
+            await enqueue_job(
+                own,
+                tenant_id=uuid.UUID(str(tenant_id)),
+                kind=JOB_KIND,
+                idempotency_key=job_key(document_id, document_sha256),
+                payload={
+                    "document_id": str(document_id),
+                    "document_sha256": document_sha256,
+                },
+                requeue_failed=True,
+            )
+            await own.commit()
+        return True
+    except Exception:  # noqa: BLE001 - a queue fault must not block reading the document
+        logger.warning("Could not queue the index for document %s", document_id, exc_info=True)
+        return False
 
 
 async def forget_document(db: AsyncSession, *, tenant_id, document_id) -> int:

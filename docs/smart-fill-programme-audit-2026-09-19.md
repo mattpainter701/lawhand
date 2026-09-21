@@ -115,6 +115,11 @@ From the Phase 3 and 5 work:
 - The MCP `get_matter_document_text` tool does not accept images.
 - No sweep job pre-extracts old documents; the cache fills from the upload
   job.
+- Resolved 2026-09-21: cached text and search rows are derived data written
+  in their own unit of work (own-session cache write, index as a durable
+  job); the caller's transaction never commits on their account, and the
+  cache row is dropped when the tenant's last document with those bytes is
+  deleted.
 
 ## 6. Implementation plan for Phases 4a, 4b, 5a, 5b, 5c (shipped 2026-09-20 as planned; departures in the Phase 3 plan doc)
 

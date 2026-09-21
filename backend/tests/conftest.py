@@ -155,6 +155,24 @@ async def test_redis():
         await client.aclose()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def derived_data_sessions(test_engine, monkeypatch):
+    """Bind the derived-data unit of work to the test engine.
+
+    The extraction cache and the document index write through their own
+    session factories (never the caller's transaction). In tests those must
+    reach the same database the fixtures build, like the durable worker's
+    factory that individual tests patch.
+    """
+
+    from app.services import document_text_cache, matter_document_index
+
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    monkeypatch.setattr(document_text_cache, "session_factory", factory)
+    monkeypatch.setattr(matter_document_index, "session_factory", factory)
+    yield
+
+
 @pytest_asyncio.fixture
 async def db_session(test_engine):
     from sqlalchemy import text as _text

@@ -46,7 +46,7 @@ Template Studio can create a new draft from an approved template. Open [Template
 
 ### Search inside a matter's documents
 
-The search box on the Documents tab also looks inside the documents' text once you type three or more characters. Matching passages appear as **Found inside documents** with an Open link to the document; scanned pages read by OCR are included. The index follows each document's exact bytes and is dropped with the document. A passage is the document's own words, not a matter record: open the document before relying on it.
+The search box on the Documents tab also looks inside the documents' text once you type three or more characters. Matching passages appear as **Found inside documents** with an Open link to the document; scanned pages read by OCR are included. The index follows each document's exact bytes, is built shortly after a document is first read, and is dropped with the document. A passage is the document's own words, not a matter record: open the document before relying on it.
 
 ### Search historic firm files
 

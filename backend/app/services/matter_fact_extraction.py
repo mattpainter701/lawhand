@@ -492,21 +492,15 @@ async def _extract(db, tenant_id, document, content) -> document_text_cache.Extr
             detail="Source text could not be read. Review the original and enter the value manually.",
         ) from exc
     # The matter-scoped search index follows the cache: same text, same
-    # digest. It is a convenience, never a gate on reading the document.
-    try:
-        from app.services import matter_document_index
+    # digest. It is built by a durable job queued in its own unit of work, so
+    # this caller's transaction is untouched and a queue fault is only logged.
+    from app.services import matter_document_index
 
-        await matter_document_index.index_document(
-            db,
-            tenant_id=tenant_id,
-            document=document,
-            extraction=extraction,
-            embedder=matter_document_index.default_embedder(),
-        )
-    except Exception:  # noqa: BLE001 - indexing must not block extraction
-        logger.warning("Matter document index update failed", exc_info=True)
-        await db.rollback()
-        await set_tenant_context(db, str(tenant_id))
+    await matter_document_index.enqueue_index(
+        tenant_id=tenant_id,
+        document_id=document.id,
+        document_sha256=document.document_sha256,
+    )
     extraction.text = extraction.text[:MAX_SOURCE_TEXT]
     return extraction
 

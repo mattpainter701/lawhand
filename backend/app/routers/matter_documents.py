@@ -43,6 +43,7 @@ from app.schemas.matter_document import (
 )
 from app.services.document_accountability import append_document_integrity_event
 from app.services import (
+    document_text_cache,
     matter_document_index,
     matter_fact_extraction,
     matter_form_reading,
@@ -702,7 +703,16 @@ async def delete_matter_document(
         except OSError:
             pass
 
+    # The cached text is the document's own words; it goes when the tenant's
+    # last document with these bytes goes. Search rows cascade with the row.
+    deleted_id, deleted_digest = doc.id, doc.document_sha256
     await db.delete(doc)
+    await document_text_cache.forget_if_unreferenced(
+        db,
+        tenant_id=user.tenant_id,
+        document_sha256=deleted_digest,
+        except_document_id=deleted_id,
+    )
     await db.commit()
 
 

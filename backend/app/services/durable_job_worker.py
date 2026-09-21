@@ -124,6 +124,50 @@ async def _run_matter_fact_extraction(row: DurableJob) -> dict:
         return result
 
 
+async def _run_matter_document_index(row: DurableJob) -> dict:
+    """Build the matter-scoped search rows for one document from its cached text.
+
+    Derived data only: the job reads the extraction cache, never the file,
+    and skips with a reason when the document is gone or its bytes moved (the
+    next read queues a fresh job for the new digest).
+    """
+
+    from app.models.matter_document import MatterDocument
+    from app.services import document_text_cache, matter_document_index
+
+    payload = row.payload or {}
+    async with async_session_maker() as session:
+        await set_tenant_context(session, str(row.tenant_id))
+        try:
+            document_id = uuid.UUID(str(payload["document_id"]))
+            digest = str(payload["document_sha256"])
+        except (KeyError, TypeError, ValueError):
+            return {"status": "skipped", "reason": "malformed payload"}
+        document = await session.scalar(
+            select(MatterDocument).where(
+                MatterDocument.id == document_id,
+                MatterDocument.tenant_id == row.tenant_id,
+            )
+        )
+        if document is None:
+            return {"status": "skipped", "reason": "document missing"}
+        if document.document_sha256 != digest:
+            return {"status": "skipped", "reason": "document bytes changed"}
+        extraction = await document_text_cache.lookup(
+            session, tenant_id=row.tenant_id, document_sha256=digest
+        )
+        if extraction is None:
+            return {"status": "skipped", "reason": "no cached text"}
+        chunks = await matter_document_index.index_document(
+            session,
+            tenant_id=row.tenant_id,
+            document=document,
+            extraction=extraction,
+            embedder=matter_document_index.default_embedder(),
+        )
+        return {"status": "indexed", "document_id": str(document_id), "chunks": chunks}
+
+
 async def _run_cloud_sync(row: DurableJob) -> dict:
     from app.routers.documents import _process_document
     from app.services.corpus_revision import advance_rag_corpus_revision

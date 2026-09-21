@@ -11,6 +11,7 @@ import hashlib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import func, select
@@ -318,9 +319,13 @@ async def test_route_and_matter_context_read_the_index(
     assert without_query["excerpts"] == []
 
 
-async def test_extraction_fills_the_index_and_a_fault_never_blocks_it(
+async def test_extraction_queues_the_index_job_and_the_worker_builds_it(
     db_session, test_tenant, test_user, monkeypatch
 ):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.models.durable_job import DurableJob
+    from app.services import durable_job_worker as worker
     from app.services import matter_fact_extraction as facts
 
     tenant_id = test_tenant.id
@@ -329,22 +334,114 @@ async def test_extraction_fills_the_index_and_a_fault_never_blocks_it(
         db_session, tenant_id=tenant_id, matter_id=matter.id,
         filename="notice.txt", content=HEARING.encode(),
     )
-    document_id = document.id
+    document_id, digest = document.id, document.document_sha256
+
+    # Reading the document caches its text in its own unit of work and queues
+    # one index job; the caller's transaction is not committed on its behalf.
     extraction = await facts._extract(db_session, tenant_id, document, HEARING.encode())
     assert "hearing" in extraction.text.lower()
+    assert db_session.in_transaction()
+    jobs = (
+        await db_session.execute(
+            select(DurableJob).where(DurableJob.kind == index.JOB_KIND)
+        )
+    ).scalars().all()
+    assert len(jobs) == 1 and jobs[0].status == "pending"
+    assert jobs[0].idempotency_key == index.job_key(document_id, digest)
+    assert jobs[0].payload == {"document_id": str(document_id), "document_sha256": digest}
+    # Nothing is indexed until the job runs.
+    assert await db_session.scalar(select(func.count(MatterDocumentChunk.id))) == 0
+    # A second read (a cache hit) queues nothing new.
+    await facts._extract(db_session, tenant_id, document, HEARING.encode())
+    assert await db_session.scalar(select(func.count(DurableJob.id))) == 1
+
+    job_id = jobs[0].id
+    await db_session.commit()
+    factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    with patch.object(worker, "async_session_maker", factory):
+        await worker.process_job(job_id, tenant_id)
+    job = await db_session.get(DurableJob, job_id)
+    await db_session.refresh(job)
+    assert job.status == "completed"
+    assert job.result == {"status": "indexed", "document_id": str(document_id), "chunks": 1}
     assert await db_session.scalar(
         select(func.count(MatterDocumentChunk.id)).where(
             MatterDocumentChunk.matter_document_id == document_id
         )
     ) == 1
 
-    async def broken(*_args, **_kwargs):
-        raise RuntimeError("index down")
-
-    monkeypatch.setattr(index, "index_document", broken)
+    # Bytes that moved after queueing are skipped; the next read queues anew.
     document = await db_session.get(MatterDocument, document_id)
-    extraction = await facts._extract(db_session, tenant_id, document, HEARING.encode())
-    assert "hearing" in extraction.text.lower()
+    changed = HEARING.replace("Amari", "Babbage")
+    document.document_sha256 = hashlib.sha256(changed.encode()).hexdigest()
+    job.status = "pending"
+    await db_session.commit()
+    with patch.object(worker, "async_session_maker", factory):
+        await worker.process_job(job_id, tenant_id)
+    await db_session.refresh(job)
+    assert job.result == {"status": "skipped", "reason": "document bytes changed"}
+
+    # A queue fault is logged, never raised into the read.
+    document = await db_session.get(MatterDocument, document_id)
+
+    class _Boom:
+        def __call__(self):
+            raise RuntimeError("factory down")
+
+    monkeypatch.setattr(index, "session_factory", _Boom())
+    assert await index.enqueue_index(
+        tenant_id=tenant_id, document_id=document_id, document_sha256=digest
+    ) is False
+    extraction = await facts._extract(db_session, tenant_id, document, changed.encode())
+    assert "Babbage" in extraction.text
+
+
+async def test_deleting_the_last_document_with_those_bytes_drops_the_cache(
+    client, db_session, test_tenant, test_user
+):
+    from app.models.document_text_extraction import DocumentTextExtraction
+    from app.services import document_text_cache as cache
+
+    tenant_id = test_tenant.id
+    matter = await _matter(db_session, test_tenant, test_user)
+    matter_id = matter.id
+    first = await _document(
+        db_session, tenant_id=tenant_id, matter_id=matter_id,
+        filename="notice.txt", content=HEARING.encode(),
+    )
+    twin = await _document(
+        db_session, tenant_id=tenant_id, matter_id=matter_id,
+        filename="notice-copy.txt", content=HEARING.encode(),
+    )
+    first_id, twin_id, digest = first.id, twin.id, first.document_sha256
+    await cache.get_or_extract(
+        db_session, tenant_id=tenant_id, content=HEARING.encode(),
+        filename="notice.txt", content_type="text/plain",
+    )
+    await index.index_document(
+        db_session, tenant_id=tenant_id, document=first, extraction=_extraction(HEARING)
+    )
+
+    def rows():
+        return db_session.scalar(
+            select(func.count(DocumentTextExtraction.id)).where(
+                DocumentTextExtraction.document_sha256 == digest
+            )
+        )
+
+    assert await rows() == 1
+    gone = await client.delete(f"/api/matters/{matter_id}/documents/{first_id}")
+    assert gone.status_code in (200, 204), gone.text
+    # The twin still carries the bytes, so the text stays; the chunks went with the row.
+    assert await rows() == 1
+    assert await db_session.scalar(
+        select(func.count(MatterDocumentChunk.id)).where(
+            MatterDocumentChunk.matter_document_id == first_id
+        )
+    ) == 0
+    gone = await client.delete(f"/api/matters/{matter_id}/documents/{twin_id}")
+    assert gone.status_code in (200, 204), gone.text
+    assert await rows() == 0
 
 
 async def test_migration_text_pins_rls_cascade_and_head():
