@@ -317,6 +317,22 @@ async def test_route_and_matter_context_read_the_index(
     )
     assert without_query["excerpts"] == []
 
+    # A grant that may read matter metadata but not documents must not read the
+    # documents' own words.
+    no_text_scope = CapabilityContext(
+        db=db_session,
+        user=SimpleNamespace(id=test_user.id, tenant_id=tenant_id),
+        granted_scopes=frozenset({"matters:read", "tasks:read"}),
+    )
+    gated = await workspace.get_matter_context(
+        no_text_scope,
+        GetMatterContextArgs(
+            matter_id=matter_id, sections=["excerpts"], query="Judge Amari"
+        ),
+    )
+    assert gated["excerpts"] == []
+    assert "documents:read" in gated["excerpts_omitted"]
+
 
 async def test_extraction_fills_the_index_and_a_fault_never_blocks_it(
     db_session, test_tenant, test_user, monkeypatch

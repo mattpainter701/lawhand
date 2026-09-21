@@ -301,35 +301,43 @@ async def get_matter_context(
         payload["documents"] = [_document_summary(document) for document in documents]
 
     if "excerpts" in sections:
-        from app.services import matter_document_index
+        scopes = context.granted_scopes
+        if scopes is not None and "documents:read" not in scopes:
+            # Document words carry the same weight as the document-text
+            # capability, which requires documents:read. A grant that may read
+            # matter metadata must not read the documents' own text.
+            payload["excerpts"] = []
+            payload["excerpts_omitted"] = "requires the documents:read scope"
+        else:
+            from app.services import matter_document_index
 
-        hits = (
-            await matter_document_index.search(
-                context.db,
-                tenant_id=context.tenant_id,
-                matter_id=matter.id,
-                query=args.query,
-                limit=limit,
-                embedder=matter_document_index.default_embedder(),
+            hits = (
+                await matter_document_index.search(
+                    context.db,
+                    tenant_id=context.tenant_id,
+                    matter_id=matter.id,
+                    query=args.query,
+                    limit=limit,
+                    embedder=matter_document_index.default_embedder(),
+                )
+                if args.query
+                else []
             )
-            if args.query
-            else []
-        )
-        payload["excerpts"] = [
-            {
-                "document_id": hit["document_id"],
-                "filename": hit["filename"],
-                "chunk_index": hit["chunk_index"],
-                "matched_by": hit["matched_by"],
-                "open_url": hit["open_url"],
-                # The document's own words, fenced as the untrusted source they are.
-                "snippet": wrap_untrusted_text(
-                    hit["snippet"],
-                    hashlib.sha256(hit["snippet"].encode("utf-8")).hexdigest(),
-                ),
-            }
-            for hit in hits
-        ]
+            payload["excerpts"] = [
+                {
+                    "document_id": hit["document_id"],
+                    "filename": hit["filename"],
+                    "chunk_index": hit["chunk_index"],
+                    "matched_by": hit["matched_by"],
+                    "open_url": hit["open_url"],
+                    # The document's own words, fenced as the untrusted source they are.
+                    "snippet": wrap_untrusted_text(
+                        hit["snippet"],
+                        hashlib.sha256(hit["snippet"].encode("utf-8")).hexdigest(),
+                    ),
+                }
+                for hit in hits
+            ]
 
     if "events" in sections:
         events = (
