@@ -1223,6 +1223,9 @@ describe('document template workflow', () => {
     expect(await screen.findByText('100% match confidence')).toBeInTheDocument()
     await user.click(screen.getByText('Find a matter by ID'))
     fireEvent.change(screen.getByLabelText('Matter UUID fallback'), { target: { value: 'matter-2' } })
+    // The fallback commits on blur, not on each keystroke, so a typed UUID
+    // does not reset the form mid-paste.
+    fireEvent.blur(screen.getByLabelText('Matter UUID fallback'))
     expect(screen.getByPlaceholderText('Enter Client Name')).toHaveValue('')
     expect(screen.queryByText('100% match confidence')).not.toBeInTheDocument()
     expect(screen.getByText(/0% complete/)).toBeInTheDocument()
