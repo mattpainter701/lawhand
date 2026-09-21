@@ -750,6 +750,19 @@ class LegalScheduler:
             replace_existing=True,
         )
 
+        from app.services.document_retention import purge_expired_document_data
+
+        # Fill-session answers (encrypted) and cached document text are customer
+        # content with a documented 14-day window; remove them physically once
+        # that window has long passed.
+        self.scheduler.add_job(
+            self._guarded("document-retention", purge_expired_document_data),
+            CronTrigger(hour=3, minute=40),
+            id="document-retention",
+            name="Document Content Retention Sweep",
+            replace_existing=True,
+        )
+
         from app.services.background_ai_reconciliation import (
             reconcile_unknown_reservations,
         )
