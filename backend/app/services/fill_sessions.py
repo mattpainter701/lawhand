@@ -385,9 +385,20 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
 
     outcomes: list[dict[str, Any]] = []
     saved = 0
+    if not members:
+        # The job rejects an empty packet at enqueue, so an empty member list
+        # here means the sealed previews could not be read (a rotated vault
+        # key, say). Reporting "saved" with nothing saved would be a lie.
+        session.status = "failed"
+        session.last_error = (
+            "This packet's saved previews could not be read. Preview and save it again."
+        )
+        await db.commit()
+        return {"outcome": "blocked", "failure_code": "members_unreadable"}
     # Snapshotted before any rollback: a rollback expires the row, and an
     # expired attribute read on the async session is a MissingGreenlet.
     session_id, matter_id = session.id, session.matter_id
+    user_id = user.id
     for member in members:
         template_id = str(member.get("template_id") or "")
         variables = {str(k): str(v) for k, v in (member.get("variables") or {}).items()}
@@ -443,6 +454,18 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
             )
             await db.rollback()
             await set_tenant_context(db, str(tenant_id))
+        # A rollback or the endpoint's commit expired ``user``; the next
+        # member's render reads ``current_user`` attributes, which would raise
+        # MissingGreenlet. Read it afresh.
+        user = await db.get(User, user_id, populate_existing=True)
+        if user is None:
+            session = await db.get(DocumentFillSession, session_id)
+            session.status = "failed"
+            session.last_error = (
+                "The person who prepared this packet can no longer save documents."
+            )
+            await db.commit()
+            return {"outcome": "blocked", "failure_code": "actor_unavailable"}
         # The endpoint committed its own document; re-read the session row
         # the commit may have expired before recording this member.
         session = await db.get(DocumentFillSession, session_id)
