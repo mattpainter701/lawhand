@@ -234,7 +234,9 @@ async def enqueue_index(*, tenant_id, document_id, document_sha256: str | None) 
             await own.commit()
         return True
     except Exception:  # noqa: BLE001 - a queue fault must not block reading the document
-        logger.warning("Could not queue the index for document %s", document_id, exc_info=True)
+        logger.warning(
+            "Could not queue the index for document %s", document_id, exc_info=True
+        )
         return False
 
 
