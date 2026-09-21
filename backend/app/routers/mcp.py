@@ -41,12 +41,16 @@ from app.services.mcp_product import (
     ensure_mcp_product_access,
     ensure_tool_allowed,
     effective_allowed_tools,
+    find_idempotent_usage_event,
     list_product_keys,
+    lock_mcp_idempotency_key,
     mask_key,
     metering_outbox_summary,
     monthly_key_usage,
+    normalize_idempotency_key,
     product_key_status,
     record_mcp_usage,
+    request_fingerprint,
     resolve_product_key,
     revoke_product_key,
     update_product_key,
@@ -566,6 +570,16 @@ async def _record_failed_tool_call(
         )
 
 
+def _credential_scope(product_key, oauth_identity) -> str:
+    """Stable per-credential namespace for one client idempotency key."""
+
+    if product_key is not None:
+        return f"key:{product_key.id}"
+    if oauth_identity is not None:
+        return f"oauth:{str(oauth_identity.oauth_grant_id).strip()[:60]}"
+    return "unknown"
+
+
 async def _call_tool_with_product_key(
     body: ToolCallRequest,
     request: Request,
@@ -594,6 +608,46 @@ async def _call_tool_with_product_key(
             _product_key_credential(request),
         )
     await set_tenant_context(db, str(tenant.id))
+    # A retry that reuses one client idempotency key must not run (and bill) a
+    # second time. Lock first, then look up, so a concurrent retry cannot also
+    # pass the lookup before this request commits its usage row.
+    credential_scope = _credential_scope(product_key, oauth_identity)
+    idempotency_key = normalize_idempotency_key(
+        request.headers.get("Idempotency-Key")
+        or request.headers.get("X-Idempotency-Key")
+    )
+    request_digest = (
+        request_fingerprint(body.name, body.arguments) if idempotency_key else None
+    )
+    if idempotency_key is not None and request_digest is not None:
+        await lock_mcp_idempotency_key(
+            db,
+            tenant_id=tenant.id,
+            credential_scope=credential_scope,
+            key=idempotency_key,
+        )
+        existing = await find_idempotent_usage_event(
+            db,
+            tenant_id=tenant.id,
+            credential_scope=credential_scope,
+            request_idempotency_key=idempotency_key,
+        )
+        if existing is not None:
+            if existing.request_sha256 and existing.request_sha256 != request_digest:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This Idempotency-Key was already used for a different "
+                        "tool request"
+                    ),
+                )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Duplicate request: this Idempotency-Key was already "
+                    "processed and is not billed again"
+                ),
+            )
     app = getattr(request, "app", None)
     redis = getattr(getattr(app, "state", None), "redis", None)
     if oauth_identity is not None and product_key is None:
@@ -658,6 +712,9 @@ async def _call_tool_with_product_key(
         ip_address=_request_ip(request),
         user_agent=request.headers.get("User-Agent"),
         query_text=str((body.arguments or {}).get("query") or "")[:2000] or None,
+        request_idempotency_key=idempotency_key,
+        credential_scope=credential_scope if idempotency_key else None,
+        request_sha256=request_digest,
     )
     return response
 

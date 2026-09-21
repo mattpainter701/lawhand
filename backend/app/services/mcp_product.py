@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -558,6 +559,71 @@ async def enforce_research_oauth_quota(
         )
 
 
+def normalize_idempotency_key(value: str | None) -> str | None:
+    """Return one trimmed client key, or None when absent.
+
+    An over-long key is rejected rather than truncated: two keys that differ
+    only past the truncation point must not be treated as one request.
+    """
+
+    if value is None:
+        return None
+    key = value.strip()
+    if not key:
+        return None
+    if len(key) > 200:
+        raise HTTPException(status_code=400, detail="Idempotency key is too long")
+    return key
+
+
+def request_fingerprint(tool_name: str, arguments: dict[str, Any] | None) -> str:
+    """Stable digest of the tool and its arguments for one idempotency key."""
+
+    canonical = json.dumps(
+        {"tool": tool_name, "arguments": arguments or {}},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+async def lock_mcp_idempotency_key(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    credential_scope: str,
+    key: str,
+) -> None:
+    """Serialize same-key retries for the rest of this transaction.
+
+    Held from the pre-call lookup until the usage row commits, so a concurrent
+    retry cannot also pass the lookup and double-charge.
+    """
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"mcp_idem:{tenant_id}:{credential_scope}:{key}"},
+    )
+
+
+async def find_idempotent_usage_event(
+    db: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    credential_scope: str,
+    request_idempotency_key: str,
+) -> MCPUsageEvent | None:
+    return await db.scalar(
+        select(MCPUsageEvent).where(
+            MCPUsageEvent.tenant_id == tenant_id,
+            MCPUsageEvent.credential_scope == credential_scope,
+            MCPUsageEvent.request_idempotency_key == request_idempotency_key,
+        )
+    )
+
+
 async def record_mcp_usage(
     *,
     db: AsyncSession,
@@ -577,6 +643,9 @@ async def record_mcp_usage(
     error_class: str | None = None,
     query_text: str | None = None,
     metadata_json: dict | None = None,
+    request_idempotency_key: str | None = None,
+    credential_scope: str | None = None,
+    request_sha256: str | None = None,
 ) -> MCPUsageEvent:
     event = MCPUsageEvent(
         tenant_id=tenant_id,
@@ -595,6 +664,9 @@ async def record_mcp_usage(
         error_class=error_class,
         query_text=retained_gateway_query_text(query_text),
         metadata_json=metadata_json,
+        request_idempotency_key=request_idempotency_key,
+        credential_scope=credential_scope,
+        request_sha256=request_sha256,
     )
     db.add(event)
     if product_key_id:
