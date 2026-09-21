@@ -485,8 +485,42 @@ class MatterDocumentDraftAction(ChatActionModel):
         return self
 
 
+class TaskUpdateAction(ChatActionModel):
+    """A review-gated change to another work-board task.
+
+    The assistant may only propose the change. LawHand's deterministic worker
+    applies it after the assigned reviewer approves the proposal task, so no
+    MCP client ever mutates a task directly.
+    """
+
+    type: Literal["task_update"]
+    matter_id: UUID
+    target_task_id: UUID
+    status: (
+        Literal[
+            "pending",
+            "in_progress",
+            "waiting",
+            "review",
+            "completed",
+            "cancelled",
+        ]
+        | None
+    ) = None
+    priority: Literal["low", "medium", "high", "urgent"] | None = None
+    due_date: date | None = None
+    assigned_to_user_id: UUID | None = None
+    note: str | None = Field(default=None, max_length=2_000)
+    reason: str | None = Field(default=None, max_length=500)
+
+
 PendingAction = Annotated[
-    Union[EmailClientAction, SmsClientAction, MatterDocumentDraftAction],
+    Union[
+        EmailClientAction,
+        SmsClientAction,
+        MatterDocumentDraftAction,
+        TaskUpdateAction,
+    ],
     Field(discriminator="type"),
 ]
 

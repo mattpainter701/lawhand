@@ -224,6 +224,27 @@
       ]
     },
     {
+      "id": "2026.09.19.05",
+      "version": "2026.09.19.05",
+      "title": "Assistant drafts keep their formatting, and can update tasks",
+      "published_at": "2026-09-19",
+      "summary": "Documents drafted in ChatGPT, Claude, or Codex now arrive in LawHand with their headings, emphasis, and lists intact, and a connected assistant can propose a task update for a person to approve.",
+      "highlights": [
+        {
+          "title": "Draft formatting survives the push",
+          "description": "Headings, bold and italic text, bullet and numbered lists, quotes, code, and tables from an external assistant arrive in the matter as real Word formatting."
+        },
+        {
+          "title": "Task updates, still approved by a person",
+          "description": "A connected assistant can propose a status, assignee, priority, due-date, or note change on a task; a reviewer approves it before LawHand applies it."
+        },
+        {
+          "title": "Clearer limits when a draft is too big",
+          "description": "If a pushed document or citation list is over the limit, the error now names the submitted size and the allowed limit instead of a generic rejection."
+        }
+      ]
+    },
+    {
       "id": "2026.09.18.01",
       "version": "2026.09.18.01",
       "title": "North Dakota probate: intake picks the proceeding, forms pre-fill",

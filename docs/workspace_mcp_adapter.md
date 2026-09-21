@@ -51,7 +51,7 @@ result bounded:
 | Clients | `search_clients`, `get_client` | — |
 | Intake | `search_intakes`, `get_intake` | — |
 | Matters | `search_matters`, `find_matter`, `get_matter_context`, `list_matter_recipients` | `propose_client_email` |
-| Tasks | `search_tasks`, `get_task`, `list_matter_tasks` | `propose_task` |
+| Tasks | `search_tasks`, `get_task`, `list_matter_tasks` | `propose_task`, `propose_task_update` |
 | Documents | `list_matter_documents`, `get_matter_document_text` | `propose_matter_document`, `propose_matter_document_file`, `propose_matter_file` |
 | Templates | `list_document_templates`, `get_document_template_text` | `propose_document_from_template`, `propose_document_template` |
 
@@ -84,6 +84,15 @@ download routes as well as IDs that can be passed to
 There are deliberately no MCP tools for approval, filing, sending, delivery,
 or execution. Proposed work lands in LawHand Review; deterministic platform
 workers act only after a human completes the required review workflow.
+
+`propose_task_update` stages a status, priority, due-date, assignee, or note
+change against an existing task the caller can already read. It creates its own
+Review task carrying the requested change; only after a reviewer approves that
+proposal does `task_automation` apply it. The worker re-locks the target task,
+re-checks the tenant and matter, re-validates any assignee, and requires a
+reason when the requested status is Waiting or Cancelled. The assistant can
+update a task, but never without the same human approval every other proposal
+requires.
 
 ### Pushing work authored outside LawHand
 

@@ -108,6 +108,16 @@ Document fill reads the client's name parts, the matter number and opening date,
 - **Matter number and date opened.** The matter's number, practice area and opening date are available to templates by name or binding.
 - **The estate fills by field name.** A probate form field named after an estate value fills with or without a binding; before, it reported as filled and rendered blank.
 
+## 2026.09.19.05 — Assistant drafts keep their formatting, and can update tasks
+
+Released September 19, 2026.
+
+Documents drafted in ChatGPT, Claude, or Codex now arrive in LawHand with their headings, emphasis, and lists intact, and a connected assistant can propose a task update for a person to approve.
+
+- **Draft formatting survives the push.** Headings, bold and italic text, bullet and numbered lists, quotes, code, and tables from an external assistant arrive in the matter as real Word formatting.
+- **Task updates, still approved by a person.** A connected assistant can propose a status, assignee, priority, due-date, or note change on a task; a reviewer approves it before LawHand applies it.
+- **Clearer limits when a draft is too big.** If a pushed document or citation list is over the limit, the error now names the submitted size and the allowed limit instead of a generic rejection.
+
 ## 2026.09.18.01 — North Dakota probate: intake picks the proceeding, forms pre-fill
 
 Released September 18, 2026.
