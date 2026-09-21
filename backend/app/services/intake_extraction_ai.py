@@ -292,13 +292,15 @@ async def read_field_clip(
 
     import base64
 
-    if not vision_enabled():
-        raise IntakeExtractionUnavailable(
-            "AI reading of handwritten fields is not enabled on this server."
-        )
+    # The firm's own opt-in is checked first, so a firm that has not allowed
+    # the model answers with that reason rather than the platform's.
     if not tenant_ai_enabled:
         raise IntakeExtractionUnavailable(
             "AI reading of handwritten fields is not enabled for this firm."
+        )
+    if not vision_enabled():
+        raise IntakeExtractionUnavailable(
+            "AI reading of handwritten fields is not enabled on this server."
         )
     if not png_bytes:
         return None

@@ -201,7 +201,7 @@ async def test_unreadable_clips_go_to_the_vision_model_only_when_allowed_and_ask
     monkeypatch.setattr(matter_form_reading.facts, "ai_extraction_enabled", lambda row: True)
     sent: list = []
 
-    async def fake_clip(*, db, user, png_bytes, label, document_sha256):
+    async def fake_clip(*, db, user, png_bytes, label, document_sha256, tenant_ai_enabled):
         sent.append((label, len(png_bytes)))
         return "Ada Lovelace" if label == "Client Name" else None
 
