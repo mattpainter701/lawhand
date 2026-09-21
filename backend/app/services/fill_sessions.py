@@ -443,8 +443,16 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
         str(item.get("template_id")): dict(item)
         for item in (session.members_json or [])
     }
+    skipped_saved = 0
     for member in members:
         template_id = str(member.get("template_id") or "")
+        prior = prior_members.get(template_id) or {}
+        if prior.get("status") == "saved" and prior.get("matter_document_id"):
+            # A retry of the same job must not render a member it already
+            # saved: non-PDF saves are not idempotent at the render layer, so
+            # re-running one would file a second copy of the document.
+            skipped_saved += 1
+            continue
         variables = {str(k): str(v) for k, v in (member.get("variables") or {}).items()}
         request = DocumentTemplateRenderRequest(
             variables=variables,
@@ -517,6 +525,11 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
         user = await db.get(User, user_id, populate_existing=True)
         if user is None:
             session = await db.get(DocumentFillSession, session_id)
+            # Record what this run managed before it lost its actor, so a saved
+            # member is not re-rendered (and duplicated) on a later retry.
+            session.members_json = _merge_member_statuses(
+                prior_members, members, outcomes
+            )
             session.status = "failed"
             session.last_error = (
                 "The person who prepared this packet can no longer save documents."
@@ -532,6 +545,7 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
 
     session = await db.get(DocumentFillSession, session_id)
     total = len(members)
+    saved += skipped_saved
     merged_statuses = _merge_member_statuses(prior_members, members, outcomes)
     session.members_json = merged_statuses
     # The whole packet is saved only when every recorded member is, including
