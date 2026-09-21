@@ -44,6 +44,10 @@ Before uploading, confirm that the document belongs to the tenant and matter sho
 
 Template Studio can create a new draft from an approved template. Open [Template Studio](/templates), choose the right template, review detected fields, and preview the result before saving it to a matter. Generated content is a draft until a qualified person reviews and approves it.
 
+### Search inside a matter's documents
+
+The search box on the Documents tab also looks inside the documents' text once you type three or more characters. Matching passages appear as **Found inside documents** with an Open link to the document; scanned pages read by OCR are included. The index follows each document's exact bytes and is dropped with the document. A passage is the document's own words, not a matter record: open the document before relying on it.
+
 ### Search historic firm files
 
 Open [Firm Memory](/firm-memory) to search the document sources your firm has authorized for you. In the controlled unified-research rollout, start with the query: **All authorized sources** is the default, and a matter is an optional filter rather than the entry gate. You can narrow the search to on-premises file shares or cloud sources, then filter by source, share, provider, file type, modified date, or matter. Results keep the source label and zero, one, or many linked matters visible.

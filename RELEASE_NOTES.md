@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.21.01 — Search inside a matter's documents
+
+Released September 21, 2026.
+
+The Documents tab's search box now looks inside the documents' text, scans included, and the assistant can pull matching excerpts into a matter's context. Also two small hardening changes to workflow document requests.
+
+- **Found inside documents.** Type three or more characters in the Documents search and excerpts from the documents' text appear beneath the toolbar, each with an Open link. Scans read by OCR are included.
+- **Excerpts for the assistant.** The matter context tool gains an excerpts section: give it a question and it returns the matching passages from the matter's documents, fenced as untrusted text.
+- **Workflow documents hardened.** Document requests on an approved workflow version are now immutable at the database, like its stages, and a saved-document rollback blocker is labelled as a document step.
+
 ## 2026.09.20.05 — Workflows can ask for documents
 
 Released September 20, 2026.

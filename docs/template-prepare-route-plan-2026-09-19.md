@@ -316,7 +316,7 @@ still re-derived on refresh and marked "changed since verified" if the
 matter moved; the generation preview evidence stays the only gate to a
 saved PDF.
 
-## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; 5a, 5b, 5c v1, 5c-2 and 5d shipped 2026-09-20; 5e planned)
+## Phase 5: matter documents as evidence (owner's ask, 2026-09-19; 5a, 5b, 5c v1, 5c-2 and 5d shipped 2026-09-20; 5e shipped 2026-09-21)
 
 > "as documents get entered into the matters > doc that's the 'repo' of
 > knowledge outside of matter fields ... a mechanism to read those
@@ -403,7 +403,7 @@ stays firm > custom > binding > name match > synonym > document evidence,
 so a document never silently overrides a matter field; it fills a blank
 and asks to be verified.
 
-**5e: the index (later).** Chunk cached text with the existing
+**5e: the index (shipped 2026-09-21 as `matter_document_chunks`, migration 200; a character splitter rather than the token counter, which needs a downloaded encoding; consumers are the Documents tab search, `GET .../documents/search` and the `excerpts` section of `get_matter_context`).** Original note: Chunk cached text with the existing
 `chunk_text`, embed with `EmbeddingService`, store in a matter-scoped
 table (not the RAG corpus) keyed by `document_sha256`, invalidated by the
 cache row. Consumers: "find where this fact came from" in the review list,

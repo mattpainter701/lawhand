@@ -57,7 +57,7 @@ then by the quirk campaign):
 | 5b | `document_text_extractions` cache keyed by `document_sha256` (migration 197, new head) | Shipped | CHANGELOG 2026.09.20.01 | `test_document_text_cache.py` (once per digest and tenant, OCR path, image path, engine unavailable, migration RLS text); cache hit in `_postgres.py`; migration applied up, down and up on a scratch database |
 | 5c | Template-anchored reading of a printed, hand-filled form (v1: scaled alignment, OCR per field crop, thumbnails); 5c-2 vision fallback per unreadable clip, opt-in and metered, off until `INTAKE_EXTRACTION_VISION_MODEL` is set | Shipped (v1 + 5c-2) | CHANGELOG 2026.09.20.01 | `test_template_form_reading.py` (windows, crop geometry, page-size scaling, thumbnails, failures), `test_matter_document_form_reading_postgres.py` (both routes, matched and unmatched readings, 404s) |
 | 5d | `DocumentEvidenceSource` in the engine, lowest precedence, `review_required`; prefill digest and memoized loaders; `document_extracted` trigger | Shipped | CHANGELOG 2026.09.20.02 | `test_template_fill_evidence_postgres.py`, `TestDocumentEvidence`, all Smart Fill parity suites (255) unchanged |
-| 5e | Matter-scoped index over cached text | Planned, later | — | |
+| 5e | `matter_document_chunks` (migration 200) built from the extraction cache on the extraction path; words plus meaning search; `GET .../documents/search`, the `excerpts` section of `get_matter_context`, "Found inside documents" on the Documents tab | Shipped | CHANGELOG 2026.09.21.01 | `test_matter_document_index_postgres.py` (6); vitest Documents tab |
 
 ## 3. What already existed and was reused (so the concern was narrower than feared)
 
@@ -241,7 +241,7 @@ npx vitest run && npx eslint src
   (0 errors; 3 pre-existing `no-alert` warnings in ChatPage and ProfilePage).
 - Backend suites run in this branch's sessions: template suites (718), matters
   and intake and durable (256), template and e-sign (165 at `c2c5a54`).
-- Migration heads on the branch, in order: `197_document_evidence`, `198_document_fill_sessions` (3d), `199_workflow_document_requests` (2c). Each applied up, down and up on a scratch database.
+- Migration heads on the branch, in order: `197_document_evidence`, `198_document_fill_sessions` (3d), `199_workflow_document_requests` (2c), `200_matter_document_index` (5e), `201_workflow_docdefs_immutable` (2c audit). Each applied up, down and up on a scratch database.
 
 ## 8. Open risks and recommended order
 
@@ -249,7 +249,7 @@ npx vitest run && npx eslint src
    pinned to `196_mcp_usage_idempotency` after main's `#574` claimed 196 first
    (renumbered from 196 per `AGENTS.md` §1; the head on `origin/main` was
    confirmed before this change).
-2. 3d took migration 198 and 2c took 199; 5e takes 200 if it adds a table.
+2. 3d took migration 198, 2c took 199, 5e took 200, and the 2c audit follow-up (immutability trigger on the document definitions) took 201.
 3. The DOCX-to-PDF default for templates with signature fields changes a
    default; a firm that wanted Word output must choose it. The reason is shown
    beside the choice.

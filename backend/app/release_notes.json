@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.21.01",
+      "version": "2026.09.21.01",
+      "title": "Search inside a matter's documents",
+      "published_at": "2026-09-21",
+      "summary": "The Documents tab's search box now looks inside the documents' text, scans included, and the assistant can pull matching excerpts into a matter's context. Also two small hardening changes to workflow document requests.",
+      "highlights": [
+        {
+          "title": "Found inside documents",
+          "description": "Type three or more characters in the Documents search and excerpts from the documents' text appear beneath the toolbar, each with an Open link. Scans read by OCR are included."
+        },
+        {
+          "title": "Excerpts for the assistant",
+          "description": "The matter context tool gains an excerpts section: give it a question and it returns the matching passages from the matter's documents, fenced as untrusted text."
+        },
+        {
+          "title": "Workflow documents hardened",
+          "description": "Document requests on an approved workflow version are now immutable at the database, like its stages, and a saved-document rollback blocker is labelled as a document step."
+        }
+      ]
+    },
+    {
       "id": "2026.09.20.05",
       "version": "2026.09.20.05",
       "title": "Workflows can ask for documents",
