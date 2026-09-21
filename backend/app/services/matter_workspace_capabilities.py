@@ -302,12 +302,20 @@ async def get_matter_context(
 
     if "excerpts" in sections:
         scopes = context.granted_scopes
-        if scopes is not None and "documents:read" not in scopes:
-            # Document words carry the same weight as the document-text
-            # capability, which requires documents:read. A grant that may read
-            # matter metadata must not read the documents' own text.
+        # Document text is as privileged as the document-text capability, which
+        # requires documents:read. An external grant must hold that scope; an
+        # internal caller must be the interactive chat. An unattended run
+        # (channel automation_service) and a scope-less external caller get no
+        # document words.
+        if scopes is None:
+            allowed = context.channel == "matter_chat"
+            reason = "document text is not available to unattended runs"
+        else:
+            allowed = "documents:read" in scopes
+            reason = "requires the documents:read scope"
+        if not allowed:
             payload["excerpts"] = []
-            payload["excerpts_omitted"] = "requires the documents:read scope"
+            payload["excerpts_omitted"] = reason
         else:
             from app.services import matter_document_index
 

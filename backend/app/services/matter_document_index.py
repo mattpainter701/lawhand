@@ -49,6 +49,12 @@ SNIPPET_CHARS = 280
 #: Reciprocal-rank fusion constant: the usual 60 keeps a top full-text hit
 #: and a top semantic hit on equal footing.
 RRF_K = 60
+#: Relevance floor for the semantic branch, as a cosine distance (1 - cosine
+#: similarity). A query with no real match otherwise returns its nearest chunks
+#: regardless of distance and presents them as answers. 0.6 keeps moderately
+#: related passages and drops near-orthogonal noise; the word branch answers on
+#: its own, so this only trims the meaning hits. Tunable per embedding model.
+MAX_COSINE_DISTANCE = 0.6
 
 _BREAK = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 
@@ -315,7 +321,12 @@ async def search(
                 (MatterDocument.id == MatterDocumentChunk.matter_document_id)
                 & (MatterDocument.tenant_id == MatterDocumentChunk.tenant_id),
             )
-            .where(*scope, MatterDocumentChunk.embedding.isnot(None))
+            .where(
+                *scope,
+                MatterDocumentChunk.embedding.isnot(None),
+                MatterDocumentChunk.embedding.cosine_distance(vector)
+                <= MAX_COSINE_DISTANCE,
+            )
             .order_by(MatterDocumentChunk.embedding.cosine_distance(vector))
             .limit(limit * 2)
         )

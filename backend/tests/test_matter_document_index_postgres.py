@@ -333,6 +333,34 @@ async def test_route_and_matter_context_read_the_index(
     assert gated["excerpts"] == []
     assert "documents:read" in gated["excerpts_omitted"]
 
+    # The interactive chat still reads excerpts; an unattended run does not.
+    chat = CapabilityContext(
+        db=db_session,
+        user=SimpleNamespace(id=test_user.id, tenant_id=tenant_id),
+        granted_scopes=None,
+    )
+    assert (
+        await workspace.get_matter_context(
+            chat,
+            GetMatterContextArgs(
+                matter_id=matter_id, sections=["excerpts"], query="Judge Amari"
+            ),
+        )
+    )["excerpts"]
+    service = CapabilityContext(
+        db=db_session,
+        user=SimpleNamespace(id=test_user.id, tenant_id=tenant_id),
+        channel="automation_service",
+        granted_scopes=None,
+    )
+    unattended = await workspace.get_matter_context(
+        service,
+        GetMatterContextArgs(
+            matter_id=matter_id, sections=["excerpts"], query="Judge Amari"
+        ),
+    )
+    assert unattended["excerpts"] == []
+
 
 async def test_extraction_fills_the_index_and_a_fault_never_blocks_it(
     db_session, test_tenant, test_user, monkeypatch
