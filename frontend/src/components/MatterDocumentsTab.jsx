@@ -19,6 +19,7 @@ import api, {
   getMatterCloudFiles,
   createDocumentTag,
   setMatterDocumentTags,
+  searchMatterDocumentText,
 } from '../api'
 import { FileText, Upload, Trash2, Download, X, Check, Cloud, ExternalLink, RefreshCw, Eye, EyeOff, PenLine, Sparkles, Pencil, ShieldCheck, Folder, Search, Tag as TagIcon } from 'lucide-react'
 import { useConfirm } from './dialog/ConfirmProvider'
@@ -273,6 +274,31 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     refreshDocuments,
   } = explorer
   const [templateOpen, setTemplateOpen] = useState(false)
+  // Phase 5e: the same search box also looks inside the documents' text
+  // (the matter-scoped index over the extraction cache). Three characters
+  // and a short pause before asking, so typing does not flood the server.
+  const [excerpts, setExcerpts] = useState({ query: '', results: [], indexed: 0 })
+  useEffect(() => {
+    const query = String(search || '').trim()
+    if (query.length < 3) {
+      setExcerpts({ query: '', results: [], indexed: 0 })
+      return undefined
+    }
+    let active = true
+    const timer = setTimeout(() => {
+      searchMatterDocumentText(matterId, query)
+        .then((value) => {
+          if (!active) return
+          setExcerpts({
+            query,
+            results: Array.isArray(value?.results) ? value.results : [],
+            indexed: Number(value?.indexed_documents) || 0,
+          })
+        })
+        .catch(() => { if (active) setExcerpts({ query, results: [], indexed: 0 }) })
+    }, 400)
+    return () => { active = false; clearTimeout(timer) }
+  }, [matterId, search])
   const [templateToOpen, setTemplateToOpen] = useState(null)
   const [prefillVersion, setPrefillVersion] = useState(0)
   const [documentView, setDocumentView] = useState(() => { try { return localStorage.getItem(`document-view:${matterId}`) === 'folder' ? 'folder' : 'detailed' } catch { return 'detailed' } })
@@ -932,6 +958,29 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       {filingDocument && <section aria-label="File operation" className="rounded-xl border p-4"><p>{filingMode === 'copy' ? 'Copy' : 'Move'} {filingDocument.filename} to:</p>{filingMode === 'move' && <p className="text-xs text-brand-muted">Organize within this matter. The existing cloud storage path is preserved.</p>}<select aria-label="Destination folder" value={destination} disabled={filingBusy} onChange={event => { setDestination(event.target.value); copyRequest.current = crypto.randomUUID() }}><option value="__root">Unfiled</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path}</option>)}</select>{filingError && <p role="alert">{filingError}</p>}<button type="button" disabled={filingBusy} onClick={submitFiling}>{filingBusy ? 'Saving…' : filingMode === 'copy' ? 'Copy here' : 'Move here'}</button><button type="button" disabled={filingBusy} onClick={() => setFilingDocument(null)}>Cancel</button></section>}
       {documentView === 'folder' && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Folder contents">{folders.filter(folder => (folder.parent_id || null) === (folderId === ROOT_FOLDER || folderId === ALL_DOCUMENTS ? null : folderId)).map(folder => <button type="button" key={folder.id} onClick={() => setFolderId(folder.id)} className="rounded-xl border bg-brand-surface p-4 text-left"><Folder size={28} /><span className="mt-2 block break-words">{folder.name}</span></button>)}{docs.map(doc => <article key={doc.id} className="rounded-xl border bg-brand-surface p-4"><button type="button" onClick={() => setPreviewDocument(doc)} className="text-left"><FileText size={28} /><span className="mt-2 block break-words">{doc.filename}</span></button><button type="button" onClick={() => openFiling(doc, 'move')} className="mt-3 block text-sm underline">Move to…</button><button type="button" onClick={() => openFiling(doc, 'copy')} className="mt-2 text-sm underline">Copy to…</button></article>)}</div>}
       {documentView === 'detailed' && docs.length > 0 && <div className="flex gap-3 py-2"><select aria-label="Move or copy a document" value="" onChange={event => { const [mode, id] = event.target.value.split(':'); openFiling(docs.find(doc => doc.id === id), mode) }} className="max-w-full rounded border p-2 text-sm"><option value="">Move or copy…</option>{docs.map(doc => <optgroup key={doc.id} label={doc.filename}><option value={`move:${doc.id}`}>Move {doc.filename}</option><option value={`copy:${doc.id}`}>Copy {doc.filename}</option></optgroup>)}</select></div>}
+      {excerpts.query && (
+        <section aria-label="Found inside documents" className="rounded-xl border border-brand-line bg-brand-surface p-4">
+          <h3 className="text-sm font-semibold">
+            {excerpts.results.length
+              ? `Found inside ${new Set(excerpts.results.map((hit) => hit.document_id)).size} document${new Set(excerpts.results.map((hit) => hit.document_id)).size === 1 ? '' : 's'}`
+              : excerpts.indexed
+                ? 'Nothing inside the documents mentions that'
+                : 'No document text is indexed yet'}
+          </h3>
+          {excerpts.results.length > 0 && (
+            <ul className="mt-2 space-y-2">
+              {excerpts.results.map((hit) => (
+                <li key={`${hit.document_id}-${hit.chunk_index}`} className="text-[13px]">
+                  <span className="font-medium">{hit.filename}</span>
+                  {' · '}
+                  <a href={hit.open_url} target="_blank" rel="noreferrer" className="underline">Open</a>
+                  <p className="text-brand-muted">{String(hit.snippet || '').replaceAll('**', '')}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       {/* Documents table */}
       {documentView === 'folder' ? null : listing && docs.length === 0 ? (
         <div className="py-10 text-center text-[13px] font-sans text-brand-muted">Loading documents…</div>

@@ -892,9 +892,13 @@ async def rollback_run(
             await append_run_step(
                 db,
                 run,
-                step_type="task_cancel"
-                if blocker.startswith("task ")
-                else "stage_restore",
+                step_type=(
+                    "task_cancel"
+                    if blocker.startswith("task ")
+                    else "document_propose"
+                    if blocker.startswith("document ")
+                    else "stage_restore"
+                ),
                 action_key=f"blocked_{index + 1}",
                 status="blocked",
                 evidence={"reason": blocker},

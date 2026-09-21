@@ -270,6 +270,12 @@ async def test_a_saved_document_blocks_rollback(
     assert rolled.status_code == 409, rolled.text
     detail = rolled.json()["detail"]
     assert "document engagement was already saved from its session" in str(detail)
+    blocked = [
+        s
+        for s in detail["run"]["steps"]
+        if s["status"] == "blocked" and s["action_key"].startswith("blocked_")
+    ]
+    assert [s["step_type"] for s in blocked] == ["document_propose"]
     task = await db_session.get(Task, uuid.UUID(step["task_id"]))
     await db_session.refresh(task)
     assert task.status == "pending"

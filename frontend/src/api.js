@@ -3078,6 +3078,8 @@ export const acceptMatterDocumentFact = (matterId, documentId, payload) =>
   api.post(`/matters/${matterId}/documents/${documentId}/facts/accept`, payload).then(r => r.data)
 // The forms this matter generated, so a scanned, hand-filled copy can be read
 // field by field against the one it was printed from.
+export const searchMatterDocumentText = (matterId, q, limit = 8) =>
+  api.get(`/matters/${matterId}/documents/search`, { params: { q, limit } }).then(r => r.data)
 export const getMatterDocumentFormSources = (matterId, documentId) =>
   api.get(`/matters/${matterId}/documents/${documentId}/facts/form-sources`).then(r => r.data)
 export const readMatterDocumentAgainstForm = (matterId, documentId, payload) =>

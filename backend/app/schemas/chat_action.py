@@ -105,6 +105,7 @@ MatterContextSection = Literal[
     "events",
     "notes",
     "communications",
+    "excerpts",
 ]
 
 
@@ -116,6 +117,9 @@ class GetMatterContextArgs(ChatActionModel):
         max_length=8,
     )
     max_items_per_section: int = Field(default=10, ge=1, le=25)
+    #: With the ``excerpts`` section: what to look for in the matter's
+    #: documents. Without a query the section is empty, never everything.
+    query: str | None = Field(default=None, min_length=2, max_length=200)
 
 
 class ListMatterDocumentsArgs(ChatActionModel):

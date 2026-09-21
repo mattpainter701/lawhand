@@ -42,7 +42,11 @@ from app.schemas.matter_document import (
     MatterDocumentUpdate,
 )
 from app.services.document_accountability import append_document_integrity_event
-from app.services import matter_fact_extraction, matter_form_reading
+from app.services import (
+    matter_document_index,
+    matter_fact_extraction,
+    matter_form_reading,
+)
 from app.services.durable_jobs import enqueue_job
 from app.services.matter_document_organization import (
     DocumentOrganizationError,
@@ -849,6 +853,37 @@ class FormReadRequest(BaseModel):
     version_no: int | None = Field(default=None, ge=1)
     # Send the clips OCR could not read to the vision model (opt-in, metered).
     use_ai: bool = False
+
+
+@router.get("/matters/{matter_id}/documents/search")
+async def search_matter_document_text(
+    matter_id: str,
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200),
+    limit: int = Query(8, ge=1, le=25),
+    db: AsyncSession = Depends(get_db),
+):
+    """Excerpts from this matter's documents that mention ``q``.
+
+    Searches the matter-scoped index built from the extraction cache (text
+    layer and OCR). Each hit points at one document a person can open; the
+    snippet is the document's own words.
+    """
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_matter_or_404(matter_id, user.tenant_id, db)
+    results = await matter_document_index.search(
+        db,
+        tenant_id=user.tenant_id,
+        matter_id=uuid.UUID(matter_id),
+        query=q,
+        limit=limit,
+        embedder=matter_document_index.default_embedder(),
+    )
+    indexed = await matter_document_index.indexed_documents(
+        db, tenant_id=user.tenant_id, matter_id=uuid.UUID(matter_id)
+    )
+    return {"query": q, "results": results, "indexed_documents": len(indexed)}
 
 
 @router.get("/matters/{matter_id}/documents/{doc_id}/facts/form-sources")

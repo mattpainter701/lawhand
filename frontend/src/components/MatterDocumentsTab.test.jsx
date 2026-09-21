@@ -31,6 +31,7 @@ const apiMocks = vi.hoisted(() => ({
   getMatterDocumentFormSources: vi.fn().mockResolvedValue({ sources: [] }),
   readMatterDocumentAgainstForm: vi.fn(),
   getMatterFillSessions: vi.fn().mockResolvedValue({ items: [] }),
+  searchMatterDocumentText: vi.fn().mockResolvedValue({ query: '', results: [], indexed_documents: 0 }),
   abandonFillSession: vi.fn(),
   moveMatterDocuments: vi.fn(),
   provisionMatterCloudFolder: vi.fn(),
@@ -372,6 +373,25 @@ describe('MatterDocumentsTab document explorer', () => {
         expect.objectContaining({ tag_ids: ['tag-signed'] }),
       ),
     )
+  })
+
+  it('shows excerpts found inside the documents for a search', async () => {
+    apiMocks.searchMatterDocumentText.mockResolvedValue({
+      query: 'compel',
+      indexed_documents: 2,
+      results: [
+        { document_id: 'pdf-1', filename: 'Filed pleading.pdf', chunk_index: 0, snippet: 'moves to **compel** discovery responses', score: 0.02, matched_by: ['words'], open_url: '/api/matters/matter-1/documents/pdf-1/open' },
+      ],
+    })
+    const user = userEvent.setup()
+    renderDocuments()
+    await screen.findByRole('navigation', { name: 'Document folders' })
+    await user.type(screen.getByLabelText('Search documents'), 'compel')
+    const found = await screen.findByRole('region', { name: 'Found inside documents' }, { timeout: 3000 })
+    expect(within(found).getByText('Found inside 1 document')).toBeInTheDocument()
+    expect(within(found).getByText('moves to compel discovery responses')).toBeInTheDocument()
+    expect(within(found).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/api/matters/matter-1/documents/pdf-1/open')
+    await waitFor(() => expect(apiMocks.searchMatterDocumentText).toHaveBeenCalledWith('matter-1', 'compel'))
   })
 
   it('replaces the tags on a document from its row', async () => {

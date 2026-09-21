@@ -28,6 +28,7 @@ confidence it was read at, never dropped silently.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -58,6 +59,8 @@ from app.services.docx_templates import validate_docx_package
 from app.services.matter_file_store import MatterFileReadError, MatterFileStore
 from app.services.pdf_templates import TemplatePdfError, read_pdf_form_values
 from app.services.template_bindings import binding_label
+
+logger = logging.getLogger(__name__)
 
 #: A source document larger than this is not scanned for facts. Intake forms
 #: are small; a bound large enough to hold one keeps a hostile upload from
@@ -488,6 +491,22 @@ async def _extract(db, tenant_id, document, content) -> document_text_cache.Extr
             status_code=422,
             detail="Source text could not be read. Review the original and enter the value manually.",
         ) from exc
+    # The matter-scoped search index follows the cache: same text, same
+    # digest. It is a convenience, never a gate on reading the document.
+    try:
+        from app.services import matter_document_index
+
+        await matter_document_index.index_document(
+            db,
+            tenant_id=tenant_id,
+            document=document,
+            extraction=extraction,
+            embedder=matter_document_index.default_embedder(),
+        )
+    except Exception:  # noqa: BLE001 - indexing must not block extraction
+        logger.warning("Matter document index update failed", exc_info=True)
+        await db.rollback()
+        await set_tenant_context(db, str(tenant_id))
     extraction.text = extraction.text[:MAX_SOURCE_TEXT]
     return extraction
 
