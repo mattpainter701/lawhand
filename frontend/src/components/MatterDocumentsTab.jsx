@@ -585,7 +585,11 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       setDocs((prev) =>
         prev.map((d) => (d.id === doc.id ? { ...d, portal_visible: doc.portal_visible } : d))
       )
-      setError('Failed to update portal visibility. Please try again.')
+      // A failed visibility flip must not replace the whole tab with the
+      // list-load error banner; report it as a toast and leave the list up.
+      toast.error('Portal visibility was not changed', {
+        message: 'The document was left as it was. Please try again.',
+      })
     }
   }
 
