@@ -194,6 +194,7 @@ async def propose_document(
 
     from app.models.task import Task
     from app.services import template_fill_engine as engine
+    from app.services.document_prefill import _prepared_counts
     from app.services.document_template_versions import published_template_view
     from app.services.fill_sessions import open_prepared_session
     from app.services.task_workflow import append_task_event
@@ -232,8 +233,7 @@ async def propose_document(
         actor=actor,
         loaders=memoized(),
     )
-    fields = len(prepared.coverage.states)
-    filled = len(prepared.values)
+    fields, filled = _prepared_counts(prepared)
     owner_id = assigned_to_user_id or actor_user_id
     session = await open_prepared_session(
         db,
