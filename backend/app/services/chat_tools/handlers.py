@@ -50,6 +50,7 @@ from app.schemas.chat_action import (
     ResolvedSmsRecipientBinding,
     SmsConsentEvidenceBinding,
     SmsClientAction,
+    TaskUpdateAction,
     normalize_single_mailbox,
 )
 from app.schemas.workspace_mcp import (
@@ -58,6 +59,7 @@ from app.schemas.workspace_mcp import (
     ProposeDocumentTemplateArgs,
     ProposeMatterDocumentFileArgs,
     ProposeMatterFileArgs,
+    ProposeTaskUpdateArgs,
 )
 from app.schemas.task import OPEN_TASK_STATUSES
 from app.services.automation_capabilities import CapabilityContext, CapabilityError
@@ -1165,6 +1167,96 @@ async def propose_task(
         ),
         "pending_action": None,
         "sources": chips,
+    }
+
+
+def _describe_task_update(args: ProposeTaskUpdateArgs) -> str:
+    changes: list[str] = []
+    if args.status is not None:
+        changes.append(f"status -> {args.status}")
+    if args.priority is not None:
+        changes.append(f"priority -> {args.priority}")
+    if args.due_date is not None:
+        changes.append(f"due date -> {args.due_date.isoformat()}")
+    if args.assigned_to_user_id is not None:
+        changes.append(f"assignee -> {args.assigned_to_user_id}")
+    summary = "Review and approve this change to the target task: " + "; ".join(changes)
+    if args.note:
+        summary += f". Note: {args.note}"
+    if args.reason:
+        summary += f". Reason: {args.reason}"
+    return summary[:4_000]
+
+
+async def propose_task_update(
+    context: ChatToolContext, args: ProposeTaskUpdateArgs
+) -> dict[str, Any]:
+    """Stage a review-gated change to an existing work-board task."""
+
+    target = await context.db.scalar(
+        select(Task)
+        .where(
+            Task.id == args.task_id,
+            Task.tenant_id == context.tenant_id,
+        )
+        .with_for_update()
+    )
+    if target is None or target.matter_id != args.matter_id:
+        raise ChatToolError("task_not_found", "Task not found on this matter")
+    if target.pending_action:
+        raise ChatToolError(
+            "task_awaiting_review",
+            "That task is itself awaiting review; resolve it before proposing an update",
+        )
+    if args.status == "waiting" and not args.reason:
+        raise ChatToolError(
+            "reason_required", "A reason is required to move a task to Waiting"
+        )
+    if args.status == "cancelled" and not args.reason:
+        raise ChatToolError("reason_required", "A reason is required to cancel a task")
+    if args.assigned_to_user_id is not None:
+        try:
+            await require_task_references_for_tenant(
+                context.db,
+                context.tenant_id,
+                {"assigned_to_user_id": args.assigned_to_user_id},
+            )
+        except TaskWorkflowError as exc:
+            raise ChatToolError("invalid_task_reference", exc.detail) from exc
+
+    action = TaskUpdateAction(
+        type="task_update",
+        matter_id=args.matter_id,
+        target_task_id=args.task_id,
+        status=args.status,
+        priority=args.priority,
+        due_date=args.due_date,
+        assigned_to_user_id=args.assigned_to_user_id,
+        note=args.note,
+        reason=args.reason,
+    )
+    proposed = await _create_proposed_task(
+        context,
+        matter_id=args.matter_id,
+        title=f"Update task: {target.title}"[:500],
+        description=_describe_task_update(args),
+        due_date=None,
+        source_ids=[],
+        pending_action=action.model_dump(mode="json"),
+    )
+    return {
+        "task_id": str(proposed.id),
+        "target_task_id": str(target.id),
+        "version": proposed.version,
+        "title": proposed.title,
+        "status": proposed.status,
+        "matter_id": str(proposed.matter_id),
+        "action_type": action.type,
+        "approval_effect": (
+            "Approving applies the requested change to the target task. "
+            "Nothing is sent to a client."
+        ),
+        "pending_action": action.model_dump(mode="json"),
     }
 
 
