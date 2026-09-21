@@ -34,6 +34,22 @@ export async function pooled(items, limit, work) {
 
 const memberState = (status, extra = {}) => ({ status, ...extra })
 
+// The saved/failed rows to show for a session's recorded members, including
+// the signing descriptor a background-saved PDF needs to stay sendable after
+// the page is reopened.
+const savesFromMembers = (members) => Object.fromEntries((members || [])
+  .filter((member) => member.status !== 'queued')
+  .map((member) => [member.template_id, member.status === 'saved'
+    ? memberState('saved', { response: {
+        matter_document_id: member.matter_document_id,
+        output_filename: member.output_filename,
+        output_format: member.output_format || 'pdf',
+        signing_roles: member.signing_roles || [],
+        positioned_fields: member.positioned_fields || [],
+        signing_placement_required: Boolean(member.signing_placement_required),
+      } })
+    : memberState('failed', { error: member.detail || 'Not saved' })]))
+
 // The Prepare route for a set: one interview, many documents. Answers are
 // fanned out by the server; every member renders through the per-template
 // routes, so the preview evidence gate and the save path are exactly what
@@ -82,7 +98,17 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         setVerifiedNames(Object.fromEntries((value.verified || []).map((key) => [key, true])))
         if (value.matter_id) setMatterId(value.matter_id)
         if (value.status === 'saving') setBackground('saving')
-        else if (value.status === 'saved') setBackground('saved')
+        else if (value.status === 'saved' || value.status === 'failed') {
+          setBackground(value.status === 'saved' ? 'saved' : 'failed')
+        }
+        // Show whatever the session already recorded — including a partial
+        // background save that left it open — so a reopened packet is not
+        // "not previewed" and its Send card is not lost. Queued members are
+        // skipped by the helper.
+        setSaves(savesFromMembers(value.members))
+        if ((value.members || []).some((member) => member.status === 'preview_expired')) {
+          setPreviews((prev) => Object.fromEntries(Object.entries(prev).map(([id, entry]) => [id, (value.members || []).find((member) => member.template_id === id && member.status === 'preview_expired') ? memberState('idle') : entry])))
+        }
       })
       .catch(() => { /* A missing session starts fresh. */ })
       .finally(() => { if (active) setSessionRestored(true) })
@@ -196,9 +222,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         setSession(value)
         if (value.status !== 'saving') {
           setBackground(value.status === 'saved' ? 'saved' : 'failed')
-          setSaves(Object.fromEntries((value.members || []).map((member) => [member.template_id, member.status === 'saved'
-            ? memberState('saved', { response: { matter_document_id: member.matter_document_id, output_filename: member.output_filename, output_format: 'pdf' } })
-            : memberState('failed', { error: member.detail || 'Not saved' })])))
+          setSaves(savesFromMembers(value.members))
           if ((value.members || []).some((member) => member.status === 'preview_expired')) {
             setPreviews((prev) => Object.fromEntries(Object.entries(prev).map(([id, entry]) => [id, (value.members || []).find((member) => member.template_id === id && member.status === 'preview_expired') ? memberState('idle') : entry])))
           }
@@ -229,6 +253,9 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     const ready = availableMembers.filter((member) => previewOf(member).status === 'ready' && saveOf(member)?.status !== 'saved')
     if (ready.length !== availableMembers.filter((member) => saveOf(member)?.status !== 'saved').length) { setError('Preview every document before saving the packet.'); return }
     setError('')
+    // Hold the button through the two round trips below so a second click
+    // cannot queue the packet twice.
+    setSaving(true)
     try {
       await persistSession()
       const current = sessionRef.current
@@ -246,6 +273,8 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
       setBackground('saving')
     } catch (err) {
       setError(getErrorMessage(err, 'The packet could not be queued.'))
+    } finally {
+      if (mountedRef.current) setSaving(false)
     }
   }
 

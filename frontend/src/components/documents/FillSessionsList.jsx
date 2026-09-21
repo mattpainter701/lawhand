@@ -15,6 +15,7 @@ const memberSummary = (session) => {
 export default function FillSessionsList({ matterId, version = 0, onResume }) {
   const [sessions, setSessions] = useState([])
   const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
   useEffect(() => {
     if (!matterId) return undefined
     let active = true
@@ -27,7 +28,10 @@ export default function FillSessionsList({ matterId, version = 0, onResume }) {
   const resume = (session) => onResume(buildPrepareTarget({ templateId: session.template_id, setId: session.set_id, matterId, sessionId: session.id, returnTo: `/matters/${matterId}?tab=documents` }).url)
   const drop = async (session) => {
     setBusy(session.id)
-    try { await abandonFillSession(session.id); setSessions((prev) => prev.filter((item) => item.id !== session.id)) } finally { setBusy('') }
+    setError('')
+    try { await abandonFillSession(session.id); setSessions((prev) => prev.filter((item) => item.id !== session.id)) }
+    catch { setError('The document in progress could not be discarded. Try again.') }
+    finally { setBusy('') }
   }
   return (
     <section aria-label="Documents in progress" className="rounded-xl border border-brand-line bg-brand-surface-2 px-4 py-3 text-[13px] font-sans">
@@ -43,6 +47,7 @@ export default function FillSessionsList({ matterId, version = 0, onResume }) {
           </li>
         ))}
       </ul>
+      {error && <p role="alert" className="mt-2 text-xs text-brand-rose">{error}</p>}
     </section>
   )
 }

@@ -484,6 +484,7 @@ async def test_official_client_discovers_only_scope_and_rbac_allowed_tools(
         "get_matter_context",
         "list_matter_tasks",
         "propose_task",
+        "propose_task_update",
         "search_matters",
         "search_tasks",
         "get_task",

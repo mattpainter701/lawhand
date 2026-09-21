@@ -20,6 +20,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.access_control import require_capability
@@ -175,9 +176,18 @@ async def create_set(
         created_by_user_id=current_user.id,
     )
     db.add(record)
-    await db.flush()
-    await _replace_items(db, tenant_id, record, payload)
-    await db.commit()
+    try:
+        await db.flush()
+        await _replace_items(db, tenant_id, record, payload)
+        await db.commit()
+    except IntegrityError as exc:
+        # The pre-check above is racy; the unique name/position is the backstop.
+        await db.rollback()
+        await set_tenant_context(db, str(tenant_id))
+        raise HTTPException(
+            status_code=409,
+            detail="A set with that name already exists, or its members conflict.",
+        ) from exc
     await db.refresh(record)
     return await _set_response(db, tenant_id, record)
 

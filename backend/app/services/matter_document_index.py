@@ -56,6 +56,12 @@ JOB_KIND = "matter_document_index"
 #: transaction is never committed on account of derived data. A module
 #: attribute so tests bind it to their engine.
 session_factory = async_session_maker
+#: Relevance floor for the semantic branch, as a cosine distance (1 - cosine
+#: similarity). A query with no real match otherwise returns its nearest chunks
+#: regardless of distance and presents them as answers. 0.6 keeps moderately
+#: related passages and drops near-orthogonal noise; the word branch answers on
+#: its own, so this only trims the meaning hits. Tunable per embedding model.
+MAX_COSINE_DISTANCE = 0.6
 
 _BREAK = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 
@@ -359,7 +365,12 @@ async def search(
                 (MatterDocument.id == MatterDocumentChunk.matter_document_id)
                 & (MatterDocument.tenant_id == MatterDocumentChunk.tenant_id),
             )
-            .where(*scope, MatterDocumentChunk.embedding.isnot(None))
+            .where(
+                *scope,
+                MatterDocumentChunk.embedding.isnot(None),
+                MatterDocumentChunk.embedding.cosine_distance(vector)
+                <= MAX_COSINE_DISTANCE,
+            )
             .order_by(MatterDocumentChunk.embedding.cosine_distance(vector))
             .limit(limit * 2)
         )

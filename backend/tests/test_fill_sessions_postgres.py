@@ -153,7 +153,14 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
         calls.append((template_id, payload, current_user.id))
         if template_id == bad:
             raise HTTPException(status_code=409, detail="The generation preview no longer matches")
-        return SimpleNamespace(matter_document_id=str(uuid.uuid4()), output_filename="motion.pdf")
+        return SimpleNamespace(
+            matter_document_id=str(uuid.uuid4()),
+            output_filename="motion.pdf",
+            output_format="pdf",
+            signing_roles=["client"],
+            positioned_fields=[{"field_id": "f1"}],
+            signing_placement_required=True,
+        )
 
     monkeypatch.setattr(document_templates, "render_template_endpoint", fake_render)
     from app.models.durable_job import DurableJob
@@ -171,6 +178,11 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     assert row.status == "open"
     statuses = {item["template_id"]: item for item in row.members_json}
     assert statuses[str(good)]["status"] == "saved" and statuses[str(good)]["output_filename"] == "motion.pdf"
+    # The signing descriptor travels with the saved member so a packet saved in
+    # the background can still be sent for signature after it is reopened.
+    assert statuses[str(good)]["signing_roles"] == ["client"]
+    assert statuses[str(good)]["positioned_fields"] == [{"field_id": "f1"}]
+    assert statuses[str(good)]["signing_placement_required"] is True
     assert statuses[str(bad)] == {"template_id": str(bad), "status": "preview_expired", "detail": "Preview expired; review it again."}
     assert "1 of 2" in row.last_error
 

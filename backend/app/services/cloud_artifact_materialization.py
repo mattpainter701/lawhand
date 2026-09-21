@@ -102,19 +102,170 @@ def canonical_docx_filename(
     return f"{value[:max_stem].rstrip(' .-')}{suffix}"
 
 
+_MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+_MARKDOWN_UNORDERED = re.compile(r"^\s{0,3}[-*+]\s+(.*)$")
+_MARKDOWN_ORDERED = re.compile(r"^\s{0,3}\d+[.)]\s+(.*)$")
+_MARKDOWN_QUOTE = re.compile(r"^\s{0,3}>\s?(.*)$")
+_MARKDOWN_RULE = re.compile(r"^\s{0,3}([-*_])(?:\s*\1){2,}\s*$")
+_MARKDOWN_FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
+_TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$")
+_INLINE_TOKEN = re.compile(
+    r"(\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|~~[^~\n]+~~|"
+    r"\[[^\]\n]+\]\([^)\n]+\)|\*[^*\n]+\*)"
+)
+
+
+def _clean_docx_text(value: str) -> str:
+    """Drop characters OOXML cannot represent (everything below U+0020)."""
+
+    return "".join(char for char in value if char in "\t\n\r" or ord(char) >= 32)
+
+
+def _add_markdown_runs(paragraph: Any, text: str) -> None:
+    """Emit one paragraph's inline emphasis as styled runs."""
+
+    position = 0
+    for match in _INLINE_TOKEN.finditer(text):
+        if match.start() > position:
+            paragraph.add_run(_clean_docx_text(text[position : match.start()]))
+        token = match.group(0)
+        if token.startswith("**") or token.startswith("__"):
+            run = paragraph.add_run(_clean_docx_text(token[2:-2]))
+            run.bold = True
+        elif token.startswith("~~"):
+            run = paragraph.add_run(_clean_docx_text(token[2:-2]))
+            run.font.strike = True
+        elif token.startswith("`"):
+            run = paragraph.add_run(_clean_docx_text(token[1:-1]))
+            run.font.name = "Consolas"
+        elif token.startswith("["):
+            label, _, url = token[1:-1].partition("](")
+            paragraph.add_run(_clean_docx_text(label))
+            if url:
+                paragraph.add_run(f" ({_clean_docx_text(url)})")
+        else:
+            run = paragraph.add_run(_clean_docx_text(token[1:-1]))
+            run.italic = True
+        position = match.end()
+    if position < len(text):
+        paragraph.add_run(_clean_docx_text(text[position:]))
+
+
+def _split_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _add_markdown_table(
+    document: Any, header: list[str], rows: list[list[str]]
+) -> None:
+    table = document.add_table(rows=1, cols=max(1, len(header)))
+    table.style = "Table Grid"
+    for cell, value in zip(table.rows[0].cells, header):
+        cell.text = _clean_docx_text(value)
+    for row in rows:
+        cells = table.add_row().cells
+        for cell, value in zip(cells, row):
+            cell.text = _clean_docx_text(value)
+
+
+def _add_markdown_content(document: Any, content: str) -> None:
+    """Render the common assistant Markdown subset into styled Word content.
+
+    External clients emit headings, emphasis, lists, block quotes, fenced code,
+    and pipe tables. Rendering each line as a bare paragraph discarded all of
+    it, so a drafted motion reached the matter as literal ``##`` and ``**``
+    text. Blank lines are skipped rather than materialized as empty paragraphs.
+    """
+
+    lines = _clean_docx_text(content).replace("\r\n", "\n").split("\n")
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        if not stripped:
+            index += 1
+            continue
+
+        fence = _MARKDOWN_FENCE.match(line)
+        if fence:
+            marker = re.escape(fence.group(1)[0])
+            index += 1
+            while index < len(lines) and not re.match(
+                rf"^\s{{0,3}}{marker}{{3,}}", lines[index]
+            ):
+                code = document.add_paragraph(style="No Spacing")
+                code.add_run(lines[index]).font.name = "Consolas"
+                index += 1
+            index += 1
+            continue
+
+        if (
+            "|" in stripped
+            and index + 1 < len(lines)
+            and _TABLE_SEPARATOR.match(lines[index + 1])
+        ):
+            header = _split_table_row(line)
+            index += 2
+            rows: list[list[str]] = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                rows.append(_split_table_row(lines[index]))
+                index += 1
+            _add_markdown_table(document, header, rows)
+            continue
+
+        heading = _MARKDOWN_HEADING.match(line)
+        if heading:
+            document.add_heading(
+                _clean_docx_text(heading.group(2)), level=len(heading.group(1))
+            )
+            index += 1
+            continue
+
+        if _MARKDOWN_RULE.match(line):
+            index += 1
+            continue
+
+        quote = _MARKDOWN_QUOTE.match(line)
+        if quote:
+            quote_lines: list[str] = []
+            while index < len(lines):
+                match = _MARKDOWN_QUOTE.match(lines[index])
+                if not match:
+                    break
+                quote_lines.append(match.group(1).strip())
+                index += 1
+            paragraph = document.add_paragraph(style="Quote")
+            _add_markdown_runs(paragraph, " ".join(quote_lines))
+            continue
+
+        unordered = _MARKDOWN_UNORDERED.match(line)
+        if unordered:
+            paragraph = document.add_paragraph(style="List Bullet")
+            _add_markdown_runs(paragraph, unordered.group(1).strip())
+            index += 1
+            continue
+
+        ordered = _MARKDOWN_ORDERED.match(line)
+        if ordered:
+            paragraph = document.add_paragraph(style="List Number")
+            _add_markdown_runs(paragraph, ordered.group(1).strip())
+            index += 1
+            continue
+
+        paragraph = document.add_paragraph()
+        _add_markdown_runs(paragraph, stripped)
+        index += 1
+
+
 def render_revision_docx(*, title: str, content: str) -> bytes:
-    """Render conservative OOXML that Word and LibreOffice can round-trip."""
+    """Render assistant Markdown as conservative, round-trippable OOXML."""
+
     document = Document()
-    clean_title = str(title or "Draft")
+    clean_title = _clean_docx_text(str(title or "Draft"))
     document.core_properties.title = clean_title
     document.core_properties.subject = "LawHand generated working draft"
     document.add_heading(clean_title, level=1)
-    text_value = str(content or "")
-    for paragraph in text_value.split("\n"):
-        clean = "".join(
-            char for char in paragraph if char in "\t\n\r" or ord(char) >= 32
-        )
-        document.add_paragraph(clean)
+    _add_markdown_content(document, str(content or ""))
     output = io.BytesIO()
     document.save(output)
     from app.services.document_template_workspace import _canonical_docx_bytes

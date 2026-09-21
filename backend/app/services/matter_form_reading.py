@@ -11,6 +11,7 @@ writes to a record.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from typing import Any
@@ -26,6 +27,8 @@ from app.services import template_form_reading as reading
 from app.services.document_template_versions import get_version, published_template_view
 from app.services.template_cards import canonical_path
 from app.services.template_ocr import TemplateOcrError
+
+logger = logging.getLogger(__name__)
 
 MAX_SOURCES = 25
 #: A crop read below this OCR confidence is offered to the vision model.
@@ -238,6 +241,17 @@ async def read_against_form(
         )
     except TemplateOcrError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - an unreadable source is a 422, not a 500
+        # normalize_scan/page_sizes/read_scan parse untrusted bytes; a corrupt
+        # or unsupported source (a pypdf read error, say) is the caller's input
+        # problem, not a server fault.
+        logger.warning(
+            "Reading a form failed for document %s", document.id, exc_info=True
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="This document could not be read as a form. Re-upload a clear PDF, or read it page by page.",
+        ) from exc
 
     vision_notes: list[str] = []
     if use_ai:

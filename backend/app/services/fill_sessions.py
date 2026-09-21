@@ -89,6 +89,26 @@ def _open_members(ciphertext: str) -> list[dict[str, Any]]:
     return value if isinstance(value, list) else []
 
 
+def _merge_member_statuses(
+    prior: dict[str, dict], members: list[dict], outcomes: list[dict]
+) -> list[dict]:
+    """Member statuses in packet order, merging prior entries with this run.
+
+    A retry carries only the members still needed, so the entries from an
+    earlier attempt (already saved) must survive alongside this run's outcomes.
+    """
+
+    merged = dict(prior)
+    order = [str(rest.get("template_id") or "") for rest in members]
+    for template_id in order:
+        merged.setdefault(template_id, {"template_id": template_id, "status": "queued"})
+    for outcome in outcomes:
+        merged[str(outcome["template_id"])] = outcome
+    ordered = [merged[template_id] for template_id in order if template_id in merged]
+    ordered.extend(entry for tid, entry in merged.items() if tid not in set(order))
+    return ordered
+
+
 def response_for(
     session: DocumentFillSession, *, include_answers: bool
 ) -> FillSessionResponse:
@@ -115,14 +135,18 @@ def response_for(
     )
 
 
-async def _own_session(db, user, session_id) -> DocumentFillSession:
-    session = await db.scalar(
-        select(DocumentFillSession).where(
-            DocumentFillSession.id == session_id,
-            DocumentFillSession.tenant_id == uuid.UUID(str(user.tenant_id)),
-            DocumentFillSession.user_id == user.id,
-        )
+async def _own_session(
+    db, user, session_id, *, for_update: bool = False
+) -> DocumentFillSession:
+    query = select(DocumentFillSession).where(
+        DocumentFillSession.id == session_id,
+        DocumentFillSession.tenant_id == uuid.UUID(str(user.tenant_id)),
+        DocumentFillSession.user_id == user.id,
     )
+    if for_update:
+        # Serialize a claim against a concurrent read/write of the same row.
+        query = query.with_for_update()
+    session = await db.scalar(query)
     if session is None or session.expires_at <= _now():
         raise HTTPException(status_code=404, detail="Fill session not found")
     return session
@@ -279,8 +303,9 @@ async def enqueue_render(
 ):
     """Queue the background save from the previews the browser reviewed."""
 
-    session = await _own_session(db, user, session_id)
-    if session.status == "saving":
+    # Claim under a row lock: two concurrent requests must not both queue a run.
+    session = await _own_session(db, user, session_id, for_update=True)
+    if session.status not in ("open", "failed"):
         raise HTTPException(
             status_code=409, detail="This packet is already being saved."
         )
@@ -307,9 +332,22 @@ async def enqueue_render(
     ]
     session.status = "saving"
     session.last_error = None
+    # Merge onto whatever is already recorded: a retry carries only the members
+    # still needed, so entries from an earlier attempt (already saved) are kept
+    # rather than wiped when the packet is re-queued.
+    prior = {
+        str(item.get("template_id")): dict(item)
+        for item in (session.members_json or [])
+    }
+    payload_ids = {member["template_id"] for member in members}
     session.members_json = [
-        {"template_id": member["template_id"], "status": "queued"} for member in members
-    ]
+        {
+            **prior.get(member["template_id"], {}),
+            "template_id": member["template_id"],
+            "status": "queued",
+        }
+        for member in members
+    ] + [entry for tid, entry in prior.items() if tid not in payload_ids]
     job = await enqueue_job(
         db,
         tenant_id=session.tenant_id,
@@ -385,11 +423,36 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
 
     outcomes: list[dict[str, Any]] = []
     saved = 0
+    if not members:
+        # The job rejects an empty packet at enqueue, so an empty member list
+        # here means the sealed previews could not be read (a rotated vault
+        # key, say). Reporting "saved" with nothing saved would be a lie.
+        session.status = "failed"
+        session.last_error = (
+            "This packet's saved previews could not be read. Preview and save it again."
+        )
+        await db.commit()
+        return {"outcome": "blocked", "failure_code": "members_unreadable"}
     # Snapshotted before any rollback: a rollback expires the row, and an
     # expired attribute read on the async session is a MissingGreenlet.
     session_id, matter_id = session.id, session.matter_id
+    user_id = user.id
+    # This run may carry only the members still needed; keep what an earlier
+    # attempt recorded so the merge below does not drop them.
+    prior_members = {
+        str(item.get("template_id")): dict(item)
+        for item in (session.members_json or [])
+    }
+    skipped_saved = 0
     for member in members:
         template_id = str(member.get("template_id") or "")
+        prior = prior_members.get(template_id) or {}
+        if prior.get("status") == "saved" and prior.get("matter_document_id"):
+            # A retry of the same job must not render a member it already
+            # saved: non-PDF saves are not idempotent at the render layer, so
+            # re-running one would file a second copy of the document.
+            skipped_saved += 1
+            continue
         variables = {str(k): str(v) for k, v in (member.get("variables") or {}).items()}
         request = DocumentTemplateRenderRequest(
             variables=variables,
@@ -415,6 +478,19 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
                     "status": "saved",
                     "matter_document_id": response.matter_document_id,
                     "output_filename": response.output_filename,
+                    # The signing descriptor travels with the outcome so the
+                    # packet page can still offer Send after a background save.
+                    "output_format": getattr(response, "output_format", None)
+                    or member.get("output_format"),
+                    "signing_roles": list(
+                        getattr(response, "signing_roles", None) or []
+                    ),
+                    "positioned_fields": list(
+                        getattr(response, "positioned_fields", None) or []
+                    ),
+                    "signing_placement_required": bool(
+                        getattr(response, "signing_placement_required", False)
+                    ),
                 }
             )
             saved += 1
@@ -443,30 +519,50 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
             )
             await db.rollback()
             await set_tenant_context(db, str(tenant_id))
+        # A rollback or the endpoint's commit expired ``user``; the next
+        # member's render reads ``current_user`` attributes, which would raise
+        # MissingGreenlet. Read it afresh.
+        user = await db.get(User, user_id, populate_existing=True)
+        if user is None:
+            session = await db.get(DocumentFillSession, session_id)
+            # Record what this run managed before it lost its actor, so a saved
+            # member is not re-rendered (and duplicated) on a later retry.
+            session.members_json = _merge_member_statuses(
+                prior_members, members, outcomes
+            )
+            session.status = "failed"
+            session.last_error = (
+                "The person who prepared this packet can no longer save documents."
+            )
+            await db.commit()
+            return {"outcome": "blocked", "failure_code": "actor_unavailable"}
         # The endpoint committed its own document; re-read the session row
         # the commit may have expired before recording this member.
         session = await db.get(DocumentFillSession, session_id)
-        session.members_json = outcomes + [
-            {"template_id": str(rest.get("template_id")), "status": "queued"}
-            for rest in members[len(outcomes) :]
-        ]
+        session.members_json = _merge_member_statuses(prior_members, members, outcomes)
         await db.commit()
         await set_tenant_context(db, str(tenant_id))
 
     session = await db.get(DocumentFillSession, session_id)
     total = len(members)
-    session.members_json = outcomes
-    session.status = (
-        "saved" if saved == total and total else "open" if saved < total else "saved"
+    saved += skipped_saved
+    merged_statuses = _merge_member_statuses(prior_members, members, outcomes)
+    session.members_json = merged_statuses
+    # The whole packet is saved only when every recorded member is, including
+    # ones this retry did not carry because an earlier attempt saved them.
+    all_saved = bool(merged_statuses) and all(
+        entry.get("status") == "saved" for entry in merged_statuses
     )
+    not_saved = sum(1 for entry in merged_statuses if entry.get("status") != "saved")
+    session.status = "saved" if all_saved else "open"
     session.last_error = (
         None
-        if saved == total
-        else f"{total - saved} of {total} document(s) were not saved."
+        if all_saved
+        else f"{not_saved} of {len(merged_statuses)} document(s) were not saved."
     )
     await db.commit()
     return {
-        "outcome": "saved" if saved == total else "partial",
+        "outcome": "saved" if all_saved else "partial",
         "saved": saved,
         "total": total,
     }

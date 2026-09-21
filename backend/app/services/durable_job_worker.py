@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from sqlalchemy import case, or_
 from sqlalchemy import select, text
-from app.database import async_session_maker, set_tenant_context
+from app.database import async_session_maker, bind_tenant_context, set_tenant_context
 from app.models.communication_log import CommunicationLog
 from app.models.document import Document
 from app.models.durable_job import DurableJob
@@ -99,7 +99,9 @@ async def _run_matter_fact_extraction(row: DurableJob) -> dict:
 
     payload = row.payload or {}
     async with async_session_maker() as session:
-        await set_tenant_context(session, str(row.tenant_id))
+        # Bind, not set: extract_and_queue commits mid-run, and a
+        # transaction-local GUC is dropped by that commit.
+        await bind_tenant_context(session, str(row.tenant_id))
         try:
             matter_id = uuid.UUID(str(payload["matter_id"]))
             result = await extract_and_queue(
@@ -713,7 +715,12 @@ WORKFLOW_REDACTED_JOB_KINDS = {
 
 async def process_job(job_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
     async with async_session_maker() as db:
-        await set_tenant_context(db, str(tenant_id))
+        # Bind, not set: handlers (the packet save) call request-oriented code
+        # that commits mid-flight, and a transaction-local GUC is dropped by
+        # that commit — every later query would then run with no tenant and RLS
+        # would hide the rows. The rebind re-applies the tenant to each new
+        # transaction on this session.
+        await bind_tenant_context(db, str(tenant_id))
         exhausted = await db.scalar(
             select(DurableJob)
             .where(

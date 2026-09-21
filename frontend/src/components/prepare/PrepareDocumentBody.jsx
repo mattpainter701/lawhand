@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Check, Download, Eye, Send, Wand2 } from 'lucide-react'
 import MatterPicker from './MatterPicker'
 import TemplateFactReview from '../templates/TemplateFactReview'
@@ -68,6 +69,15 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     handleRender,
     handleSave,
   } = fill
+  // The UUID fallback is committed on blur or Enter, not on every keystroke:
+  // each character would otherwise change the matter and reset the form (and
+  // fire a Smart Fill request) mid-paste.
+  const [matterIdDraft, setMatterIdDraft] = useState(matterId || '')
+  useEffect(() => { setMatterIdDraft(matterId || '') }, [matterId])
+  const commitMatterIdDraft = () => {
+    const next = matterIdDraft.trim()
+    if (next !== matterId) selectMatter(next)
+  }
   const scrollClass = layout === 'modal' ? 'lg:max-h-[78vh] lg:overflow-y-auto' : ''
   return (
       <div className="grid gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]"><div className={`space-y-4 lg:pr-2 ${scrollClass}`}>
@@ -99,8 +109,10 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
           </label>
           <input id="templatespage-matter-uuid-fallback"
             type="text"
-            value={matterId}
-            onChange={(e) => selectMatter(e.target.value)}
+            value={matterIdDraft}
+            onChange={(e) => setMatterIdDraft(e.target.value)}
+            onBlur={commitMatterIdDraft}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitMatterIdDraft() } }}
             disabled={saving}
             className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent font-mono"
             placeholder="Paste matter UUID if the matter is not listed"

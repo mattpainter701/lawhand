@@ -19,6 +19,7 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
   // A created request waits here, with where each signer will sign, until
   // staff have looked. A plan the server guessed at cannot be sent unread.
   const [draft, setDraft] = useState(null)
+  const [draftError, setDraftError] = useState('')
   const [expiresOn, setExpiresOn] = useState('')
   const [dueOn, setDueOn] = useState('')
   const [reminderDays, setReminderDays] = useState('7,1')
@@ -87,7 +88,12 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
     let manifest = null
     try { manifest = await getSignatureRequestFields(matterId, request.id) } catch { manifest = null }
     if (!mountedRef.current) return
-    setDraft({ request, fields: Array.isArray(manifest?.fields) ? manifest.fields : [], acknowledged: false })
+    setDraft({ request, fields: Array.isArray(manifest?.fields) ? manifest.fields : [], fieldsLoaded: manifest !== null, acknowledged: false })
+    setDraftError(
+      manifest === null
+        ? 'The plan of where each signer will sign could not be loaded. Reload it before sending.'
+        : '',
+    )
   }
 
   const prepare = async (event) => {
@@ -160,7 +166,7 @@ export default function useSignatureRequestDraft({ matterId, document, initialSi
     signers, updateSigner, addSigner, removeSigner,
     positionedFields, setPositionedFields, initialFields, requiredRoles, placementRoles, roleOptions, placementSigners, duplicateRoles,
     reviewOpen, setReviewOpen, signingSource, reviewPossible, placementLines,
-    draft, setAcknowledged,
+    draft, setAcknowledged, draftError,
     dueOn, setDueOn, expiresOn, setExpiresOn, reminderDays, setReminderDays, enforceSigningOrder, setEnforceSigningOrder,
     busy, error, setError, notice, setNotice, noticeDelivered, setNoticeDelivered,
     prepare, openDraft, sendDraft, discardDraft, resetForm,

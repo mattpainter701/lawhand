@@ -52,6 +52,12 @@ class FillSessionMemberStatus(BaseModel):
     status: str
     matter_document_id: Optional[str] = None
     output_filename: Optional[str] = None
+    output_format: Optional[str] = None
+    #: Carried from the render response so a background-saved PDF can still be
+    #: sent for signature after the page is reopened.
+    signing_roles: list[str] = Field(default_factory=list)
+    positioned_fields: list[dict[str, Any]] = Field(default_factory=list)
+    signing_placement_required: bool = False
     detail: Optional[str] = None
 
 

@@ -35,6 +35,7 @@ def prepare(monkeypatch, *, exhausted=False, error=False, stale=False, maxed=Fal
     )
     monkeypatch.setattr(worker, "async_session_maker", lambda: db)
     monkeypatch.setattr(worker, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(worker, "bind_tenant_context", AsyncMock())
     monkeypatch.setattr(worker, "claim_job", AsyncMock(return_value=row))
     execute = AsyncMock(
         side_effect=ValueError("private handler detail") if error else None,

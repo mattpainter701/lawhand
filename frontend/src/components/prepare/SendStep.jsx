@@ -49,13 +49,15 @@ function SendForm({ matterId, document, matter, savedTarget, onSent }) {
 export default function SendStep({ matterId, document, savedTarget, onSent }) {
   const [matter, setMatter] = useState(null)
   const [matterReady, setMatterReady] = useState(false)
+  const [matterError, setMatterError] = useState('')
   const [sent, setSent] = useState(null)
   useEffect(() => {
     let active = true
     setMatterReady(false)
+    setMatterError('')
     getMatterV2(matterId)
       .then((value) => { if (active) setMatter(value) })
-      .catch(() => { if (active) setMatter(null) })
+      .catch(() => { if (active) { setMatter(null); setMatterError('The matter could not be loaded, so the client signer could not be pre-filled.') } })
       .finally(() => { if (active) setMatterReady(true) })
     return () => { active = false }
   }, [matterId])
@@ -69,6 +71,7 @@ export default function SendStep({ matterId, document, savedTarget, onSent }) {
     )
   }
   if (!matterReady) return <p role="status" className="text-sm text-brand-muted">Preparing the signature request…</p>
+  if (matterError) return <p role="alert" className="rounded-2xl border border-brand-amber/40 bg-brand-amber/5 p-4 text-sm text-brand-ink">{matterError} <Link className="underline" to={savedTarget}>Open the document in the matter</Link> to send it from the E-Signature panel instead.</p>
   return (
     <SendForm
       matterId={matterId}

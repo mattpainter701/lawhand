@@ -48,6 +48,7 @@ from app.schemas.chat_action import (
     MatterDocumentDraftAction,
     SmsConsentEvidenceBinding,
     SmsClientAction,
+    TaskUpdateAction,
     normalize_single_mailbox,
 )
 from app.services.document_accountability import append_document_integrity_event
@@ -67,8 +68,12 @@ from app.services.sms import (
     send_sms,
 )
 from app.services.task_workflow import (
+    TaskWorkflowError,
     append_task_event,
+    increment_task_version,
+    require_task_references_for_tenant,
     staged_review_is_approved,
+    transition_task,
 )
 
 logger = logging.getLogger(__name__)
@@ -826,6 +831,132 @@ async def _run_matter_document_draft(
     )
 
 
+async def _run_task_update(
+    db: AsyncSession,
+    task: Task,
+    payload: dict[str, Any],
+    actor_user_id,
+) -> ActionExecutionResult:
+    """Apply a reviewer-approved change to a target work-board task."""
+
+    try:
+        action = TaskUpdateAction.model_validate(payload)
+    except ValidationError:
+        return ActionExecutionResult(
+            False,
+            "The stored task update is not a valid action payload",
+            delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+        )
+    if action.target_task_id == task.id:
+        return ActionExecutionResult(
+            False,
+            "A task update cannot target its own review task",
+            delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+        )
+    target = await db.scalar(
+        select(Task)
+        .where(
+            Task.id == action.target_task_id,
+            Task.tenant_id == task.tenant_id,
+            Task.matter_id == action.matter_id,
+        )
+        .with_for_update()
+    )
+    if target is None:
+        return ActionExecutionResult(
+            False,
+            "The target task is no longer available on this matter",
+            delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+        )
+    if action.assigned_to_user_id is not None:
+        try:
+            await require_task_references_for_tenant(
+                db,
+                task.tenant_id,
+                {"assigned_to_user_id": action.assigned_to_user_id},
+            )
+        except TaskWorkflowError as exc:
+            return ActionExecutionResult(
+                False,
+                f"Not applied: {exc.detail}",
+                delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+            )
+
+    previous_status = target.status
+    changed: list[str] = []
+    if action.status is not None and action.status != target.status:
+        try:
+            transition_task(
+                db,
+                target,
+                to_status=action.status,
+                actor_user_id=actor_user_id,
+                reason=action.reason,
+            )
+        except TaskWorkflowError as exc:
+            return ActionExecutionResult(
+                False,
+                f"Not applied: {exc.detail}",
+                delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+            )
+        changed.append("status")
+    if action.priority is not None and action.priority != target.priority:
+        target.priority = action.priority
+        changed.append("priority")
+    if action.due_date is not None and action.due_date != target.due_date:
+        target.due_date = action.due_date
+        changed.append("due_date")
+    if (
+        action.assigned_to_user_id is not None
+        and action.assigned_to_user_id != target.assigned_to_user_id
+    ):
+        target.assigned_to_user_id = action.assigned_to_user_id
+        changed.append("assigned_to_user_id")
+
+    if changed:
+        if "status" not in changed:
+            increment_task_version(target)
+        append_task_event(
+            db,
+            target,
+            event_type="assistant_update",
+            actor_user_id=actor_user_id,
+            from_status=previous_status,
+            to_status=target.status,
+            note=action.note or "Applied an approved assistant-proposed update.",
+            metadata={
+                "source": "assistant",
+                "changed": changed,
+                "review_task_id": str(task.id),
+                "reason": action.reason,
+            },
+        )
+    elif action.note:
+        append_task_event(
+            db,
+            target,
+            event_type="assistant_note",
+            actor_user_id=actor_user_id,
+            note=action.note,
+            metadata={"source": "assistant", "review_task_id": str(task.id)},
+        )
+    else:
+        return ActionExecutionResult(
+            True,
+            "The target task already matched the approved update.",
+            provider="task",
+            provider_message_id=str(target.id),
+            delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+        )
+    return ActionExecutionResult(
+        True,
+        "Applied the approved task update.",
+        provider="task",
+        provider_message_id=str(target.id),
+        delivery_certainty=DELIVERY_NOT_ATTEMPTED,
+    )
+
+
 async def _recipient_bindings_are_current(
     db: AsyncSession,
     task: Task,
@@ -1021,6 +1152,7 @@ ACTION_HANDLERS: dict[
     "email_client": _run_email_client,
     "sms_client": _run_sms_client,
     "matter_document_draft": _run_matter_document_draft,
+    "task_update": _run_task_update,
 }
 
 
@@ -1450,18 +1582,25 @@ async def enqueue_durable_automation(
         return None
     if not task.pending_action:
         return None
-    tenant_billing_tier = await db.scalar(
-        select(Tenant.billing_tier).where(Tenant.id == task.tenant_id)
-    )
-    if tenant_billing_tier == "demo":
-        raise ActionApprovalConflict(
-            "Live outbound actions are disabled in demo workspaces. "
-            "This synthetic task can be reviewed but not delivered."
+    action_type = str(task.pending_action.get("type") or "")
+    # Only correspondence and document preparation leave LawHand. A task-field
+    # update is an internal board change, so the outbound-only gates below
+    # (demo lockdown, legal-approval authority, duplicate-delivery
+    # acknowledgement) must not apply to it.
+    outbound = action_type in {"email_client", "sms_client", "matter_document_draft"}
+    if outbound:
+        tenant_billing_tier = await db.scalar(
+            select(Tenant.billing_tier).where(Tenant.id == task.tenant_id)
         )
-    if not await _actor_can_approve_legal_work(db, actor_user_id):
-        raise ActionApprovalConflict(
-            "Legal approval authority is required before outbound automation"
-        )
+        if tenant_billing_tier == "demo":
+            raise ActionApprovalConflict(
+                "Live outbound actions are disabled in demo workspaces. "
+                "This synthetic task can be reviewed but not delivered."
+            )
+        if not await _actor_can_approve_legal_work(db, actor_user_id):
+            raise ActionApprovalConflict(
+                "Legal approval authority is required before outbound automation"
+            )
 
     if str(task.pending_action.get("type") or "") == "email_client":
         try:
@@ -1567,8 +1706,8 @@ async def enqueue_durable_automation(
         .limit(1)
     )
     retry_after_run_id = None
-    if latest_run is not None and latest_run.status == "failed":
-        is_sms_action = str(task.pending_action.get("type") or "") == "sms_client"
+    if outbound and latest_run is not None and latest_run.status == "failed":
+        is_sms_action = action_type == "sms_client"
         if is_sms_action and latest_run.reconciliation_required:
             raise ActionApprovalConflict(
                 "A prior SMS has an unknown provider outcome. Reconcile that exact "

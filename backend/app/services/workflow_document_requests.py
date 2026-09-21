@@ -194,6 +194,7 @@ async def propose_document(
 
     from app.models.task import Task
     from app.services import template_fill_engine as engine
+    from app.services.document_prefill import _prepared_counts
     from app.services.document_template_versions import published_template_view
     from app.services.fill_sessions import open_prepared_session
     from app.services.task_workflow import append_task_event
@@ -232,8 +233,7 @@ async def propose_document(
         actor=actor,
         loaders=memoized(),
     )
-    fields = len(prepared.coverage.states)
-    filled = len(prepared.values)
+    fields, filled = _prepared_counts(prepared)
     owner_id = assigned_to_user_id or actor_user_id
     session = await open_prepared_session(
         db,
@@ -320,10 +320,12 @@ async def session_blocker(db: AsyncSession, step) -> str | None:
     if not session_id:
         return None
     session = await db.scalar(
-        select(DocumentFillSession).where(
+        select(DocumentFillSession)
+        .where(
             DocumentFillSession.tenant_id == step.tenant_id,
             DocumentFillSession.id == uuid.UUID(str(session_id)),
         )
+        .with_for_update()
     )
     if session is not None and session.status in ("saving", "saved"):
         return f"document {step.action_key} was already saved from its session"
@@ -339,12 +341,17 @@ async def abandon_session(db: AsyncSession, step) -> bool:
     if not session_id:
         return False
     session = await db.scalar(
-        select(DocumentFillSession).where(
+        select(DocumentFillSession)
+        .where(
             DocumentFillSession.tenant_id == step.tenant_id,
             DocumentFillSession.id == uuid.UUID(str(session_id)),
         )
+        .with_for_update()
     )
-    if session is None or session.status == "abandoned":
+    # Locked and re-checked: a concurrent background save that claimed the
+    # session must not be abandoned underneath it, or its documents would land
+    # for a run that was rolled back.
+    if session is None or session.status in ("abandoned", "saving", "saved"):
         return False
     session.status = "abandoned"
     session.answers_ciphertext = ""

@@ -118,6 +118,7 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
   const [fields, setFields] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [documentTemplates, setDocumentTemplates] = useState([]);
+  const [documentTemplatesError, setDocumentTemplatesError] = useState("");
   const [versionSource, setVersionSource] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(canReview);
@@ -148,7 +149,15 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
         listWorkflowTemplates({}),
         canManage
           ? getTemplates({ template_status: "active", limit: 100 }).catch(
-              () => ({ items: [] }),
+              () => {
+                // Distinguish "no templates" from "the list could not be
+                // loaded", so the editor does not disable itself with the wrong
+                // reason.
+                setDocumentTemplatesError(
+                  "The document templates could not be loaded. Reload the page.",
+                );
+                return { items: [] };
+              },
             )
           : Promise.resolve({ items: [] }),
       ]);
@@ -730,6 +739,11 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
               </div>
               <div>
                 <h3>Documents to prepare</h3>
+                {documentTemplatesError && (
+                  <p role="alert" className="text-sm">
+                    {documentTemplatesError}
+                  </p>
+                )}
                 <p className="text-sm">
                   When a run is applied, each document is pre-filled from the
                   matter and handed to its assignee as a Prepare task. Nothing
@@ -812,7 +826,8 @@ export default function WorkflowSettingsPage({ user, embedded = false }) {
                   title={
                     documentTemplates.length
                       ? undefined
-                      : "Publish a document template first"
+                      : documentTemplatesError ||
+                        "Publish a document template first"
                   }
                   onClick={() =>
                     setFormValue("documents", [

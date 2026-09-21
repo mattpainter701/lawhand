@@ -391,7 +391,7 @@ describe('MatterDocumentsTab document explorer', () => {
     expect(within(found).getByText('Found inside 1 document')).toBeInTheDocument()
     expect(within(found).getByText('moves to compel discovery responses')).toBeInTheDocument()
     expect(within(found).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/api/matters/matter-1/documents/pdf-1/open')
-    await waitFor(() => expect(apiMocks.searchMatterDocumentText).toHaveBeenCalledWith('matter-1', 'compel'))
+    await waitFor(() =>     expect(apiMocks.searchMatterDocumentText).toHaveBeenCalledWith('matter-1', 'compel', 25))
   })
 
   it('replaces the tags on a document from its row', async () => {
@@ -549,7 +549,7 @@ describe('MatterDocumentsTab prepared documents', () => {
     await screen.findAllByText('Filed pleading.pdf')
     const preview = await screen.findByRole('region', { name: 'Document preview' })
     expect(preview).toHaveTextContent('Filed pleading.pdf')
-    expect(preview).toHaveTextContent('12 of 19 fields verified when generated · from Pleading form v2')
+    expect(preview).toHaveTextContent('17 of 19 fields filled, 12 verified when generated · from Pleading form v2')
     expect(screen.getByTestId('location-search')).toHaveTextContent('?tab=documents')
   })
 
