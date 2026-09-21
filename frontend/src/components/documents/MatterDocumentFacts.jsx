@@ -41,6 +41,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
   const [message, setMessage] = useState('')
   const [useAi, setUseAi] = useState(false)
   const [formSources, setFormSources] = useState([])
+  const [formSourcesError, setFormSourcesError] = useState('')
   const [formChoice, setFormChoice] = useState('')
   const [useVision, setUseVision] = useState(false)
   const documents = providedDocuments || fetched
@@ -50,6 +51,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
   useEffect(() => {
     let current = true
     setFormSources([])
+    setFormSourcesError('')
     setFormChoice('')
     if (!matterId || !documentId) return undefined
     getMatterDocumentFormSources(matterId, documentId)
@@ -59,7 +61,11 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
         setFormSources(sources)
         setFormChoice(sources.length ? formKey(sources[0]) : '')
       })
-      .catch(() => { if (current) setFormSources([]) })
+      .catch(() => {
+        if (!current) return
+        setFormSources([])
+        setFormSourcesError('The printed-form list could not be loaded.')
+      })
     return () => { current = false }
   }, [matterId, documentId])
 
@@ -193,6 +199,9 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
       <button type="button" onClick={read} disabled={busy || !documentId} className="mt-2 border rounded p-2 text-sm">
         {busy ? 'Reading…' : 'Find details'}
       </button>
+      {formSourcesError && (
+        <p role="alert" className="text-xs text-brand-rose">{formSourcesError}</p>
+      )}
       {formSources.length > 0 && (
         <div className="mt-3 rounded border border-brand-line p-2 text-xs">
           <p className="font-semibold">Printed and filled in by hand?</p>
