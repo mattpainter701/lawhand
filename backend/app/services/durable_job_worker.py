@@ -113,6 +113,12 @@ async def _run_matter_fact_extraction(row: DurableJob) -> dict:
         if result.get("status") == "queued":
             # The document said something a template could use; the matter's
             # readiness is recomputed so the banner reflects it.
+            #
+            # ``extract_and_queue`` commits, which ends the transaction-local
+            # tenant setting; RLS would then hide the matter from the prefill
+            # lookup and the trigger would be silently dropped. Restore the
+            # context before enqueueing.
+            await set_tenant_context(session, str(row.tenant_id))
             await enqueue_document_prefill(
                 session,
                 tenant_id=row.tenant_id,
