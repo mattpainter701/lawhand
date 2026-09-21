@@ -286,16 +286,17 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     }
     let active = true
     const timer = setTimeout(() => {
-      searchMatterDocumentText(matterId, query)
+      searchMatterDocumentText(matterId, query, 25)
         .then((value) => {
           if (!active) return
           setExcerpts({
             query,
             results: Array.isArray(value?.results) ? value.results : [],
             indexed: Number(value?.indexed_documents) || 0,
+            error: false,
           })
         })
-        .catch(() => { if (active) setExcerpts({ query, results: [], indexed: 0 }) })
+        .catch(() => { if (active) setExcerpts({ query, results: [], indexed: 0, error: true }) })
     }, 400)
     return () => { active = false; clearTimeout(timer) }
   }, [matterId, search])
@@ -315,7 +316,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       const target = destination === '__root' ? null : destination
       if (filingMode === 'copy') await api.post(`/matters/${matterId}/documents/copy`, { document_id: filingDocument.id, folder_id: target, copy_id: copyRequest.current })
       else await fileDocuments([filingDocument.id], target)
-      await Promise.all([refreshDocuments(), refreshFolders()]); setFilingDocument(null)
+      await Promise.all([refreshDocuments().catch(() => {}), refreshFolders().catch(() => {})]); setFilingDocument(null)
     } catch (error) { setFilingError(typeof error.response?.data?.detail === 'string' ? error.response.data.detail : 'The operation did not finish. Retry or cancel.') }
     finally { setFilingBusy(false) }
   }
@@ -340,6 +341,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     next.delete('document')
     setSearchParams(next, { replace: true })
     if (match) setPreviewDocument(match)
+    else toast.error('Document not found', { message: 'The document this link pointed to is not in this matter.' })
   }, [docs, searchParams, setSearchParams])
   const [filingDocument, setFilingDocument] = useState(null)
   const [cloudFiles, setCloudFiles] = useState(null)
@@ -415,8 +417,10 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       // The optimistic row is only correct when the upload landed in the view
       // the user is looking at; re-listing settles the case where they filed it
       // into a different folder, and refreshes the rail's counts either way.
-      await refreshFolders()
-      await refreshDocuments()
+      // A failed refresh must not read as a failed upload; the row is already
+      // in the list optimistically and the next load settles it.
+      await refreshFolders().catch(() => {})
+      await refreshDocuments().catch(() => {})
       setShowUpload(false)
       setUploadFile(null)
       setUploadDescription('')
@@ -445,7 +449,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     try {
       await deleteMatterDocument(matterId, docId)
       setDocs((prev) => prev.filter((d) => d.id !== docId))
-      await refreshFolders()
+      await refreshFolders().catch(() => {})
     } catch (error) {
       toast.error('Document was not deleted', { message: apiErrorMessage(error, 'Please try again.') })
     }
@@ -525,7 +529,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
   const handleCreateTag = useCallback(
     async (name) => {
       const tag = await createDocumentTag({ name })
-      await refreshTags()
+      await refreshTags().catch(() => {})
       return tag
     },
     [refreshTags],
@@ -538,7 +542,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
         prev.map((d) => (d.id === docId ? { ...d, tags: result.items || [] } : d)),
       )
       // A document may drop out of an active tag filter once its tags change.
-      if (selectedTagIds.length) await refreshDocuments()
+      if (selectedTagIds.length) await refreshDocuments().catch(() => {})
     },
     [matterId, setDocs, selectedTagIds, refreshDocuments],
   )
@@ -958,18 +962,20 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       <div className="flex items-center gap-2" aria-label="Document view">
         {['folder', 'detailed'].map(value => <button type="button" key={value} aria-pressed={documentView === value} onClick={() => { setDocumentView(value); if (value === 'folder') { setIncludeSubfolders(false); if (folderId === ALL_DOCUMENTS) setFolderId(ROOT_FOLDER) } }} className="rounded border border-brand-line px-3 py-2 text-sm">{value === 'folder' ? 'Folder' : 'Detailed'}</button>)}
       </div>
-      {previewDocument && <section aria-label="Document preview" className="rounded-xl border border-brand-line bg-brand-surface p-4"><div className="flex justify-between"><strong>{previewDocument.filename}</strong><button type="button" onClick={() => setPreviewDocument(null)}>Close preview</button></div>{previewDocument.generation_summary && <p className="mt-1 text-xs text-brand-muted">{previewDocument.generation_summary.verified ?? 0} of {previewDocument.generation_summary.total ?? 0} fields verified when generated · from {previewDocument.generation_summary.template_title || previewDocument.generation_summary.template_id}{previewDocument.generation_summary.template_version_no ? ` v${previewDocument.generation_summary.template_version_no}` : ''}</p>}<MatterDocumentPreview key={previewDocument.id} matterId={matterId} document={previewDocument} /><MatterDocumentFacts matterId={matterId} documentId={previewDocument.id} onAccepted={() => { refreshDocuments() }} /></section>}
+      {previewDocument && <section aria-label="Document preview" className="rounded-xl border border-brand-line bg-brand-surface p-4"><div className="flex justify-between"><strong>{previewDocument.filename}</strong><button type="button" onClick={() => setPreviewDocument(null)}>Close preview</button></div>{previewDocument.generation_summary && <p className="mt-1 text-xs text-brand-muted">{previewDocument.generation_summary.filled ?? 0} of {previewDocument.generation_summary.total ?? 0} fields filled, {previewDocument.generation_summary.verified ?? 0} verified when generated · from {previewDocument.generation_summary.template_title || previewDocument.generation_summary.template_id}{previewDocument.generation_summary.template_version_no ? ` v${previewDocument.generation_summary.template_version_no}` : ''}</p>}<MatterDocumentPreview key={previewDocument.id} matterId={matterId} document={previewDocument} /><MatterDocumentFacts matterId={matterId} documentId={previewDocument.id} onAccepted={() => { refreshDocuments() }} /></section>}
       {filingDocument && <section aria-label="File operation" className="rounded-xl border p-4"><p>{filingMode === 'copy' ? 'Copy' : 'Move'} {filingDocument.filename} to:</p>{filingMode === 'move' && <p className="text-xs text-brand-muted">Organize within this matter. The existing cloud storage path is preserved.</p>}<select aria-label="Destination folder" value={destination} disabled={filingBusy} onChange={event => { setDestination(event.target.value); copyRequest.current = crypto.randomUUID() }}><option value="__root">Unfiled</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path}</option>)}</select>{filingError && <p role="alert">{filingError}</p>}<button type="button" disabled={filingBusy} onClick={submitFiling}>{filingBusy ? 'Saving…' : filingMode === 'copy' ? 'Copy here' : 'Move here'}</button><button type="button" disabled={filingBusy} onClick={() => setFilingDocument(null)}>Cancel</button></section>}
       {documentView === 'folder' && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Folder contents">{folders.filter(folder => (folder.parent_id || null) === (folderId === ROOT_FOLDER || folderId === ALL_DOCUMENTS ? null : folderId)).map(folder => <button type="button" key={folder.id} onClick={() => setFolderId(folder.id)} className="rounded-xl border bg-brand-surface p-4 text-left"><Folder size={28} /><span className="mt-2 block break-words">{folder.name}</span></button>)}{docs.map(doc => <article key={doc.id} className="rounded-xl border bg-brand-surface p-4"><button type="button" onClick={() => setPreviewDocument(doc)} className="text-left"><FileText size={28} /><span className="mt-2 block break-words">{doc.filename}</span></button><button type="button" onClick={() => openFiling(doc, 'move')} className="mt-3 block text-sm underline">Move to…</button><button type="button" onClick={() => openFiling(doc, 'copy')} className="mt-2 text-sm underline">Copy to…</button></article>)}</div>}
       {documentView === 'detailed' && docs.length > 0 && <div className="flex gap-3 py-2"><select aria-label="Move or copy a document" value="" onChange={event => { const [mode, id] = event.target.value.split(':'); openFiling(docs.find(doc => doc.id === id), mode) }} className="max-w-full rounded border p-2 text-sm"><option value="">Move or copy…</option>{docs.map(doc => <optgroup key={doc.id} label={doc.filename}><option value={`move:${doc.id}`}>Move {doc.filename}</option><option value={`copy:${doc.id}`}>Copy {doc.filename}</option></optgroup>)}</select></div>}
       {excerpts.query && (
         <section aria-label="Found inside documents" className="rounded-xl border border-brand-line bg-brand-surface p-4">
           <h3 className="text-sm font-semibold">
-            {excerpts.results.length
-              ? `Found inside ${new Set(excerpts.results.map((hit) => hit.document_id)).size} document${new Set(excerpts.results.map((hit) => hit.document_id)).size === 1 ? '' : 's'}`
-              : excerpts.indexed
-                ? 'Nothing inside the documents mentions that'
-                : 'No document text is indexed yet'}
+            {excerpts.error
+              ? 'The search could not run. Try again.'
+              : excerpts.results.length
+                ? `Found inside ${new Set(excerpts.results.map((hit) => hit.document_id)).size} document${new Set(excerpts.results.map((hit) => hit.document_id)).size === 1 ? '' : 's'}${excerpts.results.length >= 25 ? ' (showing the first 25)' : ''}`
+                : excerpts.indexed
+                  ? 'Nothing inside the documents mentions that'
+                  : 'No document text is indexed yet'}
           </h3>
           {excerpts.results.length > 0 && (
             <ul className="mt-2 space-y-2">

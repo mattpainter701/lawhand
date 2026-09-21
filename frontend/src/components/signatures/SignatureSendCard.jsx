@@ -16,7 +16,7 @@ export default function SignatureSendCard({ draft, document, picker = null, head
     positionedFields, setPositionedFields, initialFields, roleOptions, placementSigners, duplicateRoles,
     reviewOpen, setReviewOpen, signingSource, reviewPossible, placementLines,
     dueOn, setDueOn, expiresOn, setExpiresOn, reminderDays, setReminderDays, enforceSigningOrder, setEnforceSigningOrder,
-    busy, error, notice, noticeDelivered, prepare, sendDraft, discardDraft, setAcknowledged,
+    busy, error, notice, noticeDelivered, prepare, sendDraft, discardDraft, setAcknowledged, openDraft, draftError,
   } = draft
   const pending = draft.draft
   return (
@@ -134,9 +134,15 @@ export default function SignatureSendCard({ draft, document, picker = null, head
               </label>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={sendDraft} disabled={busy || (mustAcknowledge && !pending.acknowledged)} className="rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Send for signature</button>
+              <button type="button" onClick={sendDraft} disabled={busy || Boolean(draftError) || (mustAcknowledge && !pending.acknowledged)} className="rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Send for signature</button>
               <button type="button" onClick={discardDraft} disabled={busy} className="rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-rose disabled:opacity-50">Discard draft</button>
             </div>
+            {draftError && (
+              <p role="alert" className="text-xs font-semibold text-brand-rose">
+                {draftError}{' '}
+                <button type="button" onClick={() => openDraft(pending.request)} className="underline">Reload the plan</button>
+              </p>
+            )}
           </section>
         )
       })()}
