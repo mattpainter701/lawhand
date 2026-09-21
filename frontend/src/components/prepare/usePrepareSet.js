@@ -229,6 +229,9 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     const ready = availableMembers.filter((member) => previewOf(member).status === 'ready' && saveOf(member)?.status !== 'saved')
     if (ready.length !== availableMembers.filter((member) => saveOf(member)?.status !== 'saved').length) { setError('Preview every document before saving the packet.'); return }
     setError('')
+    // Hold the button through the two round trips below so a second click
+    // cannot queue the packet twice.
+    setSaving(true)
     try {
       await persistSession()
       const current = sessionRef.current
@@ -246,6 +249,8 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
       setBackground('saving')
     } catch (err) {
       setError(getErrorMessage(err, 'The packet could not be queued.'))
+    } finally {
+      if (mountedRef.current) setSaving(false)
     }
   }
 

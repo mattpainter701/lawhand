@@ -106,6 +106,8 @@ export default function TemplateSetsPage() {
                     <select aria-label={`Version for ${tpl?.title || item.template_id}`} value={item.pinned_version_no || ''} onChange={(e) => setEditing({ ...editing, items: editing.items.map((entry, i) => (i === index ? { ...entry, pinned_version_no: e.target.value ? Number(e.target.value) : null } : entry)) })} className="rounded border border-brand-line px-2 py-1 text-xs">
                       <option value="">Follow published</option>
                       {tpl?.published_version_no ? <option value={tpl.published_version_no}>Pin v{tpl.published_version_no}</option> : null}
+                      {/* A set can be pinned to a version that is no longer the published one; keep it selectable so the editor shows the truth. */}
+                      {item.pinned_version_no && item.pinned_version_no !== tpl?.published_version_no ? <option value={item.pinned_version_no}>Pin v{item.pinned_version_no}</option> : null}
                     </select>
                     <button type="button" onClick={() => move(index, -1)} className="text-xs underline">Up</button>
                     <button type="button" onClick={() => move(index, 1)} className="text-xs underline">Down</button>
@@ -128,7 +130,7 @@ export default function TemplateSetsPage() {
         </form>
       )}
       {loading ? <p role="status" className="text-sm text-brand-muted">Loading sets…</p> : sets.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">No sets yet. Create one from the published templates you file together.</p>
+        error ? null : <p className="rounded-xl border border-dashed border-brand-line p-6 text-center text-sm text-brand-muted">No sets yet. Create one from the published templates you file together.</p>
       ) : (
         <ul aria-label="Template sets" className="space-y-2">
           {sets.map((record) => (
