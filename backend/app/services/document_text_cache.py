@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.database import async_session_maker, set_tenant_context
 from app.models.document_text_extraction import DocumentTextExtraction
@@ -232,6 +232,11 @@ async def get_or_extract(
     while ``db`` stays exactly as the caller left it: nothing committed, no
     tenant context to restore. Two readers racing on the same digest both
     extract; the second insert loses and re-reads the winner.
+
+    The cache write is derived data on its own pooled connection, so a fault
+    writing it — a pool timeout under load, a transient database error — is
+    never allowed to turn a document the caller already read into a failure:
+    the uncached extraction is returned and the next reader retries the write.
     """
 
     tenant = uuid.UUID(str(tenant_id))
@@ -262,6 +267,13 @@ async def get_or_extract(
         if winner is not None:
             winner.warnings = list(extraction.warnings)
             return winner
+    except (SQLAlchemyError, TimeoutError, OSError):
+        # The connection pool is a shared budget; exhausting it must cost the
+        # cache row, not the caller's request. The extraction already
+        # succeeded, so serve it uncached rather than raising a 500.
+        logger.warning(
+            "document text extraction could not be cached for %s", digest, exc_info=True
+        )
     return extraction
 
 

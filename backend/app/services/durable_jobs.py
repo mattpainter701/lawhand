@@ -19,6 +19,7 @@ async def enqueue_job(
     idempotency_key: str,
     payload: dict,
     requeue_failed: bool = False,
+    requeue_completed: bool = False,
 ) -> DurableJob:
     tenant_id = uuid.UUID(str(tenant_id))
     existing = await db.scalar(
@@ -29,10 +30,17 @@ async def enqueue_job(
         )
     )
     if existing:
-        if requeue_failed and existing.status == "failed":
+        if existing.status == "running":
+            # A lease is live; resetting it would double-run the handler. The
+            # holder will observe the same key and leave the work consistent.
+            return existing
+        if (requeue_failed and existing.status == "failed") or (
+            requeue_completed and existing.status == "completed"
+        ):
             # The same facts are being seen again. A job that exhausted its
-            # attempts would otherwise never run for them, leaving the work
-            # undone until an unrelated fact changed.
+            # attempts, or one whose derived result has since been replaced,
+            # would otherwise never run for them, leaving the work undone
+            # until an unrelated fact changed.
             existing.status = "pending"
             existing.attempts = 0
             existing.available_at = datetime.now(timezone.utc)

@@ -208,21 +208,38 @@ def job_key(document_id, document_sha256: str) -> str:
 async def enqueue_index(*, tenant_id, document_id, document_sha256: str | None) -> bool:
     """Queue the index build for a document, in its own committed unit of work.
 
-    Idempotent: ``enqueue_job`` keeps one row per key, and a failed build is
-    requeued on the next request. Returns True when a job row exists after
-    the call. Never raises into the caller: indexing is a convenience.
+    Idempotent in the *result*, not just the key: when the document's rows
+    already describe ``document_sha256`` there is nothing to do. Otherwise a
+    job is queued, and an existing job for the same key is reopened even if it
+    already completed — bytes that move away and then back (D1 → D2 → D1) land
+    on the same key, and a job that finished once would otherwise never run
+    again, leaving the index describing the wrong bytes. A failed build is
+    likewise requeued on the next request. Returns True when a job row exists
+    after the call. Never raises into the caller: indexing is a convenience.
     """
 
     from app.services.durable_jobs import enqueue_job
 
     if not document_sha256:
         return False
+    tenant_uuid = uuid.UUID(str(tenant_id))
+    document_uuid = uuid.UUID(str(document_id))
     try:
         async with session_factory() as own:
             await set_tenant_context(own, str(tenant_id))
+            fresh = await own.scalar(
+                select(func.count(MatterDocumentChunk.id)).where(
+                    MatterDocumentChunk.tenant_id == tenant_uuid,
+                    MatterDocumentChunk.matter_document_id == document_uuid,
+                    MatterDocumentChunk.document_sha256 == document_sha256,
+                    MatterDocumentChunk.engine_version == ENGINE_VERSION,
+                )
+            )
+            if fresh:
+                return True
             await enqueue_job(
                 own,
-                tenant_id=uuid.UUID(str(tenant_id)),
+                tenant_id=tenant_uuid,
                 kind=JOB_KIND,
                 idempotency_key=job_key(document_id, document_sha256),
                 payload={
@@ -230,6 +247,7 @@ async def enqueue_index(*, tenant_id, document_id, document_sha256: str | None) 
                     "document_sha256": document_sha256,
                 },
                 requeue_failed=True,
+                requeue_completed=True,
             )
             await own.commit()
         return True

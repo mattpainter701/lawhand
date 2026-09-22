@@ -33,6 +33,36 @@ async def test_enqueue_is_idempotent_and_status_is_serializable(
 
 
 @pytest.mark.asyncio
+async def test_a_completed_job_reopens_only_when_asked_and_never_while_running(
+    db_session, test_tenant
+):
+    async def enqueue(**extra):
+        return await enqueue_job(
+            db_session,
+            tenant_id=test_tenant.id,
+            kind="document_ingest",
+            idempotency_key="doc-reopen",
+            payload={"document_id": "doc-reopen"},
+            **extra,
+        )
+
+    row = await enqueue()
+    await db_session.commit()
+    row.status = "completed"
+    await db_session.commit()
+
+    # A finished job stays finished unless the caller asks to reopen it.
+    assert (await enqueue()).status == "completed"
+    assert (await enqueue(requeue_completed=True)).status == "pending"
+    await db_session.commit()
+
+    # A live lease is never reset out from under its holder.
+    claimed = await claim_job(db_session, row.id, owner="worker-a")
+    assert claimed.status == "running"
+    assert (await enqueue(requeue_completed=True)).status == "running"
+
+
+@pytest.mark.asyncio
 async def test_concurrent_enqueue_converges_on_one_job(test_engine, test_tenant):
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
 
