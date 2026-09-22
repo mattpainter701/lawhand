@@ -165,7 +165,7 @@ Priorities here feed the epic's sprint scope; they are not a commitment. "Story"
 
 This audit **confirms** the epic's existing P0 stories (UX-01 to UX-04, UX-09) and adds evidence for the correctness fixes already implied (G-14, G-16, G-25). It also **adds two P1 stories** and **two P2 backlog items**:
 
-- **UX-10 — Global cross-module search (P1, 3–5 days).** Currently absent; competitor baseline (Clio keyword lookup, Lawmatics global search bar) suggests high discoverability value. This is a follow-up release, not part of the two-sprint plan, unless staff sessions show search is a blocking failure.
+- **UX-10 — Global cross-module search (P1, 3–5 days).** Currently absent; competitor baseline (Clio keyword lookup, Lawmatics global search bar) suggests high discoverability value. This is a follow-up candidate for Phase D of the epic's updated delivery outline, outside the initial proposed core slice unless staff sessions show search is a blocking failure.
 - **UX-11 — Bulk actions for matters and tasks (P1, 2–3 days).** Currently absent; competitor baseline (Rocket Matter batching) and the discovery that Rocket Matter's documented friction was per-row latency.
 - **UX-12 — Recurring tasks, dependencies and subtasks (P2, 4–6 days).** Absent; strong competitor baseline (Filevine Taskflow, Actionstep, Smokeball). Validate demand before scheduling; do not assume parity requires it.
 - **UX-13 — Saved views and saved report views (P2, 3–4 days).** Absent; Smokeball/PracticePanther baseline. Validated backlog, not a sprint goal.
