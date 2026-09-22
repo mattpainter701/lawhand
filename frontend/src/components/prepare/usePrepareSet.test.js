@@ -114,6 +114,45 @@ describe('usePrepareSet race handling', () => {
     expect(api.writeFillSession.mock.calls[1][0].answers).toEqual({ 'manual:template-1:name': 'third' })
   })
 
+  it('autosaves an edit made while the earlier write finishes before its debounce', async () => {
+    let resolveFirst
+    api.writeFillSession.mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.interview).toBeTruthy())
+    act(() => result.current.setAnswer('manual:template-1:name', 'old'))
+    act(() => { result.current.retrySave() })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(1))
+    act(() => result.current.setAnswer('manual:template-1:name', 'new'))
+    await act(async () => resolveFirst({ id: 'session-1', status: 'open', answers: { 'manual:template-1:name': 'old' }, verified: [], members: [] }))
+    expect(result.current.persistStatus).toBe('pending')
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(2), { timeout: 1500 })
+    expect(api.writeFillSession.mock.calls[1][0].answers).toEqual({ 'manual:template-1:name': 'new' })
+    await waitFor(() => expect(result.current.persistStatus).toBe('saved'))
+  })
+
+  it('keeps a failed queued snapshot dirty so Retry can persist it', async () => {
+    let resolveFirst
+    api.writeFillSession
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
+      .mockRejectedValueOnce(new Error('second write failed'))
+      .mockResolvedValue({ id: 'session-1', status: 'open', answers: { 'manual:template-1:name': 'new' }, verified: [], members: [] })
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.interview).toBeTruthy())
+    act(() => result.current.setAnswer('manual:template-1:name', 'old'))
+    act(() => { result.current.retrySave() })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(1))
+    act(() => result.current.setAnswer('manual:template-1:name', 'new'))
+    act(() => { result.current.retrySave() })
+    act(() => resolveFirst({ id: 'session-1', status: 'open', answers: { 'manual:template-1:name': 'old' }, verified: [], members: [] }))
+    await waitFor(() => expect(result.current.persistStatus).toBe('error'))
+    act(() => { result.current.retrySave() })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(3))
+    expect(result.current.persistStatus).toBe('saved')
+  })
+
   it.each([false, true])('saves the new matter after an old in-flight write settles (failure=%s)', async (failOld) => {
     let settleOld
     api.writeFillSession.mockImplementationOnce(() => new Promise((resolve, reject) => { settleOld = failOld ? reject : resolve }))
@@ -145,5 +184,25 @@ describe('usePrepareSet race handling', () => {
     await act(async () => { await result.current.saveAllInBackground() })
     expect(api.renderFillSession).not.toHaveBeenCalled()
     expect(result.current.error).toMatch(/offline|could not be queued|saved/)
+  })
+
+  it('flushes a pending answer when the packet unmounts before the autosave timer', async () => {
+    const { result, unmount } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.interview).toBeTruthy())
+    act(() => result.current.setAnswer('manual:template-1:name', 'Ada'))
+    expect(api.writeFillSession).not.toHaveBeenCalled()
+    act(() => unmount())
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(1))
+    expect(api.writeFillSession.mock.calls[0][0].answers).toEqual({ 'manual:template-1:name': 'Ada' })
+  })
+
+  it('warns before leaving with an unsaved packet answer', async () => {
+    const { result, unmount } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.interview).toBeTruthy())
+    act(() => result.current.setAnswer('manual:template-1:name', 'Ada'))
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    act(() => unmount())
   })
 })

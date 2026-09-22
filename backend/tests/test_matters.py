@@ -27,6 +27,7 @@ async def test_document_picker_searches_matter_numbers_and_client_names(
     matter = Matter(
         tenant_id=test_tenant.id,
         user_id=test_user.id,
+        slug="name0007",
         matter_name="Unrelated file description",
         matter_number="NAME0007",
         client_contact_id=contact.id,

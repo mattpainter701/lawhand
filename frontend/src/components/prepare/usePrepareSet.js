@@ -90,6 +90,9 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   const persistInFlight = useRef(null)
   const persistEpoch = useRef(0)
   const restoreEpoch = useRef(0)
+  const persistDirty = useRef(false)
+  const persistRevision = useRef(0)
+  const flushRef = useRef(null)
   const latestPersist = useRef(null)
   const lastPersistedKey = useRef('')
   const onSessionCreatedRef = useRef(onSessionCreated)
@@ -97,6 +100,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   const [restoreAttempt, setRestoreAttempt] = useState(0)
   const [sessionRestoreError, setSessionRestoreError] = useState('')
   const [persistError, setPersistError] = useState('')
+  const [persistStatus, setPersistStatus] = useState('idle')
   useEffect(() => {
     if (!sessionId) return undefined
     if (sessionRef.current?.id === sessionId) return undefined
@@ -112,6 +116,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         answersRef.current = value.answers || {}
         setAnswers(value.answers || {})
         setVerifiedNames(Object.fromEntries((value.verified || []).map((key) => [key, true])))
+        persistDirty.current = false
         if (value.matter_id) setMatterId(value.matter_id)
         if (value.status === 'saving') setBackground('saving')
         else if (value.status === 'saved' || value.status === 'failed') {
@@ -193,6 +198,11 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
       })
       setSmartFillState(nextMatterId ? 'ready' : 'idle')
       setSmartFillMessage(nextMatterId ? 'Available values refreshed. Your entries were kept.' : '')
+      if (Object.keys(suggested).length) {
+        persistDirty.current = true
+        persistRevision.current += 1
+        setPersistStatus('pending')
+      }
     } catch (err) {
       if (!mountedRef.current || generationRef.current !== generation) return
       setSmartFillState('error'); setSmartFillMessage(getErrorMessage(err, 'The interview could not be loaded.'))
@@ -219,10 +229,13 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
       answers: Object.fromEntries(keys.map((key) => [key, fillValue(answers[key])])),
       verified: Object.keys(verifiedNames).filter((key) => verifiedNames[key]),
     }
-    const snapshot = { epoch, key: JSON.stringify(payload), payload }
+    const snapshot = { epoch, revision: persistRevision.current, key: JSON.stringify(payload), payload }
     latestPersist.current = snapshot
     if (persistInFlight.current) return persistInFlight.current
-    if (snapshot.key === lastPersistedKey.current) return sessionRef.current
+    if (snapshot.key === lastPersistedKey.current) {
+      persistDirty.current = false
+      return sessionRef.current
+    }
     const operation = (async () => {
       while (latestPersist.current && latestPersist.current.key !== lastPersistedKey.current) {
         const currentSnapshot = latestPersist.current
@@ -241,6 +254,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         const wasNew = !sessionRef.current?.id
         sessionRef.current = saved
         lastPersistedKey.current = currentSnapshot.key
+        if (persistRevision.current === currentSnapshot.revision) persistDirty.current = false
         setPersistError('')
         if (mountedRef.current) setSession(saved)
         if (wasNew && saved?.id) onSessionCreatedRef.current?.(saved.id)
@@ -252,16 +266,39 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
       if (persistInFlight.current === operation) persistInFlight.current = null
     }
   }, [set, sessionRestored, background, answers, matterId, setId, verifiedNames, availableMembersKey])
-  const persistSession = useCallback(() => flushLatest().catch(() => {
-    if (mountedRef.current) setPersistError('Your packet answers could not be saved. Retry to keep the latest changes.')
-    return null
-  }), [flushLatest])
+  const persistSession = useCallback(async () => {
+    if (mountedRef.current) setPersistStatus('saving')
+    try {
+      const saved = await flushLatest()
+      if (mountedRef.current) setPersistStatus(persistDirty.current ? 'pending' : saved ? 'saved' : 'idle')
+      return saved
+    } catch {
+      if (mountedRef.current) {
+        setPersistStatus('error')
+        setPersistError('Your packet answers could not be saved. Retry to keep the latest changes.')
+      }
+      return null
+    }
+  }, [flushLatest])
+  useEffect(() => { flushRef.current = flushLatest }, [flushLatest])
   useEffect(() => {
     if (!set || !sessionRestored) return undefined
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(persistSession, 800)
     return () => clearTimeout(saveTimer.current)
   }, [persistSession, set, sessionRestored])
+  useEffect(() => {
+    const beforeUnload = (event) => {
+      if (!persistDirty.current && !persistInFlight.current && !(latestPersist.current && latestPersist.current.key !== lastPersistedKey.current)) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload)
+      void flushRef.current?.().catch(() => {})
+    }
+  }, [])
 
   // While a background save runs, follow the session until it settles.
   useEffect(() => {
@@ -336,6 +373,9 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   }, [])
 
   const setAnswer = (key, value) => {
+    persistRevision.current += 1
+    persistDirty.current = true
+    setPersistStatus('pending')
     revisionRef.current += 1
     setGenerating(false)
     setAnswers((prev) => {
@@ -346,13 +386,21 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     setVerifiedNames((prev) => { const next = { ...prev }; if (String(value ?? '').trim()) next[key] = true; else delete next[key]; return next })
     invalidatePreviews()
   }
-  const toggleVerified = (key) => setVerifiedNames((prev) => { const next = { ...prev }; if (next[key]) delete next[key]; else next[key] = true; return next })
+  const toggleVerified = (key) => {
+    persistRevision.current += 1
+    persistDirty.current = true
+    setPersistStatus('pending')
+    setVerifiedNames((prev) => { const next = { ...prev }; if (next[key]) delete next[key]; else next[key] = true; return next })
+  }
   const selectMatter = (id) => {
     if (id === matterId) return
     revisionRef.current += 1
     generationRef.current += 1
     persistEpoch.current += 1
+    persistRevision.current += 1
     restoreEpoch.current += 1
+    persistDirty.current = false
+    setPersistStatus('idle')
     latestPersist.current = null
     lastPersistedKey.current = ''
     setGenerating(false)
@@ -476,7 +524,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     previews, previewOf, saves, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved,
     savedDocuments, sendable: savedDocuments.filter(renderIsSendable).map(savedDocumentFromRender),
     session, background, sessionRestored, saveAllInBackground,
-    sessionRestoreError, retrySessionRestore, persistError, retrySave: persistSession,
+    sessionRestoreError, retrySessionRestore, persistError, persistStatus, retrySave: persistSession,
     flushLatest,
   }
 }

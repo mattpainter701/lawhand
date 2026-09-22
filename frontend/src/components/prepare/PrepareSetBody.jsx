@@ -22,7 +22,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
     smartFillState, smartFillMessage, refresh, previewOf, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved, sendable,
-    session, background, saveAllInBackground, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, retrySave,
+    session, background, saveAllInBackground, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
   const groups = []
@@ -48,6 +48,8 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
       <div className="space-y-4">
         {sessionRestoreError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{sessionRestoreError}</span><button type="button" onClick={retrySessionRestore} className="underline font-semibold">Retry</button></div>}
         {persistError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{persistError}</span><button type="button" onClick={retrySave} className="underline font-semibold">Retry save</button></div>}
+        {!persistError && ['pending', 'saving'].includes(persistStatus) && <p role="status" className="text-xs text-brand-muted">Saving answers…</p>}
+        {!persistError && persistStatus === 'saved' && <p role="status" className="text-xs text-brand-muted">Answers saved · available from this matter for 14 days</p>}
         {error && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">{error}</div>}
         {fixedMatterId ? <p className="text-sm font-semibold">Saving to this matter</p> : <MatterPicker matters={matters} selectedMatterId={matterId} onSelect={selectMatter} loading={matterLoading} disabled={saving || generating} />}
         <StorageReadinessNotice enabled={Boolean(matterId.trim())} />
