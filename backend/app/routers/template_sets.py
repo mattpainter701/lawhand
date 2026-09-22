@@ -485,7 +485,9 @@ async def _interview_suggestions(*, db, tenant_id, current_user, matter_id, ques
     # explicit manual binding and therefore never receive name-match values.
     batches = []
     for question in questions:
-        name = question.appears_in[0].field_name if question.appears_in else question.key
+        name = (
+            question.appears_in[0].field_name if question.appears_in else question.key
+        )
         binding = "manual" if question.manual else question.binding
         # Put each local name in only one batch. A collision spills into the
         # next batch, while the common case remains one resolver call for the

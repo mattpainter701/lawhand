@@ -441,13 +441,14 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
         first_widget = (widgets_by_name.get(pdf_name) or [None])[0]
         page_number = (first_widget.page_index + 1) if first_widget else None
         source_label = alternate_name or pdf_name
-        if re.fullmatch(r"(?:undefined|unknown|null|none)(?:[_ -]\d+)?", source_label, re.I):
+        if re.fullmatch(
+            r"(?:undefined|unknown|null|none)(?:[_ -]\d+)?", source_label, re.I
+        ):
             # Some source PDFs literally label widgets "undefined". Keep that
             # fact available for review while giving the fill UI a stable,
             # honest label that does not guess at the field's legal meaning.
-            alternate_name = (
-                f"Source field {field_number}"
-                + (f" (page {page_number})" if page_number else "")
+            alternate_name = f"Source field {field_number}" + (
+                f" (page {page_number})" if page_number else ""
             )
         else:
             alternate_name = source_label

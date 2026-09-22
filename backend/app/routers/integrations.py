@@ -1941,18 +1941,20 @@ async def storage_readiness(
         )
     ).scalar_one_or_none()
     configured = (
-        str(getattr(settings_row, "primary_cloud_provider", None) or "")
-        .strip()
-        .lower()
+        str(getattr(settings_row, "primary_cloud_provider", None) or "").strip().lower()
     )
     credentials = (
-        await db.execute(
-            select(TenantCredential).where(
-                TenantCredential.tenant_id == user.tenant_id,
-                TenantCredential.provider.in_(["microsoft", "google"]),
+        (
+            await db.execute(
+                select(TenantCredential).where(
+                    TenantCredential.tenant_id == user.tenant_id,
+                    TenantCredential.provider.in_(["microsoft", "google"]),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_provider = {row.provider: row for row in credentials}
     provider = configured or (
         "onedrive"
@@ -1976,10 +1978,14 @@ async def storage_readiness(
 
     if not provider or not row:
         status = "not_connected"
-        message = "Connect Microsoft 365 or Google Workspace before saving matter documents."
+        message = (
+            "Connect Microsoft 365 or Google Workspace before saving matter documents."
+        )
     elif not row.is_active:
         status = "needs_reconnect"
-        provider_name = credential_provider.title() if credential_provider else "the provider"
+        provider_name = (
+            credential_provider.title() if credential_provider else "the provider"
+        )
         message = (
             f"Reconnect {provider_name} before saving matter documents to {label}."
         )
@@ -2000,7 +2006,9 @@ async def storage_readiness(
             message = f"{label} is ready for matter documents."
         else:
             status = "needs_reconnect"
-            provider_name = credential_provider.title() if credential_provider else "the provider"
+            provider_name = (
+                credential_provider.title() if credential_provider else "the provider"
+            )
             message = (
                 f"Reconnect {provider_name} before saving matter documents to {label}."
             )

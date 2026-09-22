@@ -140,7 +140,9 @@ async def download_sample_source(
     )
 
 
-@router.post("/{sample_id}/smart-fill-preview", response_model=SampleTemplateSmartFillResponse)
+@router.post(
+    "/{sample_id}/smart-fill-preview", response_model=SampleTemplateSmartFillResponse
+)
 async def smart_fill_sample_template(
     sample_id: uuid.UUID,
     payload: SampleTemplateSmartFillRequest,
