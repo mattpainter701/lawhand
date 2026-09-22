@@ -5,7 +5,110 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.19.01 — Assistant drafts keep their formatting, and can update tasks
+## 2026.09.21.01 — Search inside a matter's documents
+
+Released September 21, 2026.
+
+The Documents tab's search box now looks inside the documents' text, scans included, and the assistant can pull matching excerpts into a matter's context. Also two small hardening changes to workflow document requests.
+
+- **Found inside documents.** Type three or more characters in the Documents search and excerpts from the documents' text appear beneath the toolbar, each with an Open link. Scans read by OCR are included.
+- **Excerpts for the assistant.** The matter context tool gains an excerpts section: give it a question and it returns the matching passages from the matter's documents, fenced as untrusted text.
+- **Workflow documents hardened.** Document requests on an approved workflow version are now immutable at the database, like its stages, and a saved-document rollback blocker is labelled as a document step.
+
+## 2026.09.20.05 — Workflows can ask for documents
+
+Released September 20, 2026.
+
+A workflow template can list documents to prepare. When a run is approved, each one is pre-filled from the matter by Smart Fill and handed to its assignee as a Prepare task. A person still reviews, verifies and saves it.
+
+- **Documents on a workflow template.** Under Workflow settings, add published document templates beside the checklist, with a stage, a due offset and an assignee role. The preview says if one cannot be prepared.
+- **Pre-filled and handed over.** Approving the run opens a Smart Fill session per document, filled from the matter, and a Prepare task linking to it. The assignee resumes it from Documents in progress.
+- **Rollback keeps saved work.** Rolling a run back cancels the Prepare tasks and discards unsaved sessions. A document already saved from its session blocks the rollback rather than being removed.
+
+## 2026.09.20.04 — Resume a packet, and save it in the background
+
+Released September 20, 2026.
+
+What you type on the Prepare page is kept for 14 days and can be resumed from the matter's Documents tab. A previewed packet can be saved in the background, and the ready-to-review banner shows how many fields you verified.
+
+- **Pick up where you left off.** Answers and verified ticks are kept server-side, encrypted, for 14 days. The matter's Documents tab lists documents in progress with Resume and Discard.
+- **Save all in the background.** Once every document in a packet is previewed, queue the saves on the server and leave the page. Each document reports Saved or why not; an expired preview asks for a new one.
+- **Verified counts on the banner.** The ready-to-review banner on Case Documents now shows how many fields you verified for each document.
+
+## 2026.09.20.03 — Template sets: one interview, a whole packet
+
+Released September 20, 2026.
+
+Group the templates you file together into a set, answer the shared questions once, preview every document, save them all to the matter one after another, and send the signable ones, all from the Prepare page.
+
+- **Sets in Template Studio.** Name a set, choose published templates in the order they are produced, and pin a version where a filed packet needs one. Prepare on a matter starts the packet from there.
+- **Asked once, filled everywhere.** A question bound to the same record in several documents is asked once and says how many documents it fills. Smart Fill answers it from the matter.
+- **Preview, save and send the packet.** Generate all previews (a failed one retries alone), save all to the matter one document at a time with each result shown, then send each signable PDF from the same page.
+
+## 2026.09.20.02 — Fill from the matter's documents, and AI for unreadable handwriting
+
+Released September 20, 2026.
+
+A blank template field can now be filled from what the matter's documents say, marked for review with the source one click away. When a hand-filled form has fields OCR cannot read, an opt-in AI read can try each clip.
+
+- **Documents as a fill source.** Values read from the matter's documents fill fields nothing else filled. They never replace a matter or client value, are marked for review, and link to the document.
+- **A new scan refreshes readiness.** When an uploaded document yields values, the matter's ready-to-review documents are recomputed, so the Case Documents banner reflects the scan.
+- **AI for unreadable handwriting, opt-in.** Reading a printed form against its template can send only the clips OCR could not read to the AI provider, one metered call each, when the firm allows it.
+
+## 2026.09.20.01 — Verify filled fields quickly, and read scanned or hand-filled forms
+
+Released September 20, 2026.
+
+Tick or press Enter to verify each filled field before saving, and the names travel with the document. Matter documents can now be read by OCR, and a printed, hand-filled form is read field by field against the template that printed it.
+
+- **Click through and verify.** Each filled field has a Verified tick. Press Enter to verify and move to the next. Typing a value counts as checking it. Optional, never a gate; the Documents tab shows the count.
+- **Scans and photos are read too.** Find details now reads a scanned PDF or an image through OCR when there is no text layer, and shows how sure the reader was for each value. Re-reading the same file is instant.
+- **Read a hand-filled form against its template.** A scan of a form the matter printed can be read field by field against that form, with a clip of the handwriting beside each value. Nothing is saved until you accept it.
+
+## 2026.09.19.04 — Send for signature right after you prepare a document
+
+Released September 19, 2026.
+
+A PDF prepared from a template with signature fields now offers Send for signature on the same page, with the matter's client filled in as the signer and the same checks the matter's E-Signature panel applies.
+
+- **A Send step after Save.** When the saved PDF has signature fields, the Prepare page stays open with signers, dates and reminders ready. The client's name and email come from the matter.
+- **One form, wherever you send from.** The matter's E-Signature panel and the Prepare page use the same request form, so placement review, role checks and the signing-plan acknowledgement behave the same.
+- **Word templates with signature fields default to PDF.** Only a PDF can be sent for signature, so a Word template with signature fields is generated as PDF unless you choose the editable Word document, and the page says why.
+
+## 2026.09.19.03 — Prepare a document from Studio, straight into the matter
+
+Released September 19, 2026.
+
+A published template can be taken from Template Studio to a matter in one guided page: choose the matter, review the filled fields and the exact preview, and save it into that matter's documents.
+
+- **Use on a matter, from Studio.** A published template in Studio has a Use on a matter button. It opens a guided page: Template, Matter, Populate, Review, Save. A draft says to publish a tested version first.
+- **Same review, wherever you start.** The page is the Generate dialog's own fill and preview logic, so a document prepared here is reviewed under exactly the same rules before it is saved.
+- **Lands on the matter with the document open.** Saving takes you to the matter's Case Documents with the new document's preview open. Ready-to-review documents and the probate packet open the same page with the matter chosen.
+
+## 2026.09.19.02 — Documents are prepared the moment a matter has data
+
+Released September 19, 2026.
+
+When a matter is created, converted from a lead, or receives intake answers, LawHand fills every published template from it in the background and the matter page shows what is ready to review.
+
+- **Ready to review, without a click.** Case Documents shows how many published templates fill from this matter and how much of each is filled, with what still needs a person. Open one and it is already filled in.
+- **Nothing is generated or sent on its own.** The background run records counts and field names only. Reviewing, previewing and saving a document stay yours, and sending for signature is a separate step.
+- **Refreshes as the matter grows.** A questionnaire coming back or accepted intake updates queue a fresh run. If details changed since the last run, the panel says so; opening a document always fills from live data.
+- **Converted leads count as new matters.** Opening a matter from a lead now fires the same matter-created trigger as creating one directly, so firm workflow rules and document preparation both see it.
+
+## 2026.09.19.01 — Smart Fill reaches more of the matter and fills the right way
+
+Released September 19, 2026.
+
+Document fill reads the client's name parts, the matter number and opening date, and every party role, fits each value to its field, and is proven against mock and real forms before it reaches a page.
+
+- **Letters can open with a first name.** Fields named first_name or last_name, or bound to the client's name parts, organization or client number, fill from the contact record. Name matches are offered for review.
+- **Every party role fills its caption.** Petitioner, respondent, opposing party, counsel, witness and expert rows fill their own fields, as plaintiff and defendant always did. A family caption no longer stays blank.
+- **Values fit their fields.** A state code selects a court form's dropdown option, a yes checks a box, a date field reads MM/DD/YYYY. A value a field cannot hold is left for you rather than forced in.
+- **Matter number and date opened.** The matter's number, practice area and opening date are available to templates by name or binding.
+- **The estate fills by field name.** A probate form field named after an estate value fills with or without a binding; before, it reported as filled and rendered blank.
+
+## 2026.09.19.05 — Assistant drafts keep their formatting, and can update tasks
 
 Released September 19, 2026.
 

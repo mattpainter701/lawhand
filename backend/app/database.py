@@ -126,18 +126,23 @@ async def bind_tenant_context(session: AsyncSession, tenant_id: str) -> None:
     """
     normalized = str(UUID(str(tenant_id))) if tenant_id else NO_TENANT_CONTEXT
 
-    @event.listens_for(session.sync_session, "after_begin")
-    def _rebind_tenant_context(sync_session, transaction, connection):
-        connection.execute(
-            text(
-                """
-                SELECT
-                  set_config('app.current_tenant_id', :tenant_id, true),
-                  set_config('app.tenant_id', :tenant_id, true)
-                """
-            ),
-            {"tenant_id": normalized},
-        )
+    # A test double may not expose the sync session; the explicit set below
+    # still applies, only the automatic rebind is unavailable.
+    sync_session = getattr(session, "sync_session", None)
+    if sync_session is not None:
+
+        @event.listens_for(sync_session, "after_begin")
+        def _rebind_tenant_context(sync_session, transaction, connection):
+            connection.execute(
+                text(
+                    """
+                    SELECT
+                      set_config('app.current_tenant_id', :tenant_id, true),
+                      set_config('app.tenant_id', :tenant_id, true)
+                    """
+                ),
+                {"tenant_id": normalized},
+            )
 
     await set_tenant_context(session, normalized)
 

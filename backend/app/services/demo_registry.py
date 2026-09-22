@@ -116,6 +116,17 @@ _PURGE_ONLY_TABLES = {
     "document_integrity_events",
     "document_storage_operations",
     "document_template_previews",
+    # A fill session holds the values a person is reviewing for one
+    # (template, matter, user); it is their work product, so purge it with an
+    # expired demo and never clone it into another tenant.
+    "document_fill_sessions",
+    # Extracted document text (a PDF text layer or OCR output) is customer
+    # content keyed by the document's bytes. Purge it with an expired demo;
+    # never clone one tenant's document text into another.
+    "document_text_extractions",
+    # The matter-scoped search index over that text: derived rows keyed by the
+    # document's digest. Purged with an expired demo, never cloned.
+    "matter_document_chunks",
     # A set is a firm's own decision about which templates it drafts together,
     # and its rows reference that firm's template ids. Purge it with an expired
     # demo, but never clone it: a demo tenant gets the cloned templates and
@@ -177,6 +188,7 @@ _PURGE_ONLY_TABLES = {
     "matter_workflow_automation_events",
     "matter_workflow_automation_rules",
     "matter_workflow_checklist_definitions",
+    "matter_workflow_document_definitions",
     "matter_workflow_field_requirements",
     "matter_workflow_run_events",
     "matter_workflow_run_steps",

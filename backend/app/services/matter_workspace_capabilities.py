@@ -300,6 +300,53 @@ async def get_matter_context(
         )
         payload["documents"] = [_document_summary(document) for document in documents]
 
+    if "excerpts" in sections:
+        scopes = context.granted_scopes
+        # Document text is as privileged as the document-text capability, which
+        # requires documents:read. An external grant must hold that scope; an
+        # internal caller must be the interactive chat. An unattended run
+        # (channel automation_service) and a scope-less external caller get no
+        # document words.
+        if scopes is None:
+            allowed = context.channel == "matter_chat"
+            reason = "document text is not available to unattended runs"
+        else:
+            allowed = "documents:read" in scopes
+            reason = "requires the documents:read scope"
+        if not allowed:
+            payload["excerpts"] = []
+            payload["excerpts_omitted"] = reason
+        else:
+            from app.services import matter_document_index
+
+            hits = (
+                await matter_document_index.search(
+                    context.db,
+                    tenant_id=context.tenant_id,
+                    matter_id=matter.id,
+                    query=args.query,
+                    limit=limit,
+                    embedder=matter_document_index.default_embedder(),
+                )
+                if args.query
+                else []
+            )
+            payload["excerpts"] = [
+                {
+                    "document_id": hit["document_id"],
+                    "filename": hit["filename"],
+                    "chunk_index": hit["chunk_index"],
+                    "matched_by": hit["matched_by"],
+                    "open_url": hit["open_url"],
+                    # The document's own words, fenced as the untrusted source they are.
+                    "snippet": wrap_untrusted_text(
+                        hit["snippet"],
+                        hashlib.sha256(hit["snippet"].encode("utf-8")).hexdigest(),
+                    ),
+                }
+                for hit in hits
+            ]
+
     if "events" in sections:
         events = (
             (
@@ -585,6 +632,34 @@ def _extract_bounded_document_text(
     return extracted[:max_characters], truncated, page_count
 
 
+async def _cached_document_text(
+    context: CapabilityContext, document_format: str, args, content_sha256: str
+) -> tuple[str, bool, int | None] | None:
+    """The cached extraction for these bytes, bounded like a fresh one, or None."""
+
+    from app.services import document_text_cache
+
+    try:
+        cached = await document_text_cache.lookup(
+            context.db, tenant_id=context.tenant_id, document_sha256=content_sha256
+        )
+    except Exception:  # pragma: no cover - a cache fault must not block the read
+        return None
+    if cached is None:
+        return None
+    if (
+        document_format == "pdf"
+        and cached.page_count is not None
+        and cached.page_count > args.max_pdf_pages
+    ):
+        # The cache holds more pages than this caller allows; the bounded
+        # extractor decides what such a caller may see.
+        return None
+    text = cached.text[: args.max_characters]
+    truncated = bool(cached.truncated) or len(cached.text) > args.max_characters
+    return text, truncated, cached.page_count
+
+
 async def get_matter_document_text(
     context: CapabilityContext, args: GetMatterDocumentTextArgs
 ) -> dict[str, Any]:
@@ -615,24 +690,31 @@ async def get_matter_document_text(
             "Document content is currently unavailable",
         ) from exc
 
-    try:
-        text, truncated, page_count = await asyncio.to_thread(
-            _extract_bounded_document_text,
-            file_bytes,
-            document=document,
-            document_format=document_format,
-            max_characters=args.max_characters,
-            max_pdf_pages=args.max_pdf_pages,
-        )
-    except CapabilityError:
-        raise
-    except Exception as exc:
-        raise CapabilityError(
-            "document_extraction_failed",
-            "Document text could not be safely extracted",
-        ) from exc
-
     content_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    # The extraction cache remembers what these exact bytes say (OCR
+    # included). It is read here, not written: this tool is read-only and
+    # the cache fills from the upload job and the fact-review reads.
+    cached = await _cached_document_text(context, document_format, args, content_sha256)
+    if cached is not None:
+        text, truncated, page_count = cached
+    else:
+        try:
+            text, truncated, page_count = await asyncio.to_thread(
+                _extract_bounded_document_text,
+                file_bytes,
+                document=document,
+                document_format=document_format,
+                max_characters=args.max_characters,
+                max_pdf_pages=args.max_pdf_pages,
+            )
+        except CapabilityError:
+            raise
+        except Exception as exc:
+            raise CapabilityError(
+                "document_extraction_failed",
+                "Document text could not be safely extracted",
+            ) from exc
+
     return {
         "matter_id": str(args.matter_id),
         "document": _document_summary(document),
@@ -718,6 +800,12 @@ def _template_automation_ready(template: DocumentTemplate) -> bool:
     if not template.source_storage_path and not str(template.body or "").strip():
         return False
     return True
+
+
+#: Public names for the two template checks the document-prefill job shares
+#: with the agent-facing recommender, so both rank and gate the same way.
+template_rank = _template_rank
+template_automation_ready = _template_automation_ready
 
 
 async def list_document_templates(

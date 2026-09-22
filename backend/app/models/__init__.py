@@ -12,6 +12,8 @@ from app.models.llm_routing_profile import LLMRoutingProfile
 from app.models.user import User, UserMemory
 from app.models.user_alias import UserAliasAddress
 from app.models.user_invitation import UserInvitation
+from app.models.document_text_extraction import DocumentTextExtraction
+from app.models.document_fill_session import DocumentFillSession
 from app.models.document import Document, Chunk
 from app.models.conversation import Conversation, Message, UsageRecord
 from app.models.plugin import (
@@ -227,6 +229,7 @@ from app.models.configurable_workflow import (
     CustomFieldDefinition,
     MatterCustomFieldValue,
     MatterWorkflowChecklistDefinition,
+    MatterWorkflowDocumentDefinition,
     MatterWorkflowFieldRequirement,
     MatterWorkflowRun,
     MatterWorkflowRunEvent,
@@ -240,6 +243,7 @@ from app.models.workflow_automation import (
     MatterWorkflowAutomationRule,
 )
 
+from app.models.matter_document_chunk import MatterDocumentChunk
 from app.models.workflow_configuration_proposal import WorkflowConfigurationProposal
 from app.models.workflow_run import WorkflowRun, WorkflowRunStep, WorkflowRunEvent
 from app.models.automation_service import (
@@ -273,6 +277,8 @@ __all__ = [
     "UserMemory",
     "UserAliasAddress",
     "UserInvitation",
+    "DocumentTextExtraction",
+    "DocumentFillSession",
     "Document",
     "Chunk",
     "Conversation",
@@ -452,6 +458,8 @@ __all__ = [
     "MatterWorkflowAutomationEvent",
     "MatterWorkflowStageDefinition",
     "MatterWorkflowChecklistDefinition",
+    "MatterWorkflowDocumentDefinition",
+    "MatterDocumentChunk",
     "MatterWorkflowFieldRequirement",
     "MatterWorkflowRun",
     "MatterWorkflowRunEvent",

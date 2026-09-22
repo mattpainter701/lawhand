@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from sqlalchemy import case, or_
 from sqlalchemy import select, text
-from app.database import async_session_maker, set_tenant_context
+from app.database import async_session_maker, bind_tenant_context, set_tenant_context
 from app.models.communication_log import CommunicationLog
 from app.models.document import Document
 from app.models.durable_job import DurableJob
@@ -95,18 +95,79 @@ async def _run_matter_fact_extraction(row: DurableJob) -> dict:
 
     from app.services.matter_fact_extraction import extract_and_queue
 
+    from app.services.document_prefill import enqueue_document_prefill
+
     payload = row.payload or {}
     async with async_session_maker() as session:
-        await set_tenant_context(session, str(row.tenant_id))
+        # Bind, not set: extract_and_queue commits mid-run, and a
+        # transaction-local GUC is dropped by that commit.
+        await bind_tenant_context(session, str(row.tenant_id))
         try:
-            return await extract_and_queue(
+            matter_id = uuid.UUID(str(payload["matter_id"]))
+            result = await extract_and_queue(
                 db=session,
                 tenant_id=row.tenant_id,
-                matter_id=uuid.UUID(str(payload["matter_id"])),
+                matter_id=matter_id,
                 document_id=uuid.UUID(str(payload["document_id"])),
             )
         except (KeyError, TypeError, ValueError):
             return {"status": "skipped", "reason": "malformed payload"}
+        if result.get("status") == "queued":
+            # The document said something a template could use; the matter's
+            # readiness is recomputed so the banner reflects it.
+            await enqueue_document_prefill(
+                session,
+                tenant_id=row.tenant_id,
+                matter_id=matter_id,
+                trigger_event="document_extracted",
+                actor_user_id=None,
+            )
+            await session.commit()
+        return result
+
+
+async def _run_matter_document_index(row: DurableJob) -> dict:
+    """Build the matter-scoped search rows for one document from its cached text.
+
+    Derived data only: the job reads the extraction cache, never the file,
+    and skips with a reason when the document is gone or its bytes moved (the
+    next read queues a fresh job for the new digest).
+    """
+
+    from app.models.matter_document import MatterDocument
+    from app.services import document_text_cache, matter_document_index
+
+    payload = row.payload or {}
+    async with async_session_maker() as session:
+        await set_tenant_context(session, str(row.tenant_id))
+        try:
+            document_id = uuid.UUID(str(payload["document_id"]))
+            digest = str(payload["document_sha256"])
+        except (KeyError, TypeError, ValueError):
+            return {"status": "skipped", "reason": "malformed payload"}
+        document = await session.scalar(
+            select(MatterDocument).where(
+                MatterDocument.id == document_id,
+                MatterDocument.tenant_id == row.tenant_id,
+            )
+        )
+        if document is None:
+            return {"status": "skipped", "reason": "document missing"}
+        if document.document_sha256 != digest:
+            return {"status": "skipped", "reason": "document bytes changed"}
+        extraction = await document_text_cache.lookup(
+            session, tenant_id=row.tenant_id, document_sha256=digest
+        )
+        if extraction is None:
+            return {"status": "skipped", "reason": "no cached text"}
+        chunks = await matter_document_index.index_document(
+            session,
+            tenant_id=row.tenant_id,
+            document=document,
+            extraction=extraction,
+            embedder=matter_document_index.default_embedder(),
+        )
+        return {"status": "indexed", "document_id": str(document_id), "chunks": chunks}
 
 
 async def _run_cloud_sync(row: DurableJob) -> dict:
@@ -654,7 +715,12 @@ WORKFLOW_REDACTED_JOB_KINDS = {
 
 async def process_job(job_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
     async with async_session_maker() as db:
-        await set_tenant_context(db, str(tenant_id))
+        # Bind, not set: handlers (the packet save) call request-oriented code
+        # that commits mid-flight, and a transaction-local GUC is dropped by
+        # that commit — every later query would then run with no tenant and RLS
+        # would hide the rows. The rebind re-applies the tenant to each new
+        # transaction on this session.
+        await bind_tenant_context(db, str(tenant_id))
         exhausted = await db.scalar(
             select(DurableJob)
             .where(

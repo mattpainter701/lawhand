@@ -27,6 +27,7 @@ JOB_HANDLERS = {
     "cloud_sync": JobHandler(_WORKER, "_run_cloud_sync"),
     "user_sync": JobHandler(_WORKER, "_run_user_sync"),
     "matter_fact_extraction": JobHandler(_WORKER, "_run_matter_fact_extraction"),
+    "matter_document_index": JobHandler(_WORKER, "_run_matter_document_index"),
     "mcp_stripe_meter": JobHandler(
         "app.services.mcp_product", "deliver_mcp_meter_event", "payload"
     ),
@@ -60,6 +61,12 @@ JOB_HANDLERS = {
     ),
     "workflow_run": JobHandler(
         "app.services.workflow_runtime", "run_workflow_job", "row", False, True
+    ),
+    "document_prefill": JobHandler(
+        "app.services.document_prefill", "run_prefill_job", "session_row"
+    ),
+    "template_set_render": JobHandler(
+        "app.services.fill_sessions", "run_set_render_job", "session_row"
     ),
 }
 

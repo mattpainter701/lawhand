@@ -66,7 +66,12 @@ persisted or logged. This tool is not Research MCP and cannot use a Research
 product key; it also does not provide licensed secondary-source content.
 
 `get_matter_context` can select client, team, parties, tasks, documents,
-events, notes, and communications. The matter summary it always returns
+events, notes, communications, and excerpts. The `excerpts` section takes a
+`query` (2 to 200 characters) and returns matching passages from the matter's
+own documents, read from the matter-scoped index over extracted text (scans
+read by OCR included); each passage is fenced as untrusted text and carries
+the document's open URL. Without a query the section is empty, never the
+whole index. The matter summary it always returns
 carries the firm's open date (`opened_on`) and, when staff recorded how the
 matter was engaged outside the intake packet, `engagement_status` and
 `engagement_signed_on` (see [Existing engagement](matter-intake.md#existing-engagement-no-paperwork-sent));

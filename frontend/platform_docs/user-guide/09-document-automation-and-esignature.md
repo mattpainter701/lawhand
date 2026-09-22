@@ -58,6 +58,24 @@ Before saving:
 
 Smart Fill and AI analysis accelerate assembly; they do not approve legal content.
 
+## Prepare a document from Studio into a matter
+
+[Prepare](/templates/prepare) takes a published template from Template Studio, the library, or a matter straight to a chosen matter: select the matter, review the filled fields and the exact preview, and save the generated document into that matter's documents. Opening the route preselects the template, matter, and destination folder named in the link; the shortcut links elsewhere in the app use the same [Prepare](/templates/prepare) address.
+
+After the save, the same page can create and send an e-signature request for the new document. Recipients, roles, and dates come from the same signature form used on the matter, so check every signer and the placement plan before sending. A request is only sent when you confirm it.
+
+## Documents in progress
+
+What you type on the [Prepare](/templates/prepare) page is kept for fourteen days, encrypted, together with the fields you marked verified. The matter's Documents tab lists your documents in progress with **Resume** and **Discard**; a previewed packet can be saved in the background and each document reports Saved or why not. Only the person who prepared a session can open it.
+
+## Documents from a workflow
+
+A workflow template can list documents to prepare beside its checklist. When someone approves a workflow run on a matter, each listed document is pre-filled from the matter and handed to its assignee as a **Prepare** task that opens the session under Documents in progress. Nothing is generated, saved or sent by the workflow itself: the assignee reviews, verifies and saves the document as usual, and rolling the run back cancels the task and discards an unsaved session.
+
+## Template sets
+
+A [template set](/templates/sets) groups the templates one matter's packet needs, such as a fee agreement, an engagement letter, and an intake form, so a single interview fills them all. Preparing a set runs the same fill, review, preview, and save steps as a single template, once per member; each member is saved to the matter on its own and can be sent for signature from the set. Nothing is generated or sent without a person reviewing and confirming each document.
+
 ## Version and activation discipline
 
 When source language changes, create or update the controlled template through the supported workflow. Record what changed and re-test representative scenarios. Do not replace a template file in a way that makes prior generated documents impossible to explain.

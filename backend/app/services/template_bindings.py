@@ -65,6 +65,10 @@ _CATALOGUE: tuple[TemplateBinding, ...] = (
     TemplateBinding("matter.judge", "judge", "Judge", "Matter"),
     TemplateBinding("matter.counterparty", "counterparty", "Counterparty", "Matter"),
     TemplateBinding("matter.role", "matter_role", "Represented side", "Matter"),
+    # Columns the matter has always carried but Smart Fill could not reach.
+    TemplateBinding("matter.number", "matter_number", "Matter number", "Matter"),
+    TemplateBinding("matter.practice_area", "practice_area", "Practice area", "Matter"),
+    TemplateBinding("matter.opened_on", "opened_on", "Date opened", "Matter"),
     # Billing
     TemplateBinding(
         "matter.billing_method", "billing_method", "Billing method", "Billing"
@@ -96,6 +100,31 @@ _CATALOGUE: tuple[TemplateBinding, ...] = (
     ),
     # Client contact
     TemplateBinding("client.name", "client_name", "Client name", "Client"),
+    # The name parts and identity columns behind ``display_name``. A letter
+    # that opens "Dear Ada," or a clause that turns on whether the client is
+    # a person or an entity needs these, not the composed display name.
+    TemplateBinding(
+        "client.first_name", "client_first_name", "Client first name", "Client"
+    ),
+    TemplateBinding(
+        "client.last_name", "client_last_name", "Client last name", "Client"
+    ),
+    TemplateBinding(
+        "client.preferred_name",
+        "client_preferred_name",
+        "Client preferred name",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.organization_name",
+        "client_organization_name",
+        "Client organization name",
+        "Client",
+    ),
+    TemplateBinding(
+        "client.entity_type", "client_entity_type", "Client entity type", "Client"
+    ),
+    TemplateBinding("client.client_number", "client_number", "Client number", "Client"),
     TemplateBinding("client.email", "client_email", "Client email", "Client"),
     TemplateBinding("client.phone", "client_phone", "Client phone", "Client"),
     TemplateBinding(
@@ -185,6 +214,52 @@ _CATALOGUE: tuple[TemplateBinding, ...] = (
     TemplateBinding(
         "party.defendant.names", "defendant_names", "Defendants (all)", "Parties"
     ),
+    # Every caption and people role the party model accepts, not only the
+    # civil pair. A family matter's caption is petitioner and respondent.
+    TemplateBinding(
+        "party.petitioner.name",
+        "petitioner_name",
+        "Petitioner (first listed)",
+        "Parties",
+    ),
+    TemplateBinding(
+        "party.petitioner.names", "petitioner_names", "Petitioners (all)", "Parties"
+    ),
+    TemplateBinding(
+        "party.respondent.name",
+        "respondent_name",
+        "Respondent (first listed)",
+        "Parties",
+    ),
+    TemplateBinding(
+        "party.respondent.names", "respondent_names", "Respondents (all)", "Parties"
+    ),
+    TemplateBinding(
+        "party.opposing_party.name",
+        "opposing_party_name",
+        "Opposing party (first listed)",
+        "Parties",
+    ),
+    TemplateBinding(
+        "party.opposing_party.names",
+        "opposing_party_names",
+        "Opposing parties (all)",
+        "Parties",
+    ),
+    TemplateBinding(
+        "party.counsel.name", "counsel_name", "Counsel (first listed)", "Parties"
+    ),
+    TemplateBinding("party.counsel.names", "counsel_names", "Counsel (all)", "Parties"),
+    TemplateBinding(
+        "party.witness.name", "witness_name", "Witness (first listed)", "Parties"
+    ),
+    TemplateBinding(
+        "party.witness.names", "witness_names", "Witnesses (all)", "Parties"
+    ),
+    TemplateBinding(
+        "party.expert.name", "expert_name", "Expert (first listed)", "Parties"
+    ),
+    TemplateBinding("party.expert.names", "expert_names", "Experts (all)", "Parties"),
     # People
     TemplateBinding("attorney.name", "attorney_name", "Attorney of record", "People"),
     TemplateBinding("attorney.email", "attorney_email", "Attorney email", "People"),

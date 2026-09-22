@@ -2105,6 +2105,12 @@ export const removeMatterParty = (matterId, partyId) =>
 
 // ── Matter Documents ────────────────────────────────────────────────────────
 
+// What the last unattended Smart Fill run prepared for this matter: per
+// template, how many fields fill and what still needs a person. Counts and
+// field names only; values are recomputed when a document is opened.
+export const getMatterDocumentPrefill = (matterId) =>
+  api.get(`/matters/${matterId}/document-prefill`).then((r) => r.data)
+
 export const getMatterDocuments = (matterId, params = {}) =>
   api.get(`/matters/${matterId}/documents`, {
     params,
@@ -2521,6 +2527,23 @@ export const deleteTemplateSet = (id) =>
 
 export const getTemplateSetInterview = (id, matterId) =>
   api.get(`/template-sets/${id}/interview`, { params: matterId ? { matter_id: matterId } : {} }).then(r => r.data)
+// Fan one interview's answers out to each member's own field names; the
+// merge rule stays on the server.
+export const getTemplateSetDocumentsVariables = (id, data) =>
+  api.post(`/template-sets/${id}/documents-variables`, data).then(r => r.data)
+
+// Resumable fill sessions: a preparer's answers kept server-side, and the
+// background save of a previewed packet.
+export const writeFillSession = (data) =>
+  api.post('/fill-sessions', data).then(r => r.data)
+export const getFillSession = (id) =>
+  api.get(`/fill-sessions/${id}`).then(r => r.data)
+export const abandonFillSession = (id) =>
+  api.delete(`/fill-sessions/${id}`).then(r => r.data)
+export const renderFillSession = (id, data) =>
+  api.post(`/fill-sessions/${id}/render`, data).then(r => r.data)
+export const getMatterFillSessions = (matterId) =>
+  api.get(`/matters/${matterId}/fill-sessions`).then(r => r.data)
 
 export const getTemplateFieldLibrary = () =>
   api.get('/templates/field-library').then(r => r.data)
@@ -3053,6 +3076,14 @@ export const proposeMatterDocumentFacts = (matterId, documentId, ai = false) =>
   api.post(`/matters/${matterId}/documents/${documentId}/facts`, null, { params: ai ? { ai: true } : {} }).then(r => r.data)
 export const acceptMatterDocumentFact = (matterId, documentId, payload) =>
   api.post(`/matters/${matterId}/documents/${documentId}/facts/accept`, payload).then(r => r.data)
+// The forms this matter generated, so a scanned, hand-filled copy can be read
+// field by field against the one it was printed from.
+export const searchMatterDocumentText = (matterId, q, limit = 8) =>
+  api.get(`/matters/${matterId}/documents/search`, { params: { q, limit } }).then(r => r.data)
+export const getMatterDocumentFormSources = (matterId, documentId) =>
+  api.get(`/matters/${matterId}/documents/${documentId}/facts/form-sources`).then(r => r.data)
+export const readMatterDocumentAgainstForm = (matterId, documentId, payload) =>
+  api.post(`/matters/${matterId}/documents/${documentId}/facts/from-form`, payload).then(r => r.data)
 
 export const getTemplateAIProfile = (key) =>
   platformApi(key).get('/platform/llm/template-profile').then((r) => r.data)

@@ -1,10 +1,16 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MatterDocumentsTab, { canReviseWithAssistant, isAssistantRevisionDocument } from './MatterDocumentsTab'
 import { ConfirmProvider } from './dialog/ConfirmProvider'
 import { ToastProvider } from './toast/ToastProvider'
+
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="location-search">{location.search}</span>
+}
 
 const apiMocks = vi.hoisted(() => ({
   default: { post: vi.fn() },
@@ -20,6 +26,13 @@ const apiMocks = vi.hoisted(() => ({
   getMatterDocumentDownloadUrl: vi.fn(),
   getMatterDocumentFolders: vi.fn(),
   getMatterDocuments: vi.fn(),
+  getMatterDocumentPrefill: vi.fn().mockResolvedValue(null),
+  getMatterDocumentSigningSource: vi.fn().mockResolvedValue(null),
+  getMatterDocumentFormSources: vi.fn().mockResolvedValue({ sources: [] }),
+  readMatterDocumentAgainstForm: vi.fn(),
+  getMatterFillSessions: vi.fn().mockResolvedValue({ items: [] }),
+  searchMatterDocumentText: vi.fn().mockResolvedValue({ query: '', results: [], indexed_documents: 0 }),
+  abandonFillSession: vi.fn(),
   moveMatterDocuments: vi.fn(),
   provisionMatterCloudFolder: vi.fn(),
   setMatterDocumentTags: vi.fn(),
@@ -47,6 +60,7 @@ const documents = [
     id: 'pdf-1',
     filename: 'Filed pleading.pdf',
     content_type: 'application/pdf',
+    generation_summary: { template_id: 't-1', template_title: 'Pleading form', template_version_no: 2, total: 19, filled: 17, verified: 12, verified_fields: [] },
     document_category: 'pleading',
     file_size: 4096,
     portal_visible: false,
@@ -112,15 +126,18 @@ const tags = [
   { id: 'tag-privileged', name: 'Privileged', color: 'rose' },
 ]
 
-function renderDocuments(onReviseDocument = vi.fn()) {
+function renderDocuments(onReviseDocument = vi.fn(), { initialEntries = ['/matters/matter-1'] } = {}) {
   return {
     onReviseDocument,
     ...render(
-      <ToastProvider>
-        <ConfirmProvider>
-          <MatterDocumentsTab matterId="matter-1" onReviseDocument={onReviseDocument} />
-        </ConfirmProvider>
-      </ToastProvider>,
+      <MemoryRouter initialEntries={initialEntries}>
+        <ToastProvider>
+          <ConfirmProvider>
+            <MatterDocumentsTab matterId="matter-1" onReviseDocument={onReviseDocument} />
+            <LocationProbe />
+          </ConfirmProvider>
+        </ToastProvider>
+      </MemoryRouter>,
     ),
   }
 }
@@ -358,6 +375,25 @@ describe('MatterDocumentsTab document explorer', () => {
     )
   })
 
+  it('shows excerpts found inside the documents for a search', async () => {
+    apiMocks.searchMatterDocumentText.mockResolvedValue({
+      query: 'compel',
+      indexed_documents: 2,
+      results: [
+        { document_id: 'pdf-1', filename: 'Filed pleading.pdf', chunk_index: 0, snippet: 'moves to **compel** discovery responses', score: 0.02, matched_by: ['words'], open_url: '/api/matters/matter-1/documents/pdf-1/open' },
+      ],
+    })
+    const user = userEvent.setup()
+    renderDocuments()
+    await screen.findByRole('navigation', { name: 'Document folders' })
+    await user.type(screen.getByLabelText('Search documents'), 'compel')
+    const found = await screen.findByRole('region', { name: 'Found inside documents' }, { timeout: 3000 })
+    expect(within(found).getByText('Found inside 1 document')).toBeInTheDocument()
+    expect(within(found).getByText('moves to compel discovery responses')).toBeInTheDocument()
+    expect(within(found).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/api/matters/matter-1/documents/pdf-1/open')
+    await waitFor(() =>     expect(apiMocks.searchMatterDocumentText).toHaveBeenCalledWith('matter-1', 'compel', 25))
+  })
+
   it('replaces the tags on a document from its row', async () => {
     const user = userEvent.setup()
     apiMocks.setMatterDocumentTags.mockResolvedValue({ items: [tags[0]], total: 1 })
@@ -488,5 +524,52 @@ describe('MatterDocumentsTab signing-grant labelling', () => {
     expect(screen.getAllByText('Shared with client').length).toBeGreaterThan(0)
     // The genuinely private document keeps the private label.
     expect(screen.getAllByText('Private').length).toBeGreaterThan(0)
+  })
+})
+
+describe('MatterDocumentsTab prepared documents', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    apiMocks.getMatterDocuments.mockResolvedValue({ items: documents, total: documents.length })
+    apiMocks.getMatterCloudFiles.mockResolvedValue({ files: [] })
+    apiMocks.getMatterCloudFolder.mockResolvedValue(null)
+    apiMocks.getMatterDocumentFolders.mockResolvedValue({ items: folders, total: folders.length, root_document_count: 1 })
+    apiMocks.getDocumentTags.mockResolvedValue({ items: tags, total: tags.length })
+    apiMocks.getMatterDocumentDownloadUrl.mockImplementation((matterId, documentId) => `/api/matters/${matterId}/documents/${documentId}/download`)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/')
+  })
+
+  it('opens the document named in the address once, then clears it from the address', async () => {
+    renderDocuments(vi.fn(), { initialEntries: ['/matters/matter-1?tab=documents&document=pdf-1'] })
+    await screen.findAllByText('Filed pleading.pdf')
+    const preview = await screen.findByRole('region', { name: 'Document preview' })
+    expect(preview).toHaveTextContent('Filed pleading.pdf')
+    expect(preview).toHaveTextContent('17 of 19 fields filled, 12 verified when generated · from Pleading form v2')
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?tab=documents')
+  })
+
+  it('routes a prepared document to the Prepare page when the matter page provides the route', async () => {
+    apiMocks.getMatterDocumentPrefill.mockResolvedValue({
+      event_id: 'e', prepared_at: '2026-09-19T10:00:00Z', stale: false, ready: 1,
+      templates: [{ template_id: 't-1', title: 'Fee agreement', status: 'ready', fields: 4, filled: 3, percent: 75, missing_required: 0, review: 0 }],
+    })
+    const onPrepareTemplate = vi.fn()
+    render(
+      <MemoryRouter initialEntries={['/matters/matter-1']}>
+        <ToastProvider>
+          <ConfirmProvider>
+            <MatterDocumentsTab matterId="matter-1" onReviseDocument={vi.fn()} onPrepareTemplate={onPrepareTemplate} />
+          </ConfirmProvider>
+        </ToastProvider>
+      </MemoryRouter>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Review and save' }))
+    expect(onPrepareTemplate).toHaveBeenCalledWith('t-1', null)
+    expect(screen.queryByRole('dialog', { name: 'Attach template' })).not.toBeInTheDocument()
   })
 })

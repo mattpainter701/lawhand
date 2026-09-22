@@ -26,6 +26,7 @@ from app.schemas.matter_intake import (
     IntakeStart,
     IntakeSubmission,
 )
+from app.services.document_prefill import enqueue_document_prefill
 from app.services import intake_writeback, matter_engagement, matter_intake as service
 from app.services.access_control import require_capability
 from app.services.matter_access import can_access_matter
@@ -463,6 +464,14 @@ async def accept_proposed_changes(
     result = await intake_writeback.decide_changes(
         db, user, packet, change_id=body.change_id, decide_all=body.all, accept=True
     )
+    # Accepted answers are new matter facts; refresh what documents can fill.
+    await enqueue_document_prefill(
+        db,
+        tenant_id=packet.tenant_id,
+        matter_id=packet.matter_id,
+        trigger_event="intake_writeback_accepted",
+        actor_user_id=user.id,
+    )
     await db.commit()
     return result
 
@@ -572,6 +581,13 @@ async def submit(
         # never reach this branch: the completed requirement short-circuits
         # above, so tasks and proposals cannot duplicate.
         await intake_writeback.plan_writeback(db, packet, matter, body.answers)
+        await enqueue_document_prefill(
+            db,
+            tenant_id=packet.tenant_id,
+            matter_id=packet.matter_id,
+            trigger_event="intake_submitted",
+            actor_user_id=packet.created_by,
+        )
         packet.requirements = {
             **packet.requirements,
             "questionnaire": {

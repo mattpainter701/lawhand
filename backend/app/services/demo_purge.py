@@ -70,6 +70,9 @@ _CONFIG_WORKFLOW_PURGE_ORDER = (
     "matter_workflow_automation_rules",
     "matter_workflow_field_requirements",
     "matter_workflow_checklist_definitions",
+    # Each requested document points at a stage definition with ON DELETE
+    # RESTRICT, so it must leave before the stage does.
+    "matter_workflow_document_definitions",
     "matter_workflow_stage_definitions",
     "matter_workflow_template_versions",
     "matter_workflow_templates",

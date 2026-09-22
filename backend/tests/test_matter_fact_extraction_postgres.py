@@ -314,3 +314,104 @@ async def test_other_tenant_cannot_propose_or_accept(client, db_session, fact_ca
                 )
         assert error.value.status_code == 404
     assert case.calls == []
+
+
+async def _add_scan(db_session, case, filename, content, monkeypatch=None):
+    document_id = uuid.uuid4()
+    if monkeypatch is not None:
+        # The fixture's reader asserts the original document; a scan is a
+        # second document with its own bytes.
+        async def read_scan(_store, **kwargs):
+            assert kwargs["document"].id == document_id
+            return content
+
+        monkeypatch.setattr(facts.MatterFileStore, "read_matter_file_bytes", read_scan)
+    db_session.add(
+        MatterDocument(
+            id=document_id,
+            tenant_id=case.tenant_id,
+            matter_id=case.matter_id,
+            filename=filename,
+            content_type="image/png" if filename.endswith(".png") else "application/pdf",
+            file_size=len(content),
+            storage_state="verified",
+            document_sha256=hashlib.sha256(content).hexdigest(),
+            provider_version_id="scan-1",
+        )
+    )
+    await db_session.commit()
+    return document_id
+
+
+async def test_scan_is_read_through_ocr_with_its_confidence_and_cached(
+    client, db_session, fact_case, monkeypatch
+):
+    from app.services import document_text_cache as cache
+
+    case = fact_case
+    scan_bytes = b"png-bytes-of-a-hand-filled-form"
+    case.source["bytes"] = scan_bytes
+    document_id = await _add_scan(db_session, case, "scan.png", scan_bytes, monkeypatch)
+    extractions = []
+
+    def fake_extract(filename, content_type, content):
+        extractions.append(filename)
+        return cache.Extraction(
+            text="Client: Ada Lovelace\nCase No.: 2024-CV-777",
+            engine=cache.ENGINE_OCR_LOCAL,
+            ocr_confidence=0.73,
+            lines=[
+                {"page_index": 0, "text": "Case No.:", "score": 0.9, "rect": [72, 600, 140, 620]},
+                {"page_index": 0, "text": "2024-CV-777", "score": 0.58, "rect": [150, 600, 260, 620]},
+            ],
+            page_count=1,
+        )
+
+    monkeypatch.setattr(cache, "extract", fake_extract)
+    url = f"/api/matters/{case.matter_id}/documents/{document_id}/facts"
+    response = await client.post(url)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    name = proposal_target(body, "client.name")
+    assert name["value"] == "Ada Lovelace" and name["source_kind"] == "ocr"
+    assert name["confidence"] == pytest.approx(0.73)
+    case_number = proposal_target(body, "matter.case_number")
+    # The merged text and the OCR detections agree on one value; the
+    # detection pair carries its own, lower, confidence and the text-layer
+    # line carries the page average. One value, best confidence kept.
+    assert case_number["value"] == "2024-CV-777"
+    assert {entry["source_kind"] for entry in case_number["values"]} == {"ocr"}
+    assert any("read by OCR" in warning for warning in body["warnings"])
+
+    again = await client.post(url)
+    assert again.status_code == 200, again.text
+    assert extractions == ["scan.png"], "the second read must come from the cache"
+
+
+async def test_unreadable_scan_says_so_and_a_prose_file_keeps_the_old_wording(
+    client, db_session, fact_case, monkeypatch
+):
+    from app.services import document_text_cache as cache
+
+    case = fact_case
+    case.source["bytes"] = b"blank-scan"
+    document_id = await _add_scan(db_session, case, "blank.pdf", b"blank-scan", monkeypatch)
+    monkeypatch.setattr(
+        cache,
+        "extract",
+        lambda filename, content_type, content: cache.Extraction(
+            text="", engine=cache.ENGINE_OCR_LOCAL, ocr_confidence=0.0
+        ),
+    )
+    response = await client.post(f"/api/matters/{case.matter_id}/documents/{document_id}/facts")
+    assert response.status_code == 200, response.text
+    assert response.json()["candidates"] == []
+    assert "OCR found no readable text in this scan." in response.json()["warnings"]
+
+
+async def test_unsupported_source_type_is_refused(client, db_session, fact_case):
+    case = fact_case
+    document_id = await _add_scan(db_session, case, "sheet.xlsx", b"xlsx")
+    response = await client.post(f"/api/matters/{case.matter_id}/documents/{document_id}/facts")
+    assert response.status_code == 422
+    assert "image source" in response.json()["detail"]

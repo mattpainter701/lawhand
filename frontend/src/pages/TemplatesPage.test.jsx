@@ -1223,6 +1223,9 @@ describe('document template workflow', () => {
     expect(await screen.findByText('100% match confidence')).toBeInTheDocument()
     await user.click(screen.getByText('Find a matter by ID'))
     fireEvent.change(screen.getByLabelText('Matter UUID fallback'), { target: { value: 'matter-2' } })
+    // The fallback commits on blur, not on each keystroke, so a typed UUID
+    // does not reset the form mid-paste.
+    fireEvent.blur(screen.getByLabelText('Matter UUID fallback'))
     expect(screen.getByPlaceholderText('Enter Client Name')).toHaveValue('')
     expect(screen.queryByText('100% match confidence')).not.toBeInTheDocument()
     expect(screen.getByText(/0% complete/)).toBeInTheDocument()
@@ -1289,7 +1292,7 @@ describe('document template workflow', () => {
     render(<TemplatesPage />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /^Approved/ })).not.toBeChecked()
     expect(screen.getByLabelText(/Client name/)).toHaveAttribute('id', 'template-variable-client_name')
     expect(screen.getByRole('combobox', { name: /Venue/ })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Notes/ }).tagName).toBe('TEXTAREA')
@@ -1315,10 +1318,12 @@ describe('document template workflow', () => {
     }))
     await user.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
 
+    // The two values the reviewer typed or chose are the two they verified.
     await waitFor(() => expect(renderTemplate).toHaveBeenCalledWith('schema-pdf', {
       matter_id: 'matter-1',
       preview_id: 'schema-preview-1',
       variables: { client_name: 'Jane', approved: 'false', venue: 'Cook County', notes: '' },
+      verified_fields: ['client_name', 'venue'],
     }))
   })
 

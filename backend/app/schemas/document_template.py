@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 CATEGORIES = ["engagement_letter", "retainer", "NDA", "motion", "other"]
 
@@ -200,6 +200,9 @@ class DocumentTemplateRenderRequest(BaseModel):
     # DOCX templates may produce a review-bound PDF suitable for e-signature.
     # The retained template source remains DOCX and is never overwritten.
     convert_to_pdf: bool = False
+    # The variables the preparer marked verified before saving. Names only,
+    # recorded on the generated document and its event; never a gate.
+    verified_fields: list[str] = Field(default_factory=list, max_length=400)
 
     @field_validator("variables")
     @classmethod
@@ -214,6 +217,21 @@ class DocumentTemplateRenderRequest(BaseModel):
         if total > 250_000:
             raise ValueError("Combined variable values exceed 250,000 characters")
         return value
+
+    @model_validator(mode="after")
+    def validate_verified_fields(self):
+        names: list[str] = []
+        for name in self.verified_fields:
+            if len(name) > 100:
+                raise ValueError("Verified field names may not exceed 100 characters")
+            if name not in self.variables:
+                raise ValueError(
+                    "verified_fields names a variable that is not in this request"
+                )
+            if name not in names:
+                names.append(name)
+        self.verified_fields = names
+        return self
 
 
 class DocumentTemplatePublishRequest(BaseModel):
@@ -261,6 +279,15 @@ class DocumentTemplateRenderResponse(BaseModel):
     storage_backend: Optional[str] = None
     storage_provider: Optional[str] = None
     storage_warning: Optional[str] = None
+    # Signing readiness of the saved document, so the caller that just
+    # generated it can offer "Send for signature" without a second listing
+    # round trip. Empty until a document is saved into a matter.
+    signing_roles: list[str] = Field(default_factory=list)
+    signing_placement_required: bool = False
+    positioned_fields: list[dict[str, Any]] = Field(default_factory=list)
+    signing_placement_problems: list[dict[str, Any]] = Field(default_factory=list)
+    # Field, filled and verified counts recorded on the saved document.
+    generation_summary: Optional[dict[str, Any]] = None
 
 
 class DocumentTemplateSmartFillRequest(BaseModel):

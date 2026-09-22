@@ -19,14 +19,16 @@ Sources are read in descending order of trust:
 
 Nothing here guesses. An ambiguous target is reported as ``conflicting_sources``
 rather than averaged or chosen, and a target the source does not mention yields
-no proposal at all. Value patterns are matched against bounded extracted text;
-no model runs, so a scan with no text layer proposes nothing until OCR text is
-supplied.
+no proposal at all. Value patterns are matched against bounded extracted text
+served by ``document_text_cache``, which reads a scan through OCR when a page
+has no text layer; a value read from handwriting is proposed with the OCR
+confidence it was read at, never dropped silently.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -52,11 +54,13 @@ from app.models.tenant import TenantSettings
 from app.schemas.configurable_workflow import normalized_field_value
 from app.services import intake_writeback, template_custom_fields
 from app.services.configurable_workflows import value_hmac
+from app.services import document_text_cache
 from app.services.docx_templates import validate_docx_package
 from app.services.matter_file_store import MatterFileReadError, MatterFileStore
 from app.services.pdf_templates import TemplatePdfError, read_pdf_form_values
 from app.services.template_bindings import binding_label
-from app.utils.text_processing import extract_text
+
+logger = logging.getLogger(__name__)
 
 #: A source document larger than this is not scanned for facts. Intake forms
 #: are small; a bound large enough to hold one keeps a hostile upload from
@@ -261,12 +265,15 @@ def _form_candidates(form_values, targets):
     return found
 
 
-def _label_line_candidates(text, targets):
+def _label_line_candidates(
+    text, targets, *, source_kind: str = "label_value", confidence: float = 1.0
+):
     """Exact ``Label: value`` lines, matched against a target's own labels.
 
     Only an exact, case-insensitive label prefix counts, and only a single
     colon split; a line with no colon, or a longer sentence that merely starts
-    with the label, is not an answer.
+    with the label, is not an answer. ``source_kind`` and ``confidence`` let a
+    line that OCR read carry that fact to the reviewer.
     """
 
     found: dict[str, list[Candidate]] = {}
@@ -287,7 +294,65 @@ def _label_line_candidates(text, targets):
             if value is None:
                 continue
             found.setdefault(target.key, []).append(
-                Candidate(str(value), "label_value", f"line:{line_number}", 1.0)
+                Candidate(
+                    str(value), source_kind, f"line:{line_number}", float(confidence)
+                )
+            )
+    return found
+
+
+def _ocr_line_candidates(lines, targets):
+    """``Label: value`` pairs the OCR engine read, each at its own confidence.
+
+    ``lines`` are the recorded OCR detections (page, text, score, rect). A label
+    and its handwritten answer usually arrive as two detections on one row; the
+    OCR module's row joiner merges them before the label rule runs, and the pair
+    keeps the lower of the two scores, since a value is only as sure as the
+    weaker read.
+    """
+
+    from app.services.template_ocr import OcrLine, reconstruct_ocr_lines
+
+    found: dict[str, list[Candidate]] = {}
+    parsed = []
+    for entry in lines or ():
+        try:
+            rect = tuple(float(value) for value in entry.get("rect") or ())
+            if len(rect) != 4:
+                continue
+            parsed.append(
+                OcrLine(
+                    page_index=int(entry.get("page_index", 0)),
+                    text=str(entry.get("text") or ""),
+                    score=float(entry.get("score") or 0.0),
+                    rect=rect,
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    if not parsed:
+        return found
+    for index, line in enumerate(reconstruct_ocr_lines(parsed), 1):
+        prefix, separator, raw = str(line.text).partition(":")
+        if not separator:
+            continue
+        label = normalize_text(prefix)
+        raw = raw.strip()
+        if not label or len(label) > 80 or not raw:
+            continue
+        for target in targets:
+            if label not in target.match_keys:
+                continue
+            value = target.normalize(raw)
+            if value is None:
+                continue
+            found.setdefault(target.key, []).append(
+                Candidate(
+                    str(value),
+                    "ocr",
+                    f"ocr:{int(line.page_index) + 1}:{index}",
+                    round(max(0.0, min(1.0, float(line.score))), 4),
+                )
             )
     return found
 
@@ -321,18 +386,32 @@ def _merge(*sources):
     return merged
 
 
-def extract_candidates(*, text, form_values, targets):
+def extract_candidates(*, text, form_values, targets, extraction=None):
     """Return the distinct values each target's source text supports.
 
     Pure and free of any record access: the caller decides what is already on
-    the record and what a reviewer should see.
+    the record and what a reviewer should see. When ``extraction`` says the
+    text came through OCR, label lines are attributed to the scan at the OCR
+    confidence, and the recorded OCR detections are read for pairs the merged
+    text may have lost.
     """
 
-    return _merge(
-        _form_candidates(form_values, targets),
-        _label_line_candidates(text, targets),
-        _pattern_candidates(text, targets),
-    )
+    used_ocr = bool(extraction is not None and extraction.used_ocr)
+    sources = [_form_candidates(form_values, targets)]
+    if used_ocr:
+        sources.append(
+            _label_line_candidates(
+                text,
+                targets,
+                source_kind="ocr",
+                confidence=float(extraction.ocr_confidence or 0.0),
+            )
+        )
+        sources.append(_ocr_line_candidates(extraction.lines, targets))
+    else:
+        sources.append(_label_line_candidates(text, targets))
+    sources.append(_pattern_candidates(text, targets))
+    return _merge(*sources)
 
 
 def _distinct(candidates):
@@ -368,9 +447,11 @@ async def _load_source(db, user, matter_id, document_id):
             status_code=409,
             detail="Reconcile the source document before reading its details.",
         )
-    if not document.filename.lower().endswith((".pdf", ".docx", ".txt")):
+    if not document.filename.lower().endswith(
+        (".pdf", ".docx", ".txt") + document_text_cache.IMAGE_SUFFIXES
+    ):
         raise HTTPException(
-            status_code=422, detail="Choose a PDF, Word, or plain-text source"
+            status_code=422, detail="Choose a PDF, Word, plain-text, or image source"
         )
     stable_user = SimpleNamespace(id=user.id, tenant_id=tenant_id)
     try:
@@ -392,23 +473,40 @@ async def _load_source(db, user, matter_id, document_id):
     return matter, document, content
 
 
-def _extract_text(document, content) -> str:
+async def _extract(db, tenant_id, document, content) -> document_text_cache.Extraction:
+    """The document's text through the extraction cache, OCR included."""
+
     try:
         if document.filename.lower().endswith(".docx"):
             validate_docx_package(content)
-        text = extract_text(
-            content,
-            document.content_type or "",
-            document.filename,
-            max_pdf_pages=100,
-            max_pdf_chars=MAX_SOURCE_TEXT,
+        extraction = await document_text_cache.get_or_extract(
+            db,
+            tenant_id=tenant_id,
+            content=content,
+            filename=document.filename,
+            content_type=document.content_type or "",
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(
             status_code=422,
             detail="Source text could not be read. Review the original and enter the value manually.",
         ) from exc
-    return text[:MAX_SOURCE_TEXT]
+    # The matter-scoped search index follows the cache: same text, same
+    # digest. It is built by a durable job queued in its own unit of work, so
+    # this caller's transaction is untouched and a queue fault is only logged.
+    from app.services import matter_document_index
+
+    await matter_document_index.enqueue_index(
+        tenant_id=tenant_id,
+        document_id=document.id,
+        document_sha256=document.document_sha256,
+    )
+    extraction.text = extraction.text[:MAX_SOURCE_TEXT]
+    return extraction
+
+
+async def _extract_text(db, tenant_id, document, content) -> str:
+    return (await _extract(db, tenant_id, document, content)).text
 
 
 def _form_values(document, content):
@@ -466,13 +564,22 @@ async def propose(db, user, matter_id, document_id, use_ai: bool = False):  # no
     matter, document, content = await _load_source(db, user, matter_id, document_id)
     targets = await build_targets(db, tenant_id)
     form_values = _form_values(document, content)
-    text = _extract_text(document, content)
-    candidates = extract_candidates(text=text, form_values=form_values, targets=targets)
+    extraction = await _extract(db, tenant_id, document, content)
+    text = extraction.text
+    candidates = extract_candidates(
+        text=text, form_values=form_values, targets=targets, extraction=extraction
+    )
 
-    warnings: list[str] = []
+    warnings: list[str] = list(extraction.warnings)
     if not text.strip() and not candidates:
         warnings.append(
-            "No text layer or form values were found. A scan needs OCR before its answers can be proposed."
+            "OCR found no readable text in this scan."
+            if extraction.used_ocr
+            else "No text layer or form values were found in this document."
+        )
+    elif extraction.used_ocr:
+        warnings.append(
+            "Some values were read by OCR from a scan. Each carries the confidence it was read at; check them against the page before accepting."
         )
 
     if use_ai:
@@ -623,10 +730,11 @@ async def accept(db, user, matter_id, document_id, payload: FactDecision):
             status_code=404, detail="That matter detail is no longer available."
         )
 
-    text = _extract_text(document, content)
+    extraction = await _extract(db, tenant_id, document, content)
+    text = extraction.text
     form_values = _form_values(document, content)
     candidates = extract_candidates(
-        text=text, form_values=form_values, targets=targets
+        text=text, form_values=form_values, targets=targets, extraction=extraction
     ).get(target.key, [])
     live = target.normalize(payload.value)
     if live is None:

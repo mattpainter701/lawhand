@@ -35,6 +35,8 @@ from app.schemas.intake_dashboard import (
     IntakeCallDraftUpsertRequest,
 )
 from app.services.matter_number import assign_matter_number
+from app.services.document_prefill import enqueue_document_prefill
+from app.services.durable_workflow_automations import enqueue_matter_event
 
 router = APIRouter(prefix="/api/intake", tags=["intake"])
 
@@ -391,6 +393,22 @@ async def convert_lead_to_matter(
             source=lead.source,
             metadata_json={"matter_id": str(matter.id)},
         )
+    )
+    # A converted lead is a created matter: the same trigger the matter route
+    # fires, in the same transaction, so firm rules and document prefill see
+    # the moment the matter's first data exists.
+    await enqueue_matter_event(
+        db,
+        matter=matter,
+        trigger_event="matter_created",
+        actor_user_id=user_id,
+    )
+    await enqueue_document_prefill(
+        db,
+        tenant_id=uid,
+        matter_id=matter.id,
+        trigger_event="matter_created",
+        actor_user_id=user_id,
     )
 
     await db.commit()

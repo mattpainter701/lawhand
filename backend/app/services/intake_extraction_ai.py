@@ -236,3 +236,129 @@ async def extract_with_ai(
             "AI document extraction returned an unusable response."
         ) from exc
     return reconcile_ai_values(proposal, targets)
+
+
+_VISION_PROMPT = """You read one small image clipped from a scanned legal form. The clip holds
+the handwritten or typed answer for a single labelled field. Reply with JSON
+{"value": "<the answer exactly as written>"} or {"value": null} when the clip
+is blank or unreadable. Never guess, never complete a partial answer, never
+add words that are not in the clip."""
+
+
+class AiFieldReading(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: str | None = Field(default=None, max_length=1000)
+
+
+def vision_enabled() -> bool:
+    """Whether the platform has a vision model for field clips at all."""
+
+    return bool(settings.INTAKE_EXTRACTION_ENABLED) and bool(
+        str(settings.INTAKE_EXTRACTION_VISION_MODEL or "").strip()
+    )
+
+
+def _vision_usage_record(user, tokens_in, tokens_out, final_model, gateway_request_id):
+    record = _usage_record(user, tokens_in, tokens_out, final_model, gateway_request_id)
+    record.requested_route = "intake-extraction-vision"
+    record.resolved_route = "intake-extraction-vision"
+    record.gateway_alias = settings.INTAKE_EXTRACTION_VISION_MODEL
+    record.model_used = settings.INTAKE_EXTRACTION_VISION_MODEL
+    record.operation_type = "intake_extraction_vision"
+    return record
+
+
+async def read_field_clip(
+    *,
+    db: AsyncSession,
+    user,
+    png_bytes: bytes,
+    label: str,
+    document_sha256: str,
+    tenant_ai_enabled: bool,
+    llm: LLMService | None = None,
+) -> str | None:
+    """Read one field clip with the vision model, or raise when unavailable.
+
+    One metered call per clip. ``tenant_ai_enabled`` is the firm's own opt-in
+    for the model to read its documents; it is required rather than read here
+    so a caller cannot reach the provider without having loaded and checked
+    that flag. The caller also bounds how many clips it sends and only sends
+    those OCR could not read. The reply is a closed schema; a value the model
+    invents for a blank clip is still shown to a reviewer with the clip beside
+    it, never written.
+    """
+
+    import base64
+
+    # The firm's own opt-in is checked first, so a firm that has not allowed
+    # the model answers with that reason rather than the platform's.
+    if not tenant_ai_enabled:
+        raise IntakeExtractionUnavailable(
+            "AI reading of handwritten fields is not enabled for this firm."
+        )
+    if not vision_enabled():
+        raise IntakeExtractionUnavailable(
+            "AI reading of handwritten fields is not enabled on this server."
+        )
+    if not png_bytes:
+        return None
+    await check_token_budget(db, user)
+    usage: dict = {}
+    llm_service = llm or LLMService()
+    encoded = base64.b64encode(png_bytes).decode("ascii")
+    try:
+        response_text, tokens_in, tokens_out = await llm_service.complete(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Field label: {label[:200]}"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{encoded}"},
+                        },
+                    ],
+                }
+            ],
+            tenant_name=getattr(getattr(user, "tenant", None), "name", "Legal"),
+            context="",
+            use_premium=False,
+            model=settings.INTAKE_EXTRACTION_VISION_MODEL,
+            response_format={"type": "json_object"},
+            usage_sink=usage,
+            system_prompt_override=_VISION_PROMPT,
+            max_output_tokens=200,
+            gateway_metadata=gateway_metadata(
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                operation_type="intake_extraction_vision",
+                document_sha256=document_sha256,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - any provider failure is a fallback
+        raise IntakeExtractionUnavailable(
+            "AI reading of handwritten fields is unavailable; the OCR read stands."
+        ) from exc
+    reported_model = str(usage.get("model") or "")[:200]
+    final_model = (
+        reported_model
+        if reported_model and reported_model != settings.INTAKE_EXTRACTION_VISION_MODEL
+        else None
+    )
+    gateway_request_id = str(usage.get("provider_request_id") or "")[:200] or None
+    db.add(
+        _vision_usage_record(
+            user, tokens_in, tokens_out, final_model, gateway_request_id
+        )
+    )
+    await db.commit()
+    try:
+        reading = AiFieldReading.model_validate_json(_json_payload(response_text))
+    except (ValidationError, ValueError) as exc:
+        raise IntakeExtractionUnavailable(
+            "The AI reply for a handwritten field could not be read."
+        ) from exc
+    value = " ".join(str(reading.value or "").split())
+    return value or None

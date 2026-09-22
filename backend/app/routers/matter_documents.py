@@ -17,6 +17,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +42,12 @@ from app.schemas.matter_document import (
     MatterDocumentUpdate,
 )
 from app.services.document_accountability import append_document_integrity_event
-from app.services import matter_fact_extraction
+from app.services import (
+    document_text_cache,
+    matter_document_index,
+    matter_fact_extraction,
+    matter_form_reading,
+)
 from app.services.durable_jobs import enqueue_job
 from app.services.matter_document_organization import (
     DocumentOrganizationError,
@@ -697,7 +703,16 @@ async def delete_matter_document(
         except OSError:
             pass
 
+    # The cached text is the document's own words; it goes when the tenant's
+    # last document with these bytes goes. Search rows cascade with the row.
+    deleted_id, deleted_digest = doc.id, doc.document_sha256
     await db.delete(doc)
+    await document_text_cache.forget_if_unreferenced(
+        db,
+        tenant_id=user.tenant_id,
+        document_sha256=deleted_digest,
+        except_document_id=deleted_id,
+    )
     await db.commit()
 
 
@@ -840,6 +855,89 @@ async def propose_matter_document_facts(
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return await matter_fact_extraction.propose(
         db, user, uuid.UUID(matter_id), uuid.UUID(doc_id), use_ai=ai
+    )
+
+
+class FormReadRequest(BaseModel):
+    template_id: uuid.UUID
+    version_no: int | None = Field(default=None, ge=1)
+    # Send the clips OCR could not read to the vision model (opt-in, metered).
+    use_ai: bool = False
+
+
+@router.get("/matters/{matter_id}/documents/search")
+async def search_matter_document_text(
+    matter_id: str,
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200),
+    limit: int = Query(8, ge=1, le=25),
+    db: AsyncSession = Depends(get_db),
+):
+    """Excerpts from this matter's documents that mention ``q``.
+
+    Searches the matter-scoped index built from the extraction cache (text
+    layer and OCR). Each hit points at one document a person can open; the
+    snippet is the document's own words.
+    """
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_matter_or_404(matter_id, user.tenant_id, db)
+    results = await matter_document_index.search(
+        db,
+        tenant_id=user.tenant_id,
+        matter_id=uuid.UUID(matter_id),
+        query=q,
+        limit=limit,
+        embedder=matter_document_index.default_embedder(),
+    )
+    indexed = await matter_document_index.indexed_documents(
+        db, tenant_id=user.tenant_id, matter_id=uuid.UUID(matter_id)
+    )
+    return {"query": q, "results": results, "indexed_documents": len(indexed)}
+
+
+@router.get("/matters/{matter_id}/documents/{doc_id}/facts/form-sources")
+async def list_matter_document_form_sources(
+    matter_id: str,
+    doc_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """The forms this matter has generated, so a scan can be read against one."""
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    return {
+        "sources": await matter_form_reading.form_sources(
+            db, tenant_id=user.tenant_id, matter_id=uuid.UUID(matter_id)
+        )
+    }
+
+
+@router.post("/matters/{matter_id}/documents/{doc_id}/facts/from-form")
+async def read_matter_document_against_form(
+    matter_id: str,
+    doc_id: str,
+    payload: FormReadRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Read a scanned, hand-filled copy field by field against its template.
+
+    Same review shape as ``facts``: every reading is a candidate for a person
+    to accept through ``facts/accept``; nothing is written here.
+    """
+    user = await get_current_user(request, db)
+    await set_tenant_context(db, str(user.tenant_id))
+    await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    return await matter_form_reading.read_against_form(
+        db,
+        user,
+        uuid.UUID(matter_id),
+        uuid.UUID(doc_id),
+        template_id=payload.template_id,
+        version_no=payload.version_no,
+        use_ai=payload.use_ai,
     )
 
 

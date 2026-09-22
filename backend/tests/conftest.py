@@ -127,7 +127,21 @@ async def test_engine():
         await conn.execute(_text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.execute(_text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
         await conn.run_sync(Base.metadata.create_all)
+    # The extraction cache and the document index write through their own
+    # session factories (never the caller's transaction). Bind them to this
+    # engine here, where the database is actually built — not in an autouse
+    # fixture, which would drag every database-free test into a connection it
+    # does not have.
+    from app.services import document_text_cache, matter_document_index
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    original_text_factory = document_text_cache.session_factory
+    original_index_factory = matter_document_index.session_factory
+    document_text_cache.session_factory = factory
+    matter_document_index.session_factory = factory
     yield engine
+    document_text_cache.session_factory = original_text_factory
+    matter_document_index.session_factory = original_index_factory
     # DROP SCHEMA CASCADE rather than metadata.drop_all — the latter can't
     # topologically sort the pre-existing invoices<->retainers FK cycle.
     async with engine.begin() as conn:

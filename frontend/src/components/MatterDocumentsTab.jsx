@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import MatterTransferSettings from './MatterTransferSettings'
 import MatterImportWizard from './MatterImportWizard'
 import MatterDocumentPreview from './documents/MatterDocumentPreview'
 import MatterTemplatePicker from './templates/MatterTemplatePicker'
+import PreparedDocumentsBanner from './documents/PreparedDocumentsBanner'
+import FillSessionsList from './documents/FillSessionsList'
 import MatterDocumentFacts from './documents/MatterDocumentFacts'
 import { format, parseISO } from 'date-fns'
 import api, {
@@ -16,6 +19,7 @@ import api, {
   getMatterCloudFiles,
   createDocumentTag,
   setMatterDocumentTags,
+  searchMatterDocumentText,
 } from '../api'
 import { FileText, Upload, Trash2, Download, X, Check, Cloud, ExternalLink, RefreshCw, Eye, EyeOff, PenLine, Sparkles, Pencil, ShieldCheck, Folder, Search, Tag as TagIcon } from 'lucide-react'
 import { useConfirm } from './dialog/ConfirmProvider'
@@ -231,7 +235,7 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
   )
 }
 
-export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onReviseDocument }) {
+export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onReviseDocument, onPrepareTemplate }) {
   const confirmAction = useConfirm()
   const toast = useToast()
   const explorer = useMatterDocumentExplorer(matterId)
@@ -270,6 +274,34 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     refreshDocuments,
   } = explorer
   const [templateOpen, setTemplateOpen] = useState(false)
+  // Phase 5e: the same search box also looks inside the documents' text
+  // (the matter-scoped index over the extraction cache). Three characters
+  // and a short pause before asking, so typing does not flood the server.
+  const [excerpts, setExcerpts] = useState({ query: '', results: [], indexed: 0 })
+  useEffect(() => {
+    const query = String(search || '').trim()
+    if (query.length < 3) {
+      setExcerpts({ query: '', results: [], indexed: 0 })
+      return undefined
+    }
+    let active = true
+    const timer = setTimeout(() => {
+      searchMatterDocumentText(matterId, query, 25)
+        .then((value) => {
+          if (!active) return
+          setExcerpts({
+            query,
+            results: Array.isArray(value?.results) ? value.results : [],
+            indexed: Number(value?.indexed_documents) || 0,
+            error: false,
+          })
+        })
+        .catch(() => { if (active) setExcerpts({ query, results: [], indexed: 0, error: true }) })
+    }, 400)
+    return () => { active = false; clearTimeout(timer) }
+  }, [matterId, search])
+  const [templateToOpen, setTemplateToOpen] = useState(null)
+  const [prefillVersion, setPrefillVersion] = useState(0)
   const [documentView, setDocumentView] = useState(() => { try { return localStorage.getItem(`document-view:${matterId}`) === 'folder' ? 'folder' : 'detailed' } catch { return 'detailed' } })
   useEffect(() => { try { localStorage.setItem(`document-view:${matterId}`, documentView) } catch { /* Optional preference. */ } }, [matterId, documentView])
   const [filingMode, setFilingMode] = useState('move')
@@ -284,7 +316,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       const target = destination === '__root' ? null : destination
       if (filingMode === 'copy') await api.post(`/matters/${matterId}/documents/copy`, { document_id: filingDocument.id, folder_id: target, copy_id: copyRequest.current })
       else await fileDocuments([filingDocument.id], target)
-      await Promise.all([refreshDocuments(), refreshFolders()]); setFilingDocument(null)
+      await Promise.all([refreshDocuments().catch(() => {}), refreshFolders().catch(() => {})]); setFilingDocument(null)
     } catch (error) { setFilingError(typeof error.response?.data?.detail === 'string' ? error.response.data.detail : 'The operation did not finish. Retry or cancel.') }
     finally { setFilingBusy(false) }
   }
@@ -293,6 +325,24 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
   }, [documentView, folderId, setFolderId, setIncludeSubfolders])
   function selectFolder(value) { if (value === ALL_DOCUMENTS) setDocumentView('detailed'); setFolderId(value) }
   const [previewDocument, setPreviewDocument] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // A document saved on the Prepare route lands here with ``?document=`` in
+  // the address so its preview is already open; the query is read once, after
+  // the list loads, and cleared so a reload does not reopen it. The clear goes
+  // through the router, not ``window.history``: a raw replaceState leaves the
+  // router's cached search holding ``document=``, which would come back on the
+  // next tab switch and reopen the preview.
+  useEffect(() => {
+    if (!docs.length) return
+    const wanted = searchParams.get('document')
+    if (!wanted) return
+    const match = docs.find((doc) => String(doc.id) === wanted)
+    const next = new URLSearchParams(searchParams)
+    next.delete('document')
+    setSearchParams(next, { replace: true })
+    if (match) setPreviewDocument(match)
+    else toast.error('Document not found', { message: 'The document this link pointed to is not in this matter.' })
+  }, [docs, searchParams, setSearchParams])
   const [filingDocument, setFilingDocument] = useState(null)
   const [cloudFiles, setCloudFiles] = useState(null)
 
@@ -367,8 +417,10 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       // The optimistic row is only correct when the upload landed in the view
       // the user is looking at; re-listing settles the case where they filed it
       // into a different folder, and refreshes the rail's counts either way.
-      await refreshFolders()
-      await refreshDocuments()
+      // A failed refresh must not read as a failed upload; the row is already
+      // in the list optimistically and the next load settles it.
+      await refreshFolders().catch(() => {})
+      await refreshDocuments().catch(() => {})
       setShowUpload(false)
       setUploadFile(null)
       setUploadDescription('')
@@ -397,7 +449,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     try {
       await deleteMatterDocument(matterId, docId)
       setDocs((prev) => prev.filter((d) => d.id !== docId))
-      await refreshFolders()
+      await refreshFolders().catch(() => {})
     } catch (error) {
       toast.error('Document was not deleted', { message: apiErrorMessage(error, 'Please try again.') })
     }
@@ -477,7 +529,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
   const handleCreateTag = useCallback(
     async (name) => {
       const tag = await createDocumentTag({ name })
-      await refreshTags()
+      await refreshTags().catch(() => {})
       return tag
     },
     [refreshTags],
@@ -490,7 +542,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
         prev.map((d) => (d.id === docId ? { ...d, tags: result.items || [] } : d)),
       )
       // A document may drop out of an active tag filter once its tags change.
-      if (selectedTagIds.length) await refreshDocuments()
+      if (selectedTagIds.length) await refreshDocuments().catch(() => {})
     },
     [matterId, setDocs, selectedTagIds, refreshDocuments],
   )
@@ -537,7 +589,11 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       setDocs((prev) =>
         prev.map((d) => (d.id === doc.id ? { ...d, portal_visible: doc.portal_visible } : d))
       )
-      setError('Failed to update portal visibility. Please try again.')
+      // A failed visibility flip must not replace the whole tab with the
+      // list-load error banner; report it as a toast and leave the list up.
+      toast.error('Portal visibility was not changed', {
+        message: 'The document was left as it was. Please try again.',
+      })
     }
   }
 
@@ -596,7 +652,20 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
         </div>
       </div>
 
-      {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} onClose={() => setTemplateOpen(false)} onSaved={() => { refreshDocuments(); refreshFolders() }} />}
+      <PreparedDocumentsBanner
+        matterId={matterId}
+        version={prefillVersion}
+        onOpen={(templateId) => {
+          // The matter page routes a prepared document to the guided Prepare
+          // route; without that hook (older mounts, tests) the dialog stays.
+          if (onPrepareTemplate) { onPrepareTemplate(templateId, folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId); return }
+          setTemplateToOpen(templateId); setTemplateOpen(true)
+        }}
+      />
+
+      {onPrepareTemplate && <FillSessionsList matterId={matterId} version={prefillVersion} onResume={(url) => onPrepareTemplate(null, null, url)} />}
+
+      {templateOpen && <MatterTemplatePicker matterId={matterId} folderId={folderId === ALL_DOCUMENTS || folderId === ROOT_FOLDER ? null : folderId} initialTemplateId={templateToOpen} onClose={() => { setTemplateOpen(false); setTemplateToOpen(null) }} onSaved={() => { refreshDocuments(); refreshFolders(); setPrefillVersion((v) => v + 1) }} />}
 
       {/* Folder name entry — create or rename */}
       {folderDraft && (
@@ -893,10 +962,35 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       <div className="flex items-center gap-2" aria-label="Document view">
         {['folder', 'detailed'].map(value => <button type="button" key={value} aria-pressed={documentView === value} onClick={() => { setDocumentView(value); if (value === 'folder') { setIncludeSubfolders(false); if (folderId === ALL_DOCUMENTS) setFolderId(ROOT_FOLDER) } }} className="rounded border border-brand-line px-3 py-2 text-sm">{value === 'folder' ? 'Folder' : 'Detailed'}</button>)}
       </div>
-      {previewDocument && <section aria-label="Document preview" className="rounded-xl border border-brand-line bg-brand-surface p-4"><div className="flex justify-between"><strong>{previewDocument.filename}</strong><button type="button" onClick={() => setPreviewDocument(null)}>Close preview</button></div><MatterDocumentPreview key={previewDocument.id} matterId={matterId} document={previewDocument} /><MatterDocumentFacts matterId={matterId} documentId={previewDocument.id} onAccepted={() => { refreshDocuments() }} /></section>}
+      {previewDocument && <section aria-label="Document preview" className="rounded-xl border border-brand-line bg-brand-surface p-4"><div className="flex justify-between"><strong>{previewDocument.filename}</strong><button type="button" onClick={() => setPreviewDocument(null)}>Close preview</button></div>{previewDocument.generation_summary && <p className="mt-1 text-xs text-brand-muted">{previewDocument.generation_summary.filled ?? 0} of {previewDocument.generation_summary.total ?? 0} fields filled, {previewDocument.generation_summary.verified ?? 0} verified when generated · from {previewDocument.generation_summary.template_title || previewDocument.generation_summary.template_id}{previewDocument.generation_summary.template_version_no ? ` v${previewDocument.generation_summary.template_version_no}` : ''}</p>}<MatterDocumentPreview key={previewDocument.id} matterId={matterId} document={previewDocument} /><MatterDocumentFacts matterId={matterId} documentId={previewDocument.id} onAccepted={() => { refreshDocuments() }} /></section>}
       {filingDocument && <section aria-label="File operation" className="rounded-xl border p-4"><p>{filingMode === 'copy' ? 'Copy' : 'Move'} {filingDocument.filename} to:</p>{filingMode === 'move' && <p className="text-xs text-brand-muted">Organize within this matter. The existing cloud storage path is preserved.</p>}<select aria-label="Destination folder" value={destination} disabled={filingBusy} onChange={event => { setDestination(event.target.value); copyRequest.current = crypto.randomUUID() }}><option value="__root">Unfiled</option>{folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.path}</option>)}</select>{filingError && <p role="alert">{filingError}</p>}<button type="button" disabled={filingBusy} onClick={submitFiling}>{filingBusy ? 'Saving…' : filingMode === 'copy' ? 'Copy here' : 'Move here'}</button><button type="button" disabled={filingBusy} onClick={() => setFilingDocument(null)}>Cancel</button></section>}
       {documentView === 'folder' && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Folder contents">{folders.filter(folder => (folder.parent_id || null) === (folderId === ROOT_FOLDER || folderId === ALL_DOCUMENTS ? null : folderId)).map(folder => <button type="button" key={folder.id} onClick={() => setFolderId(folder.id)} className="rounded-xl border bg-brand-surface p-4 text-left"><Folder size={28} /><span className="mt-2 block break-words">{folder.name}</span></button>)}{docs.map(doc => <article key={doc.id} className="rounded-xl border bg-brand-surface p-4"><button type="button" onClick={() => setPreviewDocument(doc)} className="text-left"><FileText size={28} /><span className="mt-2 block break-words">{doc.filename}</span></button><button type="button" onClick={() => openFiling(doc, 'move')} className="mt-3 block text-sm underline">Move to…</button><button type="button" onClick={() => openFiling(doc, 'copy')} className="mt-2 text-sm underline">Copy to…</button></article>)}</div>}
       {documentView === 'detailed' && docs.length > 0 && <div className="flex gap-3 py-2"><select aria-label="Move or copy a document" value="" onChange={event => { const [mode, id] = event.target.value.split(':'); openFiling(docs.find(doc => doc.id === id), mode) }} className="max-w-full rounded border p-2 text-sm"><option value="">Move or copy…</option>{docs.map(doc => <optgroup key={doc.id} label={doc.filename}><option value={`move:${doc.id}`}>Move {doc.filename}</option><option value={`copy:${doc.id}`}>Copy {doc.filename}</option></optgroup>)}</select></div>}
+      {excerpts.query && (
+        <section aria-label="Found inside documents" className="rounded-xl border border-brand-line bg-brand-surface p-4">
+          <h3 className="text-sm font-semibold">
+            {excerpts.error
+              ? 'The search could not run. Try again.'
+              : excerpts.results.length
+                ? `Found inside ${new Set(excerpts.results.map((hit) => hit.document_id)).size} document${new Set(excerpts.results.map((hit) => hit.document_id)).size === 1 ? '' : 's'}${excerpts.results.length >= 25 ? ' (showing the first 25)' : ''}`
+                : excerpts.indexed
+                  ? 'Nothing inside the documents mentions that'
+                  : 'No document text is indexed yet'}
+          </h3>
+          {excerpts.results.length > 0 && (
+            <ul className="mt-2 space-y-2">
+              {excerpts.results.map((hit) => (
+                <li key={`${hit.document_id}-${hit.chunk_index}`} className="text-[13px]">
+                  <span className="font-medium">{hit.filename}</span>
+                  {' · '}
+                  <a href={hit.open_url} target="_blank" rel="noreferrer" className="underline">Open</a>
+                  <p className="text-brand-muted">{String(hit.snippet || '').replaceAll('**', '')}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       {/* Documents table */}
       {documentView === 'folder' ? null : listing && docs.length === 0 ? (
         <div className="py-10 text-center text-[13px] font-sans text-brand-muted">Loading documents…</div>

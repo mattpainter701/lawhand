@@ -115,3 +115,41 @@ class DocumentTemplateSetInterviewResponse(BaseModel):
     #: rather than dropped: a packet silently missing a document is worse than
     #: one that says which document is missing.
     unavailable: list[DocumentTemplateSetItemResponse]
+
+
+class DocumentTemplateSetVariablesRequest(BaseModel):
+    """One interview's answers, to be fanned out to every member's fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    matter_id: Optional[uuid.UUID] = None
+    answers: dict[str, str] = Field(default_factory=dict, max_length=400)
+
+    @field_validator("answers")
+    @classmethod
+    def bounded_answers(cls, value: dict[str, str]) -> dict[str, str]:
+        for key, item in value.items():
+            if len(key) > 300:
+                raise ValueError("An interview key may not exceed 300 characters")
+            if len(item) > 10_000:
+                raise ValueError(f"The answer for {key!r} exceeds 10,000 characters")
+        return value
+
+
+class DocumentTemplateSetVariablesResponse(BaseModel):
+    """Each member's own variables, from the merged interview.
+
+    The merge rule stays server-owned: the client sends interview answers and
+    receives per-document field values it can hand to the existing render
+    routes one document at a time. Nothing here renders.
+    """
+
+    set_id: uuid.UUID
+    matter_id: Optional[uuid.UUID] = None
+    #: ``template_id`` → ``{field_name: value}`` for every available member.
+    documents: dict[str, dict[str, str]]
+    #: Interview keys that are required somewhere and still unanswered.
+    unanswered_required: list[str]
+    unavailable: list[DocumentTemplateSetItemResponse]
+    #: ``template_id`` → the version each available member drafts from.
+    resolved_versions: dict[str, Optional[int]]

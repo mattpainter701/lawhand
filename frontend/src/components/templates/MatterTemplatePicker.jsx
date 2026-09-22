@@ -3,7 +3,7 @@ import { getTemplate, getTemplates } from '../../api'
 
 const RenderModal = lazy(() => import('../../pages/TemplatesPage').then(module => ({ default: module.RenderModal })))
 
-export default function MatterTemplatePicker({ matterId, folderId, onClose, onSaved }) {
+export default function MatterTemplatePicker({ matterId, folderId, onClose, onSaved, initialTemplateId }) {
   const dialog = useRef(null)
   useEffect(() => { const previous = document.activeElement; return () => previous?.focus?.() }, [])
   const handleKey = event => {
@@ -39,6 +39,9 @@ export default function MatterTemplatePicker({ matterId, folderId, onClose, onSa
     catch { setError('Could not open this template. Try again.') }
     finally { setSelecting(false) }
   }
+  // A prepared document opens straight into review: the matter page already
+  // knows which template it wants, so the library step is skipped.
+  useEffect(() => { if (initialTemplateId) choose(initialTemplateId) }, [initialTemplateId])
   if (selected) return <Suspense fallback={<p role="status">Opening document editor…</p>}><RenderModal key={`${matterId}:${selected.id}`} template={selected} fixedMatterId={matterId} folderId={folderId} onSaved={onSaved} onClose={onClose} /></Suspense>
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <section ref={dialog} onKeyDown={handleKey} role="dialog" aria-modal="true" aria-label="Attach template" className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-brand-surface p-5 shadow-xl">
