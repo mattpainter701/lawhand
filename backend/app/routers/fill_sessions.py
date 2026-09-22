@@ -66,9 +66,7 @@ async def render_fill_session(
     return fill_sessions.response_for(session, include_answers=False)
 
 
-@router.post(
-    "/fill-sessions/{session_id}/complete", response_model=FillSessionResponse
-)
+@router.post("/fill-sessions/{session_id}/complete", response_model=FillSessionResponse)
 async def complete_fill_session(
     session_id: uuid.UUID,
     payload: FillSessionCompleteRequest,
