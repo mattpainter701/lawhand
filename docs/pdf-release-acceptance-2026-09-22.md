@@ -12,6 +12,14 @@ The everyday flow is **choose a matter → review missing answers → preview �
 save or download**. Template setup belongs to authoring; ordinary preparers
 should reuse the information the firm already entered.
 
+Sample-library **Preview** and packet **Open preview** display PDFs inside
+LawHand with page navigation and zoom. Sample loading and fetch errors stay
+visible in the dialog, with retry and close actions. Closing before a fetch
+finishes does not reopen it. Changing packet answers invalidates the displayed
+generated preview. Word packet output uses **Download Word preview** for review
+in a Word-compatible application. Generating or opening a preview does not
+save the document or establish that its contents have been reviewed.
+
 Primary product references reviewed on September 22, 2026:
 
 - [Gavel integrations](https://www.gavel.io/use-cases/integrations) describe

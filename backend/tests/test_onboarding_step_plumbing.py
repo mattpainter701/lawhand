@@ -383,3 +383,25 @@ async def test_first_connect_returns_to_the_wizard():
     response = await integrations._post_connect_redirect(db, TENANT_ID, "google")
 
     assert "/onboarding?connected=google" in response.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_per_user_reauthorization_returns_to_calendar_for_each_provider():
+    for provider in ("microsoft", "google"):
+        response = await integrations._post_connect_redirect(
+            _SeqDb([]), TENANT_ID, provider, intent="user"
+        )
+        assert response.headers["location"].endswith(f"/calendar?connected={provider}")
+
+
+def test_per_user_oauth_errors_return_to_calendar():
+    for provider in ("microsoft", "google"):
+        response = integrations._error_redirect(
+            provider, "token_exchange_failed", intent="user"
+        )
+        assert response.headers["location"].endswith(f"/calendar?error=token_exchange_failed&provider={provider}")
+
+
+def test_oauth_redirect_defaults_remain_admin_or_onboarding():
+    response = integrations._error_redirect("microsoft", "token_exchange_failed")
+    assert "/onboarding?error=token_exchange_failed&provider=microsoft" in response.headers["location"]

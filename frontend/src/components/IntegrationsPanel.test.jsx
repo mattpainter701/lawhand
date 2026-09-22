@@ -174,7 +174,7 @@ describe('ProviderCard states', () => {
     expect(screen.getByText('Firm-wide connection')).toBeInTheDocument()
     const users = screen.getByTestId('user-tokens-google')
     expect(within(users).getByText(/2 of 3 connected/)).toBeInTheDocument()
-    expect(within(users).getByText(/1 need to reconnect from their own profile/)).toBeInTheDocument()
+    expect(within(users).getByText(/1 need to open Calendar and choose Connect Calendar/)).toBeInTheDocument()
   })
 
   it('renders directory sync as a tier statement, not a failure, and hides Sync now', () => {

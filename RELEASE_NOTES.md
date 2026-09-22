@@ -5,15 +5,25 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.03 — Visible PDF previews and simpler reconnection
+
+Released September 22, 2026.
+
+Sample and packet PDFs open inside LawHand for review. Personal Microsoft and Google connections return you to Calendar with a clear result.
+
+- **Return to your calendar.** Connecting your own account brings you back to Calendar, including when you cancel or need to retry. You do not need administrator access.
+- **Find the reconnect control.** Open Calendar and choose Connect Calendar to reconnect your own account. Cloud status and help instructions now use that same path.
+- **See the preview you requested.** Sample and packet PDF previews open in a page viewer with zoom and page controls. Source loading and errors are visible, and Word packet previews offer a clearly labeled download.
+
 ## 2026.09.22.02 — Reliable document completion and cloud tools
 
 Released September 22, 2026.
 
-Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and personal connection controls are more reliable.
+Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and the profile page are more reliable.
 
 - **Let form reading finish.** Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them.
 - **Microsoft search requests repaired.** File and mail searches use separate supported requests and respect the sources you selected.
-- **Profile stays available.** Time-entry totals no longer stop the profile page from opening, so you can reach your personal cloud connection controls.
+- **Profile stays available.** Time-entry totals no longer stop the profile page from opening.
 - **Close a draft after saving.** A saved document leaves your in-progress list. If closing the draft needs a retry, the saved document is kept and the retry does not create another copy.
 - **Usable packet choices.** State abbreviations match available options; unmatched suggestions stay missing. The intake sample no longer prints formatting marks around its questions.
 

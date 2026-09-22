@@ -196,7 +196,7 @@ async def test_calendar_sync_provider_auth_failure_is_not_app_401(client, monkey
 
     async def fake_ms_get_events(*args, **kwargs):
         raise ValueError(
-            "No Microsoft calendar token. Please reconnect your calendar in Settings."
+            "No Microsoft calendar token. Open Calendar and choose Connect Calendar."
         )
 
     monkeypatch.setattr(
@@ -209,7 +209,7 @@ async def test_calendar_sync_provider_auth_failure_is_not_app_401(client, monkey
     )
 
     assert resp.status_code == 424
-    assert "reconnect your calendar" in resp.json()["detail"]
+    assert "Open Calendar and choose Connect Calendar" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -220,7 +220,7 @@ async def test_legacy_email_calendar_path_uses_calendar_sync_status(
 
     async def fake_google_get_events(*args, **kwargs):
         raise ValueError(
-            "Google Calendar read failed (HTTP 401). Please try again or reconnect your calendar in Settings."
+            "Google Calendar read failed (HTTP 401). Open Calendar and choose Connect Calendar."
         )
 
     monkeypatch.setattr(

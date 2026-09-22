@@ -2,11 +2,32 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.03",
+      "version": "2026.09.22.03",
+      "title": "Visible PDF previews and simpler reconnection",
+      "published_at": "2026-09-22",
+      "summary": "Sample and packet PDFs open inside LawHand for review. Personal Microsoft and Google connections return you to Calendar with a clear result.",
+      "highlights": [
+        {
+          "title": "Return to your calendar",
+          "description": "Connecting your own account brings you back to Calendar, including when you cancel or need to retry. You do not need administrator access."
+        },
+        {
+          "title": "Find the reconnect control",
+          "description": "Open Calendar and choose Connect Calendar to reconnect your own account. Cloud status and help instructions now use that same path."
+        },
+        {
+          "title": "See the preview you requested",
+          "description": "Sample and packet PDF previews open in a page viewer with zoom and page controls. Source loading and errors are visible, and Word packet previews offer a clearly labeled download."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.02",
       "version": "2026.09.22.02",
       "title": "Reliable document completion and cloud tools",
       "published_at": "2026-09-22",
-      "summary": "Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and personal connection controls are more reliable.",
+      "summary": "Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and the profile page are more reliable.",
       "highlights": [
         {
           "title": "Let form reading finish",
@@ -18,7 +39,7 @@
         },
         {
           "title": "Profile stays available",
-          "description": "Time-entry totals no longer stop the profile page from opening, so you can reach your personal cloud connection controls."
+          "description": "Time-entry totals no longer stop the profile page from opening."
         },
         {
           "title": "Close a draft after saving",

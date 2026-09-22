@@ -775,11 +775,11 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
             <p className="mt-1 text-xs text-brand-ink-2 font-sans">
               {userTokens.healthy} of {userTokens.total} connected
               {userTokens.needs_reauth > 0 && (
-                <span className="text-amber-700 font-medium"> · {userTokens.needs_reauth} need to reconnect from their own profile</span>
+                <span className="text-amber-700 font-medium"> · {userTokens.needs_reauth} need to open Calendar and choose Connect Calendar</span>
               )}
             </p>
           ) : (
-            <p className="mt-1 text-xs text-brand-ink-2 font-sans">No users have connected their own account yet. Users connect from their profile; an administrator cannot do it for them.</p>
+            <p className="mt-1 text-xs text-brand-ink-2 font-sans">No users have connected their own account yet. Each user opens Calendar and chooses Connect Calendar; an administrator cannot do it for them.</p>
           )}
         </div>
       )}

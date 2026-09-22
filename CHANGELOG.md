@@ -1,8 +1,14 @@
+## 2026.09.22.03 — Visible previews and personal cloud reconnection
+
+- Personal Microsoft and Google OAuth callbacks preserve the user connection intent and return to Calendar on success or failure. Firm-wide connection redirects remain unchanged. Calendar confirms connection health and offers understandable recovery messages.
+- Corrected Cloud status, calendar sync errors and integration guidance to direct users to Calendar > Connect Calendar. Corrected the previous release's claim that Profile contains personal cloud connection controls.
+- Sample-source and packet PDF previews open in an accessible in-app viewer instead of relying on popup tabs. Sample loading/fetch failures are visible and retryable, closing ignores delayed responses, and packet answer changes invalidate the open preview. Word packet output offers an explicit download with scoped URL cleanup.
+
 ## 2026.09.22.02 — Document completion and cloud tools
 
 - Printed-form fact extraction uses the existing long-operation request budget instead of the 25-second list/query deadline. The reader shows progress and preserves actionable normalized error messages. Proposed details still require individual acceptance.
 - Microsoft Graph file and mail searches use compatible entity-type requests selected by source, rather than an invalid mixed file/mail request. This does not replace user reauthorization when Microsoft requires MFA.
-- Profile totals normalize decimal-string time values before formatting, preventing a render crash that blocked personal cloud reconnection.
+- Profile totals normalize decimal-string time values before formatting, preventing a render crash.
 - Single-document saves drain their encrypted answer draft and bind completion to the saved matter document. Completion validates the owner, tenant, matter and generating template, is idempotent for the same file, and serializes with autosave to prevent reopening a saved draft. A completion retry retains the saved file instead of rendering again.
 - Packet choice suggestions normalize state names/codes against option values and labels. Unmatched suggestions remain missing rather than inflating completion counts.
 - Regenerated the prospective-client intake sample to remove literal Markdown emphasis markers from its printed radio questions; control names and the 63-field schema are retained.

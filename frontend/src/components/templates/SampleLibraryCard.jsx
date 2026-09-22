@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, ChevronDown, ChevronRight, Download, Eye, LibraryBig, Loader2, Search } from 'lucide-react'
 import { getSampleTemplates, getSampleTemplateSource } from '../../api'
 import SampleFillDialog from './SampleFillDialog'
+import PdfPreviewDialog from './PdfPreviewDialog'
 
 // The catalog API returns an unordered flat list. Present samples grouped by
 // document type, with the paperwork every matter opens with first, the
@@ -97,12 +98,17 @@ export default function SampleLibraryCard() {
   const [jurisdiction, setJurisdiction] = useState('all')
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(() => new Set())
-  const [previewing, setPreviewing] = useState(null)
+  const [preview, setPreview] = useState(null)
   const [filling, setFilling] = useState(null)
-  const objectUrls = useRef([])
+  const previewRequest = useRef(0)
+  const mounted = useRef(true)
 
-  useEffect(() => () => {
-    objectUrls.current.forEach((url) => URL.revokeObjectURL(url))
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      previewRequest.current += 1
+    }
   }, [])
 
   const load = useCallback(async () => {
@@ -177,18 +183,27 @@ export default function SampleLibraryCard() {
     setExpanded(open ? new Set(groups.map((group) => group.key)) : new Set())
   }
 
-  const preview = async (sample) => {
-    setPreviewing(sample.id)
+  const loadPreview = async (sample, requestId = previewRequest.current) => {
     try {
       const blob = await getSampleTemplateSource(sample.id)
-      const url = URL.createObjectURL(blob)
-      objectUrls.current.push(url)
-      window.open(url, '_blank', 'noopener')
+      if (!mounted.current || requestId !== previewRequest.current) return
+      setPreview((current) => current?.sample.id === sample.id ? { ...current, source: blob, loading: false, error: '' } : current)
     } catch {
-      setError(`The preview for “${sample.title}” could not be opened. Please try again.`)
-    } finally {
-      setPreviewing(null)
+      if (!mounted.current || requestId !== previewRequest.current) return
+      setPreview((current) => current?.sample.id === sample.id ? { ...current, loading: false, error: `The preview for “${sample.title}” could not be loaded. Please try again.` } : current)
     }
+  }
+
+  const openPreview = (sample) => {
+    const requestId = previewRequest.current + 1
+    previewRequest.current = requestId
+    setPreview({ sample, source: null, loading: true, error: '' })
+    loadPreview(sample, requestId)
+  }
+
+  const closePreview = () => {
+    previewRequest.current += 1
+    setPreview(null)
   }
 
   return (
@@ -303,11 +318,10 @@ export default function SampleLibraryCard() {
                         <div className="flex shrink-0 items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => preview(sample)}
-                            disabled={previewing === sample.id}
+                            onClick={() => openPreview(sample)}
                             className="inline-flex items-center gap-1 rounded-lg border border-brand-line px-2.5 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50"
                           >
-                            {previewing === sample.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
+                            <Eye size={13} aria-hidden="true" />
                             Preview
                           </button>
                           <button
@@ -335,6 +349,22 @@ export default function SampleLibraryCard() {
       {error && samples.length > 0 && <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
 
       {filling && <SampleFillDialog sample={filling} onClose={() => setFilling(null)} />}
+      {preview && (
+        <PdfPreviewDialog
+          title={preview.sample.title}
+          source={preview.source}
+          loading={preview.loading}
+          error={preview.error}
+          filename={preview.sample.source_filename || `${preview.sample.slug || preview.sample.id}.pdf`}
+          onClose={closePreview}
+          onRetry={() => {
+            const requestId = previewRequest.current + 1
+            previewRequest.current = requestId
+            setPreview((current) => current ? { ...current, source: null, loading: true, error: '' } : current)
+            loadPreview(preview.sample, requestId)
+          }}
+        />
+      )}
       <p className="mt-3 flex items-center gap-1.5 text-xs text-brand-muted">
         <BookOpen size={12} aria-hidden="true" /> Samples are reference forms, not legal advice; review jurisdiction-specific requirements before use.
       </p>
