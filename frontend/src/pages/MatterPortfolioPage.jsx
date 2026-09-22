@@ -210,7 +210,7 @@ export const MY_MATTER_STATUS_TABS = [
 ]
 
 // ── "Needs Action" classification ─────────────────────────────────────────────
-function needsAction(m) {
+export function needsAction(m) {
   if (m.status === 'threatened') return true
   if (m.overdue_deadline_label && m.overdue_deadline_label.toLowerCase().includes('overdue')) return true
   if (m.overdue_deadline_label && m.overdue_deadline_label.toLowerCase().includes('due today')) return true
@@ -693,6 +693,10 @@ export default function MatterPortfolioPage() {
   const setMyStatusFilter = value => setParam('mstatus', value, 'all')
   const mySearch = searchParams.get('mq') || ''
   const setMySearch = value => setParam('mq', value, '')
+  // "Needs attention" is a real view over the loaded assigned matters, not a
+  // decorative count: the header entry opens this filter.
+  const attentionOnly = searchParams.get('matn') === '1'
+  const setAttentionOnly = value => setParam('matn', value ? '1' : '', '')
   // Sort lives in the URL so a partner can send "my matters by next deadline"
   // to an associate as a link.
   const sortKeyParam = searchParams.get('msort')
@@ -783,6 +787,7 @@ export default function MatterPortfolioPage() {
   }, [myMatters])
 
   const myVisible = useMemo(() => myMatters.filter(m => {
+    if (attentionOnly && !needsAction(m)) return false
     if (myStatusFilter !== 'all' && matterLifecycleStatus(m) !== myStatusFilter) return false
     if (mySearch) {
       const q = mySearch.toLowerCase()
@@ -796,7 +801,7 @@ export default function MatterPortfolioPage() {
       )
     }
     return true
-  }), [myMatters, myStatusFilter, mySearch])
+  }), [myMatters, myStatusFilter, mySearch, attentionOnly])
 
   const myFiltered = useMemo(
     () => sortMatters(myVisible, mySort.key, mySort.direction),
@@ -873,14 +878,19 @@ export default function MatterPortfolioPage() {
             <div>
               <h2 className="font-serif font-bold text-2xl text-brand-ink">My Matters</h2>
               {boardColumns.needsAction.length > 0 && (
-                <p className="text-[13px] text-brand-rose font-sans mt-0.5 font-medium">
+                <button
+                  type="button"
+                  onClick={() => { setViewMode('list'); setAttentionOnly(true) }}
+                  aria-pressed={attentionOnly}
+                  className={`text-left text-[13px] font-sans mt-0.5 font-medium underline decoration-dotted underline-offset-2 hover:no-underline ${attentionOnly ? 'text-brand-ink' : 'text-brand-rose'}`}
+                >
                   {boardColumns.needsAction.length} matter{boardColumns.needsAction.length !== 1 ? 's' : ''} need attention
                   {boardColumns.upcoming.length > 0 && (
                     <span className="text-brand-amber ml-2">
                       · {boardColumns.upcoming.length} due tomorrow
                     </span>
                   )}
-                </p>
+                </button>
               )}
               {boardColumns.needsAction.length === 0 && boardColumns.upcoming.length > 0 && (
                 <p className="text-[13px] text-brand-amber font-sans mt-0.5 font-medium">
@@ -971,6 +981,16 @@ export default function MatterPortfolioPage() {
                     </button>
                   ))}
                 </div>
+                {attentionOnly && (
+                  <button
+                    type="button"
+                    onClick={() => setAttentionOnly(false)}
+                    className="flex items-center gap-1.5 rounded-lg border border-brand-rose/40 bg-brand-rose/10 px-3 py-2 text-[12px] font-semibold text-brand-rose hover:bg-brand-rose/20"
+                  >
+                    Needs attention
+                    <span aria-hidden="true">✕</span>
+                  </button>
+                )}
                 <div className="relative min-w-56 flex-1">
                   <Icon d={Icons.search} size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-muted" />
                   <input
@@ -995,7 +1015,7 @@ export default function MatterPortfolioPage() {
                   visual={<Icon d={Icons.briefcase} size={22} />}
                   title="No matters match this filter"
                   actionLabel="Clear filter"
-                  onAction={() => { setMySearch(''); setMyStatusFilter('all') }}
+                  onAction={() => { setMySearch(''); setMyStatusFilter('all'); setAttentionOnly(false) }}
                 >
                   Try a different status or keyword.
                 </EmptyState>
