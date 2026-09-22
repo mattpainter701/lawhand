@@ -286,6 +286,29 @@ export function providerEventDate(evt) {
   return Number.isNaN(parsed.getTime()) ? String(raw).slice(0, 10) : localIsoDate(parsed)
 }
 
+const EXTERNAL_CALENDAR_PROVIDERS = new Set(['microsoft', 'google'])
+
+// A scheduled event is saved in LawHand first; the external calendar write is
+// best effort. The banner must say which of those actually happened rather than
+// reporting every save as a successful external sync. S1.09.
+export function syncMessageForScheduledEvent(event) {
+  const provider = event?.calendar_provider || null
+  const external = EXTERNAL_CALENDAR_PROVIDERS.has(provider)
+  if (event?.sync_status === 'error') {
+    return {
+      type: 'error',
+      text: external
+        ? 'Saved in LawHand, but the connected calendar could not be updated.'
+        : 'Saved in LawHand, but an external service could not be updated.',
+      reconnectProvider: external ? provider : null,
+    }
+  }
+  if (event?.sync_status === 'synced') {
+    return { type: 'success', text: 'Event created and synced to your connected calendar.' }
+  }
+  return { type: 'success', text: 'Event created in LawHand.' }
+}
+
 // A task we pushed to Outlook or Google comes back on the provider read as an
 // event of its own, carrying the clarity_task_id marker we stamped on it. It is
 // the same deadline, so showing both leaves the reader to guess which entry is
@@ -742,7 +765,7 @@ export default function CalendarPage() {
     setEventSaving(true)
     setSyncMessage(null)
     try {
-      await createScheduledEvent({
+      const created = await createScheduledEvent({
         title: form.title,
         description: form.description || null,
         start_at: localDateTimeToIso(form.date, form.start_time),
@@ -757,7 +780,7 @@ export default function CalendarPage() {
         meeting_provider: form.meeting_provider || 'none',
       })
       setShowEventModal(false)
-      setSyncMessage({ type: 'success', text: 'Event created.' })
+      setSyncMessage(syncMessageForScheduledEvent(created))
       await fetchEvents(pivotDate)
     } catch (err) {
       setSyncMessage({
