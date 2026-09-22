@@ -80,6 +80,9 @@ test.describe('/demo customer entry', () => {
       if (sessionCreated && path === '/api/matters/my' && request.method() === 'GET') {
         return json(route, [])
       }
+      if (sessionCreated && path === '/api/matters/my/page' && request.method() === 'GET') {
+        return json(route, { items: [], total: 0, page: 1, page_size: 200 })
+      }
       if (sessionCreated && path === '/api/firm-email-intake' && request.method() === 'GET') {
         return json(route, { enabled: false, alias: null, pending_count: 0, staff: [] })
       }

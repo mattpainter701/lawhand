@@ -13,6 +13,7 @@ async function fixture(page, { denied = false } = {}) {
     if (path === '/api/auth/me') return json(route, user)
     if (path === `/api/matters/${matterId}`) return json(route, matter)
     if (path === '/api/matters' || path === '/api/matters/my') return json(route, { items: [matter] })
+    if (path === '/api/matters/my/page') return json(route, { items: [matter], total: 1, page: 1, page_size: 200 })
     if (path.endsWith('/notes') && request.method() === 'POST') {
       const data = request.postDataJSON(); state.requests.push(data)
       if (denied) return json(route, { detail: 'Forbidden' }, 403)
