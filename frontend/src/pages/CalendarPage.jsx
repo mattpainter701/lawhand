@@ -294,17 +294,36 @@ const EXTERNAL_CALENDAR_PROVIDERS = new Set(['microsoft', 'google'])
 export function syncMessageForScheduledEvent(event) {
   const provider = event?.calendar_provider || null
   const external = EXTERNAL_CALENDAR_PROVIDERS.has(provider)
+  // sync_status combines calendar and meeting-provider outcomes. The returned
+  // artifact IDs tell us which part actually succeeded.
+  const calendarSynced = external && Boolean(event?.external_calendar_event_id)
+  const zoomRequested = event?.meeting_provider === 'zoom'
+  const meetingCreated = Boolean(event?.join_url)
+
   if (event?.sync_status === 'error') {
-    return {
-      type: 'error',
-      text: external
-        ? 'Saved in LawHand, but the connected calendar could not be updated.'
-        : 'Saved in LawHand, but an external service could not be updated.',
-      reconnectProvider: external ? provider : null,
+    if (calendarSynced && zoomRequested && !meetingCreated) {
+      return {
+        type: 'error',
+        text: 'Saved in LawHand and synced to your connected calendar, but the Zoom meeting could not be created.',
+      }
     }
+    if (external && !calendarSynced) {
+      return {
+        type: 'error',
+        text: 'Saved in LawHand, but the connected calendar could not be updated.',
+        reconnectProvider: provider,
+      }
+    }
+    return { type: 'error', text: 'Saved in LawHand, but an external service could not be updated.' }
   }
-  if (event?.sync_status === 'synced') {
+  if (calendarSynced) {
     return { type: 'success', text: 'Event created and synced to your connected calendar.' }
+  }
+  if (external) {
+    return { type: 'error', text: 'Saved in LawHand. Calendar synchronization has not been confirmed.' }
+  }
+  if (zoomRequested && meetingCreated) {
+    return { type: 'success', text: 'Event created in LawHand with a Zoom meeting.' }
   }
   return { type: 'success', text: 'Event created in LawHand.' }
 }

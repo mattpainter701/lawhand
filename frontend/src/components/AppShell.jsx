@@ -59,7 +59,7 @@ export function isEditableShortcutTarget(target) {
   if (target.isContentEditable) return true
   const tag = target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
-  return typeof target.closest === 'function' && Boolean(target.closest('[role="dialog"]'))
+  return typeof target.closest === 'function' && Boolean(target.closest('[role="dialog"], [role="alertdialog"]'))
 }
 
 export default function AppShell({ children, title }) {

@@ -1,3 +1,10 @@
+## 2026.09.22.04 — Calendar result truthfulness and shortcut safety
+
+- Calendar List headings match the loaded two-month interval, including cross-year ranges.
+- New scheduled-event feedback uses the returned calendar event ID and meeting join URL to distinguish calendar synchronization from Zoom creation. Aggregate provider errors preserve known successes; missing calendar confirmation cannot read as confirmed sync. Existing save behavior and provider callbacks are unchanged.
+- The global new-conversation shortcut ignores editing, IME composition and both dialog/alertdialog controls.
+- Core Sprint 1 reconciliation and draft interaction/API contracts are recorded. Fixtures move into the user-authorized B1 backend slice; focus-policy changes and staff validation remain outstanding.
+
 ## 2026.09.22.03 — Visible previews and personal cloud reconnection
 
 - Personal Microsoft and Google OAuth callbacks preserve the user connection intent and return to Calendar on success or failure. Firm-wide connection redirects remain unchanged. Calendar confirms connection health and offers understandable recovery messages.

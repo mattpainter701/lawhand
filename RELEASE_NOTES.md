@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.04 — Clear calendar results and safer shortcuts
+
+Released September 22, 2026.
+
+Calendar list headings show the full displayed range. New event messages distinguish saving in LawHand, calendar synchronization and Zoom meeting creation.
+
+- **Know which dates you are viewing.** The calendar list names its complete date range, including when it crosses into another year.
+- **Understand what saved.** New event messages separate local saves, calendar updates and Zoom meetings. A Zoom failure preserves a successful calendar update.
+- **Keep typing and confirming safely.** The new-conversation shortcut stays inactive while you edit text, compose input or use a confirmation dialog.
+
 ## 2026.09.22.03 — Visible PDF previews and simpler reconnection
 
 Released September 22, 2026.

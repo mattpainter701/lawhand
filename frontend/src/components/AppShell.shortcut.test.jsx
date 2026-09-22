@@ -46,6 +46,9 @@ function renderShell() {
         <div role="dialog" aria-label="Probe dialog">
           <button type="button">ok</button>
         </div>
+        <div role="alertdialog" aria-label="Confirmation">
+          <button type="button">Confirm action</button>
+        </div>
       </AppShell>
     </MemoryRouter>,
   )
@@ -81,6 +84,14 @@ describe('global new-conversation shortcut respects editing context (S1.10)', ()
     renderShell()
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'n', ctrlKey: true })
+
+    expect(createConversation).not.toHaveBeenCalled()
+  })
+
+  it.each([{ ctrlKey: true }, { metaKey: true }])('ignores the shortcut on confirmation controls (%j)', (modifier) => {
+    renderShell()
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Confirm action' }), { key: 'n', ...modifier })
 
     expect(createConversation).not.toHaveBeenCalled()
   })
