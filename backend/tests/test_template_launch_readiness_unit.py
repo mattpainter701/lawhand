@@ -448,6 +448,7 @@ async def test_custom_binding_sources_and_provenance(
     matter = NS(id=identity(), client_contact_id=identity())
     value = NS(
         id=identity(),
+        field_definition_id=field.id,
         value_json=False,
         value_hmac="signed",
         updated_at=field.updated_at,
@@ -456,16 +457,22 @@ async def test_custom_binding_sources_and_provenance(
     event = NS(
         created_by=user.id,
         metadata_json={
+            "field": str(field.id),
+            "accepted_value_hmac": value.value_hmac,
             "document": str(document.id),
             "source_sha256": "a",
             "reviewed_at": field.updated_at.isoformat(),
         },
     )
     monkeypatch.setattr(custom, "definitions", AsyncMock(return_value=[field]))
-    results = [value if has_value else None]
-    if has_value and entity == "matter":
-        results.append(event if reviewed else None)
-    db = NS(scalar=AsyncMock(side_effect=results))
+    # ``load`` reads the matter's values, then the client's, then the reviewed
+    # events — each one query over the tenant.
+    matter_values = [value] if (has_value and entity == "matter") else []
+    contact_values = [value] if (has_value and entity == "contact") else []
+    reviewed_events = [event] if (has_value and entity == "matter" and reviewed) else []
+    db = NS(
+        scalars=AsyncMock(side_effect=[matter_values, contact_values, reviewed_events])
+    )
     result = (
         await custom.suggestions(
             db, user.tenant_id, matter, {"kids": f"custom.{entity}.{field.id}"}
@@ -480,7 +487,7 @@ async def test_custom_binding_sources_and_provenance(
         if has_value
         else "binding_unresolved"
     )
-    for call in db.scalar.call_args_list:
+    for call in db.scalars.call_args_list:
         assert user.tenant_id in call.args[0].compile().params.values()
 
 
@@ -497,7 +504,7 @@ async def test_custom_catalogue_excludes_sensitive_inactive_and_foreign_fields()
 @pytest.mark.asyncio
 async def test_unavailable_custom_definition_never_falls_back(monkeypatch):
     monkeypatch.setattr(custom, "definitions", AsyncMock(return_value=[]))
-    db = NS(scalar=AsyncMock())
+    db = NS(scalar=AsyncMock(), scalars=AsyncMock(return_value=[]))
     assert await custom.suggestions(db, identity(), None, {"x": "manual"}) == {}
     result = await custom.suggestions(
         db, identity(), NS(id=identity()), {"x": "custom.matter." + str(identity())}

@@ -32,6 +32,7 @@ from app.models.configurable_workflow import (
 from app.models.document_template import DocumentTemplate
 from app.models.plugin import Matter, MatterEvent
 from app.models.user import User
+from app.services import template_custom_fields, template_firm_fields
 from app.services import template_fill_engine as engine
 from app.services.configurable_workflows import digest_payload
 from app.services.durable_jobs import enqueue_job
@@ -267,6 +268,11 @@ async def prepare_matter_documents(
     verified = await verified_counts(
         db, tenant_id=matter.tenant_id, matter_id=matter.id
     )
+    # The custom-field definitions, their values, and the firm branding do not
+    # depend on the template, so read them once for the whole run and hand the
+    # snapshot to each fill.
+    custom_sources = await template_custom_fields.load(db, matter.tenant_id, matter)
+    firm_profile = await template_firm_fields.load(db, matter.tenant_id)
     for template, reasons in await _candidate_templates(db, matter):
         entry: dict[str, Any] = {
             "template_id": str(template.id),
@@ -284,6 +290,8 @@ async def prepare_matter_documents(
                 matter=matter,
                 actor=actor,
                 loaders=loaders,
+                custom_sources=custom_sources,
+                firm_profile=firm_profile,
             )
         except (ValueError, MatterLookupError) as exc:
             entry["status"] = "unavailable"

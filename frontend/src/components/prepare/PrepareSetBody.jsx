@@ -106,7 +106,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
           </div>
           {background === 'saving' && <p role="status" className="mt-2 text-xs text-brand-muted">Saving in the background. You can leave this page; the matter's Documents tab shows the packet under "in progress" until every document is saved.</p>}
           {background === 'failed' && session?.last_error && <p role="alert" className="mt-2 text-xs text-brand-rose">{session.last_error}</p>}
-          {session?.id && background !== 'saving' && <p className="mt-2 text-xs text-brand-muted">Your answers are kept for 14 days; resume from the matter's Documents tab.</p>}
+          {session?.id && background !== 'saving' && <p className="mt-2 text-xs text-brand-muted">Your answers are available for 14 days; resume from the matter's Documents tab.</p>}
           <ul className="mt-3 space-y-2">
             {availableMembers.map((member) => {
               const preview = previewOf(member)

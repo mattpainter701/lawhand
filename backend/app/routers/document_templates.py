@@ -147,10 +147,11 @@ from app.services.template_bindings import (
 )
 from app.services import pdf_source_review
 from app.services import template_cards
-from app.services.template_fill_coverage import (
+from app.services.template_fill_coverage import (  # noqa: F401 - re-exported
     is_signing_field,
     binding_is_resolvable as _binding_is_resolvable,
     coverage as fill_coverage,
+    field_has_source as _field_has_source,
     normalize_variable_name as _normalize_variable_name,
 )
 from app.services import template_fill_engine
@@ -1901,12 +1902,9 @@ def _validate_approval_ready(
             continue
         if str(field.get("default") or "").strip():
             continue
-        binding = bindings.get(name)
-        if binding is not None:
-            resolvable = _binding_is_resolvable(binding)
-        else:
-            resolvable = _normalize_variable_name(name) in vocabulary
-        if not resolvable:
+        if not _field_has_source(
+            binding=bindings.get(name), name=name, vocabulary=vocabulary
+        ):
             unresolvable.append(name)
 
     problems: list[str] = []
