@@ -5,15 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.22.02 — More reliable document reading and Microsoft search
+## 2026.09.22.02 — Reliable document completion and cloud tools
 
 Released September 22, 2026.
 
-Reading a document against its printed form has more time to finish and clearer progress and retry messages. Microsoft cloud searches use supported requests for files and mail.
+Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and personal connection controls are more reliable.
 
 - **Let form reading finish.** Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them.
 - **Microsoft search requests repaired.** File and mail searches use separate supported requests and respect the sources you selected.
 - **Profile stays available.** Time-entry totals no longer stop the profile page from opening, so you can reach your personal cloud connection controls.
+- **Close a draft after saving.** A saved document leaves your in-progress list. If closing the draft needs a retry, the saved document is kept and the retry does not create another copy.
+- **Usable packet choices.** State abbreviations match available options; unmatched suggestions stay missing. The intake sample no longer prints formatting marks around its questions.
 
 ## 2026.09.22.01 — Fill from a matter and keep your progress
 

@@ -2546,6 +2546,8 @@ export const getFillSession = (id) =>
   api.get(`/fill-sessions/${id}`).then(r => r.data)
 export const abandonFillSession = (id) =>
   api.delete(`/fill-sessions/${id}`).then(r => r.data)
+export const completeFillSession = (id, matterDocumentId) =>
+  api.post(`/fill-sessions/${id}/complete`, { matter_document_id: matterDocumentId }).then(r => r.data)
 export const renderFillSession = (id, data) =>
   api.post(`/fill-sessions/${id}/render`, data).then(r => r.data)
 export const getMatterFillSessions = (matterId) =>

@@ -186,6 +186,9 @@ class DocumentTemplateQueueResponse(BaseModel):
 
 class DocumentTemplateRenderRequest(BaseModel):
     folder_id: Optional[uuid.UUID] = None
+    # When supplied, bind the generated matter document to the caller's
+    # resumable fill session. Omitted for previews and legacy render callers.
+    fill_session_id: Optional[uuid.UUID] = None
     variables: dict[str, str] = Field(default_factory=dict, max_length=400)
     matter_id: Optional[str] = None
     include_suggestions: bool = False

@@ -4,9 +4,9 @@
     {
       "id": "2026.09.22.02",
       "version": "2026.09.22.02",
-      "title": "More reliable document reading and Microsoft search",
+      "title": "Reliable document completion and cloud tools",
       "published_at": "2026-09-22",
-      "summary": "Reading a document against its printed form has more time to finish and clearer progress and retry messages. Microsoft cloud searches use supported requests for files and mail.",
+      "summary": "Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and personal connection controls are more reliable.",
       "highlights": [
         {
           "title": "Let form reading finish",
@@ -19,6 +19,14 @@
         {
           "title": "Profile stays available",
           "description": "Time-entry totals no longer stop the profile page from opening, so you can reach your personal cloud connection controls."
+        },
+        {
+          "title": "Close a draft after saving",
+          "description": "A saved document leaves your in-progress list. If closing the draft needs a retry, the saved document is kept and the retry does not create another copy."
+        },
+        {
+          "title": "Usable packet choices",
+          "description": "State abbreviations match available options; unmatched suggestions stay missing. The intake sample no longer prints formatting marks around its questions."
         }
       ]
     },

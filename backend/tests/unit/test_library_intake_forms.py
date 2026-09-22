@@ -8,11 +8,13 @@ the variables the platform reads back.
 """
 
 import importlib.util
+import io
 import json
 import sys
 from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
 
 from app.services.pdf_templates import discover_pdf_fields
 from app.services.template_bindings import is_valid_binding
@@ -269,3 +271,15 @@ def test_authored_radio_tooltips_strip_markdown_markers(builder):
         "prior_counsel_status",
     }:
         assert "**" not in fields[name]["label"]
+
+
+def test_prospective_radio_prompts_do_not_print_authoring_markers(builder):
+    prompts = [block[1] for block in builder.PROSPECTIVE_INTAKE.blocks if block[0] == "radio"]
+    assert prompts
+    assert all("**" not in prompt for prompt in prompts)
+
+
+def test_committed_prospective_pdf_does_not_print_markdown_markers():
+    content = (SEED_DIR / "intake/prospective-client-intake-form.pdf").read_bytes()
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
+    assert "**" not in text

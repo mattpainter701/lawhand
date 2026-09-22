@@ -66,6 +66,40 @@ describe('usePrepareSet race handling', () => {
     expect(result.current.saves).toEqual({})
   })
 
+  it('maps a state code suggestion to the selectable state option', async () => {
+    api.getTemplateSetInterview.mockResolvedValue({
+      ...interview(),
+      questions: [{ ...interview().questions[0], value_kind: 'choice', options: ['North Dakota', 'Minnesota'], suggested_value: 'ND' }],
+    })
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.answers['manual:template-1:name']).toBe('North Dakota'))
+    expect(result.current.progress.completed).toBe(1)
+    expect(result.current.interview.questions[0].suggested_value).toBe('North Dakota')
+  })
+
+  it('matches a case-insensitive state name to an option export value', async () => {
+    api.getTemplateSetInterview.mockResolvedValue({
+      ...interview(),
+      questions: [{ ...interview().questions[0], value_kind: 'choice', options: [{ value: 'ND', label: 'North Dakota' }, { value: 'MN', label: 'Minnesota' }], suggested_value: 'north dakota' }],
+    })
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.answers['manual:template-1:name']).toBe('ND'))
+    expect(result.current.interview.questions[0].suggested_value).toBe('ND')
+  })
+
+  it('leaves an unrecognized choice suggestion missing', async () => {
+    api.getTemplateSetInterview.mockResolvedValue({
+      ...interview(),
+      questions: [{ ...interview().questions[0], value_kind: 'choice', options: ['North Dakota', 'Minnesota'], suggested_value: 'Colorado' }],
+    })
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.interview).toBeTruthy())
+    expect(result.current.answers['manual:template-1:name']).toBeUndefined()
+    expect(result.current.progress.completed).toBe(0)
+    expect(result.current.progress.remaining.map((row) => row.name)).toContain('manual:template-1:name')
+    expect(result.current.interview.questions[0].suggested_value).toBeNull()
+  })
+
   it('does not publish a preview that completed after an answer revision', async () => {
     let resolveFan
     api.getTemplateSetDocumentsVariables.mockReturnValueOnce(new Promise(resolve => { resolveFan = resolve }))

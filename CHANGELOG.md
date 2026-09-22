@@ -1,8 +1,11 @@
-## 2026.09.22.02 — Document reading and Microsoft search follow-up
+## 2026.09.22.02 — Document completion and cloud tools
 
 - Printed-form fact extraction uses the existing long-operation request budget instead of the 25-second list/query deadline. The reader shows progress and preserves actionable normalized error messages. Proposed details still require individual acceptance.
 - Microsoft Graph file and mail searches use compatible entity-type requests selected by source, rather than an invalid mixed file/mail request. This does not replace user reauthorization when Microsoft requires MFA.
 - Profile totals normalize decimal-string time values before formatting, preventing a render crash that blocked personal cloud reconnection.
+- Single-document saves drain their encrypted answer draft and bind completion to the saved matter document. Completion validates the owner, tenant, matter and generating template, is idempotent for the same file, and serializes with autosave to prevent reopening a saved draft. A completion retry retains the saved file instead of rendering again.
+- Packet choice suggestions normalize state names/codes against option values and labels. Unmatched suggestions remain missing rather than inflating completion counts.
+- Regenerated the prospective-client intake sample to remove literal Markdown emphasis markers from its printed radio questions; control names and the 63-field schema are retained.
 - Found during production acceptance: the synthetic form-reading request completed with HTTP 200 after the browser had already shown a generic failure; Microsoft Graph separately rejected the mixed entity types with HTTP 400.
 
 ## 2026.09.22.01 — Matter-first sample filling and PDF acceptance fixes
