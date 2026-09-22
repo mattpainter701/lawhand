@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Wand2 } from 'lucide-react'
 import MatterPicker from './MatterPicker'
 import TemplateFillProgress from '../templates/TemplateFillProgress'
@@ -5,6 +6,7 @@ import { fillValue, suggestionConfidenceLabel, suggestionOriginLabel } from '../
 import SendStep from './SendStep'
 import { buildSavedTarget } from './prepareRouting'
 import StorageReadinessNotice from './StorageReadinessNotice'
+import PdfPreviewDialog from '../templates/PdfPreviewDialog'
 
 const inputClass = 'w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent'
 
@@ -13,11 +15,22 @@ const groupLabel = (question) => {
   return `${question.appears_in?.[0]?.template_title || 'This document'} only`
 }
 
+function WordPreviewDownload({ preview }) {
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(preview.blob)
+    setUrl(nextUrl)
+    return () => URL.revokeObjectURL(nextUrl)
+  }, [preview.blob])
+  return url ? <a href={url} download={preview.filename || 'document-preview.docx'} className="text-xs underline">Download Word preview</a> : null
+}
+
 // The two panes of the Prepare route for a set: the interview on the left
 // (asked once, grouped by card, each question saying how many documents it
 // fills) and the packet on the right (one row per member with its preview
 // and save state, then one Send card per saved PDF that can be signed).
 export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatterId, returnTo }) {
+  const [selectedPreview, setSelectedPreview] = useState(null)
   const {
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
@@ -34,6 +47,9 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
   }
   const failedPreviews = availableMembers.filter((member) => previewOf(member).status === 'failed').map((member) => member.template_id)
   const failedSaves = availableMembers.filter((member) => saveOf(member)?.status === 'failed').map((member) => member.template_id)
+  const selectedMember = selectedPreview && availableMembers.find((member) => member.template_id === selectedPreview.memberId)
+  const currentPreview = selectedMember && previewOf(selectedMember)
+  const visiblePreview = currentPreview?.status === 'ready' && currentPreview.blob === selectedPreview?.blob ? currentPreview : null
   if (sessionRestored === false) return (
     <div className="space-y-4">
       {sessionRestoreError ? (
@@ -136,7 +152,9 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                 <li key={member.template_id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-brand-line px-3 py-2 text-sm">
                   <span className="min-w-0 flex-1 truncate"><strong>{member.title}</strong> <span className="text-xs text-brand-muted">· {member.output.format.toUpperCase()}{member.resolved_version_no ? ` · v${member.resolved_version_no}` : ''}</span></span>
                   <span role="status" className={`text-xs ${save?.status === 'saved' ? 'text-brand-green' : preview.status === 'failed' || save?.status === 'failed' ? 'text-brand-rose' : 'text-brand-muted'}`}>{state}</span>
-                  {preview.status === 'ready' && preview.blob && <button type="button" onClick={() => window.open(URL.createObjectURL(preview.blob), '_blank', 'noopener')} className="text-xs underline">Open preview</button>}
+                  {preview.status === 'ready' && preview.blob && (member.output.format === 'pdf'
+                    ? <button type="button" onClick={() => setSelectedPreview({ memberId: member.template_id, blob: preview.blob })} className="text-xs underline">Open preview</button>
+                    : <WordPreviewDownload preview={preview} />)}
                   {preview.status === 'ready' && preview.rendered && <details className="basis-full mt-1"><summary className="cursor-pointer text-xs underline">Review Markdown preview</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-brand-bg p-2 text-xs">{preview.rendered}</pre></details>}
                 </li>
               )
@@ -160,6 +178,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
           <SendStep key={document.id} matterId={matterId} document={document} savedTarget={buildSavedTarget({ matterId, documentId: document.id, returnTo })} />
         ))}
       </div>
+      {visiblePreview && <PdfPreviewDialog source={visiblePreview.blob} title={selectedMember.title} filename={visiblePreview.filename} onClose={() => setSelectedPreview(null)} />}
     </div>
   )
 }

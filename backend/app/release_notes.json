@@ -4,9 +4,9 @@
     {
       "id": "2026.09.22.03",
       "version": "2026.09.22.03",
-      "title": "Reconnect your account from Calendar",
+      "title": "Visible PDF previews and simpler reconnection",
       "published_at": "2026-09-22",
-      "summary": "Personal Microsoft and Google connections return you to Calendar with a clear result. Reconnect instructions now point to the correct control.",
+      "summary": "Sample and packet PDFs open inside LawHand for review. Personal Microsoft and Google connections return you to Calendar with a clear result.",
       "highlights": [
         {
           "title": "Return to your calendar",
@@ -15,6 +15,10 @@
         {
           "title": "Find the reconnect control",
           "description": "Open Calendar and choose Connect Calendar to reconnect your own account. Cloud status and help instructions now use that same path."
+        },
+        {
+          "title": "See the preview you requested",
+          "description": "Sample and packet PDF previews open in a page viewer with zoom and page controls. Source loading and errors are visible, and Word packet previews offer a clearly labeled download."
         }
       ]
     },

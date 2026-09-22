@@ -1,7 +1,8 @@
-## 2026.09.22.03 — Personal cloud reconnection
+## 2026.09.22.03 — Visible previews and personal cloud reconnection
 
 - Personal Microsoft and Google OAuth callbacks preserve the user connection intent and return to Calendar on success or failure. Firm-wide connection redirects remain unchanged. Calendar confirms connection health and offers understandable recovery messages.
 - Corrected Cloud status, calendar sync errors and integration guidance to direct users to Calendar > Connect Calendar. Corrected the previous release's claim that Profile contains personal cloud connection controls.
+- Sample-source and packet PDF previews open in an accessible in-app viewer instead of relying on popup tabs. Sample loading/fetch failures are visible and retryable, closing ignores delayed responses, and packet answer changes invalidate the open preview. Word packet output offers an explicit download with scoped URL cleanup.
 
 ## 2026.09.22.02 — Document completion and cloud tools
 

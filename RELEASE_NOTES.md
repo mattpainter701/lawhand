@@ -5,14 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.22.03 — Reconnect your account from Calendar
+## 2026.09.22.03 — Visible PDF previews and simpler reconnection
 
 Released September 22, 2026.
 
-Personal Microsoft and Google connections return you to Calendar with a clear result. Reconnect instructions now point to the correct control.
+Sample and packet PDFs open inside LawHand for review. Personal Microsoft and Google connections return you to Calendar with a clear result.
 
 - **Return to your calendar.** Connecting your own account brings you back to Calendar, including when you cancel or need to retry. You do not need administrator access.
 - **Find the reconnect control.** Open Calendar and choose Connect Calendar to reconnect your own account. Cloud status and help instructions now use that same path.
+- **See the preview you requested.** Sample and packet PDF previews open in a page viewer with zoom and page controls. Source loading and errors are visible, and Word packet previews offer a clearly labeled download.
 
 ## 2026.09.22.02 — Reliable document completion and cloud tools
 
