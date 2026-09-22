@@ -498,22 +498,27 @@ async def microsoft_connect(
 
 @router.get("/microsoft/callback")
 async def microsoft_callback(
-    code: str,
     state: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    code: str | None = None,
+    error: str | None = None,
 ):
     valid, meta = await _consume_state(request, state)
     if not valid:
         return _error_redirect("microsoft", "invalid_state")
     if meta and meta.get("provider") not in (None, "microsoft"):
         return _error_redirect("microsoft", "invalid_state")
+    intent = meta.get("intent") if isinstance(meta, dict) else None
+    if intent not in {"admin", "user"}:
+        return _error_redirect("microsoft", "invalid_state")
+    if error or not code:
+        return _error_redirect("microsoft", _oauth_error_code(error), intent=intent)
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/microsoft/callback"
     ms_tenant = settings.MICROSOFT_TENANT_ID
     token_url = f"https://login.microsoftonline.com/{ms_tenant}/oauth2/v2.0/token"
 
-    intent = meta.get("intent", "user") if meta else "user"
     teams_flag = bool(meta.get("teams")) if meta else False
     code_verifier = meta.get("pkce_verifier") if meta else None
 
@@ -537,7 +542,7 @@ async def microsoft_callback(
             data=token_payload,
         )
         if token_resp.status_code != 200:
-            return _error_redirect("microsoft", "token_exchange_failed")
+            return _error_redirect("microsoft", "token_exchange_failed", intent=intent)
 
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
@@ -553,7 +558,7 @@ async def microsoft_callback(
             scope_str = ("offline_access " + scope_str).strip()
 
         if not access_token:
-            return _error_redirect("microsoft", "no_access_token")
+            return _error_redirect("microsoft", "no_access_token", intent=intent)
 
         if intent == "admin":
             _user_id, tenant_id = _require_state_user(meta, "admin")
@@ -645,7 +650,7 @@ async def microsoft_callback(
             await _ensure_cloud_root(db, tenant_id)
             _schedule_user_sync_post_connect(tenant_id, "microsoft")
 
-    return await _post_connect_redirect(db, tenant_id, "microsoft")
+    return await _post_connect_redirect(db, tenant_id, "microsoft", intent=intent)
 
 
 @router.get("/google/connect")
@@ -719,19 +724,24 @@ async def google_connect(
 
 @router.get("/google/callback")
 async def google_callback(
-    code: str,
     state: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    code: str | None = None,
+    error: str | None = None,
 ):
     valid, meta = await _consume_state(request, state)
     if not valid:
         return _error_redirect("google", "invalid_state")
     if meta and meta.get("provider") not in (None, "google"):
         return _error_redirect("google", "invalid_state")
+    intent = meta.get("intent") if isinstance(meta, dict) else None
+    if intent not in {"admin", "user"}:
+        return _error_redirect("google", "invalid_state")
+    if error or not code:
+        return _error_redirect("google", _oauth_error_code(error), intent=intent)
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
-    intent = meta.get("intent", "user") if meta else "user"
     account_mode = meta.get("account_mode", "workspace") if meta else "workspace"
     if intent == "admin" and account_mode not in {"workspace", "personal"}:
         return _error_redirect("google", "invalid_state")
@@ -754,7 +764,7 @@ async def google_callback(
             data=token_payload,
         )
         if token_resp.status_code != 200:
-            return _error_redirect("google", "token_exchange_failed")
+            return _error_redirect("google", "token_exchange_failed", intent=intent)
 
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
@@ -763,7 +773,7 @@ async def google_callback(
         scope_str = token_data.get("scope", "")
 
         if not access_token:
-            return _error_redirect("google", "no_access_token")
+            return _error_redirect("google", "no_access_token", intent=intent)
 
         if intent == "admin":
             # Account mode is security-sensitive. Verify the signed Google
@@ -772,7 +782,9 @@ async def google_callback(
             # per-user flow deliberately has no OpenID scope and may omit it.
             id_token = token_data.get("id_token")
             if not id_token:
-                return _error_redirect("google", "identity_verification_failed")
+                return _error_redirect(
+                    "google", "identity_verification_failed", intent=intent
+                )
             try:
                 verified_claims = await verify_google_id_token(
                     id_token,
@@ -780,10 +792,12 @@ async def google_callback(
                     access_token=access_token,
                 )
             except HTTPException:
-                return _error_redirect("google", "identity_verification_failed")
+                return _error_redirect(
+                    "google", "identity_verification_failed", intent=intent
+                )
             account_type, account_domain = account_detect.detect_google(verified_claims)
             if not _google_account_mode_matches(account_mode, account_type):
-                return _error_redirect("google", "account_mode_mismatch")
+                return _error_redirect("google", "account_mode_mismatch", intent=intent)
             _user_id, tenant_id = _require_state_user(meta, "admin")
             admin_user_id = _user_id
             await set_tenant_context(db, tenant_id)
@@ -858,7 +872,7 @@ async def google_callback(
             if account_mode == "workspace":
                 _schedule_user_sync_post_connect(tenant_id, "google")
 
-    return await _post_connect_redirect(db, tenant_id, "google")
+    return await _post_connect_redirect(db, tenant_id, "google", intent=intent)
 
 
 @router.get("/zoom/connect")
@@ -1718,19 +1732,25 @@ async def _sync_users_post_connect_with_session(
 
 
 async def _post_connect_redirect(
-    db: AsyncSession, tenant_id: str, provider: str
+    db: AsyncSession, tenant_id: str, provider: str, *, intent: str = "admin"
 ) -> RedirectResponse:
     """Build the success redirect back into the app after OAuth connect.
 
-    Zoom Phone always returns to its admin integration panel. Other providers
-    land on onboarding while it is in progress, otherwise on their admin tab.
-    The ``connected`` query param is a one-time UX hint.
+    Per-user connections return to Calendar; tenant-wide connections land on
+    onboarding while it is in progress, otherwise on their admin tab. The
+    ``connected`` query param is a one-time UX hint.
     """
     if provider == ZOOM_PHONE_PROVIDER:
         base = settings.FRONTEND_URL.rstrip("/")
         return RedirectResponse(
             f"{base}/admin?tab=integrations&integration=zoom&connected={provider}",
             status_code=302,
+        )
+
+    if intent == "user":
+        base = settings.FRONTEND_URL.rstrip("/")
+        return RedirectResponse(
+            f"{base}/calendar?connected={provider}", status_code=302
         )
 
     from app.models.tenant import Tenant
@@ -1756,7 +1776,20 @@ async def _post_connect_redirect(
     return RedirectResponse(target, status_code=302)
 
 
-def _error_redirect(provider: str, code: str) -> RedirectResponse:
+_OAUTH_ERROR_CODES = frozenset(
+    {"access_denied", "interaction_required", "login_required", "consent_required"}
+)
+
+
+def _oauth_error_code(error: str | None) -> str:
+    """Keep provider cancellation text out of redirect URLs."""
+
+    return error if error in _OAUTH_ERROR_CODES else "oauth_failed"
+
+
+def _error_redirect(
+    provider: str, code: str, *, intent: str = "admin"
+) -> RedirectResponse:
     """Return OAuth failures to the relevant app workflow with an error hint."""
     base = settings.FRONTEND_URL.rstrip("/")
     if provider == ZOOM_PHONE_PROVIDER:
@@ -1764,6 +1797,10 @@ def _error_redirect(provider: str, code: str) -> RedirectResponse:
             f"{base}/admin?tab=integrations&integration=zoom"
             f"&error={code}&provider={provider}",
             status_code=302,
+        )
+    if intent == "user":
+        return RedirectResponse(
+            f"{base}/calendar?error={code}&provider={provider}", status_code=302
         )
     return RedirectResponse(
         f"{base}/onboarding?error={code}&provider={provider}", status_code=302

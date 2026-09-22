@@ -94,7 +94,7 @@ class CalendarSyncService:
                 tenant_id,
             )
             raise ValueError(
-                "No Microsoft calendar token. Please reconnect your calendar in Settings."
+                "No Microsoft calendar token. Open Calendar and choose Connect Calendar."
             )
 
         cal_url = f"{GRAPH_BASE}/me/calendarview"
@@ -137,7 +137,7 @@ class CalendarSyncService:
                 resp = await client.get(cal_url, headers=headers, params=params)
             if resp.status_code != 200:
                 raise ValueError(
-                    f"Microsoft calendar read failed (HTTP {resp.status_code}). Please try again or reconnect your calendar in Settings."
+                    f"Microsoft calendar read failed (HTTP {resp.status_code}). Open Calendar and choose Connect Calendar."
                 )
 
             events = []
@@ -255,7 +255,7 @@ class CalendarSyncService:
         )
         if not token:
             raise ValueError(
-                "No Microsoft calendar token. Please reconnect your calendar in Settings."
+                "No Microsoft calendar token. Open Calendar and choose Connect Calendar."
             )
 
         event = {
@@ -334,7 +334,7 @@ class CalendarSyncService:
                 tenant_id,
             )
             raise ValueError(
-                "No Google calendar token. Please reconnect your calendar in Settings."
+                "No Google calendar token. Open Calendar and choose Connect Calendar."
             )
 
         now = datetime.now(timezone.utc)
@@ -357,7 +357,7 @@ class CalendarSyncService:
             )
             if resp.status_code != 200:
                 raise ValueError(
-                    f"Google Calendar read failed (HTTP {resp.status_code}). Please try again or reconnect your calendar in Settings."
+                    f"Google Calendar read failed (HTTP {resp.status_code}). Open Calendar and choose Connect Calendar."
                 )
 
             events = []
@@ -461,7 +461,7 @@ class CalendarSyncService:
         token = await get_fresh_user_token(db, tenant_id, user_id, "google")
         if not token:
             raise ValueError(
-                "No Google calendar token. Please reconnect your calendar in Settings."
+                "No Google calendar token. Open Calendar and choose Connect Calendar."
             )
 
         event = {

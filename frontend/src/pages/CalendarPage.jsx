@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { reportError } from '../utils/reportError'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   getCalendarEvents,
   syncCalendarDeadlines,
@@ -431,6 +431,7 @@ function MobileAgenda({ events, onEventClick }) {
 
 export default function CalendarPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [pivotDate, setPivotDate] = useState(new Date())
   const [view, setView] = useState(() => window.localStorage.getItem('calendar-view') || 'month')
   const [events, setEvents] = useState([])
@@ -453,6 +454,22 @@ export default function CalendarPage() {
   const [taskDropSaving, setTaskDropSaving] = useState(false)
 
   useEffect(() => {
+    const connected = searchParams.get('connected')
+    const errorCode = searchParams.get('error')
+    const callbackProvider = searchParams.get('provider')
+    const requestedProvider = ['microsoft', 'google'].includes(connected || callbackProvider)
+      ? connected || callbackProvider
+      : null
+    const hasCallback = Boolean(connected || errorCode)
+    const clearCallbackQuery = () => {
+      if (!hasCallback) return
+      const next = new URLSearchParams(searchParams)
+      next.delete('connected')
+      next.delete('error')
+      next.delete('provider')
+      setSearchParams(next, { replace: true })
+    }
+
     Promise.all([
       getCalendarProviders(),
       getZoomStatus().catch(() => ({ connected: false, configured: false })),
@@ -465,18 +482,56 @@ export default function CalendarPage() {
         setZoomStatus(zoom)
         setMatters(mattersData.items || mattersData || [])
         const reconnectProvider = ['microsoft', 'google'].find((provider) => status[provider]?.needs_reconnect)
-        if (connectedProvider) {
+        if (connected && requestedProvider && data.providers?.includes(requestedProvider)) {
+          setCalendarProvider(requestedProvider)
+          setSyncMessage({
+            type: 'success',
+            text: `${providerLabel(requestedProvider)} connected successfully.`,
+          })
+        } else if (errorCode) {
+          setCalendarProvider(connectedProvider)
+          setConnectProvider(requestedProvider)
+          setSyncMessage({
+            type: 'error',
+            reconnectProvider: requestedProvider,
+            text: errorCode === 'access_denied'
+              ? 'Calendar connection was cancelled. You can try again when ready.'
+              : 'Calendar connection could not be completed. Please try again.',
+          })
+        } else if (connected) {
+          setCalendarProvider(connectedProvider)
+          setConnectProvider(requestedProvider)
+          setSyncMessage({
+            type: 'error',
+            reconnectProvider: requestedProvider,
+            text: 'Calendar connection could not be confirmed. Please try again.',
+          })
+        } else if (connectedProvider) {
           setCalendarProvider(connectedProvider)
         } else if (reconnectProvider) {
           setCalendarProvider(null)
           setSyncMessage({
             type: 'error',
+            reconnectProvider,
             text: `${providerLabel(reconnectProvider)} needs to be reconnected before sync can run.`,
           })
         }
-        setConnectProvider(data.connect_provider || reconnectProvider || data.login_provider || data.tenant_providers?.[0] || null)
+        if (!hasCallback) {
+          setConnectProvider(data.connect_provider || reconnectProvider || data.login_provider || data.tenant_providers?.[0] || null)
+        }
+        clearCallbackQuery()
       })
-      .catch(() => {})
+      .catch(() => {
+        if (hasCallback) {
+          setConnectProvider(requestedProvider)
+          setSyncMessage({
+            type: 'error',
+            reconnectProvider: requestedProvider,
+            text: 'Calendar connection could not be confirmed. Please try again.',
+          })
+          clearCallbackQuery()
+        }
+      })
   }, [])
 
   const fetchEvents = useCallback(async (pivot, activeView = view) => {
@@ -778,13 +833,23 @@ export default function CalendarPage() {
           }`}
         >
           <span>{syncMessage.text}</span>
-          <button
-            onClick={() => setSyncMessage(null)}
-            className="ml-4 opacity-60 hover:opacity-100 text-xs"
-            aria-label="Dismiss"
-          >
-            ✕
-          </button>
+          <span className="ml-4 flex items-center gap-3 shrink-0">
+            {syncMessage.type === 'error' && syncMessage.reconnectProvider && (
+              <button
+                onClick={() => connectCalendarIntegration(syncMessage.reconnectProvider)}
+                className="font-semibold underline hover:no-underline"
+              >
+                Reconnect {providerLabel(syncMessage.reconnectProvider)}
+              </button>
+            )}
+            <button
+              onClick={() => setSyncMessage(null)}
+              className="opacity-60 hover:opacity-100 text-xs"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </span>
         </div>
       )}
 
