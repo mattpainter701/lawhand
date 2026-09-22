@@ -78,7 +78,7 @@ function dateLabel(d) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function rangeLabel(view, pivot) {
+export function rangeLabel(view, pivot) {
   if (view === 'day') return pivot.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   if (view === 'week') {
     const start = startOfWeek(pivot)
@@ -87,10 +87,19 @@ function rangeLabel(view, pivot) {
       ? `${start.toLocaleDateString('en-US', { month: 'long' })} ${start.getDate()}–${end.getDate()}, ${end.getFullYear()}`
       : `${dateLabel(start)} – ${dateLabel(end)}`
   }
+  if (view === 'list') {
+    // The list loads the pivot month through the end of the next month, so the
+    // heading must describe that whole span rather than only the pivot month.
+    const start = startOfMonth(pivot)
+    const end = endOfMonth(new Date(pivot.getFullYear(), pivot.getMonth() + 1, 1))
+    const startLabel = monthLabel(start)
+    const endLabel = monthLabel(end)
+    return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
+  }
   return monthLabel(pivot)
 }
 
-function viewRange(view, pivot) {
+export function viewRange(view, pivot) {
   if (view === 'day') return [pivot, pivot]
   if (view === 'week') {
     const start = startOfWeek(pivot)
