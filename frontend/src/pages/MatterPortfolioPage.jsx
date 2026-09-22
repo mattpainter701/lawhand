@@ -13,7 +13,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { GripVertical } from 'lucide-react'
-import { getMattersV2, getMyMatters, setAssignmentActive, updateMatterV2 } from '../api'
+import { getMattersV2, getMyMattersPage, setAssignmentActive, updateMatterV2 } from '../api'
 import { useAuth } from '../App'
 import NewMatterModal from '../components/NewMatterModal'
 import CloseMatterDialog from '../components/casesetup/CloseMatterDialog'
@@ -724,8 +724,8 @@ export default function MatterPortfolioPage() {
 
   const loadMyMatters = () => {
     setMyLoading(true)
-    getMyMatters()
-      .then(data => setMyMatters(Array.isArray(data) ? data : []))
+    getMyMattersPage({ page: 1, page_size: 200 })
+      .then(data => setMyMatters(data?.items || []))
       .catch(() => {})
       .finally(() => setMyLoading(false))
   }

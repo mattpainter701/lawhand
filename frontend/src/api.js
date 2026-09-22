@@ -2620,6 +2620,8 @@ export const reopenMatter = (id) =>
   api.post(`/matters/${id}/reopen`).then((r) => r.data)
 export const getMyMatters = () =>
   api.get('/matters/my').then(r => r.data)
+export const getMyMattersPage = (params = {}) =>
+  api.get('/matters/my/page', { params }).then(r => r.data)
 export const getMatterStats = () =>
   api.get('/matters/stats').then(r => r.data)
 
