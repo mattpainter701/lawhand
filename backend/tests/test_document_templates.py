@@ -328,9 +328,14 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
     )
     assert unknown_verified.status_code == 422
     missing_matter = await client.post(
-        f"/api/templates/{template_id}/render", json={**payload, "matter_id": None}
+        f"/api/templates/{template_id}/render",
+        json={**payload, "matter_id": None, "fill_session_id": None},
     )
     assert missing_matter.status_code == 400
+    missing_session_matter = await client.post(
+        f"/api/templates/{template_id}/render", json={**payload, "matter_id": None}
+    )
+    assert missing_session_matter.status_code == 422
     foreign_folder = await client.post(
         f"/api/templates/{template_id}/render",
         json={**payload, "folder_id": str(uuid.uuid4())},
