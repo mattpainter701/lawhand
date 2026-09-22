@@ -11,6 +11,7 @@ The prior draft stated plainly that competitive research was complete but a full
 ## Method and confidence
 
 - **LawHand side:** read-only source audit of the branch head `31cdfb07` (base `c4d80b46`), React `frontend/` and FastAPI `backend/`, with `path:line` evidence in the [appendix](#appendix-lawhand-source-evidence). No customer records or provider accounts were used and nothing was saved.
+- **Reconciliation at bcecb8cb (22 September 2026):** G-04 and the Matters search row below reflect the expanded all-matters API. The due-time row and docketing label also incorporate the [epic's source reconciliation](../core-ux-future-state-epic-2026-09-22.md#source-reconciliation-after-the-research-commits). Other rows retain the original audit snapshot unless explicitly marked; no live parity retest is implied.
 - **Competitor side:** vendor documentation and dated public reviews summarised in the [competitive brief](./core-ux-competitive-research-2026-09-22.md), including the [extended vendor set](./core-ux-competitive-research-2026-09-22.md#extended-vendor-coverage-added-in-the-parity-pass) added for this audit. G2, Capterra, TrustRadius and SoftwareAdvice were 403-blocked to automated fetching; where only search snippets or tiny self-selected samples were available, the cell says so.
 - **"Competitor baseline"** means *at least one* product documents the capability. It is not a market-share, quality or pricing ranking. Subscription/integration constraints are noted where the vendor documentation states them.
 - No runtime or provider test was run for this document. Backend persistence and live sync were **not** exercised.
@@ -43,7 +44,7 @@ A capability can be *Supported* and still carry a *Discoverability* gap: the cod
 | E-signature and time tracking from a matter | **Supported** (`esignature.py:490,671`; `matters.py:2365`) | Clio, MyCase e-sign | — | — |
 | Activity feed / notes / history | **Supported** — unified timeline (`matters.py:1985-2050`) | Clio central activity | — | — |
 | Matter list completeness at scale | **Partial/Correctness** — `/matters/my` hard-caps at 100 with no `total`; portfolio loads `page_size:100` then filters client-side, so >100 matters are silently unreachable (`matters.py:999-1027`; `MatterPortfolioPage.jsx:735,820-838`) | Smokeball, Filevine paging | Completeness/scale | P0 |
-| All-matter search fields | **Partial** — `/matters` search matches `matter_name` only (`matters.py:583-584`) | Clio keyword lookup across entities | Completeness/scale | P1 |
+| All-matter search fields | **Partial, reconciled at bcecb8cb** — /matters matches matter name, matter number, client full name and client organization. Attorney-name, docket/court-number and document-content matching are not established by this change; personal-list paging remains separate. [Reconciliation](../core-ux-future-state-epic-2026-09-22.md#source-reconciliation-after-the-research-commits) | Clio keyword lookup across entities | Completeness/scale | P1 |
 
 ## 2. Tasks
 
@@ -51,7 +52,7 @@ A capability can be *Supported* and still carry a *Discoverability* gap: the cod
 | --- | --- | --- | --- | --- |
 | Create task from a matter with context prefilled | **Partial** — matter prefilled from route; contact never auto-prefilled; matter modal defaults `deadline`, global defaults `general` (`TasksPage.jsx:1451-1457,213`; `AddTaskModal.jsx:22`) | PracticePanther, Smokeball, Filevine, Actionstep prefill matter/contact | Discoverability | P0 |
 | One recognizable task composer | **Partial** — two distinct shells (`TasksPage.jsx` inline modal and `components/AddTaskModal.jsx`) | PracticePanther: one predictable form | Discoverability | P0 |
-| Due time | **Partial** — backend + matter modal support it; global create omits it and edit clears it (`schemas/task.py:39`; `TasksPage.jsx:282-286,338`) | Smokeball, MyCase scheduling | Missing capability (parity) | P1 |
+| Due time | **Partial, wording reconciled at bcecb8cb** — backend and matter modal support due time; the global form lacks a due-time control. The global editor clears due_time only when due_date is removed, not on unrelated edits. [Reconciliation](../core-ux-future-state-epic-2026-09-22.md#source-reconciliation-after-the-research-commits) | Smokeball, MyCase scheduling | Missing capability (parity) | P1 |
 | Linked contact on task | **Partial** — field exists, picker only in global modal (`TasksPage.jsx:288-294`) | PracticePanther matter/contact link | Missing capability (parity) | P1 |
 | Reminders | **Partial** — single `reminder_sent_at` + manual remind; no per-task schedule (`models/task.py:188`; `tasks.py:2589`) | PracticePanther reusable reminders | Missing capability | P2 |
 | Listing / queues (My/Firm, board/list, due buckets) | **Supported** (`TasksPage.jsx:1466-1509,1584-1644`) | All listed vendors | — | — |
@@ -81,7 +82,7 @@ A capability can be *Supported* and still carry a *Discoverability* gap: the cod
 | Timezone and date-only handling | **Supported** (`api.js:2286-2292`; `schema/calendar.py:10-15`; tests `CalendarPage.timezone.test.jsx`) | — | — | — |
 | Provider sync + reconnect status | **Supported** (`scheduled_events.py:114-121`; `auth.py:2731-2781`; `CalendarPage.jsx:467-477`) | PracticeMaster/Smokeball Outlook integration | — | — |
 | Local save vs provider-sync failure surfaced | **Correctness/Partial** — DB records `sync_status`/`sync_error`; UI unconditionally shows "Event created" and never reads them (`CalendarPage.jsx:696`) | — | Correctness | P1 |
-| Deadline/docket calculation | **Supported** — aggregated read + alert-only watcher (`calendar.py:119-307`; `scheduler.py:1179-1265`) | Court-rules engines exist elsewhere | — | — |
+| Deadline display and alerting | **Supported for aggregated reads and alert-only watching**; this is not jurisdiction-specific court-rule calculation parity. [Reconciliation](../core-ux-future-state-epic-2026-09-22.md#source-reconciliation-after-the-research-commits) | Specialist court-rule engines are a separate capability | — | — |
 | Automatic deadline shifting (business days/holidays) | **Absent** — explicitly not claimed (`operating_contract.py:63`) | Some docketing suites | Out of scope | OOS |
 | Keyboard edit / reschedule | **Partial** — buttons open on Enter/Space; no keyboard reschedule (`CalendarPage.jsx:316,367,413`) | Accessibility expectation | Discoverability | P1 |
 | Bounded calendar read | **Partial** — key dates fetch ≤500 open matters then filter in Python (`calendar.py:179-212`) | — | Completeness/scale | P2 |
@@ -127,14 +128,14 @@ A capability can be *Supported* and still carry a *Discoverability* gap: the cod
 
 ## Gap register
 
-Priorities here feed the epic's sprint scope; they are not a commitment. "Story" maps to the epic's delivery backlog. New stories UX-10–UX-13 are introduced by this audit.
+Priorities here feed the epic's phase scope; they are not a commitment. "Story" maps to the epic's delivery backlog. New stories UX-10–UX-13 are introduced by this audit.
 
 | ID | Gap | Domain | Type | Priority | Acceptance criteria (proposed) | Story |
 | --- | --- | --- | --- | --- | --- | --- |
 | G-01 | Everyday matter list buries deadline/status; "Needs attention" is text, not a queue | Matters | Discoverability | P0 | At 1366×768 and 1440×900 the default view shows matter/client, next deadline, status and owner without horizontal scroll; Needs attention opens the filtered records; scope counts name their scope | UX-01 |
 | G-02 | Matter overview shows setup/forms before work | Matters | Discoverability | P0 | Identity, alerts and task/date entry appear before setup forms; no empty signature/message form in the everyday view; required alerts stay visible when sections collapse | UX-02 |
 | G-03 | My Matters silently unreachable beyond 100 | Matters | Completeness/scale | P0 | `/matters/my` supports paging and returns `total`; >100 assigned matters are all reachable; search/filter state survives Back | UX-08 |
-| G-04 | `/matters` search matches name only | Matters | Completeness/scale | P1 | Search covers client, case-number and attorney for the documented corpus, or the UI states the exact fields searched | UX-08 |
+| G-04 | Search scope clarity and reuse after expanded /matters search | Matters | Completeness/scale | P1 | Reuse the bcecb8cb matter-name/number and client-name/organization search; state the exact fields searched and keep tenant/matter access restrictions. Attorney-name, docket/court-number and document-content extensions require a separately verified need/contract; do not rebuild landed search. [Reconciliation](../core-ux-future-state-epic-2026-09-22.md#source-reconciliation-after-the-research-commits) | UX-08 |
 | G-05 | No bulk actions on matters | Matters | Missing capability | P1 | Multi-select supports reassign/status/archive with a confirmation summary; permission-checked; no partial silent failure | UX-11 |
 | G-06 | No configurable matter types/practice areas | Matters | Missing capability | P2 | Matter type is a firm-configurable list, not free text; existing values migrate without loss | Backlog |
 | G-07 | Ethical-wall configuration has no writer/UI | Matters | Policy contract | OOS | Explicit authorization policy and audited path; security owner | OOS |
@@ -168,7 +169,7 @@ This audit **confirms** the epic's existing P0 stories (UX-01 to UX-04, UX-09) a
 - **UX-10 — Global cross-module search (P1, 3–5 days).** Currently absent; competitor baseline (Clio keyword lookup, Lawmatics global search bar) suggests high discoverability value. This is a follow-up candidate for Phase D of the epic's updated delivery outline, outside the initial proposed core slice unless staff sessions show search is a blocking failure.
 - **UX-11 — Bulk actions for matters and tasks (P1, 2–3 days).** Currently absent; competitor baseline (Rocket Matter batching) and the discovery that Rocket Matter's documented friction was per-row latency.
 - **UX-12 — Recurring tasks, dependencies and subtasks (P2, 4–6 days).** Absent; strong competitor baseline (Filevine Taskflow, Actionstep, Smokeball). Validate demand before scheduling; do not assume parity requires it.
-- **UX-13 — Saved views and saved report views (P2, 3–4 days).** Absent; Smokeball/PracticePanther baseline. Validated backlog, not a sprint goal.
+- **UX-13 — Saved views and saved report views (P2, 3–4 days).** Absent; Smokeball/PracticePanther baseline. Validated backlog, outside the initial proposed phase commitments.
 
 The audit also records what should **not** expand this epic: document version history and prepared-document drafts (document-automation owner), stage-entry automation and deadline auto-shifting (excluded automation/docket scope), ethical-wall policy authoring (security owner), and CRM-side portal/e-sign actions (document/client-portal owner).
 
@@ -190,7 +191,7 @@ Read-only audit of `31cdfb07` (base `c4d80b46`). Representative anchors, not exh
 - [Matter view gear / show-hide](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/frontend/src/components/MatterViewGear.jsx#L6)
 - [Matter list columns](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/frontend/src/components/matters/MatterListColumns.jsx#L142)
 - [Personal matters endpoint (limit 100)](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/backend/app/routers/matters.py#L999)
-- [All-matters search, name only](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/backend/app/routers/matters.py#L583)
+- [Reconciled all-matters search: matter name/number and client identity](https://github.com/mattpainter701/lawhand/blob/bcecb8cb0df6b9d60167be1bf9e05e15c22f5450/backend/app/routers/matters.py#L583)
 - [Task list query params (no search)](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/backend/app/routers/tasks.py#L563)
 - [Unbounded overdue endpoint](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/backend/app/routers/tasks.py#L490)
 - [Calendar list range vs label](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/frontend/src/pages/CalendarPage.jsx#L81)
