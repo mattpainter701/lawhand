@@ -75,8 +75,12 @@ export default function ProfilePage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  const totalHours = timeEntries.reduce((s, e) => s + (e.hours || 0), 0)
-  const totalBilled = timeEntries.reduce((s, e) => s + (e.amount || 0), 0)
+  const asFiniteNumber = (value) => {
+    const number = Number(value)
+    return Number.isFinite(number) ? number : 0
+  }
+  const totalHours = timeEntries.reduce((sum, entry) => sum + asFiniteNumber(entry.hours), 0)
+  const totalBilled = timeEntries.reduce((sum, entry) => sum + asFiniteNumber(entry.amount), 0)
 
   const activeMatters = myMatters.filter((m) => !m.is_closed)
   const riskCounts = { critical: 0, high: 0, medium: 0, low: 0 }

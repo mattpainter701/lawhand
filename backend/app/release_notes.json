@@ -15,6 +15,10 @@
         {
           "title": "Microsoft search requests repaired",
           "description": "File and mail searches use separate supported requests and respect the sources you selected."
+        },
+        {
+          "title": "Profile stays available",
+          "description": "Time-entry totals no longer stop the profile page from opening, so you can reach your personal cloud connection controls."
         }
       ]
     },

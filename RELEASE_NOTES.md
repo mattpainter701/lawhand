@@ -13,6 +13,7 @@ Reading a document against its printed form has more time to finish and clearer 
 
 - **Let form reading finish.** Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them.
 - **Microsoft search requests repaired.** File and mail searches use separate supported requests and respect the sources you selected.
+- **Profile stays available.** Time-entry totals no longer stop the profile page from opening, so you can reach your personal cloud connection controls.
 
 ## 2026.09.22.01 — Fill from a matter and keep your progress
 
