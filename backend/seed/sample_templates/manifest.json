@@ -143,7 +143,7 @@
     },
     {
       "category": "contract",
-      "description": "Wisconsin Realtors Association Residential Rental Contract.p. Fillable starter form from the public sample library; verify jurisdiction-specific requirements before use.",
+      "description": "Wisconsin Realtors Association Residential Rental Contract. Fillable starter form from the public sample library; verify jurisdiction-specific requirements before use.",
       "field_count": 86,
       "filename": "contract/wisconsin-realtors-association-residential-rental-contract-p.pdf",
       "jurisdictions": [
@@ -152,7 +152,7 @@
       "sha256": "a48f26671b4d94002f98e22d8b269339a0a664a8be8bf05805d0af4c2b20bcb2",
       "size_bytes": 720203,
       "slug": "wisconsin-realtors-association-residential-rental-contract-p",
-      "title": "Wisconsin Realtors Association Residential Rental Contract.p"
+      "title": "Wisconsin Realtors Association Residential Rental Contract"
     },
     {
       "category": "court_form",
@@ -721,8 +721,8 @@
       "filename": "engagement_letter/general-legal-services-fee-agreement.pdf",
       "jurisdictions": [],
       "origin": "authored",
-      "sha256": "77d9257ae97bc1af41bc4556fcbcc85d2091d4148c395eab2a4e14708ef4f48b",
-      "size_bytes": 97393,
+      "sha256": "e5b2c032c0df29558258158cc008f071dcfffc46c8ab9962d654028a80e4c555",
+      "size_bytes": 97492,
       "slug": "general-legal-services-fee-agreement",
       "title": "Fee Agreement \u2014 Legal Services (All Matter Types)"
     },
@@ -792,12 +792,12 @@
       },
       "category": "intake",
       "description": "First-contact intake for a prospective client: identity, contact and safe-contact preferences, the kind of help sought, other parties for a conflict check, any existing case, deadlines, prior counsel, and referral source. States that completing it creates no attorney-client relationship. Fields carry the client and matter bindings, so a returned form opens the matter without retyping.",
-      "field_count": 71,
+      "field_count": 63,
       "filename": "intake/prospective-client-intake-form.pdf",
       "jurisdictions": [],
       "origin": "authored",
-      "sha256": "1b42cb6c3694fc44aa49f8a8ffca8252b74d8cdea5097ffc04c7c93e58a13bb9",
-      "size_bytes": 56667,
+      "sha256": "b0e080f79dca09f2c48c98fce637114a99f32439f4693b4d44a9d533ec3448b8",
+      "size_bytes": 59556,
       "slug": "prospective-client-intake-form",
       "title": "Prospective Client Intake Form"
     },

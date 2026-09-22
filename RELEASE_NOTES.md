@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.01 — Fill from a matter and keep your progress
+
+Released September 22, 2026.
+
+Sample forms can use existing matter details, with a PDF preview beside the answers. Preparing documents also gets more reliable draft recovery, complete packet questions, and clearer cloud connection status.
+
+- **Start with the matter.** Search by client, matter name or number to fill a sample from existing details. Review missing answers and preview the filled PDF before downloading.
+- **Reliable drafts and packets.** Prepare restores answers and verified fields before refreshing matter data. Packets include Markdown questions, choice controls and a preview of each document.
+- **Clearer forms and connection status.** Intake choices keep their question text. Fee-agreement labels identify each signer, source defaults are visible, and storage status shows connections needing attention.
+
 ## 2026.09.21.01 — Search inside a matter's documents
 
 Released September 21, 2026.

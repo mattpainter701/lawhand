@@ -10,7 +10,7 @@ from decimal import Decimal
 from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -581,7 +581,29 @@ async def list_matters(
     if client_id:
         conditions.append(Matter.client_contact_id == uuid.UUID(client_id))
     if search:
-        conditions.append(Matter.matter_name.ilike(f"%{search}%"))
+        # The document picker uses the same search as the matters list. Match
+        # the human identifiers users know without joining/counting a matter
+        # twice, and keep the related-client lookup inside this tenant.
+        pattern = f"%{search.strip()}%"
+        conditions.append(
+            or_(
+                Matter.matter_name.ilike(pattern),
+                Matter.matter_number.ilike(pattern),
+                Matter.client_contact_id.in_(
+                    select(Contact.id).where(
+                        Contact.tenant_id == tenant_id,
+                        or_(
+                            func.trim(
+                                func.coalesce(Contact.first_name, "")
+                                + " "
+                                + func.coalesce(Contact.last_name, "")
+                            ).ilike(pattern),
+                            Contact.organization_name.ilike(pattern),
+                        ),
+                    )
+                ),
+            )
+        )
     if assigned_to:
         conditions.append(
             Matter.id.in_(

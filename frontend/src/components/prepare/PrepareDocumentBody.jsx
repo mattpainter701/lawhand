@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Download, Eye, Send, Wand2 } from 'lucide-react'
 import MatterPicker from './MatterPicker'
+import StorageReadinessNotice from './StorageReadinessNotice'
 import TemplateFactReview from '../templates/TemplateFactReview'
 import TemplateFillProgress from '../templates/TemplateFillProgress'
 import TemplateFillSource from '../templates/TemplateFillSource'
@@ -81,6 +82,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
   const scrollClass = layout === 'modal' ? 'lg:max-h-[78vh] lg:overflow-y-auto' : ''
   return (
       <div className="grid gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]"><div className={`space-y-4 lg:pr-2 ${scrollClass}`}>
+        <StorageReadinessNotice enabled={canSaveToMatter && Boolean(matterId.trim())} />
         {error && (
           <div className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">
             {canSaveToMatter ? error : 'The test needs attention. See the results below for the exact issue.'}

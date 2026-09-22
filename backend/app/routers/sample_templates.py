@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import re
 import uuid
+from types import SimpleNamespace
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,16 +22,19 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_db
+from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
 from app.models.sample_template import SampleTemplate
 from app.schemas.sample_template import (
     SampleTemplateListResponse,
     SampleTemplateRenderRequest,
     SampleTemplateResponse,
+    SampleTemplateSmartFillRequest,
+    SampleTemplateSmartFillResponse,
 )
 from app.services.access_control import require_capability
 from app.services.pdf_templates import TemplatePdfError, fill_pdf_template
+from app.routers.document_templates import build_variable_suggestions
 
 router = APIRouter(prefix="/api/templates/library", tags=["sample-templates"])
 settings = get_settings()
@@ -133,6 +137,41 @@ async def download_sample_source(
             "Cache-Control": "private, no-store",
             "Pragma": "no-cache",
         },
+    )
+
+
+@router.post("/{sample_id}/smart-fill-preview", response_model=SampleTemplateSmartFillResponse)
+async def smart_fill_sample_template(
+    sample_id: uuid.UUID,
+    payload: SampleTemplateSmartFillRequest,
+    current_user=Depends(require_capability("manage_documents")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Suggest values from one tenant-scoped matter without saving anything."""
+    await set_tenant_context(db, str(current_user.tenant_id))
+    sample = await _load_sample(db, sample_id)
+    if not sample.variable_schema:
+        raise HTTPException(
+            status_code=409,
+            detail="The sample template has not been seeded with a field schema.",
+        )
+    template = SimpleNamespace(
+        id=sample.id,
+        tenant_id=current_user.tenant_id,
+        variable_schema=sample.variable_schema,
+    )
+    resolved_matter_id, suggestions = await build_variable_suggestions(
+        template=template,
+        requested_variables=payload.variables,
+        matter_id=payload.matter_id,
+        tenant_id=uuid.UUID(str(current_user.tenant_id)),
+        current_user=current_user,
+        db=db,
+    )
+    return SampleTemplateSmartFillResponse(
+        sample_id=str(sample.id),
+        matter_id=resolved_matter_id,
+        variables=[item.model_dump(mode="json") for item in suggestions],
     )
 
 

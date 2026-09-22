@@ -367,6 +367,13 @@ describe('TemplateStudioEditor', () => {
     expect(schemaFields({ variable_schema: { fields: 'not-a-list' } })).toEqual([])
   })
 
+  it('discovers legacy Markdown placeholders without reviving excluded fields', () => {
+    expect(schemaFields({ body: '{{client_name}} {{matter_number}}', variable_schema: { fields: [{ name: 'client_name', included: false }] } })).toEqual([
+      { name: 'client_name', included: false },
+      { name: 'matter_number', label: 'matter_number', required: true, field_type: 'text' },
+    ])
+  })
+
   it('creates a Word field from a text selection, anchored to that span', async () => {
     // A Word field is a character span, not a rectangle, so the selection the
     // user made *is* the anchor — there is no page to place anything on.

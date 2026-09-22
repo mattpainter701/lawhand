@@ -36,3 +36,7 @@ it('names malformed or duplicate fields and missing sources', () => {
   expect(row('Source document').getByText('Needs fixing')).toBeVisible()
   expect(row('Field names').getByText(/First, Second, Invalid/)).toBeVisible()
 })
+it('counts legacy Markdown body placeholders in the field summary', () => {
+  show({ template: { ...template, format: 'markdown', body: '{{client_name}} {{matter_number}}', variable_schema: { fields: [] } } })
+  expect(row('Field names').getByText(/2 included fields/)).toBeVisible()
+})

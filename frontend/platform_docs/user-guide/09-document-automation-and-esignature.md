@@ -68,6 +68,16 @@ After the save, the same page can create and send an e-signature request for the
 
 What you type on the [Prepare](/templates/prepare) page is kept for fourteen days, encrypted, together with the fields you marked verified. The matter's Documents tab lists your documents in progress with **Resume** and **Discard**; a previewed packet can be saved in the background and each document reports Saved or why not. Only the person who prepared a session can open it.
 
+Wait for **Answers saved** before closing the browser. If saving or restoring fails, keep the page open and use **Retry**. The Prepare address keeps the draft reference so refreshing the page can restore the same answers.
+
+## Fill a sample form
+
+In the sample form library, choose **Fill**, then **Fill from a matter**. Search by client name, matter name or number. LawHand fills the values it can find; use **Missing** to focus on unanswered fields, or **All** to review everything. Changing to a different matter clears the previous matter's answers.
+
+Keep the source PDF beside the questions when a label needs context. Choose **Preview filled PDF**, review every page, then **Download filled PDF**. Changing an answer clears that preview so the downloaded copy matches the values you reviewed. A sample download does not create a firm template or save a document to the matter.
+
+Samples with missing source details or ambiguous labels still need source review. A numbered field label identifies a location, not a verified legal meaning. Check the form's issuing authority, edition and suitability before using it.
+
 ## Documents from a workflow
 
 A workflow template can list documents to prepare beside its checklist. When someone approves a workflow run on a matter, each listed document is pre-filled from the matter and handed to its assignee as a **Prepare** task that opens the session under Documents in progress. Nothing is generated, saved or sent by the workflow itself: the assignee reviews, verifies and saves the document as usual, and rolling the run back cancels the task and discards an unsaved session.

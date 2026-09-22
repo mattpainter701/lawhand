@@ -1916,6 +1916,104 @@ async def integration_status(
     )
 
 
+@router.get("/storage-readiness")
+async def storage_readiness(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a tenant-scoped, non-sensitive preflight for matter storage.
+
+    Preparation flows use this to warn before a cloud-bound save. It reports
+    only the selected provider and an actionable state; credentials and raw
+    provider errors remain confined to the administrator integration panel.
+    Auto mode intentionally follows MatterFileStore's policy: an active
+    Microsoft credential wins over Google even when Microsoft needs repair.
+    """
+    user = await get_current_user(request, db)
+    tenant_id = str(user.tenant_id)
+    await set_tenant_context(db, tenant_id)
+
+    from app.models.tenant import TenantSettings
+
+    settings_row = (
+        await db.execute(
+            select(TenantSettings).where(TenantSettings.tenant_id == user.tenant_id)
+        )
+    ).scalar_one_or_none()
+    configured = (
+        str(getattr(settings_row, "primary_cloud_provider", None) or "")
+        .strip()
+        .lower()
+    )
+    credentials = (
+        await db.execute(
+            select(TenantCredential).where(
+                TenantCredential.tenant_id == user.tenant_id,
+                TenantCredential.provider.in_(["microsoft", "google"]),
+            )
+        )
+    ).scalars().all()
+    by_provider = {row.provider: row for row in credentials}
+    provider = configured or (
+        "onedrive"
+        if by_provider.get("microsoft") and by_provider["microsoft"].is_active
+        else "google_drive"
+        if by_provider.get("google") and by_provider["google"].is_active
+        else None
+    )
+    labels = {
+        "onedrive": "Microsoft OneDrive",
+        "sharepoint": "Microsoft SharePoint",
+        "google_drive": "Google Drive",
+    }
+    credential_provider = {
+        "onedrive": "microsoft",
+        "sharepoint": "microsoft",
+        "google_drive": "google",
+    }.get(provider)
+    row = by_provider.get(credential_provider) if credential_provider else None
+    label = labels.get(provider, "document storage")
+
+    if not provider or not row:
+        status = "not_connected"
+        message = "Connect Microsoft 365 or Google Workspace before saving matter documents."
+    elif not row.is_active:
+        status = "needs_reconnect"
+        provider_name = credential_provider.title() if credential_provider else "the provider"
+        message = (
+            f"Reconnect {provider_name} before saving matter documents to {label}."
+        )
+    else:
+        granted = set(str(row.scopes or "").split())
+        required = {"Files.ReadWrite.All"}
+        if provider == "sharepoint":
+            required.add("Sites.Read.All")
+        elif provider == "google_drive":
+            required = {"https://www.googleapis.com/auth/drive"}
+        missing_storage = required - granted
+        # A provider-wide missing_scopes audit can be caused by mail or
+        # calendar consent. Only revoked/refresh-failed credentials make the
+        # token unusable for document storage; storage scopes are checked above.
+        usable = row.health not in {"revoked", "refresh_failed"} and not missing_storage
+        if usable:
+            status = "ready"
+            message = f"{label} is ready for matter documents."
+        else:
+            status = "needs_reconnect"
+            provider_name = credential_provider.title() if credential_provider else "the provider"
+            message = (
+                f"Reconnect {provider_name} before saving matter documents to {label}."
+            )
+
+    return {
+        "provider": provider,
+        "label": label,
+        "status": status,
+        "ready": status == "ready",
+        "message": message,
+    }
+
+
 # ── Disconnect endpoints ─────────────────────────────────────────────────
 
 

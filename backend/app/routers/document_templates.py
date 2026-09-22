@@ -2289,7 +2289,13 @@ async def list_templates(
     summary_stmt = select(
         func.count(DocumentTemplate.id),
         func.count(DocumentTemplate.id).filter(DocumentTemplate.is_active.is_(True)),
-        func.count(DocumentTemplate.id).filter(DocumentTemplate.is_active.is_(False)),
+        func.count(DocumentTemplate.id).filter(
+            DocumentTemplate.is_active.is_(False),
+            or_(
+                DocumentTemplate.status.is_(None),
+                DocumentTemplate.status != "paused",
+            ),
+        ),
         func.count(DocumentTemplate.id).filter(
             DocumentTemplate.is_active.is_(True),
             ~source_missing_filter,

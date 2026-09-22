@@ -278,7 +278,7 @@ describe('SampleLibraryCard duplicate-titled variants', () => {
 
     const unrecorded = screen.getAllByText('ND Divorce')[0].closest('li')
     expect(
-      within(unrecorded).getByText(/The source of each was not recorded/i),
+      within(unrecorded).getByText(/Source file: .*preview before filing/i),
     ).toBeInTheDocument()
 
     const recorded = screen.getAllByText('ND General')[0].closest('li')

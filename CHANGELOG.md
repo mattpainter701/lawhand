@@ -1,3 +1,10 @@
+## 2026.09.22.01 — Matter-first sample filling and PDF acceptance fixes
+
+- Sample filling now uses a tenant-scoped Smart Fill preview route, searchable matter selection, grouped fields, missing/filled filters, and a generated PDF canvas before download. Source defaults survive extraction; unnamed controls get honest page-based fallback labels. The authored intake uses labeled exclusive radio groups; fee-agreement signer names are distinct. Two source PDFs and their manifest digests are regenerated.
+- Prepare restores sessions before auto-fill and serializes document draft writes with visible save/retry state and a recoverable URL. Matter changes and answer edits invalidate old preview evidence. Packet interviews include Markdown body placeholders, preserve choice controls, and resolve local aliases in bounded batches without treating an explicit manual binding as an alias.
+- Studio field discovery and paused-template counts are consistent. The selected cloud provider's credential health is reflected in storage setup status. Matter search includes client names and matter numbers without widening tenant access.
+- Validation and remaining production acceptance requirements are recorded in `docs/pdf-release-acceptance-2026-09-22.md`. Cloud grant reauthorization and actual save/reopen checks remain operational acceptance, not a claim made by the code change.
+
 ## Unreleased — Research MCP request-level idempotency and billing visibility
 
 - `app/models/mcp_product.py` / migration `196_mcp_usage_idempotency`: `mcp_usage_events` gains nullable `request_idempotency_key`, `credential_scope`, and `request_sha256`, plus a partial unique index on `(tenant_id, credential_scope, request_idempotency_key)` where the key is not null. Additive and reversible; keyless events and the internal chat path are unaffected.

@@ -797,6 +797,8 @@ export const updateSeatCount = (count) =>
 // Integrations & Permissions
 export const getIntegrationsHealth = () =>
   api.get('/admin/integrations/health').then((r) => r.data)
+export const getStorageReadiness = () =>
+  api.get('/integrations/storage-readiness').then((r) => r.data)
 export const getIntegrationReadiness = () =>
   api.get('/admin/integrations/readiness').then((r) => r.data)
 export const getAdminPermissions = () =>
@@ -2437,6 +2439,9 @@ export const getSampleTemplate = (id) =>
 
 export const getSampleTemplateSource = (id) =>
   api.get(`/templates/library/${id}/source`, { responseType: 'blob' }).then(r => r.data)
+
+export const previewSampleTemplateSmartFill = (id, data) =>
+  api.post(`/templates/library/${id}/smart-fill-preview`, data).then(r => r.data)
 
 export const renderSampleTemplateFile = (id, data) =>
   api.post(`/templates/library/${id}/render-file`, data, { responseType: 'blob' }).then((r) => {
