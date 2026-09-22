@@ -176,6 +176,12 @@ def resolve(sources: CustomFieldSources, tenant_id, matter, bindings) -> dict:
 
 
 async def suggestions(db, tenant_id, matter, bindings):
-    """Read and resolve in one call, for a caller filling a single template."""
+    """Read and resolve in one call, for a caller filling a single template.
 
+    A template that binds no custom field costs nothing: the read is skipped
+    rather than loading a snapshot nothing will consume.
+    """
+
+    if not any(custom_binding(path) for path in bindings.values()):
+        return {}
     return resolve(await load(db, tenant_id, matter), tenant_id, matter, bindings)

@@ -59,6 +59,12 @@ def resolve(branding: dict, tenant_id, bindings) -> dict:
 
 
 async def suggestions(db, tenant_id, bindings):
-    """Read the profile and resolve in one call, for a caller with one template."""
+    """Read the profile and resolve in one call, for a caller with one template.
 
+    A template that references no firm field costs nothing: the profile is not
+    read when nothing will consume it.
+    """
+
+    if not any(path in FIRM_FIELDS for path in bindings.values()):
+        return {}
     return resolve(await load(db, tenant_id), tenant_id, bindings)
