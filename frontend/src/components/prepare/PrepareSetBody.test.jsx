@@ -39,6 +39,30 @@ describe('PrepareSetBody packet controls', () => {
     expect(screen.getByText('Ada Lovelace — Remote')).toBeInTheDocument()
   })
 
+  it('treats checking a suggested answer as reviewed and clears it when edited', () => {
+    const setReviewedValues = vi.fn()
+    const toggleVerified = vi.fn()
+    const packet = {
+      ...prep,
+      answers: { 'manual:markdown:venue': 'Remote' },
+      setReviewedValues,
+      toggleVerified,
+      progress: {
+        rows: [{ name: 'manual:markdown:venue', present: true, documents: 1, source: { suggested_value: 'Remote' }, needsReview: true, verified: false }],
+        remaining: [], review: [{ name: 'manual:markdown:venue' }], unverified: [{ name: 'manual:markdown:venue' }], completed: 1, total: 1, verified: 0,
+      },
+    }
+    const view = render(<PrepareSetBody prep={packet} matters={[]} fixedMatterId="m" />)
+    const checkbox = screen.getByRole('checkbox', { name: 'Verified: Venue' })
+    fireEvent.click(checkbox)
+    expect(toggleVerified).toHaveBeenCalledWith('manual:markdown:venue')
+    expect(setReviewedValues.mock.calls.at(-1)[0]({})).toEqual({ 'manual:markdown:venue': 'Remote' })
+
+    fireEvent.change(screen.getByRole('combobox', { name: /Venue/ }), { target: { value: 'Court' } })
+    expect(setReviewedValues.mock.calls.at(-1)[0]({ 'manual:markdown:venue': 'Remote' })).toEqual({ 'manual:markdown:venue': undefined })
+    view.unmount()
+  })
+
   it('opens the exact generated PDF in the page and closes without a popup or save', () => {
     const popup = vi.spyOn(window, 'open').mockReturnValue(null)
     const blob = new Blob(['generated PDF'], { type: 'application/pdf' })

@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.05",
+      "version": "2026.09.22.05",
+      "title": "Clearer form questions and focused cloud searches",
+      "published_at": "2026-09-22",
+      "summary": "Sample forms distinguish required answers from optional blanks, and verifying a suggested answer clears its review step. Cloud Search lets administrators choose file or email sources and keep a filename together.",
+      "highlights": [
+        {
+          "title": "See which answers are required",
+          "description": "Sample-fill counts update as you type. Separate missing-required and optional filters help you review the questions that apply."
+        },
+        {
+          "title": "Review each suggested answer once",
+          "description": "Marking a suggested answer as verified clears it from the review queue. Changing the answer or unchecking verification requires a fresh review of that value."
+        },
+        {
+          "title": "Search the source you intended",
+          "description": "Choose OneDrive, Google Drive, SharePoint or email sources when testing cloud search. Exact phrase matching keeps a filename from becoming unrelated common-word results."
+        },
+        {
+          "title": "Understand unlabelled source fields",
+          "description": "Imported fields with unusable source labels show a clear instruction to check the PDF, while preserving their page and field references."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.04",
       "version": "2026.09.22.04",
       "title": "Clear calendar results and safer shortcuts",

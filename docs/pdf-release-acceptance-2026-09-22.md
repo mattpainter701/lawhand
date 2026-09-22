@@ -20,6 +20,22 @@ generated preview. Word packet output uses **Download Word preview** for review
 in a Word-compatible application. Generating or opening a preview does not
 save the document or establish that its contents have been reviewed.
 
+Sample-fill summaries use current answers and the source's declared required
+flags. **Missing** shows required blanks; **Optional** shows optional blanks;
+**Filled** shows answered controls. An unchecked required checkbox is still
+missing, while a numeric zero remains an answer. Source flags are not a legal
+completeness determination. Follow-up questions remain visible unless authored
+conditional metadata explicitly governs them. Fields without usable source
+labels retain numbered/page references and ask the preparer to check the PDF.
+
+For a cloud-search diagnostic, open **Administration → Integrations → Search →
+Test Search**. Select the intended sources and enter a distinctive filename or
+phrase. **Match exact filename or phrase** keeps that text together rather than
+asking the planner to choose keywords; filenames enable this mode automatically.
+Full-content fetching is off by default. **Search details** exposes the technical
+plan when needed. Selecting a search source does not change document storage or
+grant access to another account.
+
 Primary product references reviewed on September 22, 2026:
 
 - [Gavel integrations](https://www.gavel.io/use-cases/integrations) describe
@@ -57,6 +73,9 @@ time-saving comparison. No customer data was sent to these services.
 | Packet state code is counted filled while its dropdown shows no answer | Normalize recognized state aliases to an option; leave unmatched suggestions missing. |
 | Profile crashes before personal cloud reconnection controls appear | Normalize decimal-string totals before formatting and ignore non-finite values. |
 | Authored intake PDF prints literal emphasis markers around radio prompts | Remove authoring markers from the source prompts and regenerate the PDF and manifest digest without changing its controls. |
+| Optional sample blanks inflate "need attention" | Derive current-answer counts and separate source-declared required blanks from optional blanks. Check manual edits, defaults, unchecked checkboxes and numeric zero. |
+| All values verified but a suggestion still needs review | Checking a suggested value records that exact answer as reviewed in single and packet preparation. Editing or unchecking invalidates the review; no matter fact, approval or delivery is implied. |
+| Full filename lookup returns unrelated emails | Preserve literal diagnostic queries and expose source selection. Compare a distinctive QA identifier and its full filename; verify the correct file in the selected provider. |
 
 The Microsoft follow-up follows the [Graph Search API limits](https://learn.microsoft.com/en-us/graph/api/resources/search-api-overview?view=graph-rest-1.0): one search request per HTTP call, supported entity combinations, and the smaller message page size. It does not replace reauthorization when Microsoft requires MFA.
 

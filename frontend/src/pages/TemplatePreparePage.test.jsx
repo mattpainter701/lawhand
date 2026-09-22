@@ -201,13 +201,14 @@ describe('the Prepare route', () => {
     })
     api.discoverTemplateVariables.mockResolvedValue({ variables: [
       { variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false },
-      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: false },
+      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: true },
     ] })
     renderAt(`?template=${T}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
     const completion = screen.getByRole('region', { name: 'Document completion' })
     expect(completion).toHaveTextContent('0 of 2 verified')
+    expect(completion).toHaveTextContent('2 suggestions to review')
     expect(screen.getByRole('button', { name: 'Unverified (2)' })).toBeInTheDocument()
     // Enter on the first row's Verified control verifies it and moves on to the next unverified row.
     const first = screen.getByRole('checkbox', { name: 'Verified: Client name' })
@@ -216,15 +217,18 @@ describe('the Prepare route', () => {
     await waitFor(() => expect(first).toBeChecked())
     expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
     expect(completion).toHaveTextContent('1 of 2 verified')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    await waitFor(() => expect(completion).toHaveTextContent('0 suggestions to review'))
+    expect(screen.getByRole('button', { name: 'Next field needing attention' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    expect(completion).toHaveTextContent('1 suggestions to review')
+    expect(completion).toHaveTextContent('1 of 2 verified')
     // Typing a value counts as checking it; clearing it does not.
     fireEvent.change(screen.getByRole('textbox', { name: /Matter name/ }), { target: { value: 'Smith v. Jones (2026)' } })
     expect(screen.getByRole('checkbox', { name: 'Verified: Matter name' })).toBeChecked()
     expect(completion).toHaveTextContent('2 of 2 verified')
     fireEvent.click(screen.getByRole('button', { name: 'Unverified (0)' }))
     expect(screen.getByText('Every filled field is verified.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'All fields (2)' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
-    expect(completion).toHaveTextContent('1 of 2 verified')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
@@ -232,7 +236,7 @@ describe('the Prepare route', () => {
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, {
       variables: { client_name: 'Ada Smith', matter_name: 'Smith v. Jones (2026)' },
       matter_id: M,
-      verified_fields: ['client_name'],
+      verified_fields: ['client_name', 'matter_name'],
       fill_session_id: '99999999-9999-4999-8999-999999999999',
     })
   })

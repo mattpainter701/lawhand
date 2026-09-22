@@ -38,6 +38,20 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     session, background, saveAllInBackground, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
+  const clearReviewedValue = (key) => setReviewedValues((prev) => ({ ...prev, [key]: undefined }))
+  const updateValue = (key, value) => {
+    clearReviewedValue(key)
+    setAnswer(key, value)
+  }
+  const verifyCurrentValue = (key, value) => {
+    setReviewedValues((prev) => ({ ...prev, [key]: fillValue(value) }))
+    toggleVerified(key)
+  }
+  const toggleValueVerified = (key, value, currentlyVerified) => {
+    if (currentlyVerified) clearReviewedValue(key)
+    else verifyCurrentValue(key, value)
+    if (currentlyVerified) toggleVerified(key)
+  }
   const groups = []
   for (const question of visible) {
     const label = groupLabel(question)
@@ -101,20 +115,20 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                         {review?.source && <p className="mb-1 text-xs text-brand-muted">{suggestionOriginLabel(review.source)}</p>}
                         {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><span>{suggestionConfidenceLabel(review)}</span>{review.needsReview ? <button type="button" disabled={saving} className="rounded border border-brand-line px-2 py-1" onClick={() => setReviewedValues((prev) => ({ ...prev, [question.key]: value }))}>Confirm {question.label}</button> : <span className="text-brand-green">Reviewed</span>}</div>}
                         {question.value_kind === 'checkbox' ? (
-                          <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => setAnswer(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
+                          <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => updateValue(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
                         ) : (question.value_kind === 'choice' || question.value_kind === 'radio') && question.options?.length ? (
-                          <select id={inputId} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass}>
+                          <select id={inputId} value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass}>
                             <option value="">Choose {question.label}</option>
                             {question.options.map((option) => <option key={String(option)} value={option}>{option}</option>)}
                           </select>
                         ) : question.value_kind === 'multiline' ? (
-                          <textarea id={inputId} rows={3} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
+                          <textarea id={inputId} rows={3} value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         ) : (
-                          <input id={inputId} type="text" value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
+                          <input id={inputId} type="text" value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         )}
                         {review?.present && (
                           <label className={`mt-1 inline-flex items-center gap-2 text-xs ${review.verified ? 'text-brand-green' : 'text-brand-muted'}`}>
-                            <input type="checkbox" aria-label={`Verified: ${question.label}`} checked={Boolean(review.verified)} onChange={() => toggleVerified(question.key)} disabled={saving} className="h-3.5 w-3.5" />
+                            <input type="checkbox" aria-label={`Verified: ${question.label}`} checked={Boolean(review.verified)} onChange={() => toggleValueVerified(question.key, value, review.verified)} disabled={saving} className="h-3.5 w-3.5" />
                             {review.verified ? 'Verified' : 'Verify'}
                           </label>
                         )}

@@ -43,6 +43,13 @@ _INDEX_SOURCE_MAP = {
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
+def _quoted_search_phrase(value: str) -> str:
+    """Quote one provider search phrase while escaping embedded syntax."""
+
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
 GOOGLE_DRIVE_BASE = "https://www.googleapis.com/drive/v3"
 GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1"
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
@@ -135,6 +142,7 @@ class CloudSearchService:
         """
         max_hits = plan.get("max_hits", settings.CLOUD_SEARCH_MAX_HITS)
         keywords = plan.get("keywords", [])
+        exact_query = bool(plan.get("exact_query"))
         date_after = plan.get("date_after", "")
         sources = plan.get("sources", None)
 
@@ -209,6 +217,7 @@ class CloudSearchService:
                                 user_id,
                                 folder_id=folder_id,
                                 token=google_token,
+                                exact_query=exact_query,
                             )
                         )
                 else:
@@ -222,6 +231,7 @@ class CloudSearchService:
                             user_id,
                             folder_id=None,
                             token=google_token,
+                            exact_query=exact_query,
                         )
                     )
             if _source_enabled(sources, "gmail"):
@@ -234,6 +244,7 @@ class CloudSearchService:
                         tenant_id,
                         user_id,
                         token=google_token,
+                        exact_query=exact_query,
                     )
                 )
 
@@ -257,6 +268,7 @@ class CloudSearchService:
                             ["onedrive"],
                             folder_id=folder_id,
                             token=microsoft_token,
+                            exact_query=exact_query,
                         )
                     )
             if use_folder_scoped_sharepoint:
@@ -271,6 +283,7 @@ class CloudSearchService:
                             drive_id=ref["drive_id"],
                             folder_id=ref["folder_id"],
                             token=microsoft_token,
+                            exact_query=exact_query,
                         )
                     )
 
@@ -301,6 +314,7 @@ class CloudSearchService:
                         graph_sources,
                         folder_id=None,
                         token=microsoft_token,
+                        exact_query=exact_query,
                     )
                 )
 
@@ -620,6 +634,7 @@ class CloudSearchService:
         user_id: str | None,
         folder_id: str | None = None,
         token: str | None = None,
+        exact_query: bool = False,
     ) -> list[CloudHit]:
         token = token or await self._get_google_token(db, tenant_id, user_id)
         if not token:
@@ -627,7 +642,11 @@ class CloudSearchService:
 
         clauses: list[str] = []
         for kw in keywords:
-            sanitised = kw.replace("'", "\\'")
+            if exact_query:
+                phrase = _quoted_search_phrase(kw)
+                sanitised = phrase.replace("\\", "\\\\").replace("'", "\\'")
+            else:
+                sanitised = kw.replace("'", "\\'")
             clauses.append(f"fullText contains '{sanitised}'")
         if date_after:
             clauses.append(f"modifiedTime > '{date_after}'")
@@ -732,6 +751,7 @@ class CloudSearchService:
         tenant_id: str,
         user_id: str | None,
         token: str | None = None,
+        exact_query: bool = False,
     ) -> list[CloudHit]:
         token = token or await self._get_google_token(db, tenant_id, user_id)
         if not token:
@@ -739,6 +759,9 @@ class CloudSearchService:
 
         query_parts: list[str] = []
         for kw in keywords:
+            if exact_query:
+                query_parts.append(_quoted_search_phrase(kw))
+                continue
             sanitised = kw.replace('"', '\\"')
             if "@" in sanitised:
                 query_parts.append(f"from:{sanitised} OR to:{sanitised}")
@@ -867,6 +890,7 @@ class CloudSearchService:
         sources: list[str] | None = None,
         folder_id: str | None = None,
         token: str | None = None,
+        exact_query: bool = False,
     ) -> list[CloudHit]:
         token = token or await self._get_microsoft_token(db, tenant_id, user_id)
         if not token:
@@ -876,10 +900,12 @@ class CloudSearchService:
         # instead of the global search query to limit results to the matter folder.
         if folder_id:
             return await self._search_onedrive_folder(
-                token, keywords, max_hits, folder_id
+                token, keywords, max_hits, folder_id, exact_query=exact_query
             )
 
         query_string = " ".join(keywords) if keywords else "*"
+        if exact_query and keywords:
+            query_string = _quoted_search_phrase(query_string)
 
         hits: list[CloudHit] = []
         # Graph accepts one searchRequest per HTTP call, and message cannot be
@@ -1370,9 +1396,12 @@ class CloudSearchService:
         keywords: list[str],
         max_hits: int,
         folder_id: str,
+        exact_query: bool = False,
     ) -> list[CloudHit]:
         """Search within a specific OneDrive folder using the folder's drive endpoint."""
         query_string = " ".join(keywords) if keywords else "*"
+        if exact_query and keywords:
+            query_string = _quoted_search_phrase(query_string)
         query_string = query_string.replace("'", "''")
         url = f"{GRAPH_BASE}/me/drive/items/{folder_id}/search(q='{query_string}')"
         params = {
@@ -1426,12 +1455,15 @@ class CloudSearchService:
         drive_id: str,
         folder_id: str,
         token: str | None = None,
+        exact_query: bool = False,
     ) -> list[CloudHit]:
         """Search inside a specific SharePoint document-library folder."""
         token = token or await self._get_microsoft_token(db, tenant_id, user_id)
         if not token:
             return []
         query_string = " ".join(keywords) if keywords else "*"
+        if exact_query and keywords:
+            query_string = _quoted_search_phrase(query_string)
         query_string = query_string.replace("'", "''")
         url = f"{GRAPH_BASE}/drives/{drive_id}/items/{folder_id}/search(q='{query_string}')"
         params = {

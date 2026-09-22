@@ -61,4 +61,15 @@ describe('interviewReview', () => {
     // A typed value that differs from the suggestion is not a suggestion any more.
     expect(interviewReview(questions, { 'defendant.full_name': 'Grace' }).rows[0].source).toBeNull()
   })
+
+  it('requires review again when a suggestion changes after confirmation', () => {
+    const confirmed = { 'defendant.full_name': 'Ada' }
+    const changed = interviewReview(
+      [{ ...questions[0], suggested_value: 'Grace' }],
+      { 'defendant.full_name': 'Grace' },
+      confirmed,
+      { 'defendant.full_name': true },
+    )
+    expect(changed.rows[0]).toMatchObject({ present: true, needsReview: true, verified: true })
+  })
 })

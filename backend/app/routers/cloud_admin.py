@@ -70,8 +70,11 @@ async def _get_cache_manager() -> ExpertiseCacheManager:
 
 class _CloudSearchTestRequest(BaseModel):
     query: str
-    sources: list[str] = Field(default=["gmail", "drive", "outlook", "onedrive"])
+    sources: list[str] = Field(
+        default=["gmail", "drive", "outlook", "onedrive"], min_length=1
+    )
     max_hits: int = Field(default=10, ge=1, le=100)
+    exact_query: bool = False
     fetch_content: bool = False
 
 
@@ -80,6 +83,33 @@ class _CloudSearchTestResponse(BaseModel):
     hits: list[dict]
     total_hits: int
     fetch_content_results: list[dict] | None = None
+
+
+def _diagnostic_plan(body: _CloudSearchTestRequest, planner_plan: dict | None) -> dict:
+    """Build the admin diagnostic plan without changing assistant planning."""
+
+    if body.exact_query:
+        return {
+            "should_search": True,
+            "sources": body.sources,
+            "keywords": [body.query.strip()],
+            "date_after": "",
+            "max_hits": body.max_hits,
+            "exact_query": True,
+        }
+    if planner_plan is not None:
+        if not planner_plan.get("should_search"):
+            return planner_plan
+        result = dict(planner_plan)
+        result["sources"] = body.sources
+        result["max_hits"] = body.max_hits
+        return result
+    return {
+        "should_search": True,
+        "sources": body.sources,
+        "keywords": body.query.split(),
+        "max_hits": body.max_hits,
+    }
 
 
 class SharePointBindingRequest(BaseModel):
@@ -399,35 +429,36 @@ async def cloud_search_test(
     tenant_id = str(admin.tenant_id)
     await set_tenant_context(db, tenant_id)
 
-    planner = _get_planner()
+    if body.exact_query:
+        plan = _diagnostic_plan(body, None)
+    else:
+        planner = _get_planner()
 
-    # Build plan -- map user sources to provider-level detection
-    source_set = set(body.sources)
-    provider_set = set()
-    if source_set & {"gmail", "drive"}:
-        provider_set.add("google")
-    if source_set & {"outlook", "onedrive", "sharepoint"}:
-        provider_set.add("microsoft")
+        # Build plan -- map user sources to provider-level detection
+        source_set = set(body.sources)
+        provider_set = set()
+        if source_set & {"gmail", "drive"}:
+            provider_set.add("google")
+        if source_set & {"outlook", "onedrive", "sharepoint"}:
+            provider_set.add("microsoft")
 
-    plan = await planner.plan(
-        user_question=prepare_provider_text(
-            body.query, getattr(admin, "privacy_mode", False)
-        ),
-        db=db,
-        tenant_id=tenant_id,
-        active_providers=list(provider_set) if provider_set else None,
-    )
+        planner_plan = await planner.plan(
+            user_question=prepare_provider_text(
+                body.query, getattr(admin, "privacy_mode", False)
+            ),
+            db=db,
+            tenant_id=tenant_id,
+            active_providers=list(provider_set) if provider_set else None,
+        )
+        plan = _diagnostic_plan(body, planner_plan)
 
-    if plan and plan.get("should_search"):
-        plan["sources"] = body.sources
-        plan["max_hits"] = body.max_hits
-    elif plan is None:
-        plan = {
-            "should_search": True,
-            "sources": body.sources,
-            "keywords": body.query.split(),
-            "max_hits": body.max_hits,
-        }
+    if not plan.get("should_search"):
+        return _CloudSearchTestResponse(
+            plan=plan,
+            hits=[],
+            total_hits=0,
+            fetch_content_results=None,
+        )
 
     # Execute search
     cloud_search = _get_cloud_search()

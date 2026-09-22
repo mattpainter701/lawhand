@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.05 — Clearer form questions and focused cloud searches
+
+Released September 22, 2026.
+
+Sample forms distinguish required answers from optional blanks, and verifying a suggested answer clears its review step. Cloud Search lets administrators choose file or email sources and keep a filename together.
+
+- **See which answers are required.** Sample-fill counts update as you type. Separate missing-required and optional filters help you review the questions that apply.
+- **Review each suggested answer once.** Marking a suggested answer as verified clears it from the review queue. Changing the answer or unchecking verification requires a fresh review of that value.
+- **Search the source you intended.** Choose OneDrive, Google Drive, SharePoint or email sources when testing cloud search. Exact phrase matching keeps a filename from becoming unrelated common-word results.
+- **Understand unlabelled source fields.** Imported fields with unusable source labels show a clear instruction to check the PDF, while preserving their page and field references.
+
 ## 2026.09.22.04 — Clear calendar results and safer shortcuts
 
 Released September 22, 2026.

@@ -1,3 +1,11 @@
+## 2026.09.22.05 — Sample answer clarity and focused cloud search
+
+- Sample-fill summaries derive from current answers and distinguish source-declared required fields from optional blanks. Missing, Optional and Filled filters use the same control-aware completion rules; unchecked required checkboxes remain missing. No conditional question logic or legal requiredness is inferred.
+- Unusable imported source labels have actionable PDF-review guidance instead of displaying `undefined`, while deterministic field/page labels and original metadata remain intact.
+- Single-document and packet verification now records the exact reviewed answer, clearing its suggestion from the attention queue. Editing or unchecking removes that review; verification does not approve, deliver or sign a document.
+- Admin Cloud Search provides source selection and an explicit exact-phrase mode, automatically suggested for filenames. Literal diagnostics bypass query planning; provider queries preserve the phrase and metadata fallback uses the complete text. General assistant planning and source permissions remain unchanged. Full-content fetching is off by default, and technical query details are collapsed.
+- Production reproduction: a saved QA PDF's unique identifier returned the correct OneDrive file; its full filename expanded to common-word terms and returned unrelated mail. Live storage acceptance remains separate from source-scoped search testing.
+
 ## 2026.09.22.04 — Calendar result truthfulness and shortcut safety
 
 - Calendar List headings match the loaded two-month interval, including cross-year ranges.
