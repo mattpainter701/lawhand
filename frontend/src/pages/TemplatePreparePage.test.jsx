@@ -25,6 +25,7 @@ const api = vi.hoisted(() => ({
   getTemplateSetDocumentsVariables: vi.fn(),
   getFillSession: vi.fn(),
   writeFillSession: vi.fn(),
+  completeFillSession: vi.fn(),
   renderFillSession: vi.fn(),
 }))
 vi.mock('../api', () => api)
@@ -63,6 +64,7 @@ beforeEach(() => {
   api.getMattersV2.mockResolvedValue({ items: [{ id: M, matter_name: 'Smith Matter', client_name: 'Ada Smith' }] })
   api.discoverTemplateVariables.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false }] })
   api.renderTemplate.mockResolvedValue({ rendered: 'Dear Ada Smith', matter_document_id: DOC, output_format: 'markdown', output_filename: 'fee.md' })
+  api.completeFillSession.mockResolvedValue({ status: 'saved' })
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -87,7 +89,108 @@ describe('the Prepare route', () => {
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
-    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M })
+    await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999', DOC))
+    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, fill_session_id: '99999999-9999-4999-8999-999999999999' })
+  })
+
+  it('keeps the saved document and retries session completion without rendering twice', async () => {
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('Dear Ada Smith')
+    api.completeFillSession.mockRejectedValueOnce(new Error('temporary completion failure'))
+    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await screen.findByRole('alert', { name: '' })
+    expect(screen.getByText(/document was saved, but this draft could not be closed/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry closing this draft' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Client name/ })).toBeDisabled()
+    const renderCountAfterSave = api.renderTemplate.mock.calls.length
+    expect(renderCountAfterSave).toBeGreaterThan(0)
+    api.completeFillSession.mockResolvedValueOnce({ status: 'saved' })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry closing this draft' }))
+    await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
+    expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountAfterSave)
+  })
+
+  it('waits for an in-flight first autosave before completing the saved document', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let resolveSession
+      const sessionId = '88888888-8888-4888-8888-888888888888'
+      api.writeFillSession.mockImplementationOnce(() => new Promise(resolve => { resolveSession = resolve }))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'Latest before save' } })
+      await vi.advanceTimersByTimeAsync(900)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(1)
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByText('Dear Ada Smith')
+      const renderCountBeforeSave = api.renderTemplate.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      await waitFor(() => expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave))
+      expect(api.completeFillSession).not.toHaveBeenCalled()
+      resolveSession({ id: sessionId, status: 'open' })
+      await waitFor(() => expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave + 1))
+      await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith(sessionId, DOC))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries a failed autosave with the last answers before completing the saved document', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      api.writeFillSession.mockRejectedValueOnce(new Error('Offline')).mockImplementation(async data => ({ ...data, id: sessionId, status: 'open' }))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'Exact last answer' } })
+      await vi.advanceTimersByTimeAsync(900)
+      await screen.findByRole('button', { name: 'Retry saving answers' })
+      fireEvent.click(screen.getByRole('button', { name: 'Retry saving answers' }))
+      await screen.findByText(/Answers saved/)
+      expect(api.writeFillSession).toHaveBeenLastCalledWith(expect.objectContaining({ answers: { client_name: 'Exact last answer' } }))
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByText('Dear Ada Smith')
+      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith(sessionId, DOC))
+      expect(api.renderTemplate).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not render while the latest autosave is still failed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      api.writeFillSession.mockRejectedValue(new Error('Offline'))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'Unsaved answer' } })
+      await vi.advanceTimersByTimeAsync(900)
+      await screen.findByRole('button', { name: 'Retry saving answers' })
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByText('Dear Ada Smith')
+      const renderCountBeforeSave = api.renderTemplate.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      await screen.findByText(/latest answers could not be saved yet/i)
+      expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('creates and completes a draft for a selected matter even with no answer fields', async () => {
+    api.getTemplate.mockResolvedValue({ ...published, variable_schema: { fields: [] } })
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ matter_id: M, answers: {} })))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('Dear Ada Smith')
+    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999', DOC))
   })
 
   it('lets the preparer verify a filled row and sends the verified names with the save', async () => {
@@ -98,13 +201,14 @@ describe('the Prepare route', () => {
     })
     api.discoverTemplateVariables.mockResolvedValue({ variables: [
       { variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false },
-      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: false },
+      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: true },
     ] })
     renderAt(`?template=${T}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
     const completion = screen.getByRole('region', { name: 'Document completion' })
     expect(completion).toHaveTextContent('0 of 2 verified')
+    expect(completion).toHaveTextContent('2 suggestions to review')
     expect(screen.getByRole('button', { name: 'Unverified (2)' })).toBeInTheDocument()
     // Enter on the first row's Verified control verifies it and moves on to the next unverified row.
     const first = screen.getByRole('checkbox', { name: 'Verified: Client name' })
@@ -113,15 +217,18 @@ describe('the Prepare route', () => {
     await waitFor(() => expect(first).toBeChecked())
     expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
     expect(completion).toHaveTextContent('1 of 2 verified')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    await waitFor(() => expect(completion).toHaveTextContent('0 suggestions to review'))
+    expect(screen.getByRole('button', { name: 'Next field needing attention' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    expect(completion).toHaveTextContent('1 suggestions to review')
+    expect(completion).toHaveTextContent('1 of 2 verified')
     // Typing a value counts as checking it; clearing it does not.
     fireEvent.change(screen.getByRole('textbox', { name: /Matter name/ }), { target: { value: 'Smith v. Jones (2026)' } })
     expect(screen.getByRole('checkbox', { name: 'Verified: Matter name' })).toBeChecked()
     expect(completion).toHaveTextContent('2 of 2 verified')
     fireEvent.click(screen.getByRole('button', { name: 'Unverified (0)' }))
     expect(screen.getByText('Every filled field is verified.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'All fields (2)' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
-    expect(completion).toHaveTextContent('1 of 2 verified')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
@@ -129,7 +236,8 @@ describe('the Prepare route', () => {
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, {
       variables: { client_name: 'Ada Smith', matter_name: 'Smith v. Jones (2026)' },
       matter_id: M,
-      verified_fields: ['client_name'],
+      verified_fields: ['client_name', 'matter_name'],
+      fill_session_id: '99999999-9999-4999-8999-999999999999',
     })
   })
 
@@ -142,7 +250,7 @@ describe('the Prepare route', () => {
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=probate&document=${DOC}`))
-    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, folder_id: F })
+    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, folder_id: F, fill_session_id: '99999999-9999-4999-8999-999999999999' })
   })
 
   it('keeps a draft in preview-only mode', async () => {
@@ -234,14 +342,25 @@ describe('the Prepare route', () => {
     api.getTemplateSetDocumentsVariables.mockResolvedValue({ set_id: S, documents: { [A]: { def_name: 'Ada Lovelace' }, [B]: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' } }, unanswered_required: [], unavailable: [], resolved_versions: { [A]: 2, [B]: 1 } })
     let motionPreviews = 0
     api.renderTemplateFile.mockImplementation(async () => { motionPreviews += 1; if (motionPreviews === 1) throw new Error('Renderer busy'); return { blob: new Blob(['%PDF']), previewId: 'prev-a', previewPurpose: 'generation', filename: 'motion.pdf' } })
-    const saves = []
     api.renderTemplate.mockImplementation(async (id, payload) => {
-      if (!payload.matter_id) return { rendered: 'Ada Lovelace 2026-10-01', output_format: 'markdown', output_filename: 'order.md' }
-      saves.push(id)
-      if (id === B && saves.filter((s) => s === B).length === 1) { const err = new Error('Storage unavailable'); err.response = { status: 500, data: { detail: 'Storage unavailable' } }; throw err }
-      return id === A
-        ? { rendered: 'PDF saved', matter_document_id: DOC, output_format: 'pdf', output_filename: 'motion.pdf', signing_roles: ['client'], positioned_fields: [{ field_id: 'sig', role: 'client' }], signing_placement_problems: [] }
-        : { rendered: 'saved', matter_document_id: '99999999-9999-4999-8999-999999999999', output_format: 'markdown', output_filename: 'order.md' }
+      expect(payload.matter_id).toBeUndefined()
+      return { rendered: 'Ada Lovelace 2026-10-01', output_format: 'markdown', output_filename: 'order.md' }
+    })
+    const savedMotion = { template_id: A, status: 'saved', matter_document_id: DOC, output_filename: 'motion.pdf', output_format: 'pdf', signing_roles: ['client'], positioned_fields: [{ field_id: 'sig', role: 'client' }] }
+    const failedOrder = { template_id: B, status: 'failed', detail: 'Storage unavailable' }
+    const savedOrder = { template_id: B, status: 'saved', matter_document_id: '99999999-9999-4999-8999-999999999999', output_filename: 'order.md', output_format: 'markdown' }
+    let queueCount = 0
+    let firstPollDone = false
+    let resolveFirstPoll
+    api.getFillSession.mockImplementation(async () => {
+      if (!queueCount) return { id: '99999999-9999-4999-8999-999999999999', status: 'open', members: [] }
+      if (queueCount === 1 && !firstPollDone) return new Promise((resolve) => { resolveFirstPoll = (value) => { firstPollDone = true; resolve(value) } })
+      if (queueCount === 1) return { id: '99999999-9999-4999-8999-999999999999', status: 'failed', members: [savedMotion, failedOrder] }
+      return { id: '99999999-9999-4999-8999-999999999999', status: 'saved', members: [savedMotion, savedOrder] }
+    })
+    api.renderFillSession.mockImplementation(async () => {
+      queueCount += 1
+      return { id: '99999999-9999-4999-8999-999999999999', status: 'saving', members: queueCount === 1 ? [{ template_id: A, status: 'queued' }, { template_id: B, status: 'queued' }] : [savedMotion, { template_id: B, status: 'queued' }] }
     })
     api.getMatterV2.mockResolvedValue({ id: M, client_name: 'Ada Lovelace', client_email: 'ada@example.test' })
     renderAt(`?set=${S}&matter=${M}`)
@@ -263,14 +382,23 @@ describe('the Prepare route', () => {
     expect(api.renderTemplateFile).toHaveBeenCalledTimes(2)
     expect(api.renderTemplateFile).toHaveBeenLastCalledWith(A, { variables: { def_name: 'Ada Lovelace' }, matter_id: M, preview_purpose: 'generation' })
     fireEvent.click(screen.getByRole('button', { name: 'Save all to matter' }))
+    await waitFor(() => expect(api.renderFillSession).toHaveBeenCalledTimes(1))
+    await screen.findByRole('button', { name: 'Saving…' })
+    expect(screen.getByRole('textbox', { name: /Defendant/ })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Verified: Defendant' })).toBeDisabled()
+    resolveFirstPoll({ id: '99999999-9999-4999-8999-999999999999', status: 'failed', members: [savedMotion, failedOrder] })
     await screen.findByText('Save failed: Storage unavailable')
-    expect(saves).toEqual([A, B])
-    expect(api.renderTemplate).toHaveBeenCalledWith(A, { matter_id: M, preview_id: 'prev-a', variables: { def_name: 'Ada Lovelace' } })
-    // The typed hearing date is verified by the act of typing it; the suggested defendant was not ticked.
-    expect(api.renderTemplate).toHaveBeenCalledWith(B, { matter_id: M, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, verified_fields: ['hearing'] })
+    expect(api.renderFillSession).toHaveBeenNthCalledWith(1, '99999999-9999-4999-8999-999999999999', {
+      members: [
+        { template_id: A, variables: { def_name: 'Ada Lovelace' }, preview_id: 'prev-a', convert_to_pdf: false, output_format: 'pdf' },
+        { template_id: B, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, preview_id: null, convert_to_pdf: false, output_format: 'markdown', verified_fields: ['hearing'] },
+      ],
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Retry failed saves' }))
     await waitFor(() => expect(screen.getAllByText('Saved')).toHaveLength(2))
-    expect(saves).toEqual([A, B, B])
+    expect(api.renderFillSession).toHaveBeenNthCalledWith(2, '99999999-9999-4999-8999-999999999999', {
+      members: [{ template_id: B, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, preview_id: null, convert_to_pdf: false, output_format: 'markdown', verified_fields: ['hearing'] }],
+    })
     // Every document is saved; the PDF with a signing role gets a Send card.
     await screen.findByText('Every document is saved to the matter.')
     await screen.findByRole('heading', { name: 'Send for signature' })
@@ -298,7 +426,75 @@ describe('the Prepare route', () => {
     expect(screen.getByRole('checkbox', { name: 'Verified: Client name' })).toBeChecked()
   })
 
-  it('saves a previewed packet in the background and follows the session until it settles', async () => {
+  it('restores answers before automatic matter filling starts, including when the resume URL already has a matter', async () => {
+    const X = '99999999-9999-4999-8999-999999999999'
+    let restore
+    let discover
+    api.getFillSession.mockImplementation(() => new Promise(resolve => { restore = resolve }))
+    api.discoverTemplateVariables.mockImplementation(() => new Promise(resolve => { discover = resolve }))
+    renderAt(`?template=${T}&matter=${M}&session=${X}`)
+    await screen.findByText('Restoring your answers…')
+    expect(api.discoverTemplateVariables).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox', { name: /Client name/ })).not.toBeInTheDocument()
+    restore({ id: X, template_id: T, matter_id: M, answers: { client_name: 'Manually corrected client' }, verified: ['client_name'] })
+    await waitFor(() => expect(api.discoverTemplateVariables).toHaveBeenCalledTimes(1))
+    discover({ variables: [{ variable: 'client_name', suggested_value: 'Old matter value', source_type: 'contact' }] })
+    await screen.findByText('Available values refreshed. Your entries were kept.')
+    expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Manually corrected client')
+    expect(screen.getByRole('checkbox', { name: 'Verified: Client name' })).toBeChecked()
+  })
+
+  it('does not silently replace a draft when restoring it fails and lets the user retry', async () => {
+    const X = '99999999-9999-4999-8999-999999999999'
+    api.getFillSession.mockRejectedValueOnce(new Error('Network unavailable')).mockResolvedValueOnce({ id: X, template_id: T, matter_id: M, answers: { client_name: 'Recovered' }, verified: [] })
+    renderAt(`?template=${T}&session=${X}`)
+    expect(await screen.findByRole('alert')).toHaveTextContent('your draft has not been replaced')
+    expect(api.writeFillSession).not.toHaveBeenCalled()
+    expect(api.discoverTemplateVariables).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry restoring answers' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Recovered'))
+  })
+
+  it('serializes autosaves, remembers the session in the URL and retries a failed save visibly', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const X = '99999999-9999-4999-8999-999999999999'
+      let finishCreate
+      api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+      api.writeFillSession.mockImplementationOnce(() => new Promise(resolve => { finishCreate = resolve }))
+        .mockRejectedValueOnce(new Error('Offline'))
+        .mockImplementation(async data => ({ ...data, id: X }))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'First entry' } })
+      await vi.advanceTimersByTimeAsync(900)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(1)
+      fireEvent.change(input, { target: { value: 'Latest entry' } })
+      await vi.advanceTimersByTimeAsync(900)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(1)
+      finishCreate({ id: X, status: 'open' })
+      await screen.findByRole('button', { name: 'Retry saving answers' })
+      await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`session=${X}`))
+      expect(api.getFillSession).not.toHaveBeenCalled()
+      expect(api.writeFillSession).toHaveBeenLastCalledWith(expect.objectContaining({ id: X, answers: { client_name: 'Latest entry' } }))
+      fireEvent.click(screen.getByRole('button', { name: 'Retry saving answers' }))
+      await screen.findByText(/Answers saved/)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(3)
+      expect(input).toHaveValue('Latest entry')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('flushes the latest answer when leaving before the debounce finishes', async () => {
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+    renderAt(`?template=${T}&matter=${M}`)
+    fireEvent.change(await screen.findByRole('textbox', { name: /Client name/ }), { target: { value: 'Last keystroke' } })
+    fireEvent.click(screen.getByRole('link', { name: 'Back' }))
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ answers: { client_name: 'Last keystroke' } })))
+  })
+
+  it('saves a previewed packet through the durable session and follows it until it settles', async () => {
     const S = '55555555-5555-4555-8555-555555555555'
     const A = '66666666-6666-4666-8666-666666666666'
     const X = '99999999-9999-4999-8999-999999999999'
@@ -309,21 +505,46 @@ describe('the Prepare route', () => {
     ], unavailable: [] })
     api.getTemplateSetDocumentsVariables.mockResolvedValue({ set_id: S, documents: { [A]: { def_name: 'Ada' } }, unanswered_required: [], unavailable: [], resolved_versions: { [A]: 2 } })
     api.renderTemplateFile.mockResolvedValue({ blob: new Blob(['%PDF']), previewId: 'prev-a', previewPurpose: 'generation', filename: 'motion.pdf' })
-    api.renderFillSession.mockResolvedValue({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
     api.getFillSession
-      .mockResolvedValueOnce({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
+      .mockResolvedValueOnce({ id: X, status: 'open', members: [] })
       .mockResolvedValue({ id: X, status: 'saved', members: [{ template_id: A, status: 'saved', matter_document_id: DOC, output_filename: 'motion.pdf' }] })
+    api.renderFillSession.mockResolvedValue({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
     renderAt(`?set=${S}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare a packet' })
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Defendant/ })).toHaveValue('Ada'))
     fireEvent.click(screen.getByRole('button', { name: 'Generate all' }))
     await screen.findByText('Preview ready')
-    fireEvent.click(screen.getByRole('button', { name: 'Save all in the background' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save all to matter' }))
     await waitFor(() => expect(api.renderFillSession).toHaveBeenCalledWith(X, { members: [{ template_id: A, variables: { def_name: 'Ada' }, preview_id: 'prev-a', convert_to_pdf: false, output_format: 'pdf' }] }))
-    await screen.findByText(/Saving in the background/)
     await waitFor(() => expect(screen.getByText('Saved')).toBeInTheDocument(), { timeout: 8000 })
     await screen.findByText('Every document is saved to the matter.')
   }, 15000)
+
+  it('keeps a reviewed packet suggestion cleared after resuming an answer', async () => {
+    const S = '55555555-5555-4555-8555-555555555555'
+    const A = '66666666-6666-4666-8666-666666666666'
+    const X = '99999999-9999-4999-8999-999999999999'
+    const key = `manual:${A}:client_name`
+    api.getTemplateSet.mockResolvedValue({ id: S, title: 'Packet', items: [{ template_id: A, title: 'Motion', position: 0, resolved_version_no: 1 }] })
+    api.getTemplate.mockResolvedValue({ id: A, title: 'Motion', format: 'markdown', body: '{{client_name}}', is_active: true, variable_schema: { fields: [{ name: 'client_name', binding: '' }] } })
+    api.getTemplateSetInterview.mockResolvedValue({ set_id: S, title: 'Packet', questions: [{ key, label: 'Client name', value_kind: 'text', required: true, card: '', binding: '', appears_in: [{ template_id: A, template_title: 'Motion', field_name: 'client_name', label: 'Client name' }], suggested_value: 'Ada', provenance: { source_type: 'matter_party', confidence: 1 }, review_required: true }], unavailable: [] })
+    api.getFillSession.mockResolvedValue({ id: X, set_id: S, status: 'open', matter_id: M, answers: { [key]: 'Ada' }, verified: [key], members: [] })
+
+    renderAt(`?set=${S}&matter=${M}&session=${X}`)
+    await screen.findByRole('heading', { name: 'Prepare a packet' })
+    const completion = await screen.findByRole('region', { name: 'Document completion' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada'))
+    expect(completion).toHaveTextContent('0 suggestions to review')
+    const verified = screen.getByRole('checkbox', { name: 'Verified: Client name' })
+    expect(verified).toBeChecked()
+    fireEvent.click(verified)
+    await waitFor(() => expect(completion).toHaveTextContent('1 suggestions to review'))
+    fireEvent.click(verified)
+    await waitFor(() => expect(completion).toHaveTextContent('0 suggestions to review'))
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Grace' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Ada' } })
+    await waitFor(() => expect(completion).toHaveTextContent('1 suggestions to review'))
+  })
 
   it('explains itself without a template and reports a load failure', async () => {
     renderAt('')

@@ -38,6 +38,7 @@ from app.middleware.tenant import get_current_user
 from app.models.document_template import DocumentTemplate
 from app.models.document_template_version import DocumentTemplateVersion
 from app.models.document_template_preview import DocumentTemplatePreview
+from app.models.document_fill_session import DocumentFillSession
 from app.models.matter_document import MatterDocument
 from app.models.matter_party import MatterParty
 from app.models.plugin import Matter, MatterEvent
@@ -76,6 +77,7 @@ from app.schemas.document_template import (
     DocumentTemplateVariableSuggestion,
 )
 from app.services import (
+    fill_sessions,
     template_custom_fields,
     template_fact_review,
     template_field_library,
@@ -147,10 +149,11 @@ from app.services.template_bindings import (
 )
 from app.services import pdf_source_review
 from app.services import template_cards
-from app.services.template_fill_coverage import (
+from app.services.template_fill_coverage import (  # noqa: F401 - re-exported
     is_signing_field,
     binding_is_resolvable as _binding_is_resolvable,
     coverage as fill_coverage,
+    field_has_source as _field_has_source,
     normalize_variable_name as _normalize_variable_name,
 )
 from app.services import template_fill_engine
@@ -1901,12 +1904,9 @@ def _validate_approval_ready(
             continue
         if str(field.get("default") or "").strip():
             continue
-        binding = bindings.get(name)
-        if binding is not None:
-            resolvable = _binding_is_resolvable(binding)
-        else:
-            resolvable = _normalize_variable_name(name) in vocabulary
-        if not resolvable:
+        if not _field_has_source(
+            binding=bindings.get(name), name=name, vocabulary=vocabulary
+        ):
             unresolvable.append(name)
 
     problems: list[str] = []
@@ -2291,7 +2291,13 @@ async def list_templates(
     summary_stmt = select(
         func.count(DocumentTemplate.id),
         func.count(DocumentTemplate.id).filter(DocumentTemplate.is_active.is_(True)),
-        func.count(DocumentTemplate.id).filter(DocumentTemplate.is_active.is_(False)),
+        func.count(DocumentTemplate.id).filter(
+            DocumentTemplate.is_active.is_(False),
+            or_(
+                DocumentTemplate.status.is_(None),
+                DocumentTemplate.status != "paused",
+            ),
+        ),
         func.count(DocumentTemplate.id).filter(
             DocumentTemplate.is_active.is_(True),
             ~source_missing_filter,
@@ -4512,6 +4518,49 @@ async def render_template_endpoint(
         tenant_id=parsed_tenant_id,
         matter_id=payload.matter_id,
     )
+    bound_fill_session = None
+    if payload.fill_session_id:
+        if matter is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A fill session requires a destination matter.",
+            )
+        bound_fill_session = await db.scalar(
+            select(DocumentFillSession).where(
+                DocumentFillSession.id == payload.fill_session_id,
+                DocumentFillSession.tenant_id == parsed_tenant_id,
+                DocumentFillSession.user_id == current_user.id,
+                DocumentFillSession.template_id == template_id,
+                DocumentFillSession.matter_id == matter.id,
+            )
+        )
+        if (
+            bound_fill_session is None
+            or bound_fill_session.status not in ("open", "failed")
+            or bound_fill_session.expires_at <= datetime.now(timezone.utc)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="This fill session is no longer available for rendering.",
+            )
+        session_answers = fill_sessions.decrypt_answers(
+            bound_fill_session.answers_ciphertext
+        )
+        nonempty_session_answers = {
+            str(name): str(value)
+            for name, value in session_answers.items()
+            if str(value).strip()
+        }
+        nonempty_render_values = {
+            str(name): str(value)
+            for name, value in payload.variables.items()
+            if str(value).strip()
+        }
+        if nonempty_session_answers != nonempty_render_values:
+            raise HTTPException(
+                status_code=409,
+                detail="The render values do not match the fill session.",
+            )
     destination_folder = None
     if payload.folder_id:
         if matter is None:
@@ -4597,6 +4646,13 @@ async def render_template_endpoint(
             lock=False,
         )
         if existing_document:
+            if payload.fill_session_id and str(
+                (existing_document.generation_summary or {}).get("fill_session_id")
+            ) != str(payload.fill_session_id):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This preview is already bound to another fill session.",
+                )
             if getattr(existing_document, "folder_id", None) != payload.folder_id:
                 raise HTTPException(
                     409,
@@ -4907,6 +4963,13 @@ async def render_template_endpoint(
                         409,
                         "This preview was already saved to a different folder. Create a new preview or move the saved document.",
                     )
+                if payload.fill_session_id and str(
+                    (existing_document.generation_summary or {}).get("fill_session_id")
+                ) != str(payload.fill_session_id):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This preview is already bound to another fill session.",
+                    )
                 return _existing_document_response(
                     existing_document,
                     matter_id=parsed_matter_id,
@@ -4955,6 +5018,8 @@ async def render_template_endpoint(
             "verified": len(verified_fields),
             "verified_fields": verified_fields,
         }
+        if payload.fill_session_id:
+            generation_summary["fill_session_id"] = str(payload.fill_session_id)
         doc.generation_summary = generation_summary
         event = MatterEvent(
             tenant_id=parsed_tenant_id,

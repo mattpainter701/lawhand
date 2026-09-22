@@ -111,13 +111,23 @@ function StatusPanel() {
 // ── Test Panel ──────────────────────────────────────────────────────────────
 
 function TestPanel() {
+  const sourceOptions = [
+    ['gmail', 'Gmail'],
+    ['drive', 'Google Drive'],
+    ['outlook', 'Outlook'],
+    ['onedrive', 'OneDrive'],
+    ['sharepoint', 'SharePoint'],
+  ]
   const [query, setQuery] = useState('')
+  const [sources, setSources] = useState(sourceOptions.map(([value]) => value))
   const [maxHits, setMaxHits] = useState(10)
-  const [fetchContent, setFetchContent] = useState(true)
+  const [exactQuery, setExactQuery] = useState(false)
+  const [fetchContent, setFetchContent] = useState(false)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const fetchedContent = result?.fetch_content_results || result?.contents || []
+  const looksLikeFilename = (value) => /\.(?:pdf|docx?|xlsx?|pptx?|txt|csv)(?:\s|$)/i.test(value.trim())
 
   const handleTest = async () => {
     if (!query.trim()) return
@@ -127,8 +137,9 @@ function TestPanel() {
     try {
       const res = await testCloudSearch({
         query: query,
-        sources: ['gmail', 'drive', 'outlook', 'onedrive', 'sharepoint'],
+        sources,
         max_hits: maxHits,
+        exact_query: exactQuery,
         fetch_content: fetchContent,
       })
       setResult(res)
@@ -147,13 +158,39 @@ function TestPanel() {
         </label>
         <textarea id="cloudsearchadmin-search-query"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value
+            setQuery(value)
+            if (looksLikeFilename(value)) setExactQuery(true)
+          }}
           className="w-full h-24 px-4 py-3 border border-brand-line rounded-lg text-sm font-sans text-brand-ink placeholder-brand-muted bg-brand-surface focus:outline-none focus:ring-2 focus:ring-brand-accent/30 focus:border-brand-accent resize-y"
           placeholder="e.g. Find the latest renewal discussion with Acme and the attached SOW"
         />
       </div>
 
-      <div className="flex items-center gap-6">
+      <fieldset className="space-y-2">
+        <legend className="text-xs text-brand-muted font-sans">Search sources</legend>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {sourceOptions.map(([value, label]) => (
+            <label key={value} className="flex items-center gap-2 text-xs text-brand-muted font-sans cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sources.includes(value)}
+                onChange={() => setSources((current) => current.includes(value)
+                  ? current.filter((source) => source !== value)
+                  : [...current, value])}
+                className="rounded border-brand-line"
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        {sources.length === 0 && (
+          <p className="text-xs text-brand-rose" role="alert">Select at least one source to run a search.</p>
+        )}
+      </fieldset>
+
+      <div className="flex items-center gap-6 flex-wrap">
         <div className="flex items-center gap-2">
           <label htmlFor="cloudsearchadmin-max-hits" className="text-xs text-brand-muted font-sans">Max hits</label>
           <input id="cloudsearchadmin-max-hits"
@@ -174,9 +211,18 @@ function TestPanel() {
           />
           Fetch full content
         </label>
+        <label className="flex items-center gap-2 text-xs text-brand-muted font-sans cursor-pointer">
+          <input
+            type="checkbox"
+            checked={exactQuery}
+            onChange={(e) => setExactQuery(e.target.checked)}
+            className="rounded border-brand-line"
+          />
+          Match exact filename or phrase
+        </label>
         <button
           onClick={handleTest}
-          disabled={loading || !query.trim()}
+          disabled={loading || !query.trim() || sources.length === 0}
           className="px-5 py-2 bg-brand-accent text-white text-sm font-sans font-medium rounded-lg hover:bg-brand-accent-2 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-auto"
         >
           {loading ? 'Searching...' : 'Run Search'}
@@ -193,16 +239,14 @@ function TestPanel() {
         <div className="space-y-4">
           {/* Plan */}
           {result.plan && (
-            <div className="bg-brand-surface border border-brand-line rounded-lg">
-              <div className="px-4 py-3 border-b border-brand-line bg-brand-bg-soft/50">
-                <span className="text-[11px] font-bold text-brand-muted uppercase tracking-wider">
-                  Search Plan
-                </span>
-              </div>
+            <details className="bg-brand-surface border border-brand-line rounded-lg">
+              <summary className="px-4 py-3 text-[11px] font-bold text-brand-muted uppercase tracking-wider cursor-pointer">
+                Search details
+              </summary>
               <pre className="p-4 text-xs font-mono text-brand-ink-2 overflow-auto max-h-40">
                 {JSON.stringify(result.plan, null, 2)}
               </pre>
-            </div>
+            </details>
           )}
 
           {/* Hits */}
@@ -215,9 +259,10 @@ function TestPanel() {
                 <div className="flex items-center gap-2 mb-2">
                   <Badge label={hit.provider} variant="neutral" />
                   <Badge label={hit.source} variant="neutral" />
-                  <span className="text-xs text-brand-muted font-mono ml-auto">
-                    score: {(hit.relevance_score ?? 0).toFixed(3)}
-                  </span>
+                  <details className="ml-auto text-xs text-brand-muted font-mono">
+                    <summary className="cursor-pointer">Search details</summary>
+                    <span>score: {(hit.relevance_score ?? 0).toFixed(3)}</span>
+                  </details>
                 </div>
                 <p className="text-sm font-sans font-medium text-brand-ink mb-1">{hit.title || 'Untitled'}</p>
                 <p className="text-xs text-brand-ink-2 font-sans line-clamp-2">{hit.snippet}</p>
@@ -524,7 +569,7 @@ export default function CloudSearchAdmin() {
       <div>
         <h2 className="text-xl font-serif font-bold text-brand-ink mb-1">Cloud Search</h2>
         <p className="text-xs text-brand-muted font-sans">
-          Live RAG — search customer Google/Microsoft cloud without full ingestion.
+          Search connected Google and Microsoft files and messages without importing everything.
         </p>
       </div>
 

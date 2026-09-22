@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSampleTemplates, getSampleTemplateSource } from '../../api'
@@ -61,6 +62,7 @@ describe('SampleLibraryCard', () => {
   })
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
     vi.clearAllMocks()
   })
 
@@ -126,29 +128,43 @@ describe('SampleLibraryCard', () => {
     expect(screen.queryByText('Durable Power of Attorney')).not.toBeInTheDocument()
   })
 
-  it('opens the source PDF in a new tab when previewing', async () => {
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
-    const createUrl = vi.fn(() => 'blob:preview')
-    const revokeUrl = vi.fn()
-    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl })
-    getSampleTemplateSource.mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
-    render(<SampleLibraryCard />)
+  it('opens a source preview in StrictMode without requiring a popup', async () => {
+    const popup = vi.spyOn(window, 'open').mockReturnValue(null)
+    const source = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
+    let resolveSource
+    getSampleTemplateSource.mockImplementation(() => new Promise((resolve) => { resolveSource = resolve }))
+    render(<StrictMode><SampleLibraryCard /></StrictMode>)
     await screen.findByText('Durable Power of Attorney')
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     fireEvent.click(within(rowFor('Last Will and Testament')).getByRole('button', { name: 'Preview' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Loading PDF preview')
     await waitFor(() => expect(getSampleTemplateSource).toHaveBeenCalledWith('will-1'))
-    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('blob:preview', '_blank', 'noopener'))
-    openSpy.mockRestore()
-    vi.unstubAllGlobals()
+    resolveSource(source)
+    expect(await screen.findByRole('region', { name: 'Preview of Last Will and Testament' })).toBeInTheDocument()
+    expect(popup).not.toHaveBeenCalled()
   })
 
-  it('shows an alert when the preview cannot be opened', async () => {
+  it('shows a retryable alert when the preview cannot be loaded', async () => {
     getSampleTemplateSource.mockRejectedValue(new Error('offline'))
     render(<SampleLibraryCard />)
     await screen.findByText('Durable Power of Attorney')
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
     fireEvent.click(within(rowFor('Last Will and Testament')).getByRole('button', { name: 'Preview' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('could not be opened')
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded')
+    expect(screen.getByRole('button', { name: 'Retry preview' })).toBeInTheDocument()
+  })
+
+  it('ignores a source response after the preview is closed', async () => {
+    let resolveSource
+    getSampleTemplateSource.mockImplementation(() => new Promise((resolve) => { resolveSource = resolve }))
+    render(<SampleLibraryCard />)
+    await screen.findByText('Durable Power of Attorney')
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    fireEvent.click(within(rowFor('Last Will and Testament')).getByRole('button', { name: 'Preview' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close PDF preview' }))
+    resolveSource(new Blob(['late']))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.queryByRole('region', { name: 'Preview of Last Will and Testament' })).not.toBeInTheDocument()
   })
 
   it('opens the fill dialog and closes it again', async () => {
@@ -278,7 +294,7 @@ describe('SampleLibraryCard duplicate-titled variants', () => {
 
     const unrecorded = screen.getAllByText('ND Divorce')[0].closest('li')
     expect(
-      within(unrecorded).getByText(/The source of each was not recorded/i),
+      within(unrecorded).getByText(/Source file: .*preview before filing/i),
     ).toBeInTheDocument()
 
     const recorded = screen.getAllByText('ND General')[0].closest('li')

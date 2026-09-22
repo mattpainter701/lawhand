@@ -24,8 +24,15 @@ async def test_failed_or_stalled_provision_does_not_start_an_upload(monkeypatch,
     pending = {'_status': status}
     db = Mock(execute=AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=pending))))
     monkeypatch.setattr(module.asyncio, 'sleep', AsyncMock())
-    with pytest.raises(MatterFileStoragePolicyError, match='provisioning failed|still being prepared'):
+    with pytest.raises(MatterFileStoragePolicyError) as exc_info:
         await MatterFileStore().store_matter_file_result(db, str(uuid.uuid4()), 'case', 'documents', 'a.pdf', b'file', 'application/pdf', matter_cloud_folder=pending)
+    message = str(exc_info.value)
+    assert "Documents > Document tools" in message
+    assert "No file was stored" in message
+    if status == 'failed':
+        assert "setup failed" in message
+    else:
+        assert "still being prepared" in message
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,24 @@ const renderHome = (items) => render(
 )
 
 describe('fill coverage in the library', () => {
+  it('does not put paused published templates in the draft queue fallback', () => {
+    render(
+      <MemoryRouter>
+        <TemplateStudioHome
+          templates={[
+            { id: 'paused', title: 'Paused', is_active: false, status: 'paused' },
+            { id: 'draft', title: 'Draft', is_active: false, status: 'draft' },
+          ]}
+          summary={{ total: 2, active: 0, inactive: 2, ready: 0, source_missing: 0 }}
+          onRefresh={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('heading', { name: 'Continue setup' }).parentElement).toHaveTextContent('1')
+    expect(screen.getByText('Draft')).toBeInTheDocument()
+    expect(screen.queryByText('Paused')).not.toBeInTheDocument()
+  })
+
   // The number that decides whether a template is worth having was previously
   // reachable only by opening each one in an editor, which is no way to
   // compare them.

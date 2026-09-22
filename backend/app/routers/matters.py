@@ -10,7 +10,7 @@ from decimal import Decimal
 from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -59,6 +59,7 @@ from app.schemas.matter import (
     MatterListResponse,
     MatterMemoryResponse,
     MatterMemoryUpdate,
+    MatterMyMattersPage,
     MatterNoteCreate,
     MatterNoteResponse,
     MatterNoteUpdate,
@@ -581,7 +582,29 @@ async def list_matters(
     if client_id:
         conditions.append(Matter.client_contact_id == uuid.UUID(client_id))
     if search:
-        conditions.append(Matter.matter_name.ilike(f"%{search}%"))
+        # The document picker uses the same search as the matters list. Match
+        # the human identifiers users know without joining/counting a matter
+        # twice, and keep the related-client lookup inside this tenant.
+        pattern = f"%{search.strip()}%"
+        conditions.append(
+            or_(
+                Matter.matter_name.ilike(pattern),
+                Matter.matter_number.ilike(pattern),
+                Matter.client_contact_id.in_(
+                    select(Contact.id).where(
+                        Contact.tenant_id == tenant_id,
+                        or_(
+                            func.trim(
+                                func.coalesce(Contact.first_name, "")
+                                + " "
+                                + func.coalesce(Contact.last_name, "")
+                            ).ilike(pattern),
+                            Contact.organization_name.ilike(pattern),
+                        ),
+                    )
+                ),
+            )
+        )
     if assigned_to:
         conditions.append(
             Matter.id.in_(
@@ -996,15 +1019,14 @@ async def create_matter(
     return _matter_to_response(matter, budget)
 
 
-@router.get("/my", response_model=list[MatterSummaryMyMatters])
-async def get_my_matters(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get matters assigned to the current user, sorted by deadline, role-aware."""
-    user = await get_current_user(request, db)
-    tenant_id = user.tenant_id
-
+async def _my_matters_items(
+    db: AsyncSession,
+    user,
+    tenant_id,
+    *,
+    limit: int | None = 100,
+) -> list[MatterSummaryMyMatters]:
+    """Load and enrich matters assigned to the user, sorted by deadline (nulls last)."""
     q = (
         select(Matter)
         .options(
@@ -1023,7 +1045,7 @@ async def get_my_matters(
                 )
             ),
         )
-        .limit(100)
+        .limit(limit)
     )
     result = await db.execute(q)
     matters = result.unique().scalars().all()
@@ -1182,6 +1204,39 @@ async def get_my_matters(
         )
     )
     return items
+
+
+@router.get("/my", response_model=list[MatterSummaryMyMatters])
+async def get_my_matters(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get matters assigned to the current user, sorted by deadline, role-aware.
+
+    Legacy shape kept for existing callers; it remains capped at 100. Use
+    ``/my/page`` for a bounded page with a scoped total.
+    """
+    user = await get_current_user(request, db)
+    return await _my_matters_items(db, user, user.tenant_id, limit=100)
+
+
+@router.get("/my/page", response_model=MatterMyMattersPage)
+async def get_my_matters_page(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bounded, ordered page of the current user's assigned matters with a total."""
+    user = await get_current_user(request, db)
+    items = await _my_matters_items(db, user, user.tenant_id, limit=None)
+    start = (page - 1) * page_size
+    return MatterMyMattersPage(
+        items=items[start : start + page_size],
+        total=len(items),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/stats", response_model=MatterStats)

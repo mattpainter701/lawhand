@@ -5,6 +5,18 @@ documents. Workspace MCP and LawHand Chat share the same proposal handlers.
 The [BYO-harness channel contract](../byo-harness-channel-contract.md) owns channel
 positioning, platform AI metering, and connection budgets.
 
+Template Studio's single-document Prepare route separately completes its encrypted
+fill session after a matter document has been saved. The authenticated
+`POST /api/fill-sessions/{session_id}/complete` endpoint requires document-management
+authority and checks session ownership plus the saved document's tenant, matter,
+uploader, generating template and recorded fill-session identity. Prepare drains
+its answer draft before rendering; the optional render `fill_session_id` requires
+an unexpired owned session with matching nonempty answers and destination.
+Repeating completion with the same document is
+idempotent; completion and autosave lock the session so a late write cannot reopen
+it. This records preparation completion only: it creates no artifact approval,
+signature request or delivery authority, and exposes no additional MCP tool.
+
 ## Human review
 
 New document proposals create a `GeneratedArtifact`, immutable revision, verified

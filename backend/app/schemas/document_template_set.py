@@ -91,6 +91,7 @@ class InterviewQuestionResponse(BaseModel):
     key: str
     label: str
     value_kind: str
+    options: list[str] = Field(default_factory=list)
     required: bool
     #: Card key for a shared question, "" for one belonging to one document.
     card: str

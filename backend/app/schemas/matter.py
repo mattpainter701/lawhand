@@ -346,6 +346,19 @@ class MatterSummaryMyMatters(MatterSummary):
     overdue_deadline_label: str | None = None
 
 
+class MatterMyMattersPage(BaseModel):
+    """A bounded page of the current user's assigned matters.
+
+    ``total`` is the number of matching records before pagination, so the client
+    can walk every assigned matter instead of being silently capped.
+    """
+
+    items: list[MatterSummaryMyMatters]
+    total: int
+    page: int
+    page_size: int
+
+
 # ── Assignments ───────────────────────────────────────────────────────────────
 
 

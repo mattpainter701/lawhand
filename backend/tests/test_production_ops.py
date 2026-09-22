@@ -391,6 +391,9 @@ def _run_preflight(
         f'  *"base64,json,re,sys"*) exec {shlex.quote(Path(sys.executable).as_posix())} "$@" ;;\n'
         f'  *PLATFORM_BOOTSTRAP_CREDENTIALS_JSON*) exec {shlex.quote(Path(sys.executable).as_posix())} "$@" ;;\n'
         "esac\n"
+        # Match the real parser's stdin consumption so pipefail cannot turn an
+        # early stub exit into a spurious SIGPIPE from the Compose JSON writer.
+        "cat >/dev/null\n"
         "printf '%s' \"$FAKE_BIND_SOURCES\"\n",
         encoding="utf-8",
     )

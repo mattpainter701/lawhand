@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, set_tenant_context
 from app.schemas.fill_session import (
     FillSessionListResponse,
+    FillSessionCompleteRequest,
     FillSessionRenderRequest,
     FillSessionResponse,
     FillSessionWrite,
@@ -62,6 +63,21 @@ async def render_fill_session(
     """Save every previewed member in the background, as the caller."""
     await set_tenant_context(db, str(current_user.tenant_id))
     session = await fill_sessions.enqueue_render(db, current_user, session_id, payload)
+    return fill_sessions.response_for(session, include_answers=False)
+
+
+@router.post("/fill-sessions/{session_id}/complete", response_model=FillSessionResponse)
+async def complete_fill_session(
+    session_id: uuid.UUID,
+    payload: FillSessionCompleteRequest,
+    current_user=Depends(require_capability("manage_documents")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a single-document session saved after verifying its output."""
+    await set_tenant_context(db, str(current_user.tenant_id))
+    session = await fill_sessions.complete(
+        db, current_user, session_id, payload.matter_document_id
+    )
     return fill_sessions.response_for(session, include_answers=False)
 
 

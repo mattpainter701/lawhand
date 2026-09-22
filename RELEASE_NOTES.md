@@ -5,6 +5,60 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.05 — Reliable packet saves and clearer form review
+
+Released September 22, 2026.
+
+Packet saves keep each document's result when you return. Form review distinguishes required answers and optional blanks, and Cloud Search can target a source and filename.
+
+- **See which answers are required.** Sample-fill counts update as you type. Required and optional filters separate unanswered questions, and unlabelled source fields explain when to check the PDF.
+- **Review each suggested answer once.** Verifying an answer clears its review step and survives reopening a packet. Changing the answer or unchecking verification requires a fresh review.
+- **Search the source you intended.** Choose OneDrive, Google Drive, SharePoint or email sources when testing cloud search. Exact phrase matching keeps a filename from becoming unrelated common-word results.
+- **Find the right recovery step.** Document folder errors point to the matter's Document tools and explain when to check the cloud connection. Failed saves clearly say no file was stored.
+- **Keep packet save results.** One save action records each document's result and can continue after you leave. Reopening shows saved files; retries keep recorded successes.
+
+## 2026.09.22.04 — Clear calendar results and safer shortcuts
+
+Released September 22, 2026.
+
+Calendar list headings show the full displayed range. New event messages distinguish saving in LawHand, calendar synchronization and Zoom meeting creation.
+
+- **Know which dates you are viewing.** The calendar list names its complete date range, including when it crosses into another year.
+- **Understand what saved.** New event messages separate local saves, calendar updates and Zoom meetings. A Zoom failure preserves a successful calendar update.
+- **Keep typing and confirming safely.** The new-conversation shortcut stays inactive while you edit text, compose input or use a confirmation dialog.
+
+## 2026.09.22.03 — Visible PDF previews and simpler reconnection
+
+Released September 22, 2026.
+
+Sample and packet PDFs open inside LawHand for review. Personal Microsoft and Google connections return you to Calendar with a clear result.
+
+- **Return to your calendar.** Connecting your own account brings you back to Calendar, including when you cancel or need to retry. You do not need administrator access.
+- **Find the reconnect control.** Open Calendar and choose Connect Calendar to reconnect your own account. Cloud status and help instructions now use that same path.
+- **See the preview you requested.** Sample and packet PDF previews open in a page viewer with zoom and page controls. Source loading and errors are visible, and Word packet previews offer a clearly labeled download.
+
+## 2026.09.22.02 — Reliable document completion and cloud tools
+
+Released September 22, 2026.
+
+Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and the profile page are more reliable.
+
+- **Let form reading finish.** Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them.
+- **Microsoft search requests repaired.** File and mail searches use separate supported requests and respect the sources you selected.
+- **Profile stays available.** Time-entry totals no longer stop the profile page from opening.
+- **Close a draft after saving.** A saved document leaves your in-progress list. If closing the draft needs a retry, the saved document is kept and the retry does not create another copy.
+- **Usable packet choices.** State abbreviations match available options; unmatched suggestions stay missing. The intake sample no longer prints formatting marks around its questions.
+
+## 2026.09.22.01 — Fill from a matter and keep your progress
+
+Released September 22, 2026.
+
+Sample forms can use existing matter details, with a PDF preview beside the answers. Preparing documents also gets more reliable draft recovery, complete packet questions, and clearer cloud connection status.
+
+- **Start with the matter.** Search by client, matter name or number to fill a sample from existing details. Review missing answers and preview the filled PDF before downloading.
+- **Reliable drafts and packets.** Prepare restores answers and verified fields before refreshing matter data. Packets include Markdown questions, choice controls and a preview of each document.
+- **Clearer forms and connection status.** Intake choices keep their question text. Fee-agreement labels identify each signer, source defaults are visible, and storage status shows connections needing attention.
+
 ## 2026.09.21.01 — Search inside a matter's documents
 
 Released September 21, 2026.

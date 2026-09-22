@@ -5,9 +5,40 @@ from sqlalchemy import select, text
 
 from app.models.client_portal import ClientPortalInvite
 from app.models.communication_log import CommunicationLog
+from app.models.contact import Contact
 from app.models.matter_assignment import MatterAssignment
 from app.models.plugin import Matter, MatterEvent
 from app.services import email as email_module
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("search", ["NAME0007", "Jordan Example", "Example Holdings"])
+async def test_document_picker_searches_matter_numbers_and_client_names(
+    client, db_session, test_tenant, test_user, search
+):
+    contact = Contact(
+        tenant_id=test_tenant.id,
+        first_name="Jordan",
+        last_name="Example",
+        organization_name="Example Holdings",
+    )
+    db_session.add(contact)
+    await db_session.flush()
+    matter = Matter(
+        tenant_id=test_tenant.id,
+        user_id=test_user.id,
+        slug="name0007",
+        matter_name="Unrelated file description",
+        matter_number="NAME0007",
+        client_contact_id=contact.id,
+    )
+    db_session.add(matter)
+    await db_session.flush()
+    matter_id = str(matter.id)
+    response = await client.get("/api/matters", params={"search": search})
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert [item["id"] for item in response.json()["items"]] == [matter_id]
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,44 @@
+## 2026.09.22.05 — Sample answer clarity and focused cloud search
+
+- Packet saving uses one durable session path. The primary Save action records results for resume and completion, drains current answers before queueing, reconciles ambiguous responses and skips recorded successes on retry. Fields stay locked while saving. Non-PDF worker-crash atomicity still requires a separate stress test; this change does not claim exactly-once cloud writes.
+
+- Sample-fill summaries derive from current answers and distinguish source-declared required fields from optional blanks. Missing, Optional and Filled filters use the same control-aware completion rules; unchecked required checkboxes remain missing. No conditional question logic or legal requiredness is inferred.
+- Unusable imported source labels have actionable PDF-review guidance instead of displaying `undefined`, while deterministic field/page labels and original metadata remain intact.
+- Single-document and packet verification now records the exact reviewed answer, clearing its suggestion from the attention queue. Reopening a packet restores review acknowledgement for its saved verified answers. Editing or unchecking removes that review; verification does not approve, deliver or sign a document.
+- Pending and failed matter-folder setup errors direct users to the actual matter Documents / Document tools controls and cloud reconnection, instead of the unrelated File Shares screen or an unconditional wait-and-retry instruction. Storage policy, provisioning waits and upload guards are unchanged.
+- Admin Cloud Search provides source selection and an explicit exact-phrase mode, automatically suggested for filenames. Literal diagnostics bypass query planning; provider queries preserve the phrase and metadata fallback uses the complete text. General assistant planning and source permissions remain unchanged. Full-content fetching is off by default, and technical query details are collapsed.
+- Production reproduction: a saved QA PDF's unique identifier returned the correct OneDrive file; its full filename expanded to common-word terms and returned unrelated mail. Live storage acceptance remains separate from source-scoped search testing.
+
+## 2026.09.22.04 — Calendar result truthfulness and shortcut safety
+
+- Calendar List headings match the loaded two-month interval, including cross-year ranges.
+- New scheduled-event feedback uses the returned calendar event ID and meeting join URL to distinguish calendar synchronization from Zoom creation. Aggregate provider errors preserve known successes; missing calendar confirmation cannot read as confirmed sync. Existing save behavior and provider callbacks are unchanged.
+- The global new-conversation shortcut ignores editing, IME composition and both dialog/alertdialog controls.
+- Core Sprint 1 reconciliation and draft interaction/API contracts are recorded. Fixtures move into the user-authorized B1 backend slice; focus-policy changes and staff validation remain outstanding.
+
+## 2026.09.22.03 — Visible previews and personal cloud reconnection
+
+- Personal Microsoft and Google OAuth callbacks preserve the user connection intent and return to Calendar on success or failure. Firm-wide connection redirects remain unchanged. Calendar confirms connection health and offers understandable recovery messages.
+- Corrected Cloud status, calendar sync errors and integration guidance to direct users to Calendar > Connect Calendar. Corrected the previous release's claim that Profile contains personal cloud connection controls.
+- Sample-source and packet PDF previews open in an accessible in-app viewer instead of relying on popup tabs. Sample loading/fetch failures are visible and retryable, closing ignores delayed responses, and packet answer changes invalidate the open preview. Word packet output offers an explicit download with scoped URL cleanup.
+
+## 2026.09.22.02 — Document completion and cloud tools
+
+- Printed-form fact extraction uses the existing long-operation request budget instead of the 25-second list/query deadline. The reader shows progress and preserves actionable normalized error messages. Proposed details still require individual acceptance.
+- Microsoft Graph file and mail searches use compatible entity-type requests selected by source, rather than an invalid mixed file/mail request. This does not replace user reauthorization when Microsoft requires MFA.
+- Profile totals normalize decimal-string time values before formatting, preventing a render crash.
+- Single-document saves drain their encrypted answer draft and bind completion to the saved matter document. Completion validates the owner, tenant, matter and generating template, is idempotent for the same file, and serializes with autosave to prevent reopening a saved draft. A completion retry retains the saved file instead of rendering again.
+- Packet choice suggestions normalize state names/codes against option values and labels. Unmatched suggestions remain missing rather than inflating completion counts.
+- Regenerated the prospective-client intake sample to remove literal Markdown emphasis markers from its printed radio questions; control names and the 63-field schema are retained.
+- Found during production acceptance: the synthetic form-reading request completed with HTTP 200 after the browser had already shown a generic failure; Microsoft Graph separately rejected the mixed entity types with HTTP 400.
+
+## 2026.09.22.01 — Matter-first sample filling and PDF acceptance fixes
+
+- Sample filling now uses a tenant-scoped Smart Fill preview route, searchable matter selection, grouped fields, missing/filled filters, and a generated PDF canvas before download. Source defaults survive extraction; unnamed controls get honest page-based fallback labels. The authored intake uses labeled exclusive radio groups; fee-agreement signer names are distinct. Two source PDFs and their manifest digests are regenerated.
+- Prepare restores sessions before auto-fill and serializes document draft writes with visible save/retry state and a recoverable URL. Matter changes and answer edits invalidate old preview evidence. Packet interviews include Markdown body placeholders, preserve choice controls, and resolve local aliases in bounded batches without treating an explicit manual binding as an alias.
+- Studio field discovery and paused-template counts are consistent. The selected cloud provider's credential health is reflected in storage setup status. Matter search includes client names and matter numbers without widening tenant access.
+- Validation and remaining production acceptance requirements are recorded in `docs/pdf-release-acceptance-2026-09-22.md`. Cloud grant reauthorization and actual save/reopen checks remain operational acceptance, not a claim made by the code change.
+
 ## Unreleased — Research MCP request-level idempotency and billing visibility
 
 - `app/models/mcp_product.py` / migration `196_mcp_usage_idempotency`: `mcp_usage_events` gains nullable `request_idempotency_key`, `credential_scope`, and `request_sha256`, plus a partial unique index on `(tenant_id, credential_scope, request_idempotency_key)` where the key is not null. Additive and reversible; keyless events and the internal chat path are unaffected.

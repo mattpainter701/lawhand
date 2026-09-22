@@ -185,6 +185,39 @@ async def test_the_cache_row_is_committed_without_committing_the_caller(
 
 
 @pytest.mark.asyncio
+async def test_a_cache_write_fault_still_returns_the_extraction(
+    db_session, test_tenant, monkeypatch
+):
+    """The cache write runs on its own pooled connection. Exhausting the pool,
+    or any transient database fault, costs the cache row — never the read."""
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    monkeypatch.setattr(
+        cache,
+        "extract",
+        lambda filename, content_type, content: cache.Extraction(
+            text="Client: Ada", engine=cache.ENGINE_TEXT_LAYER, page_count=1
+        ),
+    )
+
+    def _exhausted():
+        raise SQLAlchemyError("connection pool exhausted")
+
+    monkeypatch.setattr(cache, "session_factory", _exhausted)
+    await set_tenant_context(db_session, str(test_tenant.id))
+    extraction = await cache.get_or_extract(
+        db_session,
+        tenant_id=test_tenant.id,
+        content=b"unwritable bytes",
+        filename="a.txt",
+        content_type="text/plain",
+    )
+    assert extraction.text == "Client: Ada"
+    assert not extraction.cached
+
+
+@pytest.mark.asyncio
 async def test_forget_if_unreferenced_keeps_shared_bytes_and_other_tenants(
     db_session, test_tenant, test_user
 ):

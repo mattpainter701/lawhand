@@ -38,6 +38,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
   const [replace, setReplace] = useState({})
   const [done, setDone] = useState({})
   const [busy, setBusy] = useState(false)
+  const [readingForm, setReadingForm] = useState(false)
   const [message, setMessage] = useState('')
   const [useAi, setUseAi] = useState(false)
   const [formSources, setFormSources] = useState([])
@@ -78,6 +79,8 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
     setValues({})
     setDone({})
     setMessage('')
+    setBusy(false)
+    setReadingForm(false)
     // When the parent already holds the matter's document list, reuse it rather
     // than issuing a second read of the same documents.
     if (matterId && !providedDocuments && !providedDocumentId) {
@@ -102,6 +105,7 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
     if (!source) return
     const version = ++requestVersion.current
     setBusy(true)
+    setReadingForm(true)
     setProposal(null)
     setValues({})
     setReplace({})
@@ -115,9 +119,14 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
       })
       applyResult(version, result)
     } catch (error) {
-      if (version === requestVersion.current) setMessage(error?.response?.data?.detail || 'The scan could not be read against the form.')
+      if (version === requestVersion.current) {
+        setMessage(error?.response?.data?.detail || error?.message || 'The scan could not be read against the form.')
+      }
     } finally {
-      if (version === requestVersion.current) setBusy(false)
+      if (version === requestVersion.current) {
+        setBusy(false)
+        setReadingForm(false)
+      }
     }
   }, [matterId, documentId, formSources, formChoice, useVision, applyResult])
 
@@ -217,8 +226,13 @@ export default function MatterDocumentFacts({ matterId, documentId: providedDocu
             Use AI for fields OCR could not read (sends only those clips to the AI provider)
           </label>
           <button type="button" onClick={readAgainstForm} disabled={busy || !documentId || !formChoice} className="mt-2 border rounded p-2 text-sm">
-            {busy ? 'Reading…' : 'Read against the printed form'}
+            {readingForm ? 'Reading the scan…' : 'Read against the printed form'}
           </button>
+          {readingForm && (
+            <p role="status" aria-live="polite" className="mt-2 text-xs text-brand-muted">
+              Reading this form can take a few minutes. Keep this page open.
+            </p>
+          )}
         </div>
       )}
       {proposal && pending.length > 0 && (proposal.warnings || []).length > 0 && (

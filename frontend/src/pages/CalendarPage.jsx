@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { reportError } from '../utils/reportError'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   getCalendarEvents,
   syncCalendarDeadlines,
@@ -78,7 +78,7 @@ function dateLabel(d) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function rangeLabel(view, pivot) {
+export function rangeLabel(view, pivot) {
   if (view === 'day') return pivot.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   if (view === 'week') {
     const start = startOfWeek(pivot)
@@ -87,10 +87,19 @@ function rangeLabel(view, pivot) {
       ? `${start.toLocaleDateString('en-US', { month: 'long' })} ${start.getDate()}–${end.getDate()}, ${end.getFullYear()}`
       : `${dateLabel(start)} – ${dateLabel(end)}`
   }
+  if (view === 'list') {
+    // The list loads the pivot month through the end of the next month, so the
+    // heading must describe that whole span rather than only the pivot month.
+    const start = startOfMonth(pivot)
+    const end = endOfMonth(new Date(pivot.getFullYear(), pivot.getMonth() + 1, 1))
+    const startLabel = monthLabel(start)
+    const endLabel = monthLabel(end)
+    return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
+  }
   return monthLabel(pivot)
 }
 
-function viewRange(view, pivot) {
+export function viewRange(view, pivot) {
   if (view === 'day') return [pivot, pivot]
   if (view === 'week') {
     const start = startOfWeek(pivot)
@@ -277,6 +286,48 @@ export function providerEventDate(evt) {
   return Number.isNaN(parsed.getTime()) ? String(raw).slice(0, 10) : localIsoDate(parsed)
 }
 
+const EXTERNAL_CALENDAR_PROVIDERS = new Set(['microsoft', 'google'])
+
+// A scheduled event is saved in LawHand first; the external calendar write is
+// best effort. The banner must say which of those actually happened rather than
+// reporting every save as a successful external sync. S1.09.
+export function syncMessageForScheduledEvent(event) {
+  const provider = event?.calendar_provider || null
+  const external = EXTERNAL_CALENDAR_PROVIDERS.has(provider)
+  // sync_status combines calendar and meeting-provider outcomes. The returned
+  // artifact IDs tell us which part actually succeeded.
+  const calendarSynced = external && Boolean(event?.external_calendar_event_id)
+  const zoomRequested = event?.meeting_provider === 'zoom'
+  const meetingCreated = Boolean(event?.join_url)
+
+  if (event?.sync_status === 'error') {
+    if (calendarSynced && zoomRequested && !meetingCreated) {
+      return {
+        type: 'error',
+        text: 'Saved in LawHand and synced to your connected calendar, but the Zoom meeting could not be created.',
+      }
+    }
+    if (external && !calendarSynced) {
+      return {
+        type: 'error',
+        text: 'Saved in LawHand, but the connected calendar could not be updated.',
+        reconnectProvider: provider,
+      }
+    }
+    return { type: 'error', text: 'Saved in LawHand, but an external service could not be updated.' }
+  }
+  if (calendarSynced) {
+    return { type: 'success', text: 'Event created and synced to your connected calendar.' }
+  }
+  if (external) {
+    return { type: 'error', text: 'Saved in LawHand. Calendar synchronization has not been confirmed.' }
+  }
+  if (zoomRequested && meetingCreated) {
+    return { type: 'success', text: 'Event created in LawHand with a Zoom meeting.' }
+  }
+  return { type: 'success', text: 'Event created in LawHand.' }
+}
+
 // A task we pushed to Outlook or Google comes back on the provider read as an
 // event of its own, carrying the clarity_task_id marker we stamped on it. It is
 // the same deadline, so showing both leaves the reader to guess which entry is
@@ -431,6 +482,7 @@ function MobileAgenda({ events, onEventClick }) {
 
 export default function CalendarPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [pivotDate, setPivotDate] = useState(new Date())
   const [view, setView] = useState(() => window.localStorage.getItem('calendar-view') || 'month')
   const [events, setEvents] = useState([])
@@ -453,6 +505,22 @@ export default function CalendarPage() {
   const [taskDropSaving, setTaskDropSaving] = useState(false)
 
   useEffect(() => {
+    const connected = searchParams.get('connected')
+    const errorCode = searchParams.get('error')
+    const callbackProvider = searchParams.get('provider')
+    const requestedProvider = ['microsoft', 'google'].includes(connected || callbackProvider)
+      ? connected || callbackProvider
+      : null
+    const hasCallback = Boolean(connected || errorCode)
+    const clearCallbackQuery = () => {
+      if (!hasCallback) return
+      const next = new URLSearchParams(searchParams)
+      next.delete('connected')
+      next.delete('error')
+      next.delete('provider')
+      setSearchParams(next, { replace: true })
+    }
+
     Promise.all([
       getCalendarProviders(),
       getZoomStatus().catch(() => ({ connected: false, configured: false })),
@@ -465,18 +533,56 @@ export default function CalendarPage() {
         setZoomStatus(zoom)
         setMatters(mattersData.items || mattersData || [])
         const reconnectProvider = ['microsoft', 'google'].find((provider) => status[provider]?.needs_reconnect)
-        if (connectedProvider) {
+        if (connected && requestedProvider && data.providers?.includes(requestedProvider)) {
+          setCalendarProvider(requestedProvider)
+          setSyncMessage({
+            type: 'success',
+            text: `${providerLabel(requestedProvider)} connected successfully.`,
+          })
+        } else if (errorCode) {
+          setCalendarProvider(connectedProvider)
+          setConnectProvider(requestedProvider)
+          setSyncMessage({
+            type: 'error',
+            reconnectProvider: requestedProvider,
+            text: errorCode === 'access_denied'
+              ? 'Calendar connection was cancelled. You can try again when ready.'
+              : 'Calendar connection could not be completed. Please try again.',
+          })
+        } else if (connected) {
+          setCalendarProvider(connectedProvider)
+          setConnectProvider(requestedProvider)
+          setSyncMessage({
+            type: 'error',
+            reconnectProvider: requestedProvider,
+            text: 'Calendar connection could not be confirmed. Please try again.',
+          })
+        } else if (connectedProvider) {
           setCalendarProvider(connectedProvider)
         } else if (reconnectProvider) {
           setCalendarProvider(null)
           setSyncMessage({
             type: 'error',
+            reconnectProvider,
             text: `${providerLabel(reconnectProvider)} needs to be reconnected before sync can run.`,
           })
         }
-        setConnectProvider(data.connect_provider || reconnectProvider || data.login_provider || data.tenant_providers?.[0] || null)
+        if (!hasCallback) {
+          setConnectProvider(data.connect_provider || reconnectProvider || data.login_provider || data.tenant_providers?.[0] || null)
+        }
+        clearCallbackQuery()
       })
-      .catch(() => {})
+      .catch(() => {
+        if (hasCallback) {
+          setConnectProvider(requestedProvider)
+          setSyncMessage({
+            type: 'error',
+            reconnectProvider: requestedProvider,
+            text: 'Calendar connection could not be confirmed. Please try again.',
+          })
+          clearCallbackQuery()
+        }
+      })
   }, [])
 
   const fetchEvents = useCallback(async (pivot, activeView = view) => {
@@ -678,7 +784,7 @@ export default function CalendarPage() {
     setEventSaving(true)
     setSyncMessage(null)
     try {
-      await createScheduledEvent({
+      const created = await createScheduledEvent({
         title: form.title,
         description: form.description || null,
         start_at: localDateTimeToIso(form.date, form.start_time),
@@ -693,7 +799,7 @@ export default function CalendarPage() {
         meeting_provider: form.meeting_provider || 'none',
       })
       setShowEventModal(false)
-      setSyncMessage({ type: 'success', text: 'Event created.' })
+      setSyncMessage(syncMessageForScheduledEvent(created))
       await fetchEvents(pivotDate)
     } catch (err) {
       setSyncMessage({
@@ -778,13 +884,23 @@ export default function CalendarPage() {
           }`}
         >
           <span>{syncMessage.text}</span>
-          <button
-            onClick={() => setSyncMessage(null)}
-            className="ml-4 opacity-60 hover:opacity-100 text-xs"
-            aria-label="Dismiss"
-          >
-            ✕
-          </button>
+          <span className="ml-4 flex items-center gap-3 shrink-0">
+            {syncMessage.type === 'error' && syncMessage.reconnectProvider && (
+              <button
+                onClick={() => connectCalendarIntegration(syncMessage.reconnectProvider)}
+                className="font-semibold underline hover:no-underline"
+              >
+                Reconnect {providerLabel(syncMessage.reconnectProvider)}
+              </button>
+            )}
+            <button
+              onClick={() => setSyncMessage(null)}
+              className="opacity-60 hover:opacity-100 text-xs"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </span>
         </div>
       )}
 

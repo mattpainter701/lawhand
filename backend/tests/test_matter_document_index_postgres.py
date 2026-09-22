@@ -488,6 +488,75 @@ async def test_deleting_the_last_document_with_those_bytes_drops_the_cache(
     assert await rows() == 0
 
 
+async def test_a_revert_to_previously_indexed_bytes_rebuilds_the_rows(
+    db_session, test_tenant, test_user
+):
+    """D1 → D2 → D1 must re-index, never keep D2's text.
+
+    The index job's key carries the digest, so a revert lands on a key that
+    already completed. Without reopening it, the rows would keep describing D2
+    while the document carries D1, and search would return words the document
+    no longer contains.
+    """
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.models.durable_job import DurableJob
+    from app.services import durable_job_worker as worker
+    from app.services import matter_fact_extraction as facts
+
+    tenant_id = test_tenant.id
+    matter = await _matter(db_session, test_tenant, test_user)
+    matter_id = matter.id
+    first = HEARING
+    changed = HEARING.replace("March 3", "April 9")
+    document = await _document(
+        db_session, tenant_id=tenant_id, matter_id=matter_id,
+        filename="notice.txt", content=first.encode(),
+    )
+    document_id = document.id
+    first_sha = hashlib.sha256(first.encode()).hexdigest()
+    changed_sha = hashlib.sha256(changed.encode()).hexdigest()
+    factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def read_and_index(content: str, expected_sha: str):
+        row = await db_session.get(MatterDocument, document_id)
+        row.document_sha256 = expected_sha
+        await db_session.commit()
+        await facts._extract(db_session, tenant_id, row, content.encode())
+        job = await db_session.scalar(
+            select(DurableJob).where(
+                DurableJob.kind == index.JOB_KIND,
+                DurableJob.idempotency_key == index.job_key(document_id, expected_sha),
+            )
+        )
+        await db_session.commit()
+        with patch.object(worker, "async_session_maker", factory):
+            await worker.process_job(job.id, tenant_id)
+        await db_session.refresh(job)
+        return job
+
+    assert (await read_and_index(first, first_sha)).result["status"] == "indexed"
+    assert (await read_and_index(changed, changed_sha)).result["status"] == "indexed"
+    hits = await index.search(
+        db_session, tenant_id=tenant_id, matter_id=matter_id, query="April"
+    )
+    assert hits and hits[0]["document_id"] == str(document_id)
+
+    # Back to the first bytes: the completed job for this key must reopen and
+    # the rows must describe the bytes the document carries now.
+    assert (await read_and_index(first, first_sha)).result["status"] == "indexed"
+    contents = (
+        await db_session.execute(
+            select(MatterDocumentChunk.content).where(
+                MatterDocumentChunk.matter_document_id == document_id
+            )
+        )
+    ).scalars().all()
+    assert any("March 3" in content for content in contents)
+    assert not any("April 9" in content for content in contents)
+
+
 async def test_migration_text_pins_rls_cascade_and_head():
     source = (
         Path(__file__).resolve().parents[1]

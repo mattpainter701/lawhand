@@ -11,7 +11,7 @@ const templateIsDocx = (template) => String(template?.format || '').toLowerCase(
 export const templateHasSigningFields = (template) => (template?.variable_schema?.fields || [])
   .some((field) => field?.included !== false && isSigningField(field))
 
-export default function usePrepareFill({ template, initialMatterId, folderId, onSaved }) {
+export default function usePrepareFill({ template, initialMatterId, folderId, onSaved, beforeSave, autoFillEnabled = true }) {
   const [variables, setVariables] = useState({})
   const [matterId, setMatterId] = useState(initialMatterId || '')
   const [rendered, setRendered] = useState(null)
@@ -32,6 +32,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const [rendering, setRendering] = useState(false)
   const [renderPurpose, setRenderPurpose] = useState('')
   const [saving, setSaving] = useState(false)
+  const [completionPending, setCompletionPending] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(null)
   const [smartFillState, setSmartFillState] = useState('idle')
@@ -144,6 +145,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setFocusedFillName(null)
     lastAttentionField.current = null
     setSaved(false)
+    setCompletionPending(false)
     setRendered(null)
     setMatterDocId(null)
     setSavedDownloadUrl('')
@@ -313,7 +315,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   // manual button stays as the explicit refresh. One pass per matter keeps a
   // late response from clobbering edits the reviewer has since typed.
   useEffect(() => {
-    if (saving || !fillableNames.length) return
+    if (!autoFillEnabled || saving || !fillableNames.length) return
     const hasMatter = Boolean(matterId.trim())
     if (!hasMatter && !hasFirmFields) {
       smartFillAutoKeyRef.current = ''
@@ -323,7 +325,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     if (smartFillAutoKeyRef.current === key) return
     smartFillAutoKeyRef.current = key
     smartFillRef.current?.()
-  }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving])
+  }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving, autoFillEnabled])
 
   const handleRender = async (requestedPdfPurpose = null) => {
     const previewPurpose = requestedPdfPurpose || (canSaveToMatter ? 'generation' : 'draft')
@@ -423,9 +425,15 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setError(null)
     setStorageWarning('')
     try {
+      const fillSessionId = await beforeSave?.()
+      if (beforeSave && !fillSessionId) {
+        setError('Your latest answers could not be saved yet. Retry saving answers before creating the document.')
+        return
+      }
       const res = await renderTemplate(template.id, {
         variables: saveVariables,
         matter_id: saveMatterId,
+        ...(fillSessionId ? { fill_session_id: fillSessionId } : {}),
         ...(folderId ? { folder_id: folderId } : {}),
         ...(isDocxTemplate ? { convert_to_pdf: convertDocxToPdf } : {}),
         ...(isPdfOutput ? { preview_id: savePreviewId } : {}),
@@ -445,8 +453,9 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
       setStorageWarning(res.storage_warning || '')
       if (res.matter_document_id) {
         setMatterDocId(res.matter_document_id)
+        const completed = await onSaved?.(res)
+        setCompletionPending(completed === false)
         setSaved(true)
-        onSaved?.(res)
       } else {
         setError('The server rendered the text but did not return a saved matter document.')
       }
@@ -459,6 +468,6 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
 
 
   return {
-    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, verifiedNames, setVerifiedNames, toggleVerified, verifyAndAdvance, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
+    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, completionPending, setCompletionPending, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, verifiedNames, setVerifiedNames, toggleVerified, verifyAndAdvance, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
   }
 }

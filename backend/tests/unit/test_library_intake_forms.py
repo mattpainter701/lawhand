@@ -8,11 +8,13 @@ the variables the platform reads back.
 """
 
 import importlib.util
+import io
 import json
 import sys
 from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
 
 from app.services.pdf_templates import discover_pdf_fields
 from app.services.template_bindings import is_valid_binding
@@ -132,6 +134,29 @@ def test_the_fee_agreement_serves_every_matter_type(builder):
     } <= names
 
 
+def test_authored_signature_labels_identify_the_signing_role(builder):
+    labels = {field.name: field.label for field in builder.FEE_AGREEMENT.fields()}
+    assert labels["client_name"] == "Client printed name"
+    assert labels["co_client_name"] == "Additional client printed name"
+    assert labels["attorney_name"] == "Attorney printed name"
+
+
+def test_prospective_intake_yes_no_questions_are_exclusive(builder):
+    radio_names = {
+        block[2]
+        for block in builder.PROSPECTIVE_INTAKE.blocks
+        if block[0] == "radio"
+    }
+    assert {
+        "safe_contact",
+        "existing_case",
+        "urgent_deadline",
+        "served",
+        "currently_represented",
+        "prior_counsel_status",
+    } <= radio_names
+
+
 def test_no_default_suggests_an_amount_a_firm_must_decide(builder):
     """A printed number would read as advice about what a firm should charge.
 
@@ -230,3 +255,31 @@ def test_radio_block_builds_one_exclusive_field(builder) -> None:
     assert fields["prior_representation"]["options"] == ["yes", "no"]
     # Required would make the group impossible to satisfy.
     assert fields["prior_representation"]["required"] is False
+
+
+def test_authored_radio_tooltips_strip_markdown_markers(builder):
+    fields = {
+        field["name"]: field
+        for field in discover_pdf_fields(builder.render(builder.PROSPECTIVE_INTAKE))
+    }
+    for name in {
+        "safe_contact",
+        "existing_case",
+        "urgent_deadline",
+        "served",
+        "currently_represented",
+        "prior_counsel_status",
+    }:
+        assert "**" not in fields[name]["label"]
+
+
+def test_prospective_radio_prompts_do_not_print_authoring_markers(builder):
+    prompts = [block[1] for block in builder.PROSPECTIVE_INTAKE.blocks if block[0] == "radio"]
+    assert prompts
+    assert all("**" not in prompt for prompt in prompts)
+
+
+def test_committed_prospective_pdf_does_not_print_markdown_markers():
+    content = (SEED_DIR / "intake/prospective-client-intake-form.pdf").read_bytes()
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
+    assert "**" not in text

@@ -34,9 +34,14 @@ vi.mock('../api', () => ({
     }],
   }),
   getInvoicePreview: vi.fn().mockResolvedValue({ time_entries: [], expenses: [] }),
-  getMyMatters: vi.fn().mockResolvedValue([
-    { id: 'profile-matter-1', matter_name: 'Acme advisory', matter_type: 'commercial', status: 'active' },
-  ]),
+  getMyMattersPage: vi.fn().mockResolvedValue({
+    items: [
+      { id: 'profile-matter-1', matter_name: 'Acme advisory', matter_type: 'commercial', status: 'active' },
+    ],
+    total: 1,
+    page: 1,
+    page_size: 200,
+  }),
   getAppVersion: vi.fn().mockResolvedValue({ version: 'test', release_notes: [] }),
   getMattersV2: vi.fn().mockResolvedValue({ items: [] }),
   getTimeEntries: vi.fn().mockResolvedValue({ items: [] }),

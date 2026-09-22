@@ -48,7 +48,7 @@ When the connection is **Reconnect Required** or **Refresh Failed** the card lea
 
 The refresh line is worded exactly: **Last successful token refresh** when the last attempt worked, or **Last token refresh attempt … failed** beside the recorded error when it did not. A failed attempt also updates the timestamp, so the time alone is not evidence of health.
 
-**Per-user connections.** Users connect their own mailbox and calendar from their profile. Those tokens refresh through a separate path and fail independently of the firm-wide grant: the firm-wide grant can be revoked for weeks while users' own sync keeps running clean, and the reverse. The card shows how many users are connected and how many need to reconnect. An administrator cannot reconnect a user's token; the user does it from their profile.
+**Per-user connections.** Each user opens [Calendar](/calendar) and chooses **Connect Calendar** to connect their own Microsoft or Google account. Those tokens refresh through a separate path and fail independently of the firm-wide grant: the firm-wide grant can be revoked for weeks while users' own sync keeps running clean, and the reverse. The card shows how many users are connected and how many need to reconnect. An administrator cannot reconnect a user's token. Personal connection attempts return to Calendar with a connection result and a retry path; firm-wide connections return to the administrator's Cloud section.
 
 **Sync now** appears only when directory sync is available on the account tier. Personal Google and Microsoft accounts have no directory to import; the card says so and does not treat it as a failure.
 

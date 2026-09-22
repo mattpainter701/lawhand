@@ -3,7 +3,7 @@ import { reportError } from '../utils/reportError'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../App'
 import { ArrowRight, BookOpen, Briefcase, Clock, DollarSign, Building, ShieldCheck, LogOut } from 'lucide-react'
-import { getMyMatters, getTimeEntries, getWorkspaceMcpGrants, revokeAllSessions, updateMe } from '../api'
+import { getMyMattersPage, getTimeEntries, getWorkspaceMcpGrants, revokeAllSessions, updateMe } from '../api'
 import ReleaseInfoPanel from '../components/ReleaseInfoPanel'
 import WorkspaceMcpGrantsPanel from '../components/WorkspaceMcpGrantsPanel'
 
@@ -61,7 +61,9 @@ export default function ProfilePage() {
     try {
       setLoading(true)
       const [matters, entries] = await Promise.all([
-        getMyMatters().catch(() => []),
+        getMyMattersPage({ page: 1, page_size: 200 })
+          .then((data) => data?.items || [])
+          .catch(() => []),
         getTimeEntries({ limit: 50 }).catch(() => []),
       ])
       setMyMatters(matters)
@@ -75,8 +77,12 @@ export default function ProfilePage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  const totalHours = timeEntries.reduce((s, e) => s + (e.hours || 0), 0)
-  const totalBilled = timeEntries.reduce((s, e) => s + (e.amount || 0), 0)
+  const asFiniteNumber = (value) => {
+    const number = Number(value)
+    return Number.isFinite(number) ? number : 0
+  }
+  const totalHours = timeEntries.reduce((sum, entry) => sum + asFiniteNumber(entry.hours), 0)
+  const totalBilled = timeEntries.reduce((sum, entry) => sum + asFiniteNumber(entry.amount), 0)
 
   const activeMatters = myMatters.filter((m) => !m.is_closed)
   const riskCounts = { critical: 0, high: 0, medium: 0, low: 0 }

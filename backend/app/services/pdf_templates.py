@@ -421,7 +421,7 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
     # get_fields() also returns non-terminal hierarchy parents. Only widgets
     # are renderable inputs, so use their qualified terminal names as truth.
     names = list(widgets_by_name)
-    for pdf_name in names:
+    for field_number, pdf_name in enumerate(names, start=1):
         field = raw_fields.get(pdf_name) or {}
         variable = _normalize_variable(pdf_name)
         base = variable
@@ -437,8 +437,21 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
                 or [PdfWidget(0, pdf_name, "/Tx", (0, 0, 0, 0))]
             )[0].field_type
         )
-        alternate_name = field.get("/TU")
+        alternate_name = str(field.get("/TU") or "").strip()
         first_widget = (widgets_by_name.get(pdf_name) or [None])[0]
+        page_number = (first_widget.page_index + 1) if first_widget else None
+        source_label = alternate_name or pdf_name
+        if re.fullmatch(
+            r"(?:undefined|unknown|null|none)(?:[_ -]\d+)?", source_label, re.I
+        ):
+            # Some source PDFs literally label widgets "undefined". Keep that
+            # fact available for review while giving the fill UI a stable,
+            # honest label that does not guess at the field's legal meaning.
+            alternate_name = f"Source field {field_number}" + (
+                f" (page {page_number})" if page_number else ""
+            )
+        else:
+            alternate_name = source_label
         flags = int(
             field.get("/Ff", 0)
             or (first_widget.flags if first_widget is not None else 0)
@@ -450,10 +463,17 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
             "/Ch": "choice",
             "/Sig": "signature",
         }.get(field_type, "text")
+        raw_default = _field_property(field, "/V")
+        default = str(raw_default) if raw_default is not None else ""
+        if type_name in {"checkbox", "radio"}:
+            default = default.lstrip("/")
+        if default.casefold() == "off":
+            default = ""
         discovered.append(
             {
                 "name": variable,
-                "label": str(alternate_name or pdf_name).replace("_", " ").strip(),
+                "label": alternate_name.replace("_", " ").strip(),
+                "source_label": source_label.replace("_", " ").strip(),
                 "pdf_field_name": pdf_name,
                 "field_type": type_name,
                 "required": bool(flags & 2),
@@ -463,7 +483,8 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
                 "source_required": bool(flags & 2),
                 "multiline": field_type == "/Tx" and bool(flags & 4096),
                 "options": _normalized_options(field, type_name),
-                "page": (first_widget.page_index + 1) if first_widget else None,
+                "default": default,
+                "page": page_number,
                 "rect": list(first_widget.rect) if first_widget else None,
                 "confidence": 1.0,
                 "review_required": True,

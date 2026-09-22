@@ -53,6 +53,9 @@ import {
   placementsFor,
   sourceKind,
 } from './pdfFieldGeometry'
+import { schemaFields } from './templateFieldSchema'
+
+export { schemaFields }
 
 const FIELD_TOOLS = [
   { kind: 'text', label: 'Text', icon: Type },
@@ -67,11 +70,6 @@ const FIELD_TYPES = ['text', 'multiline', 'date', 'checkbox', 'signature', 'numb
 // Operators that need no literal to compare against. The server accepts
 // equals/in/not_in too; those need a value input this panel does not have yet.
 const UNARY_OPERATORS = ['present', 'absent', 'truthy', 'falsy']
-
-export const schemaFields = (template) => {
-  const fields = template?.variable_schema?.fields
-  return Array.isArray(fields) ? fields : []
-}
 
 export const schemaRegions = (template) => {
   const regions = template?.variable_schema?.regions
@@ -903,7 +901,7 @@ export default function TemplateStudioEditor({ template, source, sourceError, on
                   className={`w-full truncate rounded-md px-2 py-1.5 text-left text-xs ${entry.identity === selectedIdentity ? 'bg-brand-accent/15 font-semibold text-brand-ink' : 'text-brand-muted hover:bg-brand-bg'} ${entry.field.included === false ? 'line-through opacity-60' : ''}`}
                 >
                   {entry.field.label || entry.field.name}
-                  <span className="block truncate text-[11px] font-normal">{entry.field.included === false ? 'Excluded' : entry.field.review_required || entry.field.ai_suggested || Number(entry.field.confidence ?? 1) < 0.75 ? 'Needs review' : 'Included'} · {entry.field.field_type || 'text'}</span>
+                  <span className="block truncate text-[11px] font-normal">{entry.field.included === false ? 'Excluded' : !sourceReviewed && (entry.field.review_required || entry.field.ai_suggested || Number(entry.field.confidence ?? 1) < 0.75) ? 'Needs review' : 'Included'} · {entry.field.field_type || 'text'}</span>
                   {entry.field.source_text && <span className="block truncate text-[11px] font-normal">Replaces: {entry.field.source_text}</span>}
                 </button>
               </li>

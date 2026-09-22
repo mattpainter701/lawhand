@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
 import { Wand2 } from 'lucide-react'
 import MatterPicker from './MatterPicker'
 import TemplateFillProgress from '../templates/TemplateFillProgress'
 import { fillValue, suggestionConfidenceLabel, suggestionOriginLabel } from '../templates/templateFillReview'
 import SendStep from './SendStep'
 import { buildSavedTarget } from './prepareRouting'
+import StorageReadinessNotice from './StorageReadinessNotice'
+import PdfPreviewDialog from '../templates/PdfPreviewDialog'
 
 const inputClass = 'w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent'
 
@@ -12,18 +15,43 @@ const groupLabel = (question) => {
   return `${question.appears_in?.[0]?.template_title || 'This document'} only`
 }
 
+function WordPreviewDownload({ preview }) {
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(preview.blob)
+    setUrl(nextUrl)
+    return () => URL.revokeObjectURL(nextUrl)
+  }, [preview.blob])
+  return url ? <a href={url} download={preview.filename || 'document-preview.docx'} className="text-xs underline">Download Word preview</a> : null
+}
+
 // The two panes of the Prepare route for a set: the interview on the left
 // (asked once, grouped by card, each question saying how many documents it
 // fills) and the packet on the right (one row per member with its preview
 // and save state, then one Send card per saved PDF that can be signed).
 export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatterId, returnTo }) {
+  const [selectedPreview, setSelectedPreview] = useState(null)
   const {
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
     smartFillState, smartFillMessage, refresh, previewOf, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved, sendable,
-    session, background, saveAllInBackground,
+    session, background, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
+  const clearReviewedValue = (key) => setReviewedValues((prev) => ({ ...prev, [key]: undefined }))
+  const updateValue = (key, value) => {
+    clearReviewedValue(key)
+    setAnswer(key, value)
+  }
+  const verifyCurrentValue = (key, value) => {
+    setReviewedValues((prev) => ({ ...prev, [key]: fillValue(value) }))
+    toggleVerified(key)
+  }
+  const toggleValueVerified = (key, value, currentlyVerified) => {
+    if (currentlyVerified) clearReviewedValue(key)
+    else verifyCurrentValue(key, value)
+    if (currentlyVerified) toggleVerified(key)
+  }
   const groups = []
   for (const question of visible) {
     const label = groupLabel(question)
@@ -33,11 +61,28 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
   }
   const failedPreviews = availableMembers.filter((member) => previewOf(member).status === 'failed').map((member) => member.template_id)
   const failedSaves = availableMembers.filter((member) => saveOf(member)?.status === 'failed').map((member) => member.template_id)
+  const selectedMember = selectedPreview && availableMembers.find((member) => member.template_id === selectedPreview.memberId)
+  const currentPreview = selectedMember && previewOf(selectedMember)
+  const visiblePreview = currentPreview?.status === 'ready' && currentPreview.blob === selectedPreview?.blob ? currentPreview : null
+  if (sessionRestored === false) return (
+    <div className="space-y-4">
+      {sessionRestoreError ? (
+        <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2">
+          <span>{sessionRestoreError}</span><button type="button" onClick={retrySessionRestore} className="underline font-semibold">Retry</button>
+        </div>
+      ) : <p role="status" className="text-sm text-brand-muted">Restoring your packet answers…</p>}
+    </div>
+  )
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(300px,420px)_minmax(0,1fr)]">
-      <div className="space-y-4">
+    <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(300px,420px)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-4">
+        {sessionRestoreError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{sessionRestoreError}</span><button type="button" onClick={retrySessionRestore} className="underline font-semibold">Retry</button></div>}
+        {persistError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{persistError}</span><button type="button" onClick={retrySave} className="underline font-semibold">Retry save</button></div>}
+        {!persistError && ['pending', 'saving'].includes(persistStatus) && <p role="status" className="text-xs text-brand-muted">Saving answers…</p>}
+        {!persistError && persistStatus === 'saved' && <p role="status" className="text-xs text-brand-muted">Answers saved · available from this matter for 14 days</p>}
         {error && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">{error}</div>}
         {fixedMatterId ? <p className="text-sm font-semibold">Saving to this matter</p> : <MatterPicker matters={matters} selectedMatterId={matterId} onSelect={selectMatter} loading={matterLoading} disabled={saving || generating} />}
+        <StorageReadinessNotice enabled={Boolean(matterId.trim())} />
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-brand-line rounded bg-brand-bg px-3 py-2">
           <div>
             <p className="text-sm font-medium text-brand-ink">Smart fill</p>
@@ -70,15 +115,20 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                         {review?.source && <p className="mb-1 text-xs text-brand-muted">{suggestionOriginLabel(review.source)}</p>}
                         {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><span>{suggestionConfidenceLabel(review)}</span>{review.needsReview ? <button type="button" disabled={saving} className="rounded border border-brand-line px-2 py-1" onClick={() => setReviewedValues((prev) => ({ ...prev, [question.key]: value }))}>Confirm {question.label}</button> : <span className="text-brand-green">Reviewed</span>}</div>}
                         {question.value_kind === 'checkbox' ? (
-                          <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => setAnswer(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
+                          <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => updateValue(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
+                        ) : (question.value_kind === 'choice' || question.value_kind === 'radio') && question.options?.length ? (
+                          <select id={inputId} value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass}>
+                            <option value="">Choose {question.label}</option>
+                            {question.options.map((option) => <option key={String(option)} value={option}>{option}</option>)}
+                          </select>
                         ) : question.value_kind === 'multiline' ? (
-                          <textarea id={inputId} rows={3} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
+                          <textarea id={inputId} rows={3} value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         ) : (
-                          <input id={inputId} type="text" value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
+                          <input id={inputId} type="text" value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         )}
                         {review?.present && (
                           <label className={`mt-1 inline-flex items-center gap-2 text-xs ${review.verified ? 'text-brand-green' : 'text-brand-muted'}`}>
-                            <input type="checkbox" aria-label={`Verified: ${question.label}`} checked={Boolean(review.verified)} onChange={() => toggleVerified(question.key)} disabled={saving} className="h-3.5 w-3.5" />
+                            <input type="checkbox" aria-label={`Verified: ${question.label}`} checked={Boolean(review.verified)} onChange={() => toggleValueVerified(question.key, value, review.verified)} disabled={saving} className="h-3.5 w-3.5" />
                             {review.verified ? 'Verified' : 'Verify'}
                           </label>
                         )}
@@ -100,13 +150,12 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
               <button type="button" onClick={() => generateAll()} disabled={generating || saving || !matterId.trim() || !availableMembers.length || allSaved} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">{generating ? 'Generating…' : allPreviewed ? 'Generate all again' : 'Generate all'}</button>
               {failedPreviews.length > 0 && !generating && <button type="button" onClick={() => generateAll(failedPreviews)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed previews</button>}
               <button type="button" onClick={() => saveAll()} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} className="rounded-lg bg-brand-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save all to matter'}</button>
-              <button type="button" onClick={saveAllInBackground} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} title="Queue the saves on the server so you can leave this page" className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">Save all in the background</button>
               {failedSaves.length > 0 && !saving && <button type="button" onClick={() => saveAll(failedSaves)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed saves</button>}
             </div>
           </div>
           {background === 'saving' && <p role="status" className="mt-2 text-xs text-brand-muted">Saving in the background. You can leave this page; the matter's Documents tab shows the packet under "in progress" until every document is saved.</p>}
           {background === 'failed' && session?.last_error && <p role="alert" className="mt-2 text-xs text-brand-rose">{session.last_error}</p>}
-          {session?.id && background !== 'saving' && <p className="mt-2 text-xs text-brand-muted">Your answers are kept for 14 days; resume from the matter's Documents tab.</p>}
+          {session?.id && background !== 'saving' && <p className="mt-2 text-xs text-brand-muted">Your answers are available for 14 days; resume from the matter's Documents tab.</p>}
           <ul className="mt-3 space-y-2">
             {availableMembers.map((member) => {
               const preview = previewOf(member)
@@ -116,7 +165,10 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                 <li key={member.template_id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-brand-line px-3 py-2 text-sm">
                   <span className="min-w-0 flex-1 truncate"><strong>{member.title}</strong> <span className="text-xs text-brand-muted">· {member.output.format.toUpperCase()}{member.resolved_version_no ? ` · v${member.resolved_version_no}` : ''}</span></span>
                   <span role="status" className={`text-xs ${save?.status === 'saved' ? 'text-brand-green' : preview.status === 'failed' || save?.status === 'failed' ? 'text-brand-rose' : 'text-brand-muted'}`}>{state}</span>
-                  {preview.status === 'ready' && preview.blob && <button type="button" onClick={() => window.open(URL.createObjectURL(preview.blob), '_blank', 'noopener')} className="text-xs underline">Open preview</button>}
+                  {preview.status === 'ready' && preview.blob && (member.output.format === 'pdf'
+                    ? <button type="button" onClick={() => setSelectedPreview({ memberId: member.template_id, blob: preview.blob })} className="text-xs underline">Open preview</button>
+                    : <WordPreviewDownload preview={preview} />)}
+                  {preview.status === 'ready' && preview.rendered && <details className="basis-full mt-1"><summary className="cursor-pointer text-xs underline">Review Markdown preview</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-brand-bg p-2 text-xs">{preview.rendered}</pre></details>}
                 </li>
               )
             })}
@@ -139,6 +191,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
           <SendStep key={document.id} matterId={matterId} document={document} savedTarget={buildSavedTarget({ matterId, documentId: document.id, returnTo })} />
         ))}
       </div>
+      {visiblePreview && <PdfPreviewDialog source={visiblePreview.blob} title={selectedMember.title} filename={visiblePreview.filename} onClose={() => setSelectedPreview(null)} />}
     </div>
   )
 }

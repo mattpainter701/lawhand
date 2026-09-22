@@ -36,6 +36,7 @@ from dataclasses import dataclass
 
 from app.services.template_bindings import MANUAL_BINDING, is_item_binding
 from app.services.template_cards import canonical_path, cards, resolve
+from app.services.template_fill_engine import extract_template_variables
 
 #: Ceiling on documents in one set.  A set is a packet a person reviews before
 #: it leaves the firm; past this the review stops being real.
@@ -52,6 +53,7 @@ class TemplateMember:
     template_id: str
     title: str
     variable_schema: dict
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,8 @@ class InterviewQuestion:
     #: The declared binding path, ``""`` when the question is manual.
     binding: str
     appears_in: tuple[DocumentFieldRef, ...]
+    options: tuple[str, ...] = ()
+    manual: bool = False
 
     @property
     def is_shared(self) -> bool:
@@ -98,8 +102,18 @@ def _fillable_fields(member: TemplateMember):
     """
 
     fields = (member.variable_schema or {}).get("fields")
-    if not isinstance(fields, list):
-        return
+    fields = list(fields) if isinstance(fields, list) else []
+    known = {
+        str(field.get("name") or "").strip()
+        for field in fields
+        if isinstance(field, dict)
+    }
+    # Legacy Markdown templates may have placeholders but no saved field map.
+    fields.extend(
+        {"name": name, "required": True}
+        for name in extract_template_variables(member.body or "")
+        if name not in known
+    )
     for field in fields:
         if not isinstance(field, dict):
             continue
@@ -158,9 +172,13 @@ def build_interview(members: list[TemplateMember]) -> list[InterviewQuestion]:
                     "required": bool(field.get("required")),
                     "card": card_ref.card.key if card_ref else "",
                     "binding": binding if binding and binding != MANUAL_BINDING else "",
+                    "manual": binding == MANUAL_BINDING,
                     # A bound question reads better under the card's own wording
                     # than under whichever document happened to be first.
                     "card_label": card_ref.label if card_ref else "",
+                    "options": tuple(field.get("options") or [])
+                    if isinstance(field.get("options"), list)
+                    else (),
                     "refs": [ref],
                 }
                 continue
@@ -175,6 +193,8 @@ def build_interview(members: list[TemplateMember]) -> list[InterviewQuestion]:
             required=merged[key]["required"],
             card=merged[key]["card"],
             binding=merged[key]["binding"],
+            options=merged[key]["options"],
+            manual=merged[key]["manual"],
             appears_in=tuple(merged[key]["refs"]),
         )
         for key in order

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import { getFillSession, getMattersV2, getTemplate, writeFillSession } from '../api'
+import { completeFillSession, getFillSession, getMattersV2, getTemplate } from '../api'
+import useFillDraft from '../components/prepare/useFillDraft'
 import usePrepareFill, { templateHasSigningFields } from '../components/prepare/usePrepareFill'
 import SendStep, { renderIsSendable, savedDocumentFromRender } from '../components/prepare/SendStep'
 import usePrepareSet from '../components/prepare/usePrepareSet'
@@ -24,6 +25,12 @@ async function loadReleaseTemplate(templateId) {
 }
 
 function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const sessionRef = useRef(null)
+  const [restored, setRestored] = useState(!query.sessionId)
+  const [restoreError, setRestoreError] = useState('')
+  const [restoreAttempt, setRestoreAttempt] = useState(0)
   // The hook reports the render response; the matter it was saved to is the
   // one chosen in the body, which the page cannot see until the hook returns.
   const matterRef = useRef(query.matterId || '')
@@ -31,14 +38,51 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   // everything else hands over to the matter's documents.
   const [sendable, setSendable] = useState(null)
   const [sent, setSent] = useState(false)
+  const draftRef = useRef(null)
+  const [completionIssue, setCompletionIssue] = useState('')
+  const [pendingCompletion, setPendingCompletion] = useState(null)
+  const finishSavedDocument = useCallback(async (pending) => {
+    const drained = await draftRef.current?.flush?.()
+    if (drained === false) {
+      setPendingCompletion(pending)
+      setCompletionIssue('Your document was saved, but your latest answers could not be finalized. Retry to finish closing this draft.')
+      return false
+    }
+    const sessionId = pending.sessionId || sessionRef.current?.id
+    if (!sessionId) {
+      setPendingCompletion({ ...pending, sessionId: null })
+      setCompletionIssue('Your document was saved, but this draft could not be closed because its saved answers are still unavailable. Retry to finish closing it.')
+      return false
+    }
+    try {
+      await completeFillSession(sessionId, pending.documentId)
+      setPendingCompletion(null)
+      setCompletionIssue('')
+      return true
+    } catch {
+      setPendingCompletion(pending)
+      setCompletionIssue('Your document was saved, but this draft could not be closed. Retry to finish closing it.')
+      return false
+    }
+  }, [])
+  const beforeSave = useCallback(async () => {
+    const drained = await draftRef.current?.flush?.()
+    if (drained === false) return null
+    return sessionRef.current?.id || null
+  }, [])
   const fill = usePrepareFill({
     template,
     initialMatterId: query.matterId || '',
     folderId: query.folderId || null,
-    onSaved: (res) => {
+    autoFillEnabled: restored,
+    beforeSave,
+    onSaved: async (res) => {
       const matterId = matterRef.current
+      const pending = { sessionId: sessionRef.current?.id, documentId: res?.matter_document_id, res, matterId }
+      if (pending.documentId && !(await finishSavedDocument(pending))) return false
       if (renderIsSendable(res)) setSendable({ matterId, document: savedDocumentFromRender(res) })
       else onSaved(res, matterId)
+      return true
     },
   })
   matterRef.current = fill.matterId
@@ -46,42 +90,53 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   // The values typed here are kept server-side (encrypted) so the page can
   // be closed and resumed from the matter's Documents tab; created on the
   // first value, updated a moment after each change, resumed from `?session=`.
-  const sessionRef = useRef(null)
-  const [restored, setRestored] = useState(!query.sessionId)
   const { setVariables, setVerifiedNames, setMatterId } = fill
   useEffect(() => {
-    if (!query.sessionId) return undefined
+    if (!query.sessionId || query.sessionId === sessionRef.current?.id) return undefined
     let active = true
+    setRestored(false)
+    setRestoreError('')
     getFillSession(query.sessionId)
       .then((value) => {
         if (!active) return
+        if (value.template_id !== template.id) throw new Error('This draft belongs to a different template. Open it from the matter’s Documents tab.')
         sessionRef.current = value
         if (value.answers && Object.keys(value.answers).length) setVariables((prev) => ({ ...prev, ...value.answers }))
         setVerifiedNames(Object.fromEntries((value.verified || []).map((name) => [name, true])))
         if (value.matter_id) setMatterId(value.matter_id)
+        setRestored(true)
       })
-      .catch(() => { /* A missing session starts fresh. */ })
-      .finally(() => { if (active) setRestored(true) })
+      .catch(() => { if (active) setRestoreError('We couldn’t restore your saved answers. Retry before continuing; your draft has not been replaced.') })
     return () => { active = false }
-  }, [query.sessionId, setVariables, setVerifiedNames, setMatterId])
-  const { variables, verifiedNames, matterId, saved } = fill
-  useEffect(() => {
-    if (!restored || !template || saved) return undefined
+  }, [query.sessionId, restoreAttempt, template.id, setVariables, setVerifiedNames, setMatterId])
+  const { variables, verifiedNames, matterId, saved, completionPending } = fill
+  const draftPayload = useMemo(() => {
+    if (!restored || (saved && !completionPending)) return null
     const answers = Object.fromEntries(Object.entries(variables).filter(([, value]) => String(value ?? '').trim()))
-    if (!Object.keys(answers).length && !sessionRef.current) return undefined
-    const timer = setTimeout(() => {
-      writeFillSession({
-        ...(sessionRef.current?.id ? { id: sessionRef.current.id } : {}),
+    if (!Object.keys(answers).length && !sessionRef.current && !matterId.trim()) return null
+    return {
         matter_id: matterId.trim() || null,
         template_id: template.id,
         title: template.title || '',
         versions: { [template.id]: template.published_version_no ?? null },
         answers,
         verified: Object.keys(verifiedNames).filter((name) => verifiedNames[name] && String(variables[name] ?? '').trim()),
-      }).then((value) => { sessionRef.current = value }).catch(() => { /* retried on the next change */ })
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [restored, template, variables, verifiedNames, matterId, saved])
+    }
+  }, [restored, template, variables, verifiedNames, matterId, saved, completionPending])
+  const onDraftCreated = useCallback((id) => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('session') === id) return
+    params.set('session', id)
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }, [navigate, location.pathname, location.search])
+  const draft = useFillDraft({ payload: draftPayload, sessionRef, onCreated: onDraftCreated })
+  draftRef.current = draft
+  const retryCompletion = async () => {
+    if (!pendingCompletion || !(await finishSavedDocument(pendingCompletion))) return
+    fill.setCompletionPending(false)
+    if (renderIsSendable(pendingCompletion.res)) setSendable({ matterId: pendingCompletion.matterId, document: savedDocumentFromRender(pendingCompletion.res) })
+    else onSaved(pendingCompletion.res, pendingCompletion.matterId)
+  }
   const steps = prepareSteps({
     template,
     matterId: fill.matterId,
@@ -94,7 +149,10 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   return (
     <>
       <PrepareStepper steps={steps} />
-      {sendable ? (
+      {!restored ? (
+        restoreError ? <div role="alert" className="rounded border border-brand-rose/30 p-3 text-sm"><p>{restoreError}</p><button type="button" onClick={() => setRestoreAttempt(value => value + 1)} className="mt-2 rounded border border-brand-line px-3 py-2">Retry restoring answers</button></div>
+          : <p role="status">Restoring your answers…</p>
+      ) : sendable ? (
         <SendStep
           matterId={sendable.matterId}
           document={sendable.document}
@@ -102,15 +160,24 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
           onSent={() => setSent(true)}
         />
       ) : (
-        <PrepareDocumentBody fill={fill} template={template} matters={matters} matterLoading={matterLoading} layout="page" />
+        <>
+          {completionIssue && <div role="alert" className="rounded border border-brand-rose/30 p-3 text-sm">
+            <p>{completionIssue}</p>
+            {pendingCompletion?.res?.download_url && <a className="mt-2 inline-block underline" href={pendingCompletion.res.download_url}>Open the saved document</a>}
+            {pendingCompletion && <button type="button" className="ml-3 underline" onClick={retryCompletion}>Retry closing this draft</button>}
+          </div>}
+          {draft.status === 'error' ? <div role="alert" className="rounded border border-brand-rose/30 p-3 text-sm">Your latest answers haven’t been saved. Keep this page open. <button type="button" className="underline" onClick={draft.retry}>Retry saving answers</button></div>
+            : draft.status !== 'idle' && <p role="status" className="text-xs text-brand-muted">{draft.status === 'saved' ? 'Answers saved · available from this matter for 14 days' : 'Saving answers…'}</p>}
+          <PrepareDocumentBody fill={fill} template={template} matters={matters} matterLoading={matterLoading} layout="page" />
+        </>
       )}
     </>
   )
 }
 
 // A set: one interview, many documents, saved one at a time from here.
-function PrepareSet({ query, matters, matterLoading }) {
-  const prep = usePrepareSet({ setId: query.setId, initialMatterId: query.matterId || '', folderId: query.folderId || null, sessionId: query.sessionId || null })
+function PrepareSet({ query, matters, matterLoading, onSessionCreated }) {
+  const prep = usePrepareSet({ setId: query.setId, initialMatterId: query.matterId || '', folderId: query.folderId || null, sessionId: query.sessionId || null, onSessionCreated })
   const anyPdfSigning = prep.availableMembers.some((member) => member.output?.format === 'pdf')
   const steps = prepareSteps({
     template: prep.set ? { title: prep.set.title } : null,
@@ -168,6 +235,12 @@ export default function TemplatePreparePage() {
   const onSaved = useCallback((res, matterId) => {
     navigate(buildSavedTarget({ matterId: String(matterId || query.matterId || '').trim(), documentId: res?.matter_document_id, returnTo: query.returnTo }))
   }, [navigate, query.matterId, query.returnTo])
+  const onPacketSessionCreated = useCallback((id) => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('session') === id) return
+    params.set('session', id)
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+  }, [navigate, location.pathname, location.search])
 
   const backTarget = query.returnTo || (template ? `/templates/${encodeURIComponent(template.id)}/studio` : query.setId ? '/templates/sets' : '/templates')
 
@@ -182,7 +255,7 @@ export default function TemplatePreparePage() {
       {loading && <p role="status" className="text-sm text-brand-muted">Loading the template…</p>}
       {templateError && <p role="alert" className="text-sm text-brand-rose">{templateError}</p>}
       {query.setId && (
-        <PrepareSet key={`${query.setId}:${query.matterId || ''}`} query={query} matters={matters} matterLoading={matterLoading} />
+        <PrepareSet key={`${query.setId}:${query.matterId || ''}`} query={query} matters={matters} matterLoading={matterLoading} onSessionCreated={onPacketSessionCreated} />
       )}
       {!loading && !query.templateId && !query.setId && (
         <section className="rounded-xl border border-brand-line bg-brand-surface-2 p-4 text-sm">

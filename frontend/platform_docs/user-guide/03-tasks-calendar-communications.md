@@ -27,6 +27,12 @@ When you finish work, complete the task promptly. If the work cannot be complete
 
 Use [Calendar](/calendar) for events and deadlines. Confirm the date, time zone, matter, and attendees before saving. A calendar event can remind people when to act, but the underlying task should still explain the required work and owner.
 
+### Reading a new event's save result
+
+After **New Event**, the message distinguishes saving in LawHand from synchronization to a connected calendar. A Zoom meeting can be created without a calendar copy. If Zoom fails after the calendar updates, the message preserves that calendar success. If calendar synchronization is unconfirmed or fails, the local event remains saved; check its result before creating another copy.
+
+The List heading shows the complete displayed date range. It can span two months or cross into a new year.
+
 ### Dragging a task on the calendar
 
 Drag an open task deadline to a different day in Month view, or to an hour column in Day or Week view. Because the same gesture can mean two different things, LawHand asks which one you meant:

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import MatterDocumentFacts from './MatterDocumentFacts'
 import { getMatterDocuments, proposeMatterDocumentFacts, acceptMatterDocumentFact, getMatterDocumentFormSources, readMatterDocumentAgainstForm } from '../../api'
@@ -10,7 +10,10 @@ vi.mock('../../api', () => ({
   getMatterDocumentFormSources: vi.fn(),
   readMatterDocumentAgainstForm: vi.fn(),
 }))
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 beforeEach(() => {
   vi.clearAllMocks()
   getMatterDocuments.mockResolvedValue([{ id: 'source', filename: 'intake.pdf' }])
@@ -135,6 +138,47 @@ it('reads a scan field by field against the form the matter printed', async () =
     value: 'Ada Lovelace',
     replace_existing: false,
   }))
+})
+
+it('shows a normalized timeout message when printed-form reading takes too long', async () => {
+  getMatterDocumentFormSources.mockResolvedValue({ sources: [{ template_id: 't-1', template_title: 'Intake form', version_no: 2 }] })
+  const timeout = new Error('This is taking longer than usual. The server did not respond in time — please try again.')
+  readMatterDocumentAgainstForm.mockRejectedValue(timeout)
+  render(<MatterDocumentFacts matterId="matter" documentId="scan" />)
+  fireEvent.click(screen.getByText('Read details from a document'))
+  await screen.findByLabelText('Printed form')
+  fireEvent.click(screen.getByText('Read against the printed form'))
+  expect(await screen.findByText(timeout.message)).toBeInTheDocument()
+  expect(screen.getByText('Read against the printed form')).toBeInTheDocument()
+})
+
+it('shows progress until a deferred form read succeeds', async () => {
+  let resolveRead
+  readMatterDocumentAgainstForm.mockReturnValue(new Promise(resolve => { resolveRead = resolve }))
+  getMatterDocumentFormSources.mockResolvedValue({ sources: [{ template_id: 't-1', template_title: 'Intake form', version_no: 2 }] })
+  render(<MatterDocumentFacts matterId="matter" documentId="scan" />)
+  fireEvent.click(screen.getByText('Read details from a document'))
+  await screen.findByLabelText('Printed form')
+  fireEvent.click(screen.getByText('Read against the printed form'))
+  expect(screen.getByText('Reading this form can take a few minutes. Keep this page open.')).toBeInTheDocument()
+  await act(async () => { resolveRead({ candidates: [], warnings: ['Finished reading.'] }) })
+  expect(await screen.findByText('Finished reading.')).toBeInTheDocument()
+  expect(screen.queryByText('Reading this form can take a few minutes. Keep this page open.')).not.toBeInTheDocument()
+})
+
+it('drops a stale form read when the document changes', async () => {
+  let resolveRead
+  readMatterDocumentAgainstForm.mockReturnValue(new Promise(resolve => { resolveRead = resolve }))
+  getMatterDocumentFormSources.mockResolvedValue({ sources: [{ template_id: 't-1', template_title: 'Intake form', version_no: 2 }] })
+  const { rerender } = render(<MatterDocumentFacts matterId="matter" documentId="scan" />)
+  fireEvent.click(screen.getByText('Read details from a document'))
+  await screen.findByLabelText('Printed form')
+  fireEvent.click(screen.getByText('Read against the printed form'))
+  rerender(<MatterDocumentFacts matterId="matter" documentId="other-scan" />)
+  await act(async () => { resolveRead({ candidates: [{ target_key: 'client.name', label: 'Stale value', value: 'Ignore me' }], warnings: [] }) })
+  expect(screen.queryByText('Stale value')).not.toBeInTheDocument()
+  expect(screen.queryByText('Reading this form can take a few minutes. Keep this page open.')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Read against the printed form' })).toBeEnabled()
 })
 
 it('sends the unreadable clips to AI only when the reviewer opts in', async () => {

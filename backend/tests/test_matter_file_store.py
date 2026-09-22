@@ -18,6 +18,17 @@ from app.services.matter_file_store import (
 )
 
 
+def _mock_http_client(monkeypatch, handler):
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(handler)
+
+    def client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(store_module.httpx, "AsyncClient", client)
+
+
 def _document(
     tenant_id: str,
     *,
@@ -286,6 +297,111 @@ async def test_explicit_primary_cloud_fails_closed_without_local_or_cross_cloud_
     assert not (
         tmp_path / tenant_id / "matters" / "matter-1" / "documents" / "agreement.pdf"
     ).exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 503])
+async def test_google_lookup_failure_does_not_start_upload(monkeypatch, status_code):
+    requests = []
+
+    async def token(*_args):
+        return "google-token"
+
+    async def no_lock(*_args, **_kwargs):
+        return None
+
+    def handler(request):
+        requests.append(request.method)
+        return httpx.Response(status_code, text="provider failure")
+
+    monkeypatch.setattr(store_module, "_storage_token", token)
+    monkeypatch.setattr(MatterFileStore, "_lock_write_binding", no_lock)
+    _mock_http_client(monkeypatch, handler)
+
+    result = await MatterFileStore()._try_store_google_drive(
+        db=object(),
+        tenant_id="tenant-a",
+        matter_slug="matter-1",
+        category="documents",
+        filename="agreement.pdf",
+        content=b"content",
+        content_type="application/pdf",
+        folder_id="parent-1",
+    )
+
+    assert result is not None
+    assert result.error
+    assert requests == ["GET"]
+
+
+@pytest.mark.asyncio
+async def test_google_lookup_transport_failure_does_not_start_upload(monkeypatch):
+    requests = []
+
+    async def token(*_args):
+        return "google-token"
+
+    async def no_lock(*_args, **_kwargs):
+        return None
+
+    def handler(request):
+        requests.append(request.method)
+        raise httpx.ConnectError("temporary lookup failure", request=request)
+
+    monkeypatch.setattr(store_module, "_storage_token", token)
+    monkeypatch.setattr(MatterFileStore, "_lock_write_binding", no_lock)
+    _mock_http_client(monkeypatch, handler)
+
+    result = await MatterFileStore()._try_store_google_drive(
+        db=object(),
+        tenant_id="tenant-a",
+        matter_slug="matter-1",
+        category="documents",
+        filename="agreement.pdf",
+        content=b"content",
+        content_type="application/pdf",
+        folder_id="parent-1",
+    )
+
+    assert result is not None
+    assert result.error == "Google Drive file lookup did not complete"
+    assert requests == ["GET"]
+
+
+@pytest.mark.asyncio
+async def test_google_empty_lookup_proceeds_to_upload(monkeypatch):
+    requests = []
+
+    async def token(*_args):
+        return "google-token"
+
+    async def no_lock(*_args, **_kwargs):
+        return None
+
+    def handler(request):
+        requests.append(request.method)
+        if request.method == "GET":
+            return httpx.Response(200, json={"files": []})
+        return httpx.Response(200, json={"id": "item-1", "parents": ["parent-1"]})
+
+    monkeypatch.setattr(store_module, "_storage_token", token)
+    monkeypatch.setattr(MatterFileStore, "_lock_write_binding", no_lock)
+    _mock_http_client(monkeypatch, handler)
+
+    result = await MatterFileStore()._try_store_google_drive(
+        db=object(),
+        tenant_id="tenant-a",
+        matter_slug="matter-1",
+        category="documents",
+        filename="agreement.pdf",
+        content=b"content",
+        content_type="application/pdf",
+        folder_id="parent-1",
+    )
+
+    assert result is not None
+    assert result.provider_item_id == "item-1"
+    assert requests == ["GET", "POST"]
 
 
 @pytest.mark.asyncio

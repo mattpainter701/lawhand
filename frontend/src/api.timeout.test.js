@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLongRunningPath, LONG_REQUEST_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from './api'
+import api, { isLongRunningPath, LONG_REQUEST_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from './api'
 
 describe('request deadlines', () => {
   it('keeps bounded list and query calls on the short deadline', () => {
@@ -24,6 +24,7 @@ describe('request deadlines', () => {
       '/billing/invoices/i1/export',
       '/intake/dashboard/calls/export',
       '/matters/m1/documents/d1/revisions',
+      '/matters/m1/documents/d1/facts/from-form',
     ]) {
       expect(isLongRunningPath(path)).toBe(true)
     }
@@ -41,5 +42,20 @@ describe('request deadlines', () => {
 
   it('leaves the long deadline well clear of the short one', () => {
     expect(LONG_REQUEST_TIMEOUT_MS).toBeGreaterThan(REQUEST_TIMEOUT_MS)
+  })
+
+  it('applies the long deadline to an actual printed-form request', async () => {
+    const previousAdapter = api.defaults.adapter
+    let requestConfig
+    api.defaults.adapter = async (config) => {
+      requestConfig = config
+      return { data: { candidates: [] }, status: 200, statusText: 'OK', headers: {}, config, request: {} }
+    }
+    try {
+      await api.post('/matters/m1/documents/d1/facts/from-form', { template_id: 't1' })
+    } finally {
+      api.defaults.adapter = previousAdapter
+    }
+    expect(requestConfig.timeout).toBe(LONG_REQUEST_TIMEOUT_MS)
   })
 })

@@ -736,14 +736,14 @@ class MatterFileStore:
             status = (metadata or {}).get("_status")
             if status == "failed":
                 raise MatterFileStoragePolicyError(
-                    "Matter folder provisioning failed. Retry provisioning in File Shares before uploading."
+                    "Matter folder setup failed. Check or reconnect the cloud connection, then open the matter's Documents > Document tools, choose folder setup, and retry. No file was stored."
                 )
             if status != "provisioning":
                 return metadata
             if attempt < 10:
                 await asyncio.sleep(0.5)
         raise MatterFileStoragePolicyError(
-            "Matter folders are still being prepared. Retry this upload shortly; no file was stored."
+            "Matter folders are still being prepared. Check or reconnect the cloud connection if needed, then open the matter's Documents > Document tools, choose folder setup, and retry shortly. No file was stored."
         )
 
     async def _lock_write_binding(
@@ -1171,12 +1171,26 @@ class MatterFileStore:
                         "includeItemsFromAllDrives": True,
                     },
                 )
-                if resp.status_code == 200:
-                    files = resp.json().get("files", [])
-                    return files[0] if files else None
-        except Exception:
-            pass
-        return None
+                if resp.status_code != 200:
+                    if resp.status_code == 429:
+                        raise ProviderThrottled(
+                            "Google Drive file lookup was throttled",
+                            status_code=resp.status_code,
+                        )
+                    raise ProviderError(
+                        f"Google Drive file lookup failed with HTTP {resp.status_code}",
+                        status_code=resp.status_code,
+                    )
+                files = resp.json().get("files", [])
+                return files[0] if files else None
+        except (ProviderError, ProviderThrottled):
+            raise
+        except httpx.HTTPError as exc:
+            raise ProviderError("Google Drive file lookup did not complete") from exc
+        except Exception as exc:
+            raise ProviderError(
+                "Google Drive file lookup returned invalid data"
+            ) from exc
 
     async def _upload_large_google_drive(
         self,

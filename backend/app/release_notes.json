@@ -2,6 +2,127 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.05",
+      "version": "2026.09.22.05",
+      "title": "Reliable packet saves and clearer form review",
+      "published_at": "2026-09-22",
+      "summary": "Packet saves keep each document's result when you return. Form review distinguishes required answers and optional blanks, and Cloud Search can target a source and filename.",
+      "highlights": [
+        {
+          "title": "See which answers are required",
+          "description": "Sample-fill counts update as you type. Required and optional filters separate unanswered questions, and unlabelled source fields explain when to check the PDF."
+        },
+        {
+          "title": "Review each suggested answer once",
+          "description": "Verifying an answer clears its review step and survives reopening a packet. Changing the answer or unchecking verification requires a fresh review."
+        },
+        {
+          "title": "Search the source you intended",
+          "description": "Choose OneDrive, Google Drive, SharePoint or email sources when testing cloud search. Exact phrase matching keeps a filename from becoming unrelated common-word results."
+        },
+        {
+          "title": "Find the right recovery step",
+          "description": "Document folder errors point to the matter's Document tools and explain when to check the cloud connection. Failed saves clearly say no file was stored."
+        },
+        {
+          "title": "Keep packet save results",
+          "description": "One save action records each document's result and can continue after you leave. Reopening shows saved files; retries keep recorded successes."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.22.04",
+      "version": "2026.09.22.04",
+      "title": "Clear calendar results and safer shortcuts",
+      "published_at": "2026-09-22",
+      "summary": "Calendar list headings show the full displayed range. New event messages distinguish saving in LawHand, calendar synchronization and Zoom meeting creation.",
+      "highlights": [
+        {
+          "title": "Know which dates you are viewing",
+          "description": "The calendar list names its complete date range, including when it crosses into another year."
+        },
+        {
+          "title": "Understand what saved",
+          "description": "New event messages separate local saves, calendar updates and Zoom meetings. A Zoom failure preserves a successful calendar update."
+        },
+        {
+          "title": "Keep typing and confirming safely",
+          "description": "The new-conversation shortcut stays inactive while you edit text, compose input or use a confirmation dialog."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.22.03",
+      "version": "2026.09.22.03",
+      "title": "Visible PDF previews and simpler reconnection",
+      "published_at": "2026-09-22",
+      "summary": "Sample and packet PDFs open inside LawHand for review. Personal Microsoft and Google connections return you to Calendar with a clear result.",
+      "highlights": [
+        {
+          "title": "Return to your calendar",
+          "description": "Connecting your own account brings you back to Calendar, including when you cancel or need to retry. You do not need administrator access."
+        },
+        {
+          "title": "Find the reconnect control",
+          "description": "Open Calendar and choose Connect Calendar to reconnect your own account. Cloud status and help instructions now use that same path."
+        },
+        {
+          "title": "See the preview you requested",
+          "description": "Sample and packet PDF previews open in a page viewer with zoom and page controls. Source loading and errors are visible, and Word packet previews offer a clearly labeled download."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.22.02",
+      "version": "2026.09.22.02",
+      "title": "Reliable document completion and cloud tools",
+      "published_at": "2026-09-22",
+      "summary": "Saved documents close their drafts, packet dropdowns show usable suggestions, and printed-form reading has clearer progress. Microsoft search and the profile page are more reliable.",
+      "highlights": [
+        {
+          "title": "Let form reading finish",
+          "description": "Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them."
+        },
+        {
+          "title": "Microsoft search requests repaired",
+          "description": "File and mail searches use separate supported requests and respect the sources you selected."
+        },
+        {
+          "title": "Profile stays available",
+          "description": "Time-entry totals no longer stop the profile page from opening."
+        },
+        {
+          "title": "Close a draft after saving",
+          "description": "A saved document leaves your in-progress list. If closing the draft needs a retry, the saved document is kept and the retry does not create another copy."
+        },
+        {
+          "title": "Usable packet choices",
+          "description": "State abbreviations match available options; unmatched suggestions stay missing. The intake sample no longer prints formatting marks around its questions."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.22.01",
+      "version": "2026.09.22.01",
+      "title": "Fill from a matter and keep your progress",
+      "published_at": "2026-09-22",
+      "summary": "Sample forms can use existing matter details, with a PDF preview beside the answers. Preparing documents also gets more reliable draft recovery, complete packet questions, and clearer cloud connection status.",
+      "highlights": [
+        {
+          "title": "Start with the matter",
+          "description": "Search by client, matter name or number to fill a sample from existing details. Review missing answers and preview the filled PDF before downloading."
+        },
+        {
+          "title": "Reliable drafts and packets",
+          "description": "Prepare restores answers and verified fields before refreshing matter data. Packets include Markdown questions, choice controls and a preview of each document."
+        },
+        {
+          "title": "Clearer forms and connection status",
+          "description": "Intake choices keep their question text. Fee-agreement labels identify each signer, source defaults are visible, and storage status shows connections needing attention."
+        }
+      ]
+    },
+    {
       "id": "2026.09.21.01",
       "version": "2026.09.21.01",
       "title": "Search inside a matter's documents",

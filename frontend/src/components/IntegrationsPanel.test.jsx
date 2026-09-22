@@ -174,7 +174,7 @@ describe('ProviderCard states', () => {
     expect(screen.getByText('Firm-wide connection')).toBeInTheDocument()
     const users = screen.getByTestId('user-tokens-google')
     expect(within(users).getByText(/2 of 3 connected/)).toBeInTheDocument()
-    expect(within(users).getByText(/1 need to reconnect from their own profile/)).toBeInTheDocument()
+    expect(within(users).getByText(/1 need to open Calendar and choose Connect Calendar/)).toBeInTheDocument()
   })
 
   it('renders directory sync as a tier statement, not a failure, and hides Sync now', () => {
@@ -308,6 +308,22 @@ describe('IntegrationsPanel actions', () => {
     expect(await screen.findByText('Integrations: Needs Attention')).toBeInTheDocument()
     expect(screen.getByText('Reconnect Required')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(/re-authorize/i)
+  })
+
+  it('does not report configured OneDrive as ready when Microsoft needs reconnection', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      microsoft: {
+        ...disconnected('microsoft'),
+        connected: true,
+        health: 'refresh_failed',
+        missing_required: [],
+      },
+    }))
+    getAdminSettings.mockResolvedValue({ primary_cloud_provider: 'onedrive' })
+    render(<IntegrationsPanel />)
+    expect((await screen.findAllByText(/Reconnect Microsoft 365 before saving matter documents to Microsoft OneDrive/)).length).toBe(2)
+    await userEvent.setup().click(screen.getByText('Document storage'))
+    expect(screen.getByText('Matter document storage is not ready.')).toBeInTheDocument()
   })
 })
 

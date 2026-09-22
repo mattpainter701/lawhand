@@ -11,7 +11,7 @@ import {
   closeConflictCheck,
   createConflictCheck,
   downloadConflictCheckReport,
-  getMyMatters,
+  getMyMattersPage,
   listConflictChecks,
 } from '../api'
 import {
@@ -63,7 +63,7 @@ export default function ConflictChecksPage() {
     try {
       const [history, assignedMatters] = await Promise.all([
         listConflictChecks(),
-        getMyMatters().catch(() => []),
+        getMyMattersPage({ page: 1, page_size: 200 }).catch(() => ({ items: [] })),
       ])
       const items = history?.items || []
       setRecords(items)

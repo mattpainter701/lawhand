@@ -141,6 +141,7 @@ const LONG_REQUEST_PATTERNS = [
   /\/preview-render(\/|$)/,
   /\/analyze(\/|$)/,
   /\/revisions(\/|$)/,
+  /\/facts\/from-form(\/|$)/,
 ]
 
 export const isLongRunningPath = (url) => (
@@ -797,6 +798,8 @@ export const updateSeatCount = (count) =>
 // Integrations & Permissions
 export const getIntegrationsHealth = () =>
   api.get('/admin/integrations/health').then((r) => r.data)
+export const getStorageReadiness = () =>
+  api.get('/integrations/storage-readiness').then((r) => r.data)
 export const getIntegrationReadiness = () =>
   api.get('/admin/integrations/readiness').then((r) => r.data)
 export const getAdminPermissions = () =>
@@ -2438,6 +2441,9 @@ export const getSampleTemplate = (id) =>
 export const getSampleTemplateSource = (id) =>
   api.get(`/templates/library/${id}/source`, { responseType: 'blob' }).then(r => r.data)
 
+export const previewSampleTemplateSmartFill = (id, data) =>
+  api.post(`/templates/library/${id}/smart-fill-preview`, data).then(r => r.data)
+
 export const renderSampleTemplateFile = (id, data) =>
   api.post(`/templates/library/${id}/render-file`, data, { responseType: 'blob' }).then((r) => {
     const disposition = r.headers?.['content-disposition'] || ''
@@ -2540,6 +2546,8 @@ export const getFillSession = (id) =>
   api.get(`/fill-sessions/${id}`).then(r => r.data)
 export const abandonFillSession = (id) =>
   api.delete(`/fill-sessions/${id}`).then(r => r.data)
+export const completeFillSession = (id, matterDocumentId) =>
+  api.post(`/fill-sessions/${id}/complete`, { matter_document_id: matterDocumentId }).then(r => r.data)
 export const renderFillSession = (id, data) =>
   api.post(`/fill-sessions/${id}/render`, data).then(r => r.data)
 export const getMatterFillSessions = (matterId) =>
@@ -2612,6 +2620,8 @@ export const reopenMatter = (id) =>
   api.post(`/matters/${id}/reopen`).then((r) => r.data)
 export const getMyMatters = () =>
   api.get('/matters/my').then(r => r.data)
+export const getMyMattersPage = (params = {}) =>
+  api.get('/matters/my/page', { params }).then(r => r.data)
 export const getMatterStats = () =>
   api.get('/matters/stats').then(r => r.data)
 

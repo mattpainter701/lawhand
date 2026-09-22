@@ -65,6 +65,14 @@ PAGE_WIDTH, PAGE_HEIGHT = letter
 MARGIN = 54.0
 BODY = ("Helvetica", 9.0)
 BODY_BOLD = ("Helvetica-Bold", 9.0)
+
+
+def _plain_tooltip(text: str) -> str:
+    """Remove authoring-only emphasis markers from PDF accessibility labels."""
+
+    return text.replace("**", "")
+
+
 LEADING = 12.0
 LABEL_SIZE = 6.8
 BOX_HEIGHT = 13.0
@@ -328,7 +336,7 @@ class Sheet:
         self.canvas.acroForm.textfield(
             name=entry.name,
             value=entry.default,
-            tooltip=entry.label,
+            tooltip=_plain_tooltip(entry.label),
             x=x,
             y=y,
             width=width,
@@ -395,7 +403,7 @@ class Sheet:
             self.placed.append(entry.name)
             self.canvas.acroForm.checkbox(
                 name=entry.name,
-                tooltip=entry.label,
+                tooltip=_plain_tooltip(entry.label),
                 x=x,
                 y=self.y,
                 size=CHECK_SIZE,
@@ -439,7 +447,7 @@ class Sheet:
             self.canvas.acroForm.radio(
                 name=name,
                 value=choice.value,
-                tooltip=label,
+                tooltip=_plain_tooltip(label),
                 selected=False,
                 x=x,
                 y=self.y,
@@ -1046,15 +1054,15 @@ FEE_AGREEMENT = LibraryForm(
         ),
         SIGN("Client signature"),
         ROW(
-            Field("client_name", "Printed name", "client.name", 2.0),
+            Field("client_name", "Client printed name", "client.name", 2.0),
         ),
         SIGN("Additional client signature, if any"),
         ROW(
-            Field("co_client_name", "Printed name", "", 2.0),
+            Field("co_client_name", "Additional client printed name", "", 2.0),
         ),
         SIGN("Attorney signature, for the Firm"),
         ROW(
-            Field("attorney_name", "Printed name", "attorney.name", 1.6),
+            Field("attorney_name", "Attorney printed name", "attorney.name", 1.6),
             Field("firm_name", "Firm", "firm.name", 1.6),
         ),
     ),
@@ -1108,14 +1116,14 @@ PROSPECTIVE_INTAKE = LibraryForm(
             ),
             3,
         ),
-        CHECKS(
-            "**Is it safe and confidential for us to contact you using the "
-            "information above?**",
+        RADIO(
+            "Is it safe and confidential for us to contact you using the "
+            "information above?",
+            "safe_contact",
             (
-                Field("safe_contact_yes", "Yes"),
-                Field("safe_contact_no", "No"),
+                Choice("yes", "Yes"),
+                Choice("no", "No"),
             ),
-            2,
         ),
         ROW(
             Field(
@@ -1186,14 +1194,14 @@ PROSPECTIVE_INTAKE = LibraryForm(
             )
         ),
         H2("Existing court case"),
-        CHECKS(
-            "**Has a court case already been filed?**",
+        RADIO(
+            "Has a court case already been filed?",
+            "existing_case",
             (
-                Field("existing_case_yes", "Yes"),
-                Field("existing_case_no", "No"),
-                Field("existing_case_unsure", "Unsure"),
+                Choice("yes", "Yes"),
+                Choice("no", "No"),
+                Choice("unsure", "Unsure"),
             ),
-            3,
         ),
         ROW(
             Field("court", "Court / county", "matter.court", 1.8),
@@ -1202,15 +1210,15 @@ PROSPECTIVE_INTAKE = LibraryForm(
             Field("next_hearing_date", "Next hearing or court date", "", 1.4),
         ),
         H2("Deadlines and urgent issues"),
-        CHECKS(
-            "**Are you aware of any hearing, filing deadline, statute of limitations, "
-            "response deadline, or other date requiring immediate attention?**",
+        RADIO(
+            "Are you aware of any hearing, filing deadline, statute of limitations, "
+            "response deadline, or other date requiring immediate attention?",
+            "urgent_deadline",
             (
-                Field("urgent_deadline_yes", "Yes"),
-                Field("urgent_deadline_no", "No"),
-                Field("urgent_deadline_unsure", "Unsure"),
+                Choice("yes", "Yes"),
+                Choice("no", "No"),
+                Choice("unsure", "Unsure"),
             ),
-            3,
         ),
         BLOCK(
             Field(
@@ -1219,39 +1227,39 @@ PROSPECTIVE_INTAKE = LibraryForm(
                 lines=3,
             )
         ),
-        CHECKS(
-            "**Have you been served with court papers or other legal documents?**",
+        RADIO(
+            "Have you been served with court papers or other legal documents?",
+            "served",
             (
-                Field("served_yes", "Yes"),
-                Field("served_no", "No"),
+                Choice("yes", "Yes"),
+                Choice("no", "No"),
             ),
-            2,
         ),
         ROW(
             Field("date_served", "If yes, date served", "", 1.2),
             Field("served_document_type", "What you were served with", "", 2.0),
         ),
         H2("Current or previous attorneys"),
-        CHECKS(
-            "**Are you currently represented by another attorney regarding this "
-            "matter?**",
+        RADIO(
+            "Are you currently represented by another attorney regarding this "
+            "matter?",
+            "currently_represented",
             (
-                Field("currently_represented_yes", "Yes"),
-                Field("currently_represented_no", "No"),
+                Choice("yes", "Yes"),
+                Choice("no", "No"),
             ),
-            2,
         ),
         ROW(
             Field("current_attorney_firm", "If yes, attorney or firm", "", 3.0),
         ),
-        CHECKS(
-            "**Have you previously consulted or retained another attorney regarding "
-            "this matter?**",
+        RADIO(
+            "Have you previously consulted or retained another attorney regarding "
+            "this matter?",
+            "prior_counsel_status",
             (
-                Field("prior_counsel_yes", "Yes"),
-                Field("prior_counsel_no", "No"),
+                Choice("yes", "Yes"),
+                Choice("no", "No"),
             ),
-            2,
         ),
         BLOCK(
             Field(
