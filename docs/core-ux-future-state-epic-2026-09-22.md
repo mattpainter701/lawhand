@@ -72,6 +72,15 @@ Agreed interface constraints from the document owner:
 
 Coordination is event-driven: share proposed interface changes and conflicting file ownership before implementation; send exact PR/commit links when a dependency lands; jointly validate matter → document work → return/status using synthetic records. Each owner keeps a separate branch/worktree and owns their tests. This draft changes documentation only and does not authorize edits in the document owner's active worktree.
 
+### Reported follow-ups awaiting core UX validation
+
+The document owner reported these observations on 22 September 2026. This task has not independently reproduced them. They inform F1/F6/F8 and remain unscheduled; they do not expand the estimated core implementation scope.
+
+- **Personal cloud recovery:** the current refresh entry is Calendar → Connect Calendar, while personal OAuth callbacks reportedly return users to the admin Cloud area. The document task owns a narrow routing/recovery fix. Core UX should later validate discoverability, personal-versus-firm scope, and returning users to the work that required reconnection. Do not duplicate that routing work or claim it has landed without its PR/acceptance evidence.
+- **Cloud Search feedback:** the admin surface reportedly exposes “Live RAG,” raw SEARCH PLAN JSON and uniform numeric scores; broadly matching mail crowded a synthetic filename query. First reproduce with permission-scoped synthetic records and agree the expected results. Future core UX can explain which sources were searched, incomplete coverage, result type and available next actions in ordinary language, with technical diagnostics placed separately. Query interpretation, source weighting and ranking changes require the search owner's agreement and relevance checks; uniform scores alone do not prove the underlying ranking is defective.
+
+These observations are separate from UX-10's proposed matter/client/contact search. They do not authorize broad document-content search, a search-engine rewrite, or changes to the active document release.
+
 ## Scope and boundaries
 
 Included: My Matters, matter overview, Tasks, Calendar, Clients & CRM, the existing Intake handoff, and their shared navigation/preferences. Keep colors, typography, component vocabulary, data models, and established routes wherever possible.
