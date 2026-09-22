@@ -36,6 +36,8 @@ The brief and the parity audit answer *what features exist* and *what LawHand ha
 | Clio | "North of 150,000 customers across 130 countries" | LawNext | 2024-09-17 | Medium `[ED]` |
 | Clio | Surpassed US$500M ARR | LawNext | 2026-05-13 | Medium-High `[ED]` |
 | Clio | $3B valuation (2024); vLex acquired ~$1B at $5B (Nov 2025) | Wikipedia (cites TechCrunch/WSJ) | page edited 2026-06 | Medium `[ED]` |
+| Clio | Series G US$500M at US$5B (Nov 2025); vLex closed at US$1B | Clio press (Wayback) | 2025-11-10 | Medium-High `[ED]` |
+| Filevine | ~6,000 customers, ~100,000 legal professionals; US$400M raised across two 2025 rounds | LawNext | 2025-09-23 | Medium `[ED]` |
 | MyCase | "19,000+" firms | mycase.com | undated, retrieved 2026-09-22 | Low (marketing) |
 | Smokeball | "34,000+ legal professionals worldwide" | smokeball.com | undated, retrieved 2026-09-22 | Low (marketing) |
 | Filevine | "40M+ matters" | filevine.com | undated, retrieved 2026-09-22 | Low (marketing) |
@@ -46,6 +48,10 @@ The brief and the parity audit answer *what features exist* and *what LawHand ha
 - **ABA 2024 Practice Management TechReport** (published 18 Apr 2025): only **53%** of respondents said case/practice-management software was available at their firm, **down from 63% in 2022**. Reported use among **solos fell 45% → 37%** while firms of **100+ rose 19% → 27%**. Average annual tech spend **$13,991** (vs $14,106 in 2022). `[DATA]` (via Wayback capture)
 - **ABA 2024 Solo & Small Firm TechReport** (21 Apr 2025): document assembly available/used by only **37%** of solos; **39%** of small firms use a CRM (vs 31% cross-firm); **74%** of solos spend under **$3,000/year** on legal software. `[DATA]`
 - **ILTA 2026 Technology Survey** (via LawNext, 14 Sep 2026): 94% of firms using/exploring gen AI. This is AI-tool adoption, **not** practice-management adoption. `[DATA]`
+
+**Cloud adoption and revealed preference** (ABA 2024 Cloud Computing TechReport, published 24 Apr 2025): ~75% of respondents use cloud for work (69% in 2023); solo ~65% vs >94% at 50–99. Asked which cloud tools they use, respondents named Microsoft 365 ~72%, Teams ~63%, Dropbox ~54%, NetDocuments ~17%, **Clio ~15%** and **MyCase ~5%**. `[DATA]` This is the closest available proxy for adoption share, but it counts *usage among cloud-using respondents*, not installed base.
+
+**Conflicting adoption signals — do not average them.** ABA (independent survey) reports practice-management *use* falling among solos (45% → 37%). Clio's own 2025 Solo & Small Firm report claims **79% of solo and 81% of small firms use cloud practice-management**, versus 47% at larger firms `[DOC]` (Clio press, 8 May 2025). Clio's figure is sole-source marketing and is not comparable to ABA's; prefer ABA for planning and treat the Clio figure as an upper bound.
 
 **What the survey data implies `[INF]`:** adoption is *contracting* at the small end, not saturating. Price sensitivity is high and ease-of-use is the binding constraint. A product that is easier to adopt without a configuration project has a larger addressable pool than one that adds enterprise features.
 
@@ -68,6 +74,65 @@ Ratings below are GetApp snapshots of the shared Gartner corpus. See caveats abo
 | Case Master Pro | 5.0 | 19 | — | Client management, automated notices | None listed (all five-star, Aug 2026 — treat as non-representative) |
 
 **G2 and Capterra award data could not be verified** (both 403 and CAPTCHA-blocked). G2 Grid and Capterra Shortlist claims found on vendor pages are **vendor-asserted**, not independently confirmed here. The only directly verified badges are the SoftwareAdvice FrontRunner 2026 set above.
+
+## 2b. Archived review-platform placements (second pass)
+
+Direct G2, Capterra and SoftwareAdvice remain blocked. This second pass read **Internet Archive captures** of the category and product pages. Capture dates are shown; the original pages' own "last updated" dates are noted where visible. GetApp/Capterra/SoftwareAdvice still share one Gartner corpus.
+
+**G2 (via Wayback).** G2's Grid quadrant (Leader/High Performer/Contender/Niche) is a canvas that collapses to a placeholder in archives, so quadrant placement is **not recoverable**; only the "At a Glance" strip and per-product ratings survived. No Momentum Leader or Best Results badge was recoverable.
+
+| Category (capture) | Product | G2 "At a Glance" | Rating | Reviews | Attribute scores |
+| --- | --- | --- | --- | --- | --- |
+| Legal Practice Management (2026-09-07) | Clio Manage | Leader; Easiest to Use; Best Free | 4.6 | 997 | not shown |
+| Legal Practice Management (2026-09-07) | Smokeball | — | 4.7 | 385 | not shown |
+| Legal Practice Management (2026-09-07) | 8am MyCase | — | 4.4 | 393 | not shown |
+| Legal Practice Management (2026-09-07) | Filevine | — | 4.6 | 291 | not shown |
+| Legal Practice Management (2026-09-07) | Lawmatics | — | 4.6 | 245 | not shown |
+| Legal Practice Management (2026-09-07) | PracticePanther | — | 4.3 | 113 | not shown |
+| Legal Practice Management (2026-09-07) | Tabs3 | — | 4.4 | 105 | not shown |
+| Legal Practice Management (2026-09-07) | Actionstep | Highest Performer (2025-11-19 capture) | 3.9 | 14 | not shown |
+| Legal Case Management (2025-06-14) | Clio Manage | Leader; Best Free | 4.6 | 660 | Dashboard 8.6 (avg 8.6); Workflow 8.5; Reporting 8.0 (avg 8.4) |
+| Legal Case Management (2025-06-14) | Filevine | Easiest to Use | 4.7 | 268 | Dashboard 9.2; Workflow 9.1; Reporting 8.9 |
+| Legal Case Management (2025-06-14) | MyCase | — | 4.4 | 298 | Dashboard 8.5; Reporting 7.9 |
+| Legal Document Management (2025-09-16) | Filevine | Leader; Top Trending | 4.7 | 272 | not shown |
+| Legal Document Management (2025-09-16) | Smokeball | Easiest to Use | 4.7 | 337 | not shown |
+| Legal Billing (2023-10-26 — old) | Smokeball | not determinable | 4.8 | 244 | Partner 9.5 / Ease 9.3 / Admin 8.9 / Support 9.7 |
+| Legal Billing (2023-10-26 — old) | Clio | not determinable | 4.6 | 577 | Partner 9.2 / Ease 9.0 / Admin 8.9 / Support 9.2 |
+| Legal Billing (2023-10-26 — old) | MyCase | not determinable | 4.4 | 172 | Partner 8.5 / Ease 9.0 / Admin 8.4 / Support 8.9 |
+
+Notable read: Filevine's archived G2 **Dashboard/Workflow/Reporting scores (9.2/9.1/8.9)** are the highest attribute scores recovered, while Clio's **Reporting (8.0) sits below the category average (8.4)** — consistent with the practitioner complaints in section 4.
+
+**Capterra product pages (via Wayback, Sept 2026).** Ratings match the GetApp snapshot (same corpus). Feature sub-scores are ease-of-use / functionality / customer service.
+
+| Product | Rating | Reviews | Shortlist | Ease / Function / Support | Page updated |
+| --- | --- | --- | --- | --- | --- |
+| Smokeball | 4.76 | 360 | Yes (LPM) | 4.70 / 4.64 / 4.72 | 16 Sep 2026 |
+| PracticePanther | 4.66 | 529 | Yes | 4.65 / 4.48 / 4.60 | 16 Sep 2026 |
+| Clio | 4.65 | 1,746 | Yes | 4.60 / 4.47 / 4.68 | 11 Sep 2026 |
+| MyCase | 4.64 | 807 | Yes | 4.62 / 4.43 / 4.60 | 17 Sep 2026 |
+| Tabs3 | 4.63 | 196 | Yes | 4.42 / 4.50 / 4.71 | 17 Sep 2026 |
+| Lawmatics | 4.56 | 50 | — | not shown | category page 27 Jul 2026 |
+| Filevine | 4.44 | 288 | Yes | 4.43 / 4.39 / 4.28 | 18 Sep 2026 |
+| Centerbase | 4.41 | 61 | — | not shown | 2 Sep 2026 |
+| Rocket Matter | 4.39 | 211 | — | not shown | 16 Sep 2026 |
+| Actionstep | 4.23 | 135 | — | not shown | 9 Sep 2026 |
+
+**SoftwareAdvice FrontRunners 2026 (published 13 Jan 2026; archived 29 Jul 2026)** — final score out of 100, popularity in parentheses:
+
+| Product | Final score (popularity) | Named "Best for" |
+| --- | --- | --- |
+| Clio | 92 (100) | User Interface |
+| Smokeball | 89 (84) | Usability |
+| Assembly Neos | 86 (80) | Integrations |
+| Filevine | 83 (85) | Customization |
+| 8am MyCase | 81 (68) | Quick/Easy Adoption |
+| SmartAdvocate | 81 (60) | Customer Satisfaction |
+| Amberlo | 80 (60) | Mobile app |
+| Litify | 80 (66) | Most Used By Accounting |
+| Tabs3 | 79 (57) | Most Used By Legal Services |
+| PracticePanther | 78 (55) | Most Rated for SMBs |
+
+**Could not retrieve in this pass:** G2 Grid quadrant placement and Momentum Leader badges (canvas not archived); GetApp Category Leaders for legal (no capture after 2020); a standalone Capterra Shortlist page (only on-page badges); any independent legal software market-size estimate.
 
 ## 3. What practitioners actually use and recommend
 
@@ -107,6 +172,7 @@ Ratings below are GetApp snapshots of the shared Gartner corpus. See caveats abo
 ## 6. What this changes for LawHand `[INF]`
 
 - **Adoption is the thesis, not parity.** ABA shows small-firm adoption *falling*; the practitioner consensus is that "nothing works out of the box." The strongest wedge is an arrangement that is useful on first login — which is exactly the epic's P0 (UX-01/UX-02) and its "discoverability before configuration" thesis.
+- **The leaders are shallow, not entrenched.** Even among ABA respondents who use cloud, Clio was named by ~15% and MyCase ~5%, while Microsoft 365 (~72%) dwarfs every legal-specific tool. The incumbents are beatable on adoption, which strengthens the case for shipping ease-of-use before feature parity.
 - **The most-complained-about capabilities are the ones LawHand can fix cheaply.** Tasks needing constant filter changes, no firm-wide docket view, weak reporting, and intake copy-paste map directly to parity gaps G-10/G-11 (task search/queues), G-15 (calendar filters and honest range), G-18/G-21 (CRM handoff and URL filters).
 - **Docketing is the one area with no credible catch-up story in-scope.** The rules-based leaders (LawToolBox, CalendarRules, CompuLaw) are specialists and Clio now owns CalendarRules. This epic already excludes court-rule deadline calculation; the evidence argues for keeping that exclusion explicit and integrating rather than pretending parity.
 - **Trust signals are a differentiator.** Review themes are dominated by billing/contract disputes, migration pain and support quality, not features. Onboarding, honest save/sync messaging (parity G-16) and data portability address the failure modes firms actually report.
@@ -114,6 +180,8 @@ Ratings below are GetApp snapshots of the shared Gartner corpus. See caveats abo
 
 ## 7. Sources and limitations
 
-Primary sources retrieved: LawNext/LawSites (2023–2026), ABA 2024 Practice Management and Solo & Small Firm TechReports, ILTA 2026 survey (via LawNext), Lawyerist 2026 reviews, vendor help/product pages (Clio, Smokeball, Filevine, Actionstep, MyCase, PracticePanther, Lawmatics, Centerbase, Tabs3, LawToolBox, CalendarRules, Aderant), Internet Archive captures of G2 and ABA pages, GetApp/SoftwareAdvice snapshots, and Reddit snippets via Brave search.
+Primary sources retrieved: LawNext/LawSites (2023–2026), ABA 2024 Practice Management, Solo & Small Firm and Cloud Computing TechReports, ILTA 2026 survey (via LawNext), Clio 2024/2025 Legal Trends press pages (Wayback), Lawyerist 2026 reviews, vendor help/product pages (Clio, Smokeball, Filevine, Actionstep, MyCase, PracticePanther, Lawmatics, Centerbase, Tabs3, LawToolBox, CalendarRules, Aderant), Internet Archive captures of G2 category pages (2023–2026), Capterra category and product pages (Sept 2026), the SoftwareAdvice FrontRunners 2026 comparison (archived 29 Jul 2026), GetApp/SoftwareAdvice snapshots, and Reddit snippets via Brave search.
+
+*Second pass (added 22 September 2026):* the archived G2/Capterra/SoftwareAdvice placements in section 2b were retrieved through the Internet Archive because direct fetches return 403/CAPTCHA. G2 Grid quadrant placement and Momentum badges were not recoverable from archives and are deliberately omitted rather than inferred.
 
 **Could not verify:** independent market-share percentages; G2 Grid and Capterra Shortlist badges (403/CAPTCHA); TrustRadius aggregate scores for most products; company financials beyond secondary reporting; exact ABA solo/2–9/10–49 adoption splits (source text internally inconsistent); and any figure marked "undated." Review-platform access should be re-attempted from an interactive browser before any of these numbers are quoted externally.
