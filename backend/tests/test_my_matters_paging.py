@@ -17,7 +17,7 @@ async def _add_assigned_matters(db_session, tenant_id, user_id, count, start=0):
         matter = Matter(
             tenant_id=tenant_id,
             user_id=user_id,
-            slug=f"paging-{start + offset:04d}",
+            slug=f"paging-{uuid.uuid4().hex[:16]}",
             matter_name=f"Paging Matter {start + offset:04d}",
         )
         db_session.add(matter)
