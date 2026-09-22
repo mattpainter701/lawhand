@@ -144,6 +144,9 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         answersRef.current = value.answers || {}
         setAnswers(value.answers || {})
         setVerifiedNames(Object.fromEntries((value.verified || []).map((key) => [key, true])))
+        setReviewedValues(Object.fromEntries((value.verified || [])
+          .filter((key) => fillValue(value.answers?.[key]).trim())
+          .map((key) => [key, fillValue(value.answers[key])])))
         persistDirty.current = false
         if (value.matter_id) setMatterId(value.matter_id)
         if (value.status === 'saving') setBackground('saving')

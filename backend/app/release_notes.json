@@ -14,7 +14,7 @@
         },
         {
           "title": "Review each suggested answer once",
-          "description": "Marking a suggested answer as verified clears it from the review queue. Changing the answer or unchecking verification requires a fresh review of that value."
+          "description": "Verifying an answer clears its review step and survives reopening a packet. Changing the answer or unchecking verification requires a fresh review."
         },
         {
           "title": "Search the source you intended",

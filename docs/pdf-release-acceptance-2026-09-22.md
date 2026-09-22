@@ -80,7 +80,7 @@ time-saving comparison. No customer data was sent to these services.
 | Profile crashes before personal cloud reconnection controls appear | Normalize decimal-string totals before formatting and ignore non-finite values. |
 | Authored intake PDF prints literal emphasis markers around radio prompts | Remove authoring markers from the source prompts and regenerate the PDF and manifest digest without changing its controls. |
 | Optional sample blanks inflate "need attention" | Derive current-answer counts and separate source-declared required blanks from optional blanks. Check manual edits, defaults, unchecked checkboxes and numeric zero. |
-| All values verified but a suggestion still needs review | Checking a suggested value records that exact answer as reviewed in single and packet preparation. Editing or unchecking invalidates the review; no matter fact, approval or delivery is implied. |
+| All values verified but a suggestion still needs review | Checking a suggested value records that exact answer as reviewed in single and packet preparation. A resumed packet restores acknowledgement for saved verified answers even when the interview returns the same suggestion. Editing or unchecking invalidates the review; no matter fact, approval or delivery is implied. |
 | Full filename lookup returns unrelated emails | Preserve literal diagnostic queries and expose source selection. Compare a distinctive QA identifier and its full filename; verify the correct file in the selected provider. |
 | Folder failure points at File Shares, or pending setup implies waiting is enough | Direct recovery to this matter's Documents / Document tools and check cloud reconnection where needed. Preserve the no-file-stored message, draft answers and existing storage guards. |
 

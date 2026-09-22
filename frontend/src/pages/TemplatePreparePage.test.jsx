@@ -501,6 +501,32 @@ describe('the Prepare route', () => {
     await screen.findByText('Every document is saved to the matter.')
   }, 15000)
 
+  it('keeps a reviewed packet suggestion cleared after resuming an answer', async () => {
+    const S = '55555555-5555-4555-8555-555555555555'
+    const A = '66666666-6666-4666-8666-666666666666'
+    const X = '99999999-9999-4999-8999-999999999999'
+    const key = `manual:${A}:client_name`
+    api.getTemplateSet.mockResolvedValue({ id: S, title: 'Packet', items: [{ template_id: A, title: 'Motion', position: 0, resolved_version_no: 1 }] })
+    api.getTemplate.mockResolvedValue({ id: A, title: 'Motion', format: 'markdown', body: '{{client_name}}', is_active: true, variable_schema: { fields: [{ name: 'client_name', binding: '' }] } })
+    api.getTemplateSetInterview.mockResolvedValue({ set_id: S, title: 'Packet', questions: [{ key, label: 'Client name', value_kind: 'text', required: true, card: '', binding: '', appears_in: [{ template_id: A, template_title: 'Motion', field_name: 'client_name', label: 'Client name' }], suggested_value: 'Ada', provenance: { source_type: 'matter_party', confidence: 1 }, review_required: true }], unavailable: [] })
+    api.getFillSession.mockResolvedValue({ id: X, set_id: S, status: 'open', matter_id: M, answers: { [key]: 'Ada' }, verified: [key], members: [] })
+
+    renderAt(`?set=${S}&matter=${M}&session=${X}`)
+    await screen.findByRole('heading', { name: 'Prepare a packet' })
+    const completion = await screen.findByRole('region', { name: 'Document completion' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada'))
+    expect(completion).toHaveTextContent('0 suggestions to review')
+    const verified = screen.getByRole('checkbox', { name: 'Verified: Client name' })
+    expect(verified).toBeChecked()
+    fireEvent.click(verified)
+    await waitFor(() => expect(completion).toHaveTextContent('1 suggestions to review'))
+    fireEvent.click(verified)
+    await waitFor(() => expect(completion).toHaveTextContent('0 suggestions to review'))
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Grace' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Ada' } })
+    await waitFor(() => expect(completion).toHaveTextContent('1 suggestions to review'))
+  })
+
   it('explains itself without a template and reports a load failure', async () => {
     renderAt('')
     expect(await screen.findByText('Choose a template to prepare')).toBeVisible()
