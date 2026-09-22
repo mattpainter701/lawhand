@@ -110,6 +110,14 @@ def _merge_member_statuses(
     return ordered
 
 
+def _member_has_durable_save(member: dict[str, Any] | None) -> bool:
+    """Whether a member has a recorded document that a retry must preserve."""
+
+    return bool(
+        member and member.get("status") == "saved" and member.get("matter_document_id")
+    )
+
+
 def response_for(
     session: DocumentFillSession, *, include_answers: bool
 ) -> FillSessionResponse:
@@ -403,8 +411,6 @@ async def enqueue_render(
         }
         for member in payload.members
     ]
-    session.status = "saving"
-    session.last_error = None
     # Merge onto whatever is already recorded: a retry carries only the members
     # still needed, so entries from an earlier attempt (already saved) are kept
     # rather than wiped when the packet is re-queued.
@@ -412,15 +418,35 @@ async def enqueue_render(
         str(item.get("template_id")): dict(item)
         for item in (session.members_json or [])
     }
-    payload_ids = {member["template_id"] for member in members}
+    pending_members = [
+        member
+        for member in members
+        if not _member_has_durable_save(prior.get(member["template_id"]))
+    ]
+    if not pending_members:
+        # A lost queue acknowledgement can be retried after the worker has
+        # already recorded every requested document. Do not create another
+        # job, which would duplicate non-PDF documents at the render layer.
+        if prior and all(_member_has_durable_save(entry) for entry in prior.values()):
+            session.status = "saved"
+            session.last_error = None
+        else:
+            session.status = "open"
+        await db.commit()
+        await set_tenant_context(db, str(session.tenant_id))
+        await db.refresh(session)
+        return session
+    session.status = "saving"
+    session.last_error = None
+    pending_ids = {member["template_id"] for member in pending_members}
     session.members_json = [
         {
             **prior.get(member["template_id"], {}),
             "template_id": member["template_id"],
             "status": "queued",
         }
-        for member in members
-    ] + [entry for tid, entry in prior.items() if tid not in payload_ids]
+        for member in pending_members
+    ] + [entry for tid, entry in prior.items() if tid not in pending_ids]
     job = await enqueue_job(
         db,
         tenant_id=session.tenant_id,
@@ -436,7 +462,7 @@ async def enqueue_render(
             # values are sealed the same way the session's answers are: the job
             # decrypts them when it runs. Storing them in the clear would outlive
             # the encrypted session and defeat encrypting it.
-            "members_ciphertext": _seal_members(members),
+            "members_ciphertext": _seal_members(pending_members),
         },
     )
     session.job_id = job.id
@@ -520,7 +546,7 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
     for member in members:
         template_id = str(member.get("template_id") or "")
         prior = prior_members.get(template_id) or {}
-        if prior.get("status") == "saved" and prior.get("matter_document_id"):
+        if _member_has_durable_save(prior):
             # A retry of the same job must not render a member it already
             # saved: non-PDF saves are not idempotent at the render layer, so
             # re-running one would file a second copy of the document.

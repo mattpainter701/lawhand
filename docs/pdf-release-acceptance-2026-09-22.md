@@ -83,6 +83,7 @@ time-saving comparison. No customer data was sent to these services.
 | All values verified but a suggestion still needs review | Checking a suggested value records that exact answer as reviewed in single and packet preparation. A resumed packet restores acknowledgement for saved verified answers even when the interview returns the same suggestion. Editing or unchecking invalidates the review; no matter fact, approval or delivery is implied. |
 | Full filename lookup returns unrelated emails | Preserve literal diagnostic queries and expose source selection. Compare a distinctive QA identifier and its full filename; verify the correct file in the selected provider. |
 | Folder failure points at File Shares, or pending setup implies waiting is enough | Direct recovery to this matter's Documents / Document tools and check cloud reconnection where needed. Preserve the no-file-stored message, draft answers and existing storage guards. |
+| Foreground packet saves are absent from a resumed session; a lost non-PDF save response can be retried as a new file | Use one durable session save path, drain answers first, reconcile current server status, and preserve recorded successful members on retry. Test partial failure, lost queue response, blank optional forms and reopening saved results. |
 
 The Microsoft follow-up follows the [Graph Search API limits](https://learn.microsoft.com/en-us/graph/api/resources/search-api-overview?view=graph-rest-1.0): one search request per HTTP call, supported entity combinations, and the smaller message page size. It does not replace reauthorization when Microsoft requires MFA.
 
@@ -92,6 +93,11 @@ Use clearly labeled synthetic QA data. For each cloud provider, save one PDF
 and a mixed packet, find the saved files on the matter, reopen the actual bytes,
 and verify values and layout. Then exercise background packet save and retry.
 Do not change a production workspace's primary provider merely to get a pass.
+
+PDF retries reuse their consumed preview evidence. The packet worker also skips
+recorded successful members. A process crash between a non-PDF document commit
+and the separate member-status commit is not covered by those protections;
+exercise that fault separately before claiming exactly-once non-PDF saves.
 
 The audited workspace's Microsoft grant had an MFA-related refresh failure;
 Google was disconnected. Those require account authorization and are not fixed

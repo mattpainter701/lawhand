@@ -5,16 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.22.05 — Clearer form questions and focused cloud searches
+## 2026.09.22.05 — Reliable packet saves and clearer form review
 
 Released September 22, 2026.
 
-Sample forms distinguish required answers from optional blanks, and verifying a suggested answer clears its review step. Cloud Search lets administrators choose file or email sources and keep a filename together.
+Packet saves keep each document's result when you return. Form review distinguishes required answers and optional blanks, and Cloud Search can target a source and filename.
 
 - **See which answers are required.** Sample-fill counts update as you type. Required and optional filters separate unanswered questions, and unlabelled source fields explain when to check the PDF.
 - **Review each suggested answer once.** Verifying an answer clears its review step and survives reopening a packet. Changing the answer or unchecking verification requires a fresh review.
 - **Search the source you intended.** Choose OneDrive, Google Drive, SharePoint or email sources when testing cloud search. Exact phrase matching keeps a filename from becoming unrelated common-word results.
 - **Find the right recovery step.** Document folder errors point to the matter's Document tools and explain when to check the cloud connection. Failed saves clearly say no file was stored.
+- **Keep packet save results.** One save action records each document's result and can continue after you leave. Reopening shows saved files; retries keep recorded successes.
 
 ## 2026.09.22.04 — Clear calendar results and safer shortcuts
 

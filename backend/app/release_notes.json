@@ -4,9 +4,9 @@
     {
       "id": "2026.09.22.05",
       "version": "2026.09.22.05",
-      "title": "Clearer form questions and focused cloud searches",
+      "title": "Reliable packet saves and clearer form review",
       "published_at": "2026-09-22",
-      "summary": "Sample forms distinguish required answers from optional blanks, and verifying a suggested answer clears its review step. Cloud Search lets administrators choose file or email sources and keep a filename together.",
+      "summary": "Packet saves keep each document's result when you return. Form review distinguishes required answers and optional blanks, and Cloud Search can target a source and filename.",
       "highlights": [
         {
           "title": "See which answers are required",
@@ -23,6 +23,10 @@
         {
           "title": "Find the right recovery step",
           "description": "Document folder errors point to the matter's Document tools and explain when to check the cloud connection. Failed saves clearly say no file was stored."
+        },
+        {
+          "title": "Keep packet save results",
+          "description": "One save action records each document's result and can continue after you leave. Reopening shows saved files; retries keep recorded successes."
         }
       ]
     },

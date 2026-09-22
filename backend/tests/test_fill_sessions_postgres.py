@@ -327,6 +327,25 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     assert statuses[str(bad)] == {"template_id": str(bad), "status": "preview_expired", "detail": "Preview expired; review it again."}
     assert "1 of 2" in row.last_error
 
+    # Retrying after a lost queue acknowledgement carries only the member
+    # that still needs work; the successful member is never rendered again.
+    retry = await fill_sessions.enqueue_render(
+        db_session,
+        owner,
+        session_id,
+        FillSessionRenderRequest(members=[
+            {"template_id": str(good), "variables": {"client_name": "Ada", "other": "x"}, "preview_id": str(preview), "output_format": "pdf", "verified_fields": ["client_name"]},
+            {"template_id": str(bad), "variables": {"client_name": "Ada"}, "preview_id": None, "output_format": "markdown"},
+        ]),
+    )
+    retry_statuses = {item["template_id"]: item for item in retry.members_json}
+    assert retry_statuses[str(good)]["status"] == "saved"
+    assert retry_statuses[str(bad)]["status"] == "queued"
+    retry_job = await db_session.get(DurableJob, retry.job_id)
+    calls.clear()
+    await fill_sessions.run_set_render_job(db_session, retry_job)
+    assert [call[0] for call in calls] == [bad]
+
     # A user who can no longer save documents blocks the job rather than saving as nobody.
     monkeypatch.setattr("app.services.rbac_service.get_user_capabilities", lambda db, user_id: _no_caps())
     # The job row expired with the first run's rollbacks; read it afresh.

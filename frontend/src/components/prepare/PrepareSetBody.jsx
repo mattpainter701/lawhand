@@ -35,7 +35,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
     smartFillState, smartFillMessage, refresh, previewOf, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved, sendable,
-    session, background, saveAllInBackground, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
+    session, background, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
   const clearReviewedValue = (key) => setReviewedValues((prev) => ({ ...prev, [key]: undefined }))
@@ -150,7 +150,6 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
               <button type="button" onClick={() => generateAll()} disabled={generating || saving || !matterId.trim() || !availableMembers.length || allSaved} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">{generating ? 'Generating…' : allPreviewed ? 'Generate all again' : 'Generate all'}</button>
               {failedPreviews.length > 0 && !generating && <button type="button" onClick={() => generateAll(failedPreviews)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed previews</button>}
               <button type="button" onClick={() => saveAll()} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} className="rounded-lg bg-brand-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save all to matter'}</button>
-              <button type="button" onClick={saveAllInBackground} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} title="Queue the saves on the server so you can leave this page" className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">Save all in the background</button>
               {failedSaves.length > 0 && !saving && <button type="button" onClick={() => saveAll(failedSaves)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed saves</button>}
             </div>
           </div>

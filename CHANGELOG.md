@@ -1,5 +1,7 @@
 ## 2026.09.22.05 — Sample answer clarity and focused cloud search
 
+- Packet saving uses one durable session path. The primary Save action records results for resume and completion, drains current answers before queueing, reconciles ambiguous responses and skips recorded successes on retry. Fields stay locked while saving. Non-PDF worker-crash atomicity still requires a separate stress test; this change does not claim exactly-once cloud writes.
+
 - Sample-fill summaries derive from current answers and distinguish source-declared required fields from optional blanks. Missing, Optional and Filled filters use the same control-aware completion rules; unchecked required checkboxes remain missing. No conditional question logic or legal requiredness is inferred.
 - Unusable imported source labels have actionable PDF-review guidance instead of displaying `undefined`, while deterministic field/page labels and original metadata remain intact.
 - Single-document and packet verification now records the exact reviewed answer, clearing its suggestion from the attention queue. Reopening a packet restores review acknowledgement for its saved verified answers. Editing or unchecking removes that review; verification does not approve, deliver or sign a document.
