@@ -11,10 +11,10 @@ Released September 22, 2026.
 
 Sample forms distinguish required answers from optional blanks, and verifying a suggested answer clears its review step. Cloud Search lets administrators choose file or email sources and keep a filename together.
 
-- **See which answers are required.** Sample-fill counts update as you type. Separate missing-required and optional filters help you review the questions that apply.
+- **See which answers are required.** Sample-fill counts update as you type. Required and optional filters separate unanswered questions, and unlabelled source fields explain when to check the PDF.
 - **Review each suggested answer once.** Marking a suggested answer as verified clears it from the review queue. Changing the answer or unchecking verification requires a fresh review of that value.
 - **Search the source you intended.** Choose OneDrive, Google Drive, SharePoint or email sources when testing cloud search. Exact phrase matching keeps a filename from becoming unrelated common-word results.
-- **Understand unlabelled source fields.** Imported fields with unusable source labels show a clear instruction to check the PDF, while preserving their page and field references.
+- **Find the right recovery step.** Document folder errors point to the matter's Document tools and explain when to check the cloud connection. Failed saves clearly say no file was stored.
 
 ## 2026.09.22.04 — Clear calendar results and safer shortcuts
 

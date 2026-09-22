@@ -82,6 +82,7 @@ time-saving comparison. No customer data was sent to these services.
 | Optional sample blanks inflate "need attention" | Derive current-answer counts and separate source-declared required blanks from optional blanks. Check manual edits, defaults, unchecked checkboxes and numeric zero. |
 | All values verified but a suggestion still needs review | Checking a suggested value records that exact answer as reviewed in single and packet preparation. Editing or unchecking invalidates the review; no matter fact, approval or delivery is implied. |
 | Full filename lookup returns unrelated emails | Preserve literal diagnostic queries and expose source selection. Compare a distinctive QA identifier and its full filename; verify the correct file in the selected provider. |
+| Folder failure points at File Shares, or pending setup implies waiting is enough | Direct recovery to this matter's Documents / Document tools and check cloud reconnection where needed. Preserve the no-file-stored message, draft answers and existing storage guards. |
 
 The Microsoft follow-up follows the [Graph Search API limits](https://learn.microsoft.com/en-us/graph/api/resources/search-api-overview?view=graph-rest-1.0): one search request per HTTP call, supported entity combinations, and the smaller message page size. It does not replace reauthorization when Microsoft requires MFA.
 
