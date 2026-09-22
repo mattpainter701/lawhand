@@ -2,6 +2,8 @@
 
 Prepared 22 September 2026 for LawHand's core-workspace refinement epic.
 
+See also the [feature-parity audit](./core-ux-feature-parity-2026-09-22.md) and the [market and review evidence](./core-ux-market-and-review-evidence-2026-09-22.md).
+
 ## What users appear to value
 
 The recurring theme is easy access to related information, predictable places for everyday actions, reduced re-entry, and help when a user gets stuck. Customization is valuable when it accommodates the firm's work; extensive configuration can undermine that value. These are directional findings from selected public reviews and documented workflows, not a representative survey or hands-on testing of competitor accounts.

@@ -53,6 +53,7 @@ Target guardrails: changing a view never changes permissions, matter status, ass
 - Read-only source audit reviewed current implementations and existing tests. No application tests were run because no product code changed. Backend payload persistence and successful provider sync were not tested live.
 - The document-automation task owns active PR #580 and its production acceptance. Its scope and interface constraints are recorded above; document engine, questionnaire and draft fixes are outside this epic.
 - A companion [feature-parity audit](./research/core-ux-feature-parity-2026-09-22.md) (22 September 2026) reads the same source revision and records, for each capability across Matters, Tasks, Calendar, CRM/Intake and navigation, whether LawHand matches, partially supports, lacks or has not yet verified it — and whether a gap is a missing capability or an existing one users struggle to find. It also extends the [competitive research brief](./research/core-ux-competitive-research-2026-09-22.md) with Smokeball, Filevine, Rocket Matter, Actionstep, Centerbase and Lawmatics. Its gap register introduces UX-10 to UX-13 below.
+- A [market and review evidence](./research/core-ux-market-and-review-evidence-2026-09-22.md) companion adds adoption figures (ABA 2024: practice-management availability fell 63% → 53%, solo use 45% → 37%; 74% of solos spend under $3,000/year), review aggregates, and practitioner complaint themes by capability. It is evidence for prioritising the parity gaps; it is not an independent market-share report and states its access limits.
 - Existing UX planning/implementation PRs were inspected as background, particularly #395, #396, #425 and #431. Many old findings are already fixed. Before creating this draft, #395 was confirmed closed/unmerged and #425/#431 merged; current open PRs included #580 (document automation), #578 (ops) and #548 (Google root migration), with no duplicate core UX epic returned. This plan extends current main rather than reviving old branches. Remote branches alone do not prove active ownership.
 
 ## Current UX: what to retain and what to refine
@@ -131,6 +132,7 @@ The [feature-parity audit](./research/core-ux-feature-parity-2026-09-22.md) conf
 - It confirms the scale gaps already assigned to UX-08: the 100-record cap on personal matters and the 200-record task fetch.
 - It adds two P1 stories — UX-10 (global cross-module search) and UX-11 (bulk actions) — and two validated-backlog items (UX-12 recurring/dependent/subtask work; UX-13 saved views). The P1 stories are follow-up release candidates, not part of the two-sprint plan, unless staff sessions show search or bulk work is a blocking failure.
 - It records what must **not** expand this epic: document version history and prepared-document drafts (document-automation owner), stage-entry automation and automatic deadline shifting (excluded), ethical-wall policy authoring (security owner), and CRM-side portal/e-sign actions (document/client-portal owner).
+- The [market and review evidence](./research/core-ux-market-and-review-evidence-2026-09-22.md) reinforces this prioritisation: practitioner complaints cluster on exactly the discoverability gaps this epic targets (constant task-filter changes, no firm-wide docket view, intake copy-paste, weak reporting), while the rules-based docketing leaders are specialists this epic explicitly does not try to match.
 
 ## Delivery backlog
 
@@ -217,7 +219,7 @@ These are product tradeoffs for the collaboration the user requested. No extra p
 
 ## Source map and publication state
 
-See the [competitive research brief](./research/core-ux-competitive-research-2026-09-22.md) for vendor documentation, user-review evidence and limitations, and the [feature-parity audit](./research/core-ux-feature-parity-2026-09-22.md) for the per-capability match/partial/gap register and its source appendix.
+See the [competitive research brief](./research/core-ux-competitive-research-2026-09-22.md) for vendor documentation, user-review evidence and limitations, the [feature-parity audit](./research/core-ux-feature-parity-2026-09-22.md) for the per-capability match/partial/gap register and its source appendix, and the [market and review evidence](./research/core-ux-market-and-review-evidence-2026-09-22.md) for adoption data and practitioner complaint themes.
 
 Current source anchor examples (immutable audit snapshot):
 
@@ -236,4 +238,4 @@ Current source anchor examples (immutable audit snapshot):
 - [Client directory loading](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/frontend/src/pages/ClientsPage.jsx#L140)
 - [Navigation preferences](https://github.com/mattpainter701/lawhand/blob/c4d80b46522e1c2b9436fdc8fae343c9d78db8c9/frontend/src/components/NavigationEditor.jsx)
 
-This documentation draft starts from origin/main at c4d80b46522e1c2b9436fdc8fae343c9d78db8c9 on branch docs/core-ux-future-state-plan, owned by Plan legal platform UX refinement. It adds this epic, its competitive research companion and the feature-parity audit companion only. No application files, migrations, provider settings or customer release notes change. Runtime tests and production acceptance belong to later implementation PRs; the draft must remain open for collaboration without merging or enabling auto-merge.
+This documentation draft starts from origin/main at c4d80b46522e1c2b9436fdc8fae343c9d78db8c9 on branch docs/core-ux-future-state-plan, owned by Plan legal platform UX refinement. It adds this epic and its three research companions (competitive research, feature-parity audit, market and review evidence) only. No application files, migrations, provider settings or customer release notes change. Runtime tests and production acceptance belong to later implementation PRs; the draft must remain open for collaboration without merging or enabling auto-merge.
