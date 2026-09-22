@@ -55,7 +55,7 @@ const savesFromMembers = (members) => Object.fromEntries((members || [])
 // routes, so the preview evidence gate and the save path are exactly what
 // they are for one document. Save-all runs from the browser, one member at a
 // time, because preview evidence is per user.
-export default function usePrepareSet({ setId, initialMatterId = '', folderId = null, sessionId = null }) {
+export default function usePrepareSet({ setId, initialMatterId = '', folderId = null, sessionId = null, onSessionCreated = null }) {
   const [set, setSet] = useState(null)
   const [members, setMembers] = useState([])
   const [interview, setInterview] = useState(null)
@@ -74,6 +74,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const generationRef = useRef(0)
+  const revisionRef = useRef(0)
   const mountedRef = useRef(true)
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
   // The server-side session: created on the first answer, updated a moment
@@ -85,17 +86,37 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   const sessionRef = useRef(null)
   const saveTimer = useRef(null)
   const restoredAnswers = useRef(null)
+  const answersRef = useRef({})
+  const persistInFlight = useRef(null)
+  const persistEpoch = useRef(0)
+  const restoreEpoch = useRef(0)
+  const persistDirty = useRef(false)
+  const persistRevision = useRef(0)
+  const flushRef = useRef(null)
+  const latestPersist = useRef(null)
+  const lastPersistedKey = useRef('')
+  const onSessionCreatedRef = useRef(onSessionCreated)
+  useEffect(() => { onSessionCreatedRef.current = onSessionCreated }, [onSessionCreated])
+  const [restoreAttempt, setRestoreAttempt] = useState(0)
+  const [sessionRestoreError, setSessionRestoreError] = useState('')
+  const [persistError, setPersistError] = useState('')
+  const [persistStatus, setPersistStatus] = useState('idle')
   useEffect(() => {
     if (!sessionId) return undefined
+    if (sessionRef.current?.id === sessionId) return undefined
+    const requestEpoch = restoreEpoch.current
     let active = true
     getFillSession(sessionId)
       .then((value) => {
-        if (!active) return
+        if (!active || restoreEpoch.current !== requestEpoch) return
+        if (String(value.set_id) !== String(setId)) throw new Error('This saved packet belongs to a different template set.')
         sessionRef.current = value
         setSession(value)
         restoredAnswers.current = value.answers || {}
+        answersRef.current = value.answers || {}
         setAnswers(value.answers || {})
         setVerifiedNames(Object.fromEntries((value.verified || []).map((key) => [key, true])))
+        persistDirty.current = false
         if (value.matter_id) setMatterId(value.matter_id)
         if (value.status === 'saving') setBackground('saving')
         else if (value.status === 'saved' || value.status === 'failed') {
@@ -109,11 +130,11 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
         if ((value.members || []).some((member) => member.status === 'preview_expired')) {
           setPreviews((prev) => Object.fromEntries(Object.entries(prev).map(([id, entry]) => [id, (value.members || []).find((member) => member.template_id === id && member.status === 'preview_expired') ? memberState('idle') : entry])))
         }
+        setSessionRestored(true)
       })
-      .catch(() => { /* A missing session starts fresh. */ })
-      .finally(() => { if (active) setSessionRestored(true) })
+      .catch((err) => { if (active && restoreEpoch.current === requestEpoch) setSessionRestoreError(getErrorMessage(err, 'The saved packet could not be restored.')) })
     return () => { active = false }
-  }, [sessionId])
+  }, [sessionId, setId, restoreAttempt])
 
   // The set and each available member's release, once per set.
   useEffect(() => {
@@ -160,55 +181,124 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
       for (const question of response.questions || []) {
         if (question.suggested_value != null && String(question.suggested_value) !== '') suggested[question.key] = fillValue(question.suggested_value)
       }
+      const previousAnswers = answersRef.current
       setAnswers((prev) => {
         const next = { ...prev }
         for (const [key, value] of Object.entries(suggested)) if (!fillValue(next[key]).trim()) next[key] = value
+        answersRef.current = next
         return next
       })
       setVerifiedNames((prev) => {
         const next = { ...prev }
-        for (const key of Object.keys(next)) if (suggested[key] != null && suggested[key] !== fillValue(answers[key])) delete next[key]
+        for (const key of Object.keys(next)) {
+          if (suggested[key] == null) continue
+          if (fillValue(previousAnswers[key]) !== fillValue(answersRef.current[key])) delete next[key]
+        }
         return next
       })
       setSmartFillState(nextMatterId ? 'ready' : 'idle')
       setSmartFillMessage(nextMatterId ? 'Available values refreshed. Your entries were kept.' : '')
+      if (Object.keys(suggested).length) {
+        persistDirty.current = true
+        persistRevision.current += 1
+        setPersistStatus('pending')
+      }
     } catch (err) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generationRef.current !== generation) return
       setSmartFillState('error'); setSmartFillMessage(getErrorMessage(err, 'The interview could not be loaded.'))
     }
   }, [setId])
 
-  useEffect(() => { if (set) loadInterview(matterId.trim()) }, [set, matterId, loadInterview])
+  useEffect(() => { if (set && sessionRestored) loadInterview(matterId.trim()) }, [set, matterId, sessionRestored, loadInterview])
 
   // Persist answers, verified names and the matter a moment after they
   // change. Creating the session lazily means an untouched page leaves no row.
-  const persistSession = useCallback(async () => {
-    // Do not autosave over a session that is running or finished: a save in
-    // flight owns the answers, and re-posting a completed packet would reopen
-    // it and erase the per-document outcomes.
-    if (!set || !sessionRestored || background === 'saving' || background === 'saved') return
+  const flushLatest = useCallback(async () => {
+    // Every caller records a complete snapshot. If a write is already in
+    // flight, wait for it and then drain the newest snapshot instead of
+    // replaying the closure that happened to start the first write.
+    if (!set || !sessionRestored || background === 'saving' || background === 'saved') return sessionRef.current
+    const epoch = persistEpoch.current
     const keys = Object.keys(answers).filter((key) => fillValue(answers[key]).trim())
-    if (!keys.length && !sessionRef.current) return
-    try {
-      const saved = await writeFillSession({
-        ...(sessionRef.current?.id ? { id: sessionRef.current.id } : {}),
-        matter_id: matterId.trim() || null,
-        set_id: setId,
-        title: set.title || '',
-        versions: Object.fromEntries(availableMembers.map((member) => [member.template_id, member.resolved_version_no ?? null])),
-        answers: Object.fromEntries(keys.map((key) => [key, fillValue(answers[key])])),
-        verified: Object.keys(verifiedNames).filter((key) => verifiedNames[key]),
-      })
-      sessionRef.current = saved
-      if (mountedRef.current) setSession(saved)
-    } catch { /* The page keeps working from memory; the next change retries. */ }
+    if (!keys.length && !sessionRef.current) return sessionRef.current
+    const payload = {
+      matter_id: matterId.trim() || null,
+      set_id: setId,
+      title: set.title || '',
+      versions: Object.fromEntries(availableMembers.map((member) => [member.template_id, member.resolved_version_no ?? null])),
+      answers: Object.fromEntries(keys.map((key) => [key, fillValue(answers[key])])),
+      verified: Object.keys(verifiedNames).filter((key) => verifiedNames[key]),
+    }
+    const snapshot = { epoch, revision: persistRevision.current, key: JSON.stringify(payload), payload }
+    latestPersist.current = snapshot
+    if (persistInFlight.current) return persistInFlight.current
+    if (snapshot.key === lastPersistedKey.current) {
+      persistDirty.current = false
+      return sessionRef.current
+    }
+    const operation = (async () => {
+      while (latestPersist.current && latestPersist.current.key !== lastPersistedKey.current) {
+        const currentSnapshot = latestPersist.current
+        if (currentSnapshot.epoch !== persistEpoch.current) break
+        const current = sessionRef.current
+        let saved
+        try {
+          saved = await writeFillSession({ ...(current?.id ? { id: current.id } : {}), ...currentSnapshot.payload })
+        } catch (err) {
+          if (currentSnapshot.epoch !== persistEpoch.current) continue
+          throw err
+        }
+        // A matter switch invalidates the response from the old session. The
+        // request may finish, but it must not resurrect that session in state.
+        if (persistEpoch.current !== currentSnapshot.epoch) continue
+        const wasNew = !sessionRef.current?.id
+        sessionRef.current = saved
+        lastPersistedKey.current = currentSnapshot.key
+        if (persistRevision.current === currentSnapshot.revision) persistDirty.current = false
+        setPersistError('')
+        if (mountedRef.current) setSession(saved)
+        if (wasNew && saved?.id) onSessionCreatedRef.current?.(saved.id)
+      }
+      return sessionRef.current
+    })()
+    persistInFlight.current = operation
+    try { return await operation } finally {
+      if (persistInFlight.current === operation) persistInFlight.current = null
+    }
   }, [set, sessionRestored, background, answers, matterId, setId, verifiedNames, availableMembersKey])
+  const persistSession = useCallback(async () => {
+    if (mountedRef.current) setPersistStatus('saving')
+    try {
+      const saved = await flushLatest()
+      if (mountedRef.current) setPersistStatus(persistDirty.current ? 'pending' : saved ? 'saved' : 'idle')
+      return saved
+    } catch {
+      if (mountedRef.current) {
+        setPersistStatus('error')
+        setPersistError('Your packet answers could not be saved. Retry to keep the latest changes.')
+      }
+      return null
+    }
+  }, [flushLatest])
+  useEffect(() => { flushRef.current = flushLatest }, [flushLatest])
   useEffect(() => {
     if (!set || !sessionRestored) return undefined
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(persistSession, 800)
     return () => clearTimeout(saveTimer.current)
   }, [persistSession, set, sessionRestored])
+  useEffect(() => {
+    const beforeUnload = (event) => {
+      if (!persistDirty.current && !persistInFlight.current && !(latestPersist.current && latestPersist.current.key !== lastPersistedKey.current)) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload)
+      void flushRef.current?.().catch(() => {})
+    }
+  }, [])
 
   // While a background save runs, follow the session until it settles.
   useEffect(() => {
@@ -257,7 +347,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     // cannot queue the packet twice.
     setSaving(true)
     try {
-      await persistSession()
+      await flushLatest()
       const current = sessionRef.current
       if (!current?.id) { setError('The session could not be saved; try again.'); return }
       const queued = await renderFillSession(current.id, {
@@ -283,15 +373,43 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   }, [])
 
   const setAnswer = (key, value) => {
-    setAnswers((prev) => ({ ...prev, [key]: value }))
+    persistRevision.current += 1
+    persistDirty.current = true
+    setPersistStatus('pending')
+    revisionRef.current += 1
+    setGenerating(false)
+    setAnswers((prev) => {
+      const next = { ...prev, [key]: value }
+      answersRef.current = next
+      return next
+    })
     setVerifiedNames((prev) => { const next = { ...prev }; if (String(value ?? '').trim()) next[key] = true; else delete next[key]; return next })
     invalidatePreviews()
   }
-  const toggleVerified = (key) => setVerifiedNames((prev) => { const next = { ...prev }; if (next[key]) delete next[key]; else next[key] = true; return next })
+  const toggleVerified = (key) => {
+    persistRevision.current += 1
+    persistDirty.current = true
+    setPersistStatus('pending')
+    setVerifiedNames((prev) => { const next = { ...prev }; if (next[key]) delete next[key]; else next[key] = true; return next })
+  }
   const selectMatter = (id) => {
     if (id === matterId) return
+    revisionRef.current += 1
+    generationRef.current += 1
+    persistEpoch.current += 1
+    persistRevision.current += 1
+    restoreEpoch.current += 1
+    persistDirty.current = false
+    setPersistStatus('idle')
+    latestPersist.current = null
+    lastPersistedKey.current = ''
+    setGenerating(false)
     setMatterId(id)
-    setPreviews({}); setSaves({})
+    answersRef.current = {}
+    sessionRef.current = null
+    setSession(null); setBackground(null); setPersistError('')
+    setAnswers({}); setVerifiedNames({}); setReviewedValues({})
+    setPreviews({}); setSaves({}); setError('')
   }
 
   const progress = interviewReview(questions, answers, reviewedValues, verifiedNames)
@@ -318,17 +436,20 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     if (!matterId.trim()) { setError('Choose the destination matter before generating the packet.'); return }
     if (requiredUnresolvedNames.length) { setError(`Answer ${requiredUnresolvedNames.length} required question${requiredUnresolvedNames.length === 1 ? '' : 's'} before generating.`); return }
     const targets = availableMembers.filter((member) => !only || only.includes(member.template_id))
+    const revision = revisionRef.current
+    const targetMatterId = matterId.trim()
     setError(''); setGenerating(true)
     setPreviews((prev) => ({ ...prev, ...Object.fromEntries(targets.map((member) => [member.template_id, memberState('loading')])) }))
     try {
-      const fan = await getTemplateSetDocumentsVariables(setId, { matter_id: matterId.trim(), answers })
+      const fan = await getTemplateSetDocumentsVariables(setId, { matter_id: targetMatterId, answers })
+      if (revisionRef.current !== revision) return
       await pooled(targets, PREVIEW_CONCURRENCY, async (member) => {
         const variables = fan.documents?.[member.template_id] || {}
         try {
           let entry
           if (member.output.file) {
             const result = await renderTemplateFile(member.template_id, {
-              variables, matter_id: matterId.trim(), preview_purpose: 'generation',
+              variables, matter_id: targetMatterId, preview_purpose: 'generation',
               ...(member.output.convertToPdf ? { convert_to_pdf: true } : {}),
             })
             entry = memberState('ready', { previewId: result.previewId || '', filename: result.filename, blob: result.blob, variables })
@@ -336,18 +457,18 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
             const result = await renderTemplate(member.template_id, { variables })
             entry = memberState('ready', { rendered: result.rendered || '', filename: result.output_filename || `${member.title}.md`, variables })
           }
-          if (mountedRef.current) setPreviews((prev) => ({ ...prev, [member.template_id]: entry }))
+          if (mountedRef.current && revisionRef.current === revision) setPreviews((prev) => ({ ...prev, [member.template_id]: entry }))
         } catch (err) {
-          if (mountedRef.current) setPreviews((prev) => ({ ...prev, [member.template_id]: memberState('failed', { error: getErrorMessage(err, 'The preview failed.'), variables }) }))
+          if (mountedRef.current && revisionRef.current === revision) setPreviews((prev) => ({ ...prev, [member.template_id]: memberState('failed', { error: getErrorMessage(err, 'The preview failed.'), variables }) }))
         }
       })
     } catch (err) {
-      if (mountedRef.current) {
+      if (mountedRef.current && revisionRef.current === revision) {
         setError(getErrorMessage(err, 'The packet could not be prepared.'))
         setPreviews((prev) => ({ ...prev, ...Object.fromEntries(targets.map((member) => [member.template_id, memberState('idle')])) }))
       }
     } finally {
-      if (mountedRef.current) setGenerating(false)
+      if (mountedRef.current && revisionRef.current === revision) setGenerating(false)
     }
   }
 
@@ -389,6 +510,12 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     }
   }
 
+  const retrySessionRestore = () => {
+    setSessionRestoreError('')
+    setSessionRestored(false)
+    setRestoreAttempt((value) => value + 1)
+  }
+
   return {
     set, members, availableMembers, unavailable, interview, questions, loading, error, setError,
     matterId, selectMatter, answers, setAnswer, reviewedValues, setReviewedValues, verifiedNames, toggleVerified,
@@ -396,6 +523,8 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     smartFillState, smartFillMessage, refresh: () => loadInterview(matterId.trim()),
     previews, previewOf, saves, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved,
     savedDocuments, sendable: savedDocuments.filter(renderIsSendable).map(savedDocumentFromRender),
-    session, background, saveAllInBackground,
+    session, background, sessionRestored, saveAllInBackground,
+    sessionRestoreError, retrySessionRestore, persistError, persistStatus, retrySave: persistSession,
+    flushLatest,
   }
 }

@@ -64,7 +64,7 @@ function StudioQueue({ title, count, icon: Icon, empty, templates }) {
 export default function TemplateStudioHome({ templates, summary, queues, onRefresh }) {
   const fallback = {
     needs_attention: { total: summary.source_missing || 0, items: templates.filter(sourceMissing).slice(0, 3) },
-    continue_setup: { total: summary.inactive || 0, items: templates.filter((template) => !template.is_active && !sourceMissing(template)).slice(0, 3) },
+    continue_setup: { total: templates.filter((template) => !template.is_active && template.status !== 'paused' && !sourceMissing(template)).length, items: templates.filter((template) => !template.is_active && template.status !== 'paused' && !sourceMissing(template)).slice(0, 3) },
     awaiting_publish: { total: 0, items: [] },
     published: { total: summary.ready || 0, items: templates.filter((template) => template.is_active && !sourceMissing(template)).slice(0, 3) },
   }

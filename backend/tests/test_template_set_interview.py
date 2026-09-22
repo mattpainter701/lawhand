@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.routers import document_templates, template_sets as router
+from app.schemas.document_template import DocumentTemplateVariableSuggestion
 from app.services import template_sets
 
 pytestmark = pytest.mark.asyncio
@@ -27,6 +28,7 @@ def _matter():
         stage="pleadings",
         jurisdiction="North Dakota",
         case_number="CV-2026-42",
+        matter_number="LAW0001",
         court="Cass County District Court",
         judge="Hon. A. Turing",
         billing_method=None,
@@ -114,6 +116,90 @@ class TestMergedSmartFill:
         )
         assert len(questions) == 2
         assert all(resolved[q.key].suggested_value is None for q in questions)
+
+    async def test_unbound_name_matches_use_client_and_matter_sources(self, monkeypatch):
+        questions, resolved = await self._fill(
+            monkeypatch,
+            [
+                member("t1", "Notice", {"name": "client_name"}),
+                member("t2", "Cover", {"name": "matter_number"}),
+            ],
+        )
+        values = {
+            question.key: resolved[question.key].suggested_value
+            for question in questions
+        }
+        assert values["manual:t1:client_name"] == "Ada Lovelace"
+        assert values["manual:t2:matter_number"] == "LAW0001"
+
+    async def test_duplicate_local_names_keep_binding_and_manual_semantics(self, monkeypatch):
+        questions, resolved = await self._fill(
+            monkeypatch,
+            [
+                member("t1", "Client", {"name": "value", "binding": "client.name"}),
+                member("t2", "Matter", {"name": "value", "binding": "matter.case_number"}),
+                member("t3", "Manual", {"name": "client_name", "binding": "manual"}),
+            ],
+        )
+        values = {question.key: resolved[question.key].suggested_value for question in questions}
+        assert values["client.full_name"] == "Ada Lovelace"
+        assert values["matter.case_number"] == "CV-2026-42"
+        assert values["manual:t3:client_name"] is None
+
+    async def test_unique_local_names_use_one_resolver_batch(self, monkeypatch):
+        calls = []
+
+        async def fake_fill(**kwargs):
+            calls.append(kwargs["template"].variable_schema["fields"])
+            return None, [
+                DocumentTemplateVariableSuggestion(
+                    variable=name, suggested_value=None,
+                    provenance={"status": "manual_entry"},
+                )
+                for name in kwargs["requested_variables"]
+            ]
+
+        monkeypatch.setattr(router, "build_variable_suggestions", fake_fill)
+        questions = [
+            template_sets.InterviewQuestion(
+                key=f"manual:t{i}:field_{i}", label=f"Field {i}", value_kind="text",
+                required=False, card="", binding="",
+                appears_in=(template_sets.DocumentFieldRef(
+                    template_id=f"t{i}", template_title=f"Doc {i}",
+                    field_name=f"field_{i}", label=f"Field {i}",
+                ),),
+                manual=False,
+            )
+            for i in range(100)
+        ]
+        await router._interview_suggestions(
+            db=SimpleNamespace(), tenant_id=uuid.uuid4(), current_user=SimpleNamespace(),
+            matter_id=str(uuid.uuid4()), questions=questions,
+        )
+        assert len(calls) == 1
+        assert len(calls[0]) == 100
+
+    async def test_name_collision_spills_to_a_second_batch(self, monkeypatch):
+        calls = []
+
+        async def fake_fill(**kwargs):
+            fields = kwargs["template"].variable_schema["fields"]
+            calls.append(fields)
+            value = "Ada Lovelace" if fields[0].get("binding") == "client.name" else "CV-2026-42"
+            return None, [DocumentTemplateVariableSuggestion(variable="value", suggested_value=value)]
+
+        monkeypatch.setattr(router, "build_variable_suggestions", fake_fill)
+        questions = template_sets.build_interview([
+            member("t1", "Client", {"name": "value", "binding": "client.name"}),
+            member("t2", "Matter", {"name": "value", "binding": "matter.case_number"}),
+        ])
+        resolved = await router._interview_suggestions(
+            db=SimpleNamespace(), tenant_id=uuid.uuid4(), current_user=SimpleNamespace(),
+            matter_id=str(uuid.uuid4()), questions=questions,
+        )
+        assert len(calls) == 2
+        assert resolved["client.full_name"].suggested_value == "Ada Lovelace"
+        assert resolved["matter.case_number"].suggested_value == "CV-2026-42"
 
     async def test_an_unresolvable_binding_says_so_rather_than_going_blank(
         self, monkeypatch

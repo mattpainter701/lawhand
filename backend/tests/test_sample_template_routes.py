@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from app.main import app
 from app.routers import sample_templates
+from app.routers import document_templates
 from app.services.pdf_templates import discover_pdf_fields
 
 
@@ -27,6 +28,20 @@ def _fillable_pdf() -> bytes:
     pdf = canvas.Canvas(output, pagesize=letter)
     pdf.drawString(72, 720, "Client:")
     pdf.acroForm.textfield(name="Client Name", x=120, y=705, width=250, height=24)
+    pdf.save()
+    return output.getvalue()
+
+
+def _pdf_with_slash_default() -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    output = BytesIO()
+    pdf = canvas.Canvas(output, pagesize=letter)
+    pdf.acroForm.textfield(
+        name="Literal default", value="/keep-this-slash", x=72, y=700, width=250, height=24
+    )
+    pdf.showPage()
     pdf.save()
     return output.getvalue()
 
@@ -140,6 +155,141 @@ async def test_render_requires_seeded_schema():
             db=db,
         )
     assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_smart_fill_preview_scopes_to_selected_matter(monkeypatch):
+    tenant_id = uuid.uuid4()
+    sample = _sample(variable_schema={"version": 1, "fields": [{"name": "client_name"}]})
+    db = AsyncMock()
+    db.scalar = AsyncMock(return_value=sample)
+    db.execute = AsyncMock()
+    monkeypatch.setattr(sample_templates, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(
+        sample_templates,
+        "build_variable_suggestions",
+        AsyncMock(return_value=("matter-1", [SimpleNamespace(
+            model_dump=lambda **_: {
+                "variable": "client_name",
+                "suggested_value": "Ada Example",
+                "source_type": "matter",
+                "source_field": "client.name",
+                "provenance": {},
+                "confidence": 1.0,
+                "review_required": True,
+            }
+        )])),
+    )
+    response = await sample_templates.smart_fill_sample_template(
+        sample.id,
+        sample_templates.SampleTemplateSmartFillRequest(matter_id="matter-1"),
+        current_user=SimpleNamespace(tenant_id=tenant_id),
+        db=db,
+    )
+    assert response.matter_id == "matter-1"
+    assert response.variables[0]["suggested_value"] == "Ada Example"
+    sample_templates.set_tenant_context.assert_awaited_once_with(db, str(tenant_id))
+
+
+@pytest.mark.asyncio
+async def test_smart_fill_preview_uses_real_resolver_with_sample_schema(monkeypatch):
+    tenant_id = uuid.uuid4()
+    matter_id = uuid.uuid4()
+    sample = _sample(
+        variable_schema={
+            "version": 1,
+            "fields": [{"name": "client_name", "label": "Client name"}],
+        }
+    )
+    matter = SimpleNamespace(
+        id=matter_id,
+        matter_name="Lovelace intake",
+        case_number="CV-2026-1",
+        matter_type="civil",
+        status="open",
+        client=SimpleNamespace(
+            id=uuid.uuid4(),
+            display_name="Ada Example",
+            email="ada@example.com",
+            phone="555-0100",
+            address={"city": "Fargo", "state": "ND", "zip": "58102"},
+        ),
+        attorney_of_record=None,
+    )
+    db = AsyncMock()
+    db.scalar = AsyncMock(return_value=sample)
+    monkeypatch.setattr(sample_templates, "set_tenant_context", AsyncMock())
+
+    async def load_matter(**kwargs):
+        assert kwargs["matter_id"] == str(matter_id)
+        return matter
+
+    async def load_parties(**kwargs):
+        return []
+
+    async def load_evidence(**kwargs):
+        return ()
+
+    monkeypatch.setattr(document_templates, "_load_matter_context", load_matter)
+    monkeypatch.setattr(document_templates, "_load_matter_parties", load_parties)
+    monkeypatch.setattr(document_templates, "_load_document_evidence", load_evidence)
+
+    response = await sample_templates.smart_fill_sample_template(
+        sample.id,
+        sample_templates.SampleTemplateSmartFillRequest(
+            matter_id=str(matter_id), variables=["client_name"]
+        ),
+        current_user=SimpleNamespace(
+            id=uuid.uuid4(), tenant_id=tenant_id, full_name="Test Attorney", email="test@example.com"
+        ),
+        db=db,
+    )
+
+    assert response.matter_id == str(matter_id)
+    assert response.variables[0]["variable"] == "client_name"
+    assert response.variables[0]["suggested_value"] == "Ada Example"
+
+
+@pytest.mark.asyncio
+async def test_smart_fill_preview_requires_seeded_schema():
+    sample = _sample(variable_schema=None)
+    db = AsyncMock()
+    db.scalar = AsyncMock(return_value=sample)
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.smart_fill_sample_template(
+            sample.id,
+            sample_templates.SampleTemplateSmartFillRequest(matter_id="matter-1"),
+            current_user=SimpleNamespace(tenant_id=uuid.uuid4()),
+            db=db,
+        )
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_smart_fill_preview_preserves_matter_access_denial(monkeypatch):
+    sample = _sample(variable_schema={"version": 1, "fields": [{"name": "client_name"}]})
+    db = AsyncMock()
+    db.scalar = AsyncMock(return_value=sample)
+    monkeypatch.setattr(sample_templates, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(
+        sample_templates,
+        "build_variable_suggestions",
+        AsyncMock(side_effect=HTTPException(status_code=404, detail="Matter not found")),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.smart_fill_sample_template(
+            sample.id,
+            sample_templates.SampleTemplateSmartFillRequest(matter_id="other-tenant-matter"),
+            current_user=SimpleNamespace(tenant_id=uuid.uuid4()),
+            db=db,
+        )
+    assert exc_info.value.status_code == 404
+
+
+def test_text_defaults_preserve_a_leading_slash():
+    field = discover_pdf_fields(_pdf_with_slash_default())[0]
+    assert field["field_type"] == "text"
+    assert field["default"] == "/keep-this-slash"
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@ const templateIsDocx = (template) => String(template?.format || '').toLowerCase(
 export const templateHasSigningFields = (template) => (template?.variable_schema?.fields || [])
   .some((field) => field?.included !== false && isSigningField(field))
 
-export default function usePrepareFill({ template, initialMatterId, folderId, onSaved }) {
+export default function usePrepareFill({ template, initialMatterId, folderId, onSaved, autoFillEnabled = true }) {
   const [variables, setVariables] = useState({})
   const [matterId, setMatterId] = useState(initialMatterId || '')
   const [rendered, setRendered] = useState(null)
@@ -313,7 +313,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   // manual button stays as the explicit refresh. One pass per matter keeps a
   // late response from clobbering edits the reviewer has since typed.
   useEffect(() => {
-    if (saving || !fillableNames.length) return
+    if (!autoFillEnabled || saving || !fillableNames.length) return
     const hasMatter = Boolean(matterId.trim())
     if (!hasMatter && !hasFirmFields) {
       smartFillAutoKeyRef.current = ''
@@ -323,7 +323,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     if (smartFillAutoKeyRef.current === key) return
     smartFillAutoKeyRef.current = key
     smartFillRef.current?.()
-  }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving])
+  }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving, autoFillEnabled])
 
   const handleRender = async (requestedPdfPurpose = null) => {
     const previewPurpose = requestedPdfPurpose || (canSaveToMatter ? 'generation' : 'draft')

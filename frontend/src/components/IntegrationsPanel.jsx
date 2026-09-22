@@ -13,6 +13,7 @@ import {
   saveSharePointBinding,
 } from '../api'
 import { Disclosure } from './ui'
+import { deriveStorageReadiness, STORAGE_PROVIDER_LABELS } from './storageReadiness'
 
 const SCOPE_LABELS_MS = {
   offline_access: 'Offline access (refresh tokens)',
@@ -56,11 +57,7 @@ const CAP_BADGE = {
   unavailable: { text: 'Not on this tier', cls: 'bg-gray-100 text-gray-500' },
 }
 
-export const PRIMARY_CLOUD_LABELS = {
-  onedrive: 'Microsoft OneDrive',
-  sharepoint: 'Microsoft SharePoint',
-  google_drive: 'Google Drive',
-}
+export const PRIMARY_CLOUD_LABELS = STORAGE_PROVIDER_LABELS
 
 // A credential in one of these states cannot be used, whatever its stored
 // scope string says. The card leads with the remedy and hides the scope
@@ -193,11 +190,19 @@ export default function IntegrationsPanel() {
     attention_needed: 'bg-amber-100 text-amber-700 border-amber-200',
     disconnected: 'bg-red-100 text-red-700 border-red-200',
   }
+  const storageReadiness = deriveStorageReadiness({
+    primaryCloud,
+    microsoft: data.microsoft,
+    google: data.google,
+    sharePointBinding,
+  })
   const anyConnected = Boolean(data.microsoft?.connected || data.google?.connected)
-  const storageSummary = primaryCloud
-    ? `Matter documents go to ${PRIMARY_CLOUD_LABELS[primaryCloud] || primaryCloud}`
-    : 'Automatic: OneDrive for Microsoft 365 tenants, otherwise Google Drive'
-  const storageTone = !anyConnected ? 'off' : (primaryCloud === 'sharepoint' && !sharePointBinding?.drive_id) ? 'warn' : 'ok'
+  const storageSummary = storageReadiness.ready
+    ? (primaryCloud
+      ? `Matter documents go to ${storageReadiness.label}`
+      : `Automatic: OneDrive for Microsoft 365 tenants, otherwise Google Drive · currently ${storageReadiness.label}`)
+    : storageReadiness.reason
+  const storageTone = storageReadiness.ready ? 'ok' : storageReadiness.status === 'not_connected' ? 'off' : 'warn'
 
   return (
     <div className="space-y-6">
@@ -277,6 +282,12 @@ export default function IntegrationsPanel() {
         testId="document-storage"
       >
         <div className="space-y-6">
+          {!storageReadiness.ready && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 font-sans" aria-live="polite">
+              <p className="font-semibold">Matter document storage is not ready.</p>
+              <p className="mt-1">{storageReadiness.reason}</p>
+            </div>
+          )}
           <PrimaryCloudSelector
             value={primaryCloud}
             saving={cloudSaving}
@@ -287,7 +298,7 @@ export default function IntegrationsPanel() {
           <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={handleRetryCloudInit}
-              disabled={retrying || !anyConnected}
+              disabled={retrying || !storageReadiness.ready}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink font-sans text-xs font-medium rounded-lg hover:bg-brand-bg-soft transition-colors disabled:opacity-50"
             >
               {retrying ? (

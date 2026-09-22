@@ -64,6 +64,19 @@ def test_every_sample_source_matches_manifest_and_is_renderable():
         )
 
 
+def test_imported_undefined_labels_get_honest_review_labels():
+    fields = discover_pdf_fields(
+        (SEED_DIR / "advance_directive" / "nevada-living-will.pdf").read_bytes()
+    )
+    assert fields
+    assert not any(
+        field["label"].strip().casefold().startswith("undefined") for field in fields
+    )
+    fallback_fields = [field for field in fields if field.get("source_label", "").casefold().startswith("undefined")]
+    assert fallback_fields
+    assert all(field["label"].startswith("Source field ") for field in fallback_fields)
+
+
 def test_catalog_is_platform_owned_and_not_tenant_scoped():
     # Shared content must not carry a tenant_id; tenants read the same rows.
     column_names = [column.name for column in SampleTemplate.__table__.columns]

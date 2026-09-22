@@ -40,6 +40,7 @@ class SampleTemplateListResponse(BaseModel):
 
 class SampleTemplateRenderRequest(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict, max_length=200)
+    matter_id: Optional[str] = Field(default=None, max_length=100)
 
     @field_validator("variables")
     @classmethod
@@ -50,3 +51,14 @@ class SampleTemplateRenderRequest(BaseModel):
             if len(item) > 10_000:
                 raise ValueError(f"Variable {key!r} exceeds 10,000 characters")
         return value
+
+
+class SampleTemplateSmartFillRequest(BaseModel):
+    matter_id: str = Field(min_length=1, max_length=100)
+    variables: Optional[list[str]] = Field(default=None, max_length=200)
+
+
+class SampleTemplateSmartFillResponse(BaseModel):
+    sample_id: str
+    matter_id: Optional[str] = None
+    variables: list[dict[str, Any]]

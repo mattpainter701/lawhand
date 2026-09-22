@@ -329,6 +329,7 @@ async def _member_snapshots(db, tenant_id, record):
                 )
                 continue
             schema, resolved = version.variable_schema, version.version_no
+            body = version.body or ""
         else:
             try:
                 view = await published_template_view(db, template)
@@ -338,11 +339,13 @@ async def _member_snapshots(db, tenant_id, record):
                 )
                 continue
             schema, resolved = view.variable_schema, view.current_version_no
+            body = getattr(view, "body", "") or ""
         members.append(
             template_sets.TemplateMember(
                 template_id=str(item.template_id),
                 title=title,
                 variable_schema=schema or {},
+                body=body,
             )
         )
         resolved_versions[str(item.template_id)] = resolved
@@ -398,6 +401,7 @@ async def set_interview(
                 required=question.required,
                 card=question.card,
                 binding=question.binding,
+                options=list(question.options),
                 shared=question.is_shared,
                 appears_in=[
                     InterviewQuestionPlacement(
@@ -475,35 +479,54 @@ async def _interview_suggestions(*, db, tenant_id, current_user, matter_id, ques
     -in name for the call and mapped back afterwards.
     """
 
-    aliases = {f"q{index}": question for index, question in enumerate(questions)}
-    probe = type(
-        "InterviewProbe",
-        (),
-        {
-            "id": uuid.uuid4(),
-            "body": "",
-            "variable_schema": {
-                "fields": [
-                    {"name": name, "binding": question.binding or "manual"}
-                    for name, question in aliases.items()
-                ]
-            },
-        },
-    )()
-    _, resolved = await build_variable_suggestions(
-        template=probe,
-        requested_variables=list(aliases),
-        matter_id=matter_id,
-        tenant_id=tenant_id,
-        current_user=current_user,
-        db=db,
-    )
-    by_alias = {item.variable: item for item in resolved}
-    return {
-        question.key: by_alias[name]
-        for name, question in aliases.items()
-        if name in by_alias
-    }
+    # Group by local name and declared binding. A repeated local name can
+    # represent different bound facts, so one positional batch probe would
+    # let the resolver collapse or reorder results. Manual fields retain their
+    # explicit manual binding and therefore never receive name-match values.
+    batches = []
+    for question in questions:
+        name = (
+            question.appears_in[0].field_name if question.appears_in else question.key
+        )
+        binding = "manual" if question.manual else question.binding
+        # Put each local name in only one batch. A collision spills into the
+        # next batch, while the common case remains one resolver call for the
+        # entire packet. Results are keyed by variable name below, never by
+        # positional order.
+        batch = next((entry for entry in batches if name not in entry["names"]), None)
+        if batch is None:
+            batch = {"names": set(), "questions": []}
+            batches.append(batch)
+        batch["names"].add(name)
+        batch["questions"].append((name, binding, question))
+
+    suggestions = {}
+    for batch in batches:
+        fields = []
+        for name, binding, _question in batch["questions"]:
+            field = {"name": name}
+            if binding:
+                field["binding"] = binding
+            fields.append(field)
+        probe = type(
+            "InterviewProbe",
+            (),
+            {"id": uuid.uuid4(), "body": "", "variable_schema": {"fields": fields}},
+        )()
+        _, resolved = await build_variable_suggestions(
+            template=probe,
+            requested_variables=list(batch["names"]),
+            matter_id=matter_id,
+            tenant_id=tenant_id,
+            current_user=current_user,
+            db=db,
+        )
+        by_name = {item.variable: item for item in resolved}
+        for name, _binding, question in batch["questions"]:
+            item = by_name.get(name)
+            if item is not None:
+                suggestions[question.key] = item.model_copy(update={"variable": name})
+    return suggestions
 
 
 __all__ = ["router", "MAX_SET_MEMBERS"]

@@ -30,6 +30,26 @@ def field(name, **kwargs):
 
 
 class TestMerging:
+    def test_markdown_placeholders_join_schema_fields_in_the_interview(self):
+        questions = build_interview([
+            TemplateMember(
+                "markdown", "Markdown notice", {"fields": []},
+                body="Client {{client_name}} · Matter {{matter_number}}",
+            )
+        ])
+        assert [question.key for question in questions] == [
+            "manual:markdown:client_name",
+            "manual:markdown:matter_number",
+        ]
+        assert all(question.required for question in questions)
+
+    def test_choice_options_are_preserved_for_packet_questions(self):
+        questions = build_interview([
+            member("t1", "Notice", field("venue", field_type="choice", options=["Court", "Remote"]))
+        ])
+        assert questions[0].value_kind == "choice"
+        assert questions[0].options == ("Court", "Remote")
+
     def test_two_documents_binding_the_same_path_ask_once(self):
         questions = build_interview([
             member("t1", "Motion", field("def_name", binding="defendant.full_name")),

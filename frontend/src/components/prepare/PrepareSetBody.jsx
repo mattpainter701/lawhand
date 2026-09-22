@@ -4,6 +4,7 @@ import TemplateFillProgress from '../templates/TemplateFillProgress'
 import { fillValue, suggestionConfidenceLabel, suggestionOriginLabel } from '../templates/templateFillReview'
 import SendStep from './SendStep'
 import { buildSavedTarget } from './prepareRouting'
+import StorageReadinessNotice from './StorageReadinessNotice'
 
 const inputClass = 'w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent'
 
@@ -21,7 +22,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
     smartFillState, smartFillMessage, refresh, previewOf, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved, sendable,
-    session, background, saveAllInBackground,
+    session, background, saveAllInBackground, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
   const groups = []
@@ -33,11 +34,25 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
   }
   const failedPreviews = availableMembers.filter((member) => previewOf(member).status === 'failed').map((member) => member.template_id)
   const failedSaves = availableMembers.filter((member) => saveOf(member)?.status === 'failed').map((member) => member.template_id)
+  if (sessionRestored === false) return (
+    <div className="space-y-4">
+      {sessionRestoreError ? (
+        <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2">
+          <span>{sessionRestoreError}</span><button type="button" onClick={retrySessionRestore} className="underline font-semibold">Retry</button>
+        </div>
+      ) : <p role="status" className="text-sm text-brand-muted">Restoring your packet answers…</p>}
+    </div>
+  )
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(300px,420px)_minmax(0,1fr)]">
-      <div className="space-y-4">
+    <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(300px,420px)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-4">
+        {sessionRestoreError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{sessionRestoreError}</span><button type="button" onClick={retrySessionRestore} className="underline font-semibold">Retry</button></div>}
+        {persistError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{persistError}</span><button type="button" onClick={retrySave} className="underline font-semibold">Retry save</button></div>}
+        {!persistError && ['pending', 'saving'].includes(persistStatus) && <p role="status" className="text-xs text-brand-muted">Saving answers…</p>}
+        {!persistError && persistStatus === 'saved' && <p role="status" className="text-xs text-brand-muted">Answers saved · available from this matter for 14 days</p>}
         {error && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">{error}</div>}
         {fixedMatterId ? <p className="text-sm font-semibold">Saving to this matter</p> : <MatterPicker matters={matters} selectedMatterId={matterId} onSelect={selectMatter} loading={matterLoading} disabled={saving || generating} />}
+        <StorageReadinessNotice enabled={Boolean(matterId.trim())} />
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-brand-line rounded bg-brand-bg px-3 py-2">
           <div>
             <p className="text-sm font-medium text-brand-ink">Smart fill</p>
@@ -71,6 +86,11 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                         {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><span>{suggestionConfidenceLabel(review)}</span>{review.needsReview ? <button type="button" disabled={saving} className="rounded border border-brand-line px-2 py-1" onClick={() => setReviewedValues((prev) => ({ ...prev, [question.key]: value }))}>Confirm {question.label}</button> : <span className="text-brand-green">Reviewed</span>}</div>}
                         {question.value_kind === 'checkbox' ? (
                           <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => setAnswer(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
+                        ) : (question.value_kind === 'choice' || question.value_kind === 'radio') && question.options?.length ? (
+                          <select id={inputId} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass}>
+                            <option value="">Choose {question.label}</option>
+                            {question.options.map((option) => <option key={String(option)} value={option}>{option}</option>)}
+                          </select>
                         ) : question.value_kind === 'multiline' ? (
                           <textarea id={inputId} rows={3} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         ) : (
@@ -117,6 +137,7 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                   <span className="min-w-0 flex-1 truncate"><strong>{member.title}</strong> <span className="text-xs text-brand-muted">· {member.output.format.toUpperCase()}{member.resolved_version_no ? ` · v${member.resolved_version_no}` : ''}</span></span>
                   <span role="status" className={`text-xs ${save?.status === 'saved' ? 'text-brand-green' : preview.status === 'failed' || save?.status === 'failed' ? 'text-brand-rose' : 'text-brand-muted'}`}>{state}</span>
                   {preview.status === 'ready' && preview.blob && <button type="button" onClick={() => window.open(URL.createObjectURL(preview.blob), '_blank', 'noopener')} className="text-xs underline">Open preview</button>}
+                  {preview.status === 'ready' && preview.rendered && <details className="basis-full mt-1"><summary className="cursor-pointer text-xs underline">Review Markdown preview</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-brand-bg p-2 text-xs">{preview.rendered}</pre></details>}
                 </li>
               )
             })}

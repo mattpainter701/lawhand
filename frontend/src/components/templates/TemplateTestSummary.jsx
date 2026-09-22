@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
+import { schemaFields } from './templateFieldSchema'
 
 /** Report evidence we actually have; rendering success is not visual approval. */
 export default function TemplateTestSummary({ template, error, rendering = false, outputReady, missing = [], diagnostic = false, onFixFields }) {
-  const fields = (template.variable_schema?.fields || []).filter(field => field?.included !== false)
+  const fields = schemaFields(template).filter(field => field?.included !== false)
   const names = fields.map(field => field.name)
   const invalid = fields.filter(field => !/^[A-Za-z][A-Za-z0-9_.-]*$/.test(field.name || '') || names.filter(name => name === field.name).length > 1)
   const currentPassed = template.current_version_no > 0 && template.tested_version_no === template.current_version_no

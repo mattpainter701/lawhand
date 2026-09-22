@@ -200,7 +200,7 @@ export default function SampleLibraryCard() {
         <span className="rounded-full bg-brand-bg px-2 py-0.5 text-xs font-semibold text-brand-muted" aria-label={`${samples.length} total`}>{samples.length}</span>
       </div>
       <p className="mt-1 text-sm text-brand-muted">
-        Ready-to-fill starter forms shared across every workspace — wills, powers of attorney, leases, and court forms. Preview one, or fill it and download a finished PDF. Your own templates are never changed.
+        Reference forms shared across every workspace — wills, powers of attorney, leases, and court forms. Preview the source and review jurisdiction, wording, and field labels before downloading a filled copy. Your own templates are never changed.
       </p>
 
       {samples.length > 0 && (
@@ -289,9 +289,14 @@ export default function SampleLibraryCard() {
                             {sample.field_count ? ` · ${sample.field_count} fields` : ''}
                             {provenance ? ` · ${provenance}` : ''}
                           </p>
+                          {!provenance && (
+                            <p className="text-[11px] leading-snug text-amber-800">
+                              Source details were not recorded; attorney review is required before use.
+                            </p>
+                          )}
                           {variant && !provenance && (
                             <p className="text-[11px] leading-snug text-brand-muted">
-                              {variant.total} forms share this title and their contents differ. The source of each was not recorded — preview before filing.
+                              {variant.total} forms share this title and their contents differ. Source file: {sample.source_filename || sample.slug || 'not recorded'} — preview before filing.
                             </p>
                           )}
                         </div>

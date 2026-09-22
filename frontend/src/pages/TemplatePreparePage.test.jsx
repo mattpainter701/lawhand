@@ -298,6 +298,74 @@ describe('the Prepare route', () => {
     expect(screen.getByRole('checkbox', { name: 'Verified: Client name' })).toBeChecked()
   })
 
+  it('restores answers before automatic matter filling starts, including when the resume URL already has a matter', async () => {
+    const X = '99999999-9999-4999-8999-999999999999'
+    let restore
+    let discover
+    api.getFillSession.mockImplementation(() => new Promise(resolve => { restore = resolve }))
+    api.discoverTemplateVariables.mockImplementation(() => new Promise(resolve => { discover = resolve }))
+    renderAt(`?template=${T}&matter=${M}&session=${X}`)
+    await screen.findByText('Restoring your answers…')
+    expect(api.discoverTemplateVariables).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox', { name: /Client name/ })).not.toBeInTheDocument()
+    restore({ id: X, template_id: T, matter_id: M, answers: { client_name: 'Manually corrected client' }, verified: ['client_name'] })
+    await waitFor(() => expect(api.discoverTemplateVariables).toHaveBeenCalledTimes(1))
+    discover({ variables: [{ variable: 'client_name', suggested_value: 'Old matter value', source_type: 'contact' }] })
+    await screen.findByText('Available values refreshed. Your entries were kept.')
+    expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Manually corrected client')
+    expect(screen.getByRole('checkbox', { name: 'Verified: Client name' })).toBeChecked()
+  })
+
+  it('does not silently replace a draft when restoring it fails and lets the user retry', async () => {
+    const X = '99999999-9999-4999-8999-999999999999'
+    api.getFillSession.mockRejectedValueOnce(new Error('Network unavailable')).mockResolvedValueOnce({ id: X, template_id: T, matter_id: M, answers: { client_name: 'Recovered' }, verified: [] })
+    renderAt(`?template=${T}&session=${X}`)
+    expect(await screen.findByRole('alert')).toHaveTextContent('your draft has not been replaced')
+    expect(api.writeFillSession).not.toHaveBeenCalled()
+    expect(api.discoverTemplateVariables).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry restoring answers' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Recovered'))
+  })
+
+  it('serializes autosaves, remembers the session in the URL and retries a failed save visibly', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const X = '99999999-9999-4999-8999-999999999999'
+      let finishCreate
+      api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+      api.writeFillSession.mockImplementationOnce(() => new Promise(resolve => { finishCreate = resolve }))
+        .mockRejectedValueOnce(new Error('Offline'))
+        .mockImplementation(async data => ({ ...data, id: X }))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'First entry' } })
+      await vi.advanceTimersByTimeAsync(900)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(1)
+      fireEvent.change(input, { target: { value: 'Latest entry' } })
+      await vi.advanceTimersByTimeAsync(900)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(1)
+      finishCreate({ id: X, status: 'open' })
+      await screen.findByRole('button', { name: 'Retry saving answers' })
+      await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`session=${X}`))
+      expect(api.getFillSession).not.toHaveBeenCalled()
+      expect(api.writeFillSession).toHaveBeenLastCalledWith(expect.objectContaining({ id: X, answers: { client_name: 'Latest entry' } }))
+      fireEvent.click(screen.getByRole('button', { name: 'Retry saving answers' }))
+      await screen.findByText(/Answers saved/)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(3)
+      expect(input).toHaveValue('Latest entry')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('flushes the latest answer when leaving before the debounce finishes', async () => {
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+    renderAt(`?template=${T}&matter=${M}`)
+    fireEvent.change(await screen.findByRole('textbox', { name: /Client name/ }), { target: { value: 'Last keystroke' } })
+    fireEvent.click(screen.getByRole('link', { name: 'Back' }))
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ answers: { client_name: 'Last keystroke' } })))
+  })
+
   it('saves a previewed packet in the background and follows the session until it settles', async () => {
     const S = '55555555-5555-4555-8555-555555555555'
     const A = '66666666-6666-4666-8666-666666666666'

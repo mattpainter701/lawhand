@@ -309,6 +309,22 @@ describe('IntegrationsPanel actions', () => {
     expect(screen.getByText('Reconnect Required')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(/re-authorize/i)
   })
+
+  it('does not report configured OneDrive as ready when Microsoft needs reconnection', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      microsoft: {
+        ...disconnected('microsoft'),
+        connected: true,
+        health: 'refresh_failed',
+        missing_required: [],
+      },
+    }))
+    getAdminSettings.mockResolvedValue({ primary_cloud_provider: 'onedrive' })
+    render(<IntegrationsPanel />)
+    expect((await screen.findAllByText(/Reconnect Microsoft 365 before saving matter documents to Microsoft OneDrive/)).length).toBe(2)
+    await userEvent.setup().click(screen.getByText('Document storage'))
+    expect(screen.getByText('Matter document storage is not ready.')).toBeInTheDocument()
+  })
 })
 
 describe('PrimaryCloudSelector', () => {
