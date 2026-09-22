@@ -59,7 +59,9 @@ def test_diagnostic_requires_a_source() -> None:
 
 
 @pytest.mark.asyncio
-async def test_exact_route_bypasses_planner_and_passes_literal_plan(monkeypatch) -> None:
+async def test_exact_route_bypasses_planner_and_passes_literal_plan(
+    monkeypatch,
+) -> None:
     body = _CloudSearchTestRequest(
         query="QA PDF Fixture.pdf", sources=["onedrive"], exact_query=True
     )
@@ -77,9 +79,11 @@ async def test_exact_route_bypasses_planner_and_passes_literal_plan(monkeypatch)
             return []
 
     monkeypatch.setattr(
-        cloud_admin, "_require_admin", lambda *_args: _async_value(
+        cloud_admin,
+        "_require_admin",
+        lambda *_args: _async_value(
             SimpleNamespace(tenant_id="tenant-1", privacy_mode=False)
-        )
+        ),
     )
     monkeypatch.setattr(cloud_admin, "set_tenant_context", noop)
     monkeypatch.setattr(cloud_admin, "_get_planner", fail_if_called)
@@ -100,7 +104,9 @@ async def test_exact_route_bypasses_planner_and_passes_literal_plan(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_normal_route_uses_planner_keywords_and_selected_sources(monkeypatch) -> None:
+async def test_normal_route_uses_planner_keywords_and_selected_sources(
+    monkeypatch,
+) -> None:
     body = _CloudSearchTestRequest(query="renewal discussion", sources=["outlook"])
     received: list[dict] = []
     planner_calls: list[dict] = []
@@ -121,9 +127,11 @@ async def test_normal_route_uses_planner_keywords_and_selected_sources(monkeypat
         return None
 
     monkeypatch.setattr(
-        cloud_admin, "_require_admin", lambda *_args: _async_value(
+        cloud_admin,
+        "_require_admin",
+        lambda *_args: _async_value(
             SimpleNamespace(tenant_id="tenant-1", privacy_mode=False)
-        )
+        ),
     )
     monkeypatch.setattr(cloud_admin, "set_tenant_context", noop)
     monkeypatch.setattr(cloud_admin, "_get_planner", lambda: _Planner())
@@ -132,7 +140,14 @@ async def test_normal_route_uses_planner_keywords_and_selected_sources(monkeypat
     await cloud_admin.cloud_search_test(body, object(), object())
 
     assert planner_calls
-    assert received == [{"should_search": True, "sources": ["outlook"], "keywords": ["renewal"], "max_hits": 10}]
+    assert received == [
+        {
+            "should_search": True,
+            "sources": ["outlook"],
+            "keywords": ["renewal"],
+            "max_hits": 10,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -150,9 +165,11 @@ async def test_no_search_plan_returns_without_provider_call(monkeypatch) -> None
         raise AssertionError("provider search should not run for a no-search plan")
 
     monkeypatch.setattr(
-        cloud_admin, "_require_admin", lambda *_args: _async_value(
+        cloud_admin,
+        "_require_admin",
+        lambda *_args: _async_value(
             SimpleNamespace(tenant_id="tenant-1", privacy_mode=False)
-        )
+        ),
     )
     monkeypatch.setattr(cloud_admin, "set_tenant_context", noop)
     monkeypatch.setattr(cloud_admin, "_get_planner", lambda: _Planner())

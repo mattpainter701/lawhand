@@ -50,6 +50,7 @@ def _quoted_search_phrase(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
+
 GOOGLE_DRIVE_BASE = "https://www.googleapis.com/drive/v3"
 GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1"
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
