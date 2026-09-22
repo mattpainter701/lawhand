@@ -52,6 +52,16 @@ export function useAppShell() {
   return ctx
 }
 
+// The global conversation shortcut must never fire while the user is editing
+// text, composing input, or working inside a dialog. S1.10.
+export function isEditableShortcutTarget(target) {
+  if (!target || typeof target !== 'object') return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  return typeof target.closest === 'function' && Boolean(target.closest('[role="dialog"]'))
+}
+
 export default function AppShell({ children, title }) {
   const { user, logout: authLogout, refreshUser } = useAuth()
   const confirmAction = useConfirm()
@@ -258,6 +268,8 @@ export default function AppShell({ children, title }) {
   useEffect(() => {
     if (!canSeeModule('chat')) return undefined
     const handler = (e) => {
+      if (e.isComposing) return
+      if (isEditableShortcutTarget(e.target)) return
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault()
         handleNewConversation()
