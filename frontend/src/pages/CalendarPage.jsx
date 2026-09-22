@@ -78,7 +78,7 @@ function dateLabel(d) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function rangeLabel(view, pivot) {
+export function rangeLabel(view, pivot) {
   if (view === 'day') return pivot.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   if (view === 'week') {
     const start = startOfWeek(pivot)
@@ -87,10 +87,19 @@ function rangeLabel(view, pivot) {
       ? `${start.toLocaleDateString('en-US', { month: 'long' })} ${start.getDate()}–${end.getDate()}, ${end.getFullYear()}`
       : `${dateLabel(start)} – ${dateLabel(end)}`
   }
+  if (view === 'list') {
+    // The list loads the pivot month through the end of the next month, so the
+    // heading must describe that whole span rather than only the pivot month.
+    const start = startOfMonth(pivot)
+    const end = endOfMonth(new Date(pivot.getFullYear(), pivot.getMonth() + 1, 1))
+    const startLabel = monthLabel(start)
+    const endLabel = monthLabel(end)
+    return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
+  }
   return monthLabel(pivot)
 }
 
-function viewRange(view, pivot) {
+export function viewRange(view, pivot) {
   if (view === 'day') return [pivot, pivot]
   if (view === 'week') {
     const start = startOfWeek(pivot)
@@ -275,6 +284,48 @@ export function providerEventDate(evt) {
   if (!String(raw).includes('T')) return String(raw).slice(0, 10)
   const parsed = new Date(raw)
   return Number.isNaN(parsed.getTime()) ? String(raw).slice(0, 10) : localIsoDate(parsed)
+}
+
+const EXTERNAL_CALENDAR_PROVIDERS = new Set(['microsoft', 'google'])
+
+// A scheduled event is saved in LawHand first; the external calendar write is
+// best effort. The banner must say which of those actually happened rather than
+// reporting every save as a successful external sync. S1.09.
+export function syncMessageForScheduledEvent(event) {
+  const provider = event?.calendar_provider || null
+  const external = EXTERNAL_CALENDAR_PROVIDERS.has(provider)
+  // sync_status combines calendar and meeting-provider outcomes. The returned
+  // artifact IDs tell us which part actually succeeded.
+  const calendarSynced = external && Boolean(event?.external_calendar_event_id)
+  const zoomRequested = event?.meeting_provider === 'zoom'
+  const meetingCreated = Boolean(event?.join_url)
+
+  if (event?.sync_status === 'error') {
+    if (calendarSynced && zoomRequested && !meetingCreated) {
+      return {
+        type: 'error',
+        text: 'Saved in LawHand and synced to your connected calendar, but the Zoom meeting could not be created.',
+      }
+    }
+    if (external && !calendarSynced) {
+      return {
+        type: 'error',
+        text: 'Saved in LawHand, but the connected calendar could not be updated.',
+        reconnectProvider: provider,
+      }
+    }
+    return { type: 'error', text: 'Saved in LawHand, but an external service could not be updated.' }
+  }
+  if (calendarSynced) {
+    return { type: 'success', text: 'Event created and synced to your connected calendar.' }
+  }
+  if (external) {
+    return { type: 'error', text: 'Saved in LawHand. Calendar synchronization has not been confirmed.' }
+  }
+  if (zoomRequested && meetingCreated) {
+    return { type: 'success', text: 'Event created in LawHand with a Zoom meeting.' }
+  }
+  return { type: 'success', text: 'Event created in LawHand.' }
 }
 
 // A task we pushed to Outlook or Google comes back on the provider read as an
@@ -733,7 +784,7 @@ export default function CalendarPage() {
     setEventSaving(true)
     setSyncMessage(null)
     try {
-      await createScheduledEvent({
+      const created = await createScheduledEvent({
         title: form.title,
         description: form.description || null,
         start_at: localDateTimeToIso(form.date, form.start_time),
@@ -748,7 +799,7 @@ export default function CalendarPage() {
         meeting_provider: form.meeting_provider || 'none',
       })
       setShowEventModal(false)
-      setSyncMessage({ type: 'success', text: 'Event created.' })
+      setSyncMessage(syncMessageForScheduledEvent(created))
       await fetchEvents(pivotDate)
     } catch (err) {
       setSyncMessage({
