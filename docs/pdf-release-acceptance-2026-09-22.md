@@ -40,6 +40,8 @@ time-saving comparison. No customer data was sent to these services.
 | Ambiguous authored intake choices and fee signer names | Exclusive labeled radio groups; distinct signer labels; preserve source defaults. Visually check both regenerated sources and their outputs. |
 | Literal undefined labels and unreviewed samples | Honest numbered/page fallback, original metadata retained, source-review warning. This is not source curation or legal validation. |
 | Storage summary claims OK while grant cannot refresh | Derive readiness from the actual selected provider and storage permissions. Reauthorize and separately prove upload/reopen on Microsoft and Google. |
+| Google retry may upload after a failed existing-file lookup | Stop before upload when lookup is throttled, unavailable or interrupted. Preserve no-match uploads and checksum-based reuse. |
+| Narrow Prepare view lets controls widen the page | Use a shrinkable single-column grid below the desktop breakpoint; visually retest the form and PDF preview at 884px. |
 | Studio field and paused-template counts disagree | Discover body fields consistently; exclude paused templates from draft count. |
 
 ## Release acceptance requirements

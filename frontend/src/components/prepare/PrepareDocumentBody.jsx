@@ -81,7 +81,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
   }
   const scrollClass = layout === 'modal' ? 'lg:max-h-[78vh] lg:overflow-y-auto' : ''
   return (
-      <div className="grid gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]"><div className={`space-y-4 lg:pr-2 ${scrollClass}`}>
+      <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]"><div className={`min-w-0 space-y-4 lg:pr-2 ${scrollClass}`}>
         <StorageReadinessNotice enabled={canSaveToMatter && Boolean(matterId.trim())} />
         {error && (
           <div className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">

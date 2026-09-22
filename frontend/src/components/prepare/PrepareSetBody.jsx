@@ -44,8 +44,8 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     </div>
   )
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(300px,420px)_minmax(0,1fr)]">
-      <div className="space-y-4">
+    <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(300px,420px)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-4">
         {sessionRestoreError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{sessionRestoreError}</span><button type="button" onClick={retrySessionRestore} className="underline font-semibold">Retry</button></div>}
         {persistError && <div role="alert" className="text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2 flex items-center justify-between gap-2"><span>{persistError}</span><button type="button" onClick={retrySave} className="underline font-semibold">Retry save</button></div>}
         {!persistError && ['pending', 'saving'].includes(persistStatus) && <p role="status" className="text-xs text-brand-muted">Saving answers…</p>}
