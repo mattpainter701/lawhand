@@ -221,21 +221,23 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     }
     const snapshot = { epoch, key: JSON.stringify(payload), payload }
     latestPersist.current = snapshot
-    if (persistInFlight.current) {
-      const operation = persistInFlight.current
-      await operation
-      if (latestPersist.current?.epoch === persistEpoch.current && latestPersist.current.key !== lastPersistedKey.current && epoch !== persistEpoch.current) return flushLatest()
-      return sessionRef.current
-    }
+    if (persistInFlight.current) return persistInFlight.current
     if (snapshot.key === lastPersistedKey.current) return sessionRef.current
     const operation = (async () => {
-      while (latestPersist.current?.epoch === epoch && latestPersist.current.key !== lastPersistedKey.current) {
+      while (latestPersist.current && latestPersist.current.key !== lastPersistedKey.current) {
         const currentSnapshot = latestPersist.current
+        if (currentSnapshot.epoch !== persistEpoch.current) break
         const current = sessionRef.current
-        const saved = await writeFillSession({ ...(current?.id ? { id: current.id } : {}), ...currentSnapshot.payload })
+        let saved
+        try {
+          saved = await writeFillSession({ ...(current?.id ? { id: current.id } : {}), ...currentSnapshot.payload })
+        } catch (err) {
+          if (currentSnapshot.epoch !== persistEpoch.current) continue
+          throw err
+        }
         // A matter switch invalidates the response from the old session. The
         // request may finish, but it must not resurrect that session in state.
-        if (persistEpoch.current !== epoch) return sessionRef.current
+        if (persistEpoch.current !== currentSnapshot.epoch) continue
         const wasNew = !sessionRef.current?.id
         sessionRef.current = saved
         lastPersistedKey.current = currentSnapshot.key

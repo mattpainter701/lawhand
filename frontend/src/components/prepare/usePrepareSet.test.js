@@ -1,5 +1,5 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import usePrepareSet from './usePrepareSet'
 
 const api = vi.hoisted(() => ({
@@ -20,8 +20,9 @@ const interview = (suggested_value = null) => ({
   unavailable: [],
 })
 
+afterEach(cleanup)
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   api.getTemplateSet.mockResolvedValue({ id: SET, title: 'Packet', items: [{ template_id: template.id, title: template.title, position: 0, resolved_version_no: 1 }] })
   api.getTemplate.mockResolvedValue(template)
   api.getTemplateSetInterview.mockResolvedValue(interview())
@@ -111,6 +112,25 @@ describe('usePrepareSet race handling', () => {
     act(() => resolveFirst({ id: 'session-1', status: 'open', answers: { 'manual:template-1:name': 'first' }, verified: [], members: [] }))
     await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(2))
     expect(api.writeFillSession.mock.calls[1][0].answers).toEqual({ 'manual:template-1:name': 'third' })
+  })
+
+  it.each([false, true])('saves the new matter after an old in-flight write settles (failure=%s)', async (failOld) => {
+    let settleOld
+    api.writeFillSession.mockImplementationOnce(() => new Promise((resolve, reject) => { settleOld = failOld ? reject : resolve }))
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.interview).toBeTruthy())
+    act(() => result.current.setAnswer('manual:template-1:name', 'Old client'))
+    act(() => { result.current.retrySave() })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(1))
+    act(() => result.current.selectMatter(MATTER_B))
+    await waitFor(() => expect(result.current.smartFillState).toBe('ready'))
+    act(() => result.current.setAnswer('manual:template-1:name', 'New client'))
+    act(() => { result.current.retrySave() })
+    act(() => settleOld(failOld ? new Error('old request failed') : { id: 'old-session', status: 'open' }))
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledTimes(2))
+    expect(api.writeFillSession.mock.calls[1][0]).toMatchObject({ matter_id: MATTER_B, answers: { 'manual:template-1:name': 'New client' } })
+    expect(api.writeFillSession.mock.calls[1][0]).not.toHaveProperty('id')
+    await waitFor(() => expect(result.current.session?.id).toBe('session-1'))
   })
 
   it('does not queue a packet when the latest session snapshot fails to save', async () => {
