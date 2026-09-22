@@ -21,13 +21,20 @@ FIRM_FIELDS = {
 }
 
 
-async def suggestions(db, tenant_id, bindings):
+async def load(db, tenant_id) -> dict:
+    """The firm's branding profile, read once for however many templates need it."""
+
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    return await get_firm_branding(db, tenant) if tenant is not None else {}
+
+
+def resolve(branding: dict, tenant_id, bindings) -> dict:
+    """Resolve the firm-bound fields of one template from a preloaded profile."""
+
     requested = {name: path for name, path in bindings.items() if path in FIRM_FIELDS}
     if not requested:
         return {}
-    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
-    tenant = result.scalar_one_or_none()
-    branding = await get_firm_branding(db, tenant) if tenant is not None else {}
     resolved = {}
     for name, path in requested.items():
         field = FIRM_FIELDS[path]
@@ -49,3 +56,9 @@ async def suggestions(db, tenant_id, bindings):
             review_required=value is None,
         )
     return resolved
+
+
+async def suggestions(db, tenant_id, bindings):
+    """Read the profile and resolve in one call, for a caller with one template."""
+
+    return resolve(await load(db, tenant_id), tenant_id, bindings)

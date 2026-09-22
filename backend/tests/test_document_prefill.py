@@ -341,6 +341,41 @@ class TestJob:
             "failure_code": "source_unavailable",
         }
 
+    async def test_custom_and_firm_sources_are_loaded_once_for_every_template(
+        self, db_session, test_tenant, test_user
+    ):
+        """The custom-field and firm-profile reads must not repeat per template.
+
+        They do not depend on the template, so the run reads them once and hands
+        the same snapshot to each fill — the N+1 the batched loaders remove.
+        """
+
+        scenario = scenarios.individual_client()
+        ids = await scenarios.persist(
+            db_session, test_tenant.id, test_user.id, scenario
+        )
+        matter = await db_session.get(Matter, uuid.UUID(ids["matter_id"]))
+        await _published_pdf_template(db_session, test_tenant.id, title="First form")
+        await _published_pdf_template(db_session, test_tenant.id, title="Second form")
+
+        seen: list[tuple] = []
+        original = prefill.engine.prepare_fill
+
+        async def spy(*args, **kwargs):
+            seen.append((kwargs.get("custom_sources"), kwargs.get("firm_profile")))
+            return await original(*args, **kwargs)
+
+        with patch.object(prefill.engine, "prepare_fill", spy):
+            summaries = await prefill.prepare_matter_documents(
+                db_session, matter=matter, actor=None
+            )
+
+        assert len(summaries) == 2 and len(seen) == 2
+        first_custom, first_firm = seen[0]
+        last_custom, last_firm = seen[1]
+        assert first_custom is not None and first_custom is last_custom
+        assert first_firm is not None and first_firm is last_firm
+
     async def test_no_published_templates_records_an_honest_empty_run(
         self, db_session, test_tenant, test_user
     ):

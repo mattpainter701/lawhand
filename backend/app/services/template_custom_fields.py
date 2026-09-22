@@ -1,5 +1,7 @@
 """Tenant-scoped, non-sensitive typed field sources for Template Studio."""
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from app.models.plugin import MatterEvent
 from app.models.configurable_workflow import (
@@ -45,7 +47,74 @@ def display_value(value):
     return str(value)
 
 
-async def suggestions(db, tenant_id, matter, bindings):
+@dataclass
+class CustomFieldSources:
+    """Eligible custom fields plus the matter's and client's values, read once.
+
+    ``resolve`` builds the suggestions for as many templates as need them from
+    this snapshot, so a prefill run over twenty templates does a handful of
+    queries rather than re-reading the definitions and values per template.
+    """
+
+    definitions: dict
+    matter_values: dict
+    contact_values: dict
+    reviewed: dict
+
+
+async def load(db, tenant_id, matter) -> CustomFieldSources:
+    definitions_by_identity = {
+        (field.entity_type, str(field.id)): field
+        for field in await definitions(db, tenant_id)
+    }
+    matter_id = getattr(matter, "id", None)
+    contact_id = getattr(matter, "client_contact_id", None)
+    matter_values: dict = {}
+    if matter_id:
+        rows = await db.scalars(
+            select(MatterCustomFieldValue).where(
+                MatterCustomFieldValue.tenant_id == tenant_id,
+                MatterCustomFieldValue.matter_id == matter_id,
+            )
+        )
+        matter_values = {row.field_definition_id: row for row in rows}
+    contact_values: dict = {}
+    if contact_id:
+        rows = await db.scalars(
+            select(ContactCustomFieldValue).where(
+                ContactCustomFieldValue.tenant_id == tenant_id,
+                ContactCustomFieldValue.contact_id == contact_id,
+            )
+        )
+        contact_values = {row.field_definition_id: row for row in rows}
+    reviewed: dict = {}
+    if matter_id:
+        events = await db.scalars(
+            select(MatterEvent)
+            .where(
+                MatterEvent.tenant_id == tenant_id,
+                MatterEvent.matter_id == matter_id,
+                MatterEvent.event_type == "template_fact_reviewed",
+            )
+            .order_by(MatterEvent.created_at.desc())
+        )
+        for event in events:
+            evidence = event.metadata_json or {}
+            key = (
+                str(evidence.get("field")),
+                str(evidence.get("accepted_value_hmac")),
+                str(evidence.get("reviewed_at")),
+            )
+            reviewed.setdefault(key, event)
+    return CustomFieldSources(
+        definitions=definitions_by_identity,
+        matter_values=matter_values,
+        contact_values=contact_values,
+        reviewed=reviewed,
+    )
+
+
+def resolve(sources: CustomFieldSources, tenant_id, matter, bindings) -> dict:
     requested = {
         name: custom_binding(path)
         for name, path in bindings.items()
@@ -53,32 +122,21 @@ async def suggestions(db, tenant_id, matter, bindings):
     }
     if not requested:
         return {}
-    available = {
-        (field.entity_type, str(field.id)): field
-        for field in await definitions(db, tenant_id)
-    }
     output = {}
     for name, identity in requested.items():
-        field = available.get(identity)
-        value = None
+        field = sources.definitions.get(identity)
+        entity_type = identity[0]
         entity_id = (
             getattr(matter, "id", None)
-            if identity[0] == "matter"
+            if entity_type == "matter"
             else getattr(matter, "client_contact_id", None)
         )
+        value = None
         if field and entity_id:
-            model = (
-                MatterCustomFieldValue
-                if identity[0] == "matter"
-                else ContactCustomFieldValue
-            )
-            column = model.matter_id if identity[0] == "matter" else model.contact_id
-            value = await db.scalar(
-                select(model).where(
-                    model.tenant_id == tenant_id,
-                    column == entity_id,
-                    model.field_definition_id == field.id,
-                )
+            value = (
+                sources.matter_values.get(field.id)
+                if entity_type == "matter"
+                else sources.contact_values.get(field.id)
             )
         provenance = {
             "status": "from_custom_record" if value else "binding_unresolved",
@@ -93,21 +151,9 @@ async def suggestions(db, tenant_id, matter, bindings):
                 updated_at=value.updated_at.isoformat(),
                 updated_by_user_id=str(value.updated_by_user_id),
             )
-        if value and identity[0] == "matter":
-            reviewed = await db.scalar(
-                select(MatterEvent)
-                .where(
-                    MatterEvent.tenant_id == tenant_id,
-                    MatterEvent.matter_id == entity_id,
-                    MatterEvent.event_type == "template_fact_reviewed",
-                    MatterEvent.metadata_json["field"].as_string() == str(field.id),
-                    MatterEvent.metadata_json["accepted_value_hmac"].as_string()
-                    == value.value_hmac,
-                    MatterEvent.metadata_json["reviewed_at"].as_string()
-                    == value.updated_at.isoformat(),
-                )
-                .order_by(MatterEvent.created_at.desc())
-                .limit(1)
+        if value and entity_type == "matter":
+            reviewed = sources.reviewed.get(
+                (str(field.id), value.value_hmac, value.updated_at.isoformat())
             )
             if reviewed:
                 evidence = reviewed.metadata_json
@@ -127,3 +173,9 @@ async def suggestions(db, tenant_id, matter, bindings):
             review_required=True,
         )
     return output
+
+
+async def suggestions(db, tenant_id, matter, bindings):
+    """Read and resolve in one call, for a caller filling a single template."""
+
+    return resolve(await load(db, tenant_id, matter), tenant_id, matter, bindings)

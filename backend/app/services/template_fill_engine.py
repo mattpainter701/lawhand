@@ -1298,12 +1298,20 @@ async def prepare_fill(
     actor: Any = None,
     requested_variables: list[str] | None = None,
     loaders: Loaders = DEFAULT_LOADERS,
+    custom_sources: Any = None,
+    firm_profile: Any = None,
 ) -> PreparedFill:
     """Fill ``template`` from a matter, loading only the records it needs.
 
     ``matter`` may be passed directly (a job that already holds the row) or
     named by ``matter_id`` and loaded. ``actor`` is whoever the fill is for;
     it supplies the ``prepared_by`` family and may be ``None``.
+
+    ``custom_sources`` and ``firm_profile`` are optional preloaded snapshots
+    (``template_custom_fields.load`` / ``template_firm_fields.load``). A caller
+    filling many templates for one matter loads them once and passes them in,
+    so the custom-field definitions and the firm branding are read a single
+    time rather than once per template.
     """
 
     if matter is None and matter_id:
@@ -1351,8 +1359,16 @@ async def prepare_fill(
             document_evidence=evidence,
         )
     )
-    custom = await template_custom_fields.suggestions(db, tenant_id, matter, bindings)
-    firm = await template_firm_fields.suggestions(db, tenant_id, bindings)
+    custom = (
+        await template_custom_fields.suggestions(db, tenant_id, matter, bindings)
+        if custom_sources is None
+        else template_custom_fields.resolve(custom_sources, tenant_id, matter, bindings)
+    )
+    firm = (
+        await template_firm_fields.suggestions(db, tenant_id, bindings)
+        if firm_profile is None
+        else template_firm_fields.resolve(firm_profile, tenant_id, bindings)
+    )
     suggestions = resolve_variables(
         variables, bindings=bindings, candidates=index, firm=firm, custom=custom
     )

@@ -109,6 +109,30 @@ def binding_is_resolvable(binding: str) -> bool:
     )
 
 
+def field_has_source(
+    *,
+    binding: str | None,
+    name: str,
+    vocabulary: Iterable[str] | frozenset[str],
+) -> bool:
+    """Whether a field resolves to a data source.
+
+    The one question both readers ask: ``classify_field`` of every field
+    ("does it arrive with a value?") and the approval gate of every *required*
+    field ("can this ever render a value?"). Answering it in one place means
+    the state a field is coloured with and the verdict the gate reaches cannot
+    drift: a field the gate accepts is never one the read-out calls unfilled.
+
+    A declared binding is authoritative and never falls back to the name,
+    exactly as in ``build_variable_suggestions`` at fill time. ``manual`` is
+    not a source (``binding_is_resolvable`` reports it unresolved).
+    """
+
+    if binding:
+        return binding_is_resolvable(binding)
+    return normalize_variable_name(name) in vocabulary
+
+
 def counts_toward_coverage(field: dict[str, Any]) -> bool:
     """Whether this field is one a matter has to supply a value for.
 
@@ -142,10 +166,11 @@ def classify_field(
         return SIGNATURE
     if binding == MANUAL_BINDING:
         return MANUAL
-    if binding:
-        return BOUND if binding_is_resolvable(binding) else UNRESOLVED
     name = str(field.get("name") or "").strip()
-    return NAME_MATCHED if normalize_variable_name(name) in vocabulary else UNBOUND
+    resolvable = field_has_source(binding=binding, name=name, vocabulary=vocabulary)
+    if binding:
+        return BOUND if resolvable else UNRESOLVED
+    return NAME_MATCHED if resolvable else UNBOUND
 
 
 @dataclass(frozen=True)
