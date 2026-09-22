@@ -643,11 +643,16 @@ class CloudSearchService:
         clauses: list[str] = []
         for kw in keywords:
             if exact_query:
-                phrase = _quoted_search_phrase(kw)
-                sanitised = phrase.replace("\\", "\\\\").replace("'", "\\'")
+                # Drive's single-quoted query value has its own escaping rules.
+                # Keep literal filename matching independent of fullText's
+                # tokenized phrase matching, including filename punctuation.
+                sanitised = kw.replace("\\", "\\\\").replace("'", "\\'")
+                clauses.append(
+                    f"""(name = '{sanitised}' or fullText contains '"{sanitised}"')"""
+                )
             else:
                 sanitised = kw.replace("'", "\\'")
-            clauses.append(f"fullText contains '{sanitised}'")
+                clauses.append(f"fullText contains '{sanitised}'")
         if date_after:
             clauses.append(f"modifiedTime > '{date_after}'")
         if folder_id:

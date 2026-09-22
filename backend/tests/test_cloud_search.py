@@ -1147,9 +1147,9 @@ async def test_graph_exact_query_quotes_phrase_and_excludes_messages(monkeypatch
 @pytest.mark.parametrize(
     ("keyword", "expected"),
     [
-        ("QA PDF Fixture.pdf", """fullText contains '"QA PDF Fixture.pdf"' and trashed = false"""),
-        ("O'Reilly.pdf", r"""fullText contains '"O\'Reilly.pdf"' and trashed = false"""),
-        (r'QA "draft"\copy.pdf', r"""fullText contains '"QA \\"draft\\"\\\\copy.pdf"' and trashed = false"""),
+        ("QA PDF Fixture.pdf", """(name = 'QA PDF Fixture.pdf' or fullText contains '"QA PDF Fixture.pdf"') and trashed = false"""),
+        ("O'Reilly.pdf", r"""(name = 'O\'Reilly.pdf' or fullText contains '"O\'Reilly.pdf"') and trashed = false"""),
+        (r'QA "draft"\copy.pdf', r"""(name = 'QA "draft"\\copy.pdf' or fullText contains '"QA "draft"\\copy.pdf"') and trashed = false"""),
     ],
 )
 async def test_google_drive_exact_query_uses_drive_phrase_syntax(monkeypatch, keyword, expected):

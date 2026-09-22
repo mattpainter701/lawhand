@@ -36,6 +36,12 @@ Full-content fetching is off by default. **Search details** exposes the technica
 plan when needed. Selecting a search source does not change document storage or
 grant access to another account.
 
+Google Drive exact diagnostics combine literal filename equality with phrase
+matching and escape the Drive query value once, following the
+[Drive query examples](https://developers.google.com/workspace/drive/api/guides/search-files).
+Request-level regression cases include apostrophes, double quotes and backslashes;
+live provider acceptance remains a separate check.
+
 Primary product references reviewed on September 22, 2026:
 
 - [Gavel integrations](https://www.gavel.io/use-cases/integrations) describe
