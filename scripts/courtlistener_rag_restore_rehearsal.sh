@@ -12,7 +12,9 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/courtlistener-rag-restore.XXXXXX")"
 db="courtlistener-rag-restore-$$"
 cleanup() { docker rm -f "$db" >/dev/null 2>&1 || true; rm -rf -- "$work"; }
 trap cleanup EXIT
-restic restore latest --tag courtlistener-rag-production --target "$work"
+# Wait out a concurrent backup's exclusive lock rather than failing the
+# rehearsal; see the note in restore_rehearsal.sh.
+restic restore latest --retry-lock "${RESTIC_RETRY_LOCK:-10m}" --tag courtlistener-rag-production --target "$work"
 mapfile -t dumps < <(find "$work" -type f -name 'courtlistener-rag_*.dump' -print)
 [[ ${#dumps[@]} -eq 1 ]] || { echo "snapshot must contain exactly one CourtListener RAG dump" >&2; exit 3; }
 dump="${dumps[0]}"; base="$(dirname "$dump")"; stamp="$(basename "$dump" | sed -E 's/^courtlistener-rag_([0-9TZ]+)\.dump$/\1/')"

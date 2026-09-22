@@ -41,7 +41,13 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Restoring latest encrypted off-host snapshot into $WORK_DIR"
-restic restore latest --tag legalapp-production --target "$WORK_DIR"
+# The hourly legalapp-backup.timer holds restic's exclusive lock for minutes at
+# a time, and this rehearsal is scheduled independently of it. Without a retry
+# window the loser aborts with "waiting up to 0s for the lock" and reports a DR
+# failure that says nothing about the backup's recoverability. backup_db.sh
+# already retries every repository command for the same reason.
+restic restore latest --retry-lock "${RESTIC_RETRY_LOCK:-10m}" \
+  --tag legalapp-production --target "$WORK_DIR"
 
 BACKUP_FILE="$(find "$WORK_DIR" -type f -name 'legalapp_*.dump' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
 [[ -n "$BACKUP_FILE" ]] || { echo "No database dump found in snapshot" >&2; exit 3; }

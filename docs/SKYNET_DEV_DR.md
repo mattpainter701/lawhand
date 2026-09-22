@@ -42,7 +42,19 @@ workspace MCP, and research MCP product surfaces are disabled.
    `sudo bash scripts/install_dast_scan_entrypoint.sh`. It adds two path-scoped
    sudo rules (`lawhand-runner` may run only
    `/usr/local/sbin/lawhand-dast-scan` and `/usr/local/sbin/lawhand-active-scan`)
-   and does not grant Docker membership.
+   and does not grant Docker membership. The installer refuses a source with
+   CRLF endings or a syntax error: `install` copies bytes verbatim, so a CRLF
+   checkout produces a `#!/usr/bin/env bash\r` shebang and the entrypoint dies
+   with `env: 'bash\r': No such file or directory` (exit 127) before any line
+   runs. Downstream that reads only as "the scan produced no report", so
+   reinstall from a clean checkout when a `[dast-alert]` issue reports a
+   missing report:
+
+   ```bash
+   head -c 64 /usr/local/sbin/lawhand-dast-scan | cat -A | head -1  # expect no ^M
+   sudo bash scripts/install_dast_scan_entrypoint.sh
+   sudo -n /usr/local/sbin/lawhand-dast-scan   # smoke-test before the next schedule
+   ```
 The deployment workflow pins current `origin/main`, requires CI for that exact
 SHA, and calls a root-owned entrypoint. The entrypoint refuses a dirty checkout,
 non-main commit, wrong origin, or non-isolated environment.

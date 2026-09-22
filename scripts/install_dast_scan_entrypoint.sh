@@ -16,8 +16,22 @@ id -u "$runner_user" >/dev/null 2>&1 || {
   exit 2
 }
 for script in lawhand-dast-scan lawhand-active-scan; do
-  [[ -f "$script_dir/$script" ]] || {
-    echo "ERROR: missing $script_dir/$script" >&2
+  src="$script_dir/$script"
+  [[ -f "$src" ]] || {
+    echo "ERROR: missing $src" >&2
+    exit 2
+  }
+  # install(1) copies bytes verbatim, so a CRLF checkout installs an entrypoint
+  # whose shebang is `#!/usr/bin/env bash\r`. sudo then fails it with
+  # `env: 'bash\r': No such file or directory` (exit 127) before a single line
+  # runs, which reads downstream as "the scan produced no report" rather than
+  # as a broken install. Refuse the source instead of shipping it.
+  if LC_ALL=C grep -q $'\r' "$src"; then
+    echo "ERROR: $src has CRLF line endings; re-checkout with LF" >&2
+    exit 2
+  fi
+  bash -n "$src" || {
+    echo "ERROR: $src is not valid bash" >&2
     exit 2
   }
 done

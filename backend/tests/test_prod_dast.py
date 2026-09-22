@@ -137,6 +137,44 @@ def test_dast_installer_grants_only_the_fixed_entrypoints() -> None:
     assert "visudo -cf" in installer
     assert "chmod 0440" in installer
     assert "install -m 0755 -o root -g root" in installer
+    # install(1) copies bytes verbatim, so a CRLF source installs an entrypoint
+    # whose shebang is `#!/usr/bin/env bash\r`; sudo then fails it with exit 127
+    # before any line runs. Validate the source rather than ship it.
+    assert "grep -q $'\\r'" in installer
+    assert "bash -n" in installer
+
+
+def test_dast_entrypoints_and_gitattributes_pin_lf_endings() -> None:
+    # The entrypoints are extensionless, so the `*.sh text eol=lf` rule never
+    # reached them and a CRLF checkout could install a shebang the kernel
+    # cannot run.
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "scripts/lawhand-* text eol=lf" in attributes
+
+    for path in (ENTRYPOINT, ACTIVE_ENTRYPOINT):
+        raw = path.read_bytes()
+        assert b"\r\n" not in raw, f"{path.name} must use LF endings"
+        assert raw.startswith(b"#!/usr/bin/env bash\n")
+
+
+def test_scan_steps_report_a_failing_entrypoint_instead_of_swallowing_it() -> None:
+    parsed = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+    for job, entrypoint in (
+        ("zap-baseline", "lawhand-dast-scan"),
+        ("nuclei-active", "lawhand-active-scan"),
+    ):
+        step = parsed["jobs"][job]["steps"][0]
+        assert step["id"] == "scan"
+        # continue-on-error keeps a scan failure from blocking the report job,
+        # so the step must still surface the exit code and the entrypoint's
+        # stdout, which command substitution would otherwise discard.
+        assert step["continue-on-error"] is True
+        run = step["run"]
+        assert f'"$(sudo -n /usr/local/sbin/{entrypoint})" || scan_exit=$?' in run
+        assert "printf '%s\\n' \"$output\"" in run
+        assert 'exit "$scan_exit"' in run
+        assert f"::error::{entrypoint} exited" in run
 
 
 def _report(riskcode: str = "2", uri: str = "https://getlawhand.com/") -> dict:
