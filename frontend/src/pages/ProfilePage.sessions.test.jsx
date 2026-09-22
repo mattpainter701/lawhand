@@ -9,7 +9,7 @@ const user = { id: 'u1', full_name: 'Test Attorney', email: 'a@firm.com', role: 
 
 vi.mock('../App', () => ({ useAuth: () => ({ user, refreshUser: vi.fn() }) }))
 vi.mock('../api', () => ({
-  getMyMatters: vi.fn().mockResolvedValue([]),
+  getMyMattersPage: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   getTimeEntries: vi.fn().mockResolvedValue([]),
   getWorkspaceMcpGrants: vi.fn().mockResolvedValue({ items: [] }),
   revokeAllSessions: vi.fn().mockResolvedValue({ user_id: 'u1' }),

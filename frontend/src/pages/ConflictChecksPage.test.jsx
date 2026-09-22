@@ -6,7 +6,7 @@ import ConflictChecksPage from './ConflictChecksPage'
 import {
   closeConflictCheck,
   createConflictCheck,
-  getMyMatters,
+  getMyMattersPage,
   listConflictChecks,
 } from '../api'
 
@@ -15,7 +15,7 @@ vi.mock('../api', () => ({
   createConflictCheck: vi.fn(),
   closeConflictCheck: vi.fn(),
   downloadConflictCheckReport: vi.fn(),
-  getMyMatters: vi.fn(),
+  getMyMattersPage: vi.fn(),
 }))
 
 const openRecord = {
@@ -37,7 +37,7 @@ describe('ConflictChecksPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     listConflictChecks.mockResolvedValue({ items: [], total: 0 })
-    getMyMatters.mockResolvedValue([])
+    getMyMattersPage.mockResolvedValue({ items: [], total: 0 })
     createConflictCheck.mockResolvedValue(openRecord)
     closeConflictCheck.mockResolvedValue({
       ...openRecord,
