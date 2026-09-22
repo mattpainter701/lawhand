@@ -78,6 +78,12 @@ Keep the source PDF beside the questions when a label needs context. Choose **Pr
 
 Samples with missing source details or ambiguous labels still need source review. A numbered field label identifies a location, not a verified legal meaning. Check the form's issuing authority, edition and suitability before using it.
 
+## Read details from a completed form
+
+On the matter's Documents tab, open **Read details from a document** and choose the saved source. **Find details** looks for supported information in the document. If the document was generated from a known template, choose its **Printed form** and **Read against the printed form** to compare the answers with the original field locations.
+
+Reading a scan can take several minutes. Keep the page open while it reads; if a timeout or connection error appears, retry when the connection is available. Review each proposed value against its source before accepting it. Reading alone does not change the matter's details.
+
 ## Documents from a workflow
 
 A workflow template can list documents to prepare beside its checklist. When someone approves a workflow run on a matter, each listed document is pre-filled from the matter and handed to its assignee as a **Prepare** task that opens the session under Documents in progress. Nothing is generated, saved or sent by the workflow itself: the assignee reviews, verifies and saves the document as usual, and rolling the run back cancels the task and discards an unsaved session.

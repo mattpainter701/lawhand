@@ -43,6 +43,10 @@ time-saving comparison. No customer data was sent to these services.
 | Google retry may upload after a failed existing-file lookup | Stop before upload when lookup is throttled, unavailable or interrupted. Preserve no-match uploads and checksum-based reuse. |
 | Narrow Prepare view lets controls widen the page | Use a shrinkable single-column grid below the desktop breakpoint; visually retest the form and PDF preview at 884px. |
 | Studio field and paused-template counts disagree | Discover body fields consistently; exclude paused templates from draft count. |
+| Printed-form reading shows a generic failure before the server's successful response | Give field-by-field reading the existing 300-second budget; show progress and retry guidance; discard stale responses after context changes. |
+| Microsoft cloud search returns invalid entity combination | Separate file/mail requests and cap mail results at 25; preserve successful results when one source request fails. |
+
+The Microsoft follow-up follows the [Graph Search API limits](https://learn.microsoft.com/en-us/graph/api/resources/search-api-overview?view=graph-rest-1.0): one search request per HTTP call, supported entity combinations, and the smaller message page size. It does not replace reauthorization when Microsoft requires MFA.
 
 ## Release acceptance requirements
 

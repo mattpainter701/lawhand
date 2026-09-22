@@ -141,6 +141,7 @@ const LONG_REQUEST_PATTERNS = [
   /\/preview-render(\/|$)/,
   /\/analyze(\/|$)/,
   /\/revisions(\/|$)/,
+  /\/facts\/from-form(\/|$)/,
 ]
 
 export const isLongRunningPath = (url) => (

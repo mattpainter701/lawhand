@@ -2,6 +2,23 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.02",
+      "version": "2026.09.22.02",
+      "title": "More reliable document reading and Microsoft search",
+      "published_at": "2026-09-22",
+      "summary": "Reading a document against its printed form has more time to finish and clearer progress and retry messages. Microsoft cloud searches use supported requests for files and mail.",
+      "highlights": [
+        {
+          "title": "Let form reading finish",
+          "description": "Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them."
+        },
+        {
+          "title": "Microsoft search requests repaired",
+          "description": "File and mail searches use separate supported requests and respect the sources you selected."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.01",
       "version": "2026.09.22.01",
       "title": "Fill from a matter and keep your progress",

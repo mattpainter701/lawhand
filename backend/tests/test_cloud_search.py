@@ -115,7 +115,7 @@ async def test_drive_search_includes_shared_drive_options(monkeypatch, account_t
         db=None,
         keywords=["matter"],
         date_after="",
-        max_hits=10,
+        max_hits=200,
         tenant_id=f"tenant-{account_tier}",
         user_id=None,
     )
@@ -973,3 +973,202 @@ async def test_graph_and_sharepoint_resolve_their_own_token_when_called_directly
     )
 
     assert lookups == ["tenant-1", "tenant-2"]
+
+
+@pytest.mark.asyncio
+async def test_graph_search_splits_incompatible_file_and_message_entity_types(
+    monkeypatch,
+):
+    service = CloudSearchService()
+    captured: list[list[str]] = []
+    sizes: dict[tuple[str, ...], int] = {}
+
+    async def fake_token(*_args, **_kwargs):
+        return "access-token"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, **_kwargs):
+            request = json["requests"][0]
+            captured.append(request["entityTypes"])
+            sizes[tuple(request["entityTypes"])] = request["size"]
+            return _Response()
+
+    monkeypatch.setattr(service, "_get_microsoft_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_graph(
+        db=None,
+        keywords=["matter"],
+        date_after="",
+        max_hits=200,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        sources=["onedrive", "outlook"],
+    )
+
+    assert sorted(captured) == [["driveItem", "listItem"], ["message"]]
+    assert sizes[("message",)] == 25
+    assert sizes[("driveItem", "listItem")] == 200
+
+
+@pytest.mark.asyncio
+async def test_graph_search_only_requests_requested_entity_type(monkeypatch):
+    service = CloudSearchService()
+    captured: list[list[str]] = []
+
+    async def fake_token(*_args, **_kwargs):
+        return "access-token"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, **_kwargs):
+            captured.append(json["requests"][0]["entityTypes"])
+            return _Response()
+
+    monkeypatch.setattr(service, "_get_microsoft_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_graph(
+        db=None,
+        keywords=["matter"],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        sources=["outlook"],
+    )
+
+    assert captured == [["message"]]
+
+
+@pytest.mark.asyncio
+async def test_graph_file_search_uses_file_fields_only(monkeypatch):
+    service = CloudSearchService()
+    captured: list[dict] = []
+
+    async def fake_token(*_args, **_kwargs):
+        return "access-token"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, **_kwargs):
+            captured.append(json["requests"][0])
+            return _Response()
+
+    monkeypatch.setattr(service, "_get_microsoft_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_graph(
+        db=None,
+        keywords=["matter"],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        sources=["onedrive"],
+    )
+
+    assert captured[0]["entityTypes"] == ["driveItem", "listItem"]
+    assert captured[0]["fields"] == [
+        "name",
+        "webUrl",
+        "lastModifiedDateTime",
+        "file",
+        "parentReference",
+        "createdDateTime",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_graph_search_keeps_file_hits_when_message_group_fails(monkeypatch):
+    service = CloudSearchService()
+
+    async def fake_token(*_args, **_kwargs):
+        return "access-token"
+
+    class _GraphResponse:
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, **_kwargs):
+            entity_types = json["requests"][0]["entityTypes"]
+            if entity_types == ["message"]:
+                return _GraphResponse(400)
+            return _GraphResponse(
+                200,
+                {
+                    "value": [
+                        {
+                            "hitsContainers": [
+                                {
+                                    "total": 1,
+                                    "hits": [
+                                        {
+                                            "rank": 1,
+                                            "hitId": "file-1",
+                                            "resource": {
+                                                "@odata.type": "#microsoft.graph.driveItem",
+                                                "id": "file-1",
+                                                "name": "Matter.pdf",
+                                                "webUrl": "https://example.test/Matter.pdf",
+                                                "lastModifiedDateTime": "2026-01-01T00:00:00Z",
+                                                "file": {"mimeType": "application/pdf"},
+                                            },
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(service, "_get_microsoft_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    hits = await service._search_graph(
+        db=None,
+        keywords=["matter"],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        sources=["onedrive", "outlook"],
+    )
+
+    assert [hit.object_id for hit in hits] == ["file-1"]

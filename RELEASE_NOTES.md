@@ -5,6 +5,15 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.02 — More reliable document reading and Microsoft search
+
+Released September 22, 2026.
+
+Reading a document against its printed form has more time to finish and clearer progress and retry messages. Microsoft cloud searches use supported requests for files and mail.
+
+- **Let form reading finish.** Longer printed-form reads no longer stop after 25 seconds in the browser. Keep the page open while it reads, then review the proposed details before accepting them.
+- **Microsoft search requests repaired.** File and mail searches use separate supported requests and respect the sources you selected.
+
 ## 2026.09.22.01 — Fill from a matter and keep your progress
 
 Released September 22, 2026.

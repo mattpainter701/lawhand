@@ -1,3 +1,9 @@
+## 2026.09.22.02 — Document reading and Microsoft search follow-up
+
+- Printed-form fact extraction uses the existing long-operation request budget instead of the 25-second list/query deadline. The reader shows progress and preserves actionable normalized error messages. Proposed details still require individual acceptance.
+- Microsoft Graph file and mail searches use compatible entity-type requests selected by source, rather than an invalid mixed file/mail request. This does not replace user reauthorization when Microsoft requires MFA.
+- Found during production acceptance: the synthetic form-reading request completed with HTTP 200 after the browser had already shown a generic failure; Microsoft Graph separately rejected the mixed entity types with HTTP 400.
+
 ## 2026.09.22.01 — Matter-first sample filling and PDF acceptance fixes
 
 - Sample filling now uses a tenant-scoped Smart Fill preview route, searchable matter selection, grouped fields, missing/filled filters, and a generated PDF canvas before download. Source defaults survive extraction; unnamed controls get honest page-based fallback labels. The authored intake uses labeled exclusive radio groups; fee-agreement signer names are distinct. Two source PDFs and their manifest digests are regenerated.
