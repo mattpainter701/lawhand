@@ -35,9 +35,23 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
     questions, unavailable, availableMembers, error, matterId, selectMatter, answers, setAnswer, setReviewedValues,
     toggleVerified, fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
     smartFillState, smartFillMessage, refresh, previewOf, saveOf, generating, saving, generateAll, saveAll, allPreviewed, allSaved, sendable,
-    session, background, saveAllInBackground, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
+    session, background, sessionRestoreError, retrySessionRestore, sessionRestored, persistError, persistStatus, retrySave,
   } = prep
   const visible = questions.filter((question) => filteredKeys.includes(question.key))
+  const clearReviewedValue = (key) => setReviewedValues((prev) => ({ ...prev, [key]: undefined }))
+  const updateValue = (key, value) => {
+    clearReviewedValue(key)
+    setAnswer(key, value)
+  }
+  const verifyCurrentValue = (key, value) => {
+    setReviewedValues((prev) => ({ ...prev, [key]: fillValue(value) }))
+    toggleVerified(key)
+  }
+  const toggleValueVerified = (key, value, currentlyVerified) => {
+    if (currentlyVerified) clearReviewedValue(key)
+    else verifyCurrentValue(key, value)
+    if (currentlyVerified) toggleVerified(key)
+  }
   const groups = []
   for (const question of visible) {
     const label = groupLabel(question)
@@ -101,20 +115,20 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
                         {review?.source && <p className="mb-1 text-xs text-brand-muted">{suggestionOriginLabel(review.source)}</p>}
                         {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><span>{suggestionConfidenceLabel(review)}</span>{review.needsReview ? <button type="button" disabled={saving} className="rounded border border-brand-line px-2 py-1" onClick={() => setReviewedValues((prev) => ({ ...prev, [question.key]: value }))}>Confirm {question.label}</button> : <span className="text-brand-green">Reviewed</span>}</div>}
                         {question.value_kind === 'checkbox' ? (
-                          <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => setAnswer(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
+                          <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1"><input id={inputId} type="checkbox" checked={value === 'true'} onChange={(e) => updateValue(question.key, e.target.checked ? 'true' : 'false')} disabled={saving || allSaved} />Checked</label>
                         ) : (question.value_kind === 'choice' || question.value_kind === 'radio') && question.options?.length ? (
-                          <select id={inputId} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass}>
+                          <select id={inputId} value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass}>
                             <option value="">Choose {question.label}</option>
                             {question.options.map((option) => <option key={String(option)} value={option}>{option}</option>)}
                           </select>
                         ) : question.value_kind === 'multiline' ? (
-                          <textarea id={inputId} rows={3} value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
+                          <textarea id={inputId} rows={3} value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         ) : (
-                          <input id={inputId} type="text" value={value} onChange={(e) => setAnswer(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
+                          <input id={inputId} type="text" value={value} onChange={(e) => updateValue(question.key, e.target.value)} disabled={saving || allSaved} className={inputClass} placeholder={`Enter ${question.label}`} />
                         )}
                         {review?.present && (
                           <label className={`mt-1 inline-flex items-center gap-2 text-xs ${review.verified ? 'text-brand-green' : 'text-brand-muted'}`}>
-                            <input type="checkbox" aria-label={`Verified: ${question.label}`} checked={Boolean(review.verified)} onChange={() => toggleVerified(question.key)} disabled={saving} className="h-3.5 w-3.5" />
+                            <input type="checkbox" aria-label={`Verified: ${question.label}`} checked={Boolean(review.verified)} onChange={() => toggleValueVerified(question.key, value, review.verified)} disabled={saving} className="h-3.5 w-3.5" />
                             {review.verified ? 'Verified' : 'Verify'}
                           </label>
                         )}
@@ -136,7 +150,6 @@ export default function PrepareSetBody({ prep, matters, matterLoading, fixedMatt
               <button type="button" onClick={() => generateAll()} disabled={generating || saving || !matterId.trim() || !availableMembers.length || allSaved} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">{generating ? 'Generating…' : allPreviewed ? 'Generate all again' : 'Generate all'}</button>
               {failedPreviews.length > 0 && !generating && <button type="button" onClick={() => generateAll(failedPreviews)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed previews</button>}
               <button type="button" onClick={() => saveAll()} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} className="rounded-lg bg-brand-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save all to matter'}</button>
-              <button type="button" onClick={saveAllInBackground} disabled={saving || generating || !allPreviewed || allSaved || background === 'saving'} title="Queue the saves on the server so you can leave this page" className="rounded-lg border border-brand-line px-3 py-2 text-xs font-semibold disabled:opacity-50">Save all in the background</button>
               {failedSaves.length > 0 && !saving && <button type="button" onClick={() => saveAll(failedSaves)} className="rounded-lg border border-brand-amber px-3 py-2 text-xs font-semibold">Retry failed saves</button>}
             </div>
           </div>

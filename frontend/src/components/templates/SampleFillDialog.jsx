@@ -8,6 +8,12 @@ import GeneratedPdfPreview from './GeneratedPdfPreview'
 // The sample library is read-only shared content: filling never saves a copy to
 // the tenant's own template library, it only produces a one-off PDF download.
 const inputClass = 'w-full rounded-lg border border-brand-line bg-brand-bg px-3 py-2 text-sm text-brand-ink'
+const hasValue = (value, field) => {
+  if (field?.field_type === 'checkbox') return ['true', 'on', 'yes', '1'].includes(String(value || '').toLowerCase())
+  return value !== undefined && value !== null && !(typeof value === 'string' && value.trim() === '')
+}
+const isRequired = (field) => field.required === true || (field.required === undefined && field.source_required === true)
+const isPlaceholderSourceLabel = (value) => /^(undefined|null|unknown|none)(?:[_ -]\d+)?$/i.test(String(value || '').trim())
 
 export function FieldInput({ field, value, onChange }) {
   const label = field.label || String(field.name || '').replace(/_/g, ' ')
@@ -17,7 +23,7 @@ export function FieldInput({ field, value, onChange }) {
   if (type === 'radio' && Array.isArray(field.options) && field.options.length) {
     return (
       <fieldset className="space-y-1.5">
-        <legend className="block text-sm font-medium text-brand-ink">{label}{field.required ? ' *' : ''}</legend>
+        <legend className="block text-sm font-medium text-brand-ink">{label}{isRequired(field) ? ' *' : ''}</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {field.options.map((option) => {
             const optionValue = typeof option === 'object' ? option.value : option
@@ -51,7 +57,7 @@ export function FieldInput({ field, value, onChange }) {
           onChange={(event) => onChange(event.target.checked ? 'Yes' : '')}
           className="h-4 w-4 rounded border-brand-line"
         />
-        <span>{label}{field.required ? ' *' : ''}</span>
+        <span>{label}{isRequired(field) ? ' *' : ''}</span>
       </label>
     )
   }
@@ -59,10 +65,10 @@ export function FieldInput({ field, value, onChange }) {
   if (type === 'choice' && Array.isArray(field.options) && field.options.length) {
     return (
       <label htmlFor={inputId} className="block text-sm text-brand-ink">
-        <span className="mb-1 block font-medium">{label}{field.required ? ' *' : ''}</span>
+        <span className="mb-1 block font-medium">{label}{isRequired(field) ? ' *' : ''}</span>
         <select
           id={inputId}
-          value={value || ''}
+          value={value ?? ''}
           onChange={(event) => onChange(event.target.value)}
           className={inputClass}
         >
@@ -79,11 +85,11 @@ export function FieldInput({ field, value, onChange }) {
 
   return (
     <label htmlFor={inputId} className="block text-sm text-brand-ink">
-      <span className="mb-1 block font-medium">{label}{field.required ? ' *' : ''}</span>
+      <span className="mb-1 block font-medium">{label}{isRequired(field) ? ' *' : ''}</span>
       <input
         id={inputId}
         type="text"
-        value={value || ''}
+        value={value ?? ''}
         onChange={(event) => onChange(event.target.value)}
         className={inputClass}
       />
@@ -141,8 +147,16 @@ export default function SampleFillDialog({ sample, onClose }) {
     return [...byPage.entries()]
   }, [fields])
   const filteredFields = useMemo(() => fields.filter((field) => (
-    fieldFilter === 'all' || (fieldFilter === 'missing' ? !values[field.name] : Boolean(values[field.name]))
+    fieldFilter === 'all'
+      || (fieldFilter === 'missing' ? isRequired(field) && !hasValue(values[field.name], field) : false)
+      || (fieldFilter === 'optional' ? !isRequired(field) && !hasValue(values[field.name], field) : false)
+      || (fieldFilter === 'filled' ? hasValue(values[field.name], field) : false)
   )), [fields, fieldFilter, values])
+  const smartFillCounts = useMemo(() => ({
+    filled: fields.filter((field) => hasValue(values[field.name], field)).length,
+    requiredMissing: fields.filter((field) => isRequired(field) && !hasValue(values[field.name], field)).length,
+    optionalUnfilled: fields.filter((field) => !isRequired(field) && !hasValue(values[field.name], field)).length,
+  }), [fields, values])
 
   const provenance = sample.provenance || {}
   const sourceContext = [provenance.source_name, provenance.edition].filter(Boolean).join(' · ')
@@ -178,7 +192,7 @@ export default function SampleFillDialog({ sample, onClose }) {
         field.name,
         manual.has(field.name) ? current[field.name] : (suggested[field.name] ?? field.default ?? ''),
       ])))
-      setSmartFill({ suggestions, filled: Object.keys(suggested).length, missing: fields.length - Object.keys(suggested).length })
+      setSmartFill({ suggestions })
     } catch (err) {
       if (mounted.current && request === matterRequest.current) setError(err?.response?.data?.detail || 'The matter could not be used for Smart Fill.')
     } finally {
@@ -248,7 +262,7 @@ export default function SampleFillDialog({ sample, onClose }) {
             <div className="mt-2">
               <MatterPicker matters={[]} selectedMatterId={matterId} onSelect={chooseMatter} loading={false} disabled={smartFillBusy || busy} />
             </div>
-            {smartFill && <p className="mt-2 rounded border border-brand-line bg-brand-bg px-3 py-2 text-xs text-brand-muted">{smartFill.filled} filled from this matter · {smartFill.missing} need attention. Review every value before downloading.</p>}
+            {smartFill && <p className="mt-2 rounded border border-brand-line bg-brand-bg px-3 py-2 text-xs text-brand-muted">{smartFillCounts.filled} filled · {smartFillCounts.requiredMissing} required answers missing · {smartFillCounts.optionalUnfilled} optional unanswered. Review every value before downloading.</p>}
           </div>
           <button type="button" onClick={onClose} aria-label="Close fill dialog" className="rounded-lg p-1 text-brand-muted hover:bg-brand-bg hover:text-brand-ink">
             <X size={18} aria-hidden="true" />
@@ -262,7 +276,7 @@ export default function SampleFillDialog({ sample, onClose }) {
           <div className="space-y-3 lg:overflow-y-auto lg:pr-2">
           <div className="sticky top-0 z-10 flex items-center gap-2 bg-brand-surface-2 pb-2 text-xs">
             <span className="font-semibold text-brand-muted">Show</span>
-            {['all', 'missing', 'filled'].map((filter) => <button key={filter} type="button" onClick={() => setFieldFilter(filter)} className={`rounded border px-2 py-1 ${fieldFilter === filter ? 'border-brand-accent bg-brand-accent/10 font-semibold' : 'border-brand-line'}`}>{filter[0].toUpperCase() + filter.slice(1)}</button>)}
+            {['all', 'missing', 'optional', 'filled'].map((filter) => <button key={filter} type="button" onClick={() => setFieldFilter(filter)} className={`rounded border px-2 py-1 ${fieldFilter === filter ? 'border-brand-accent bg-brand-accent/10 font-semibold' : 'border-brand-line'}`}>{filter[0].toUpperCase() + filter.slice(1)}</button>)}
           </div>
           {groups.filter(([, groupFields]) => groupFields.some(field => filteredFields.includes(field))).map(([group, groupFields]) => (
             <fieldset key={group} className="space-y-3 rounded-lg border border-brand-line p-3">
@@ -274,8 +288,11 @@ export default function SampleFillDialog({ sample, onClose }) {
                     value={values[field.name]}
                     onChange={(value) => setValue(field.name, value)}
                   />
-                  {field.source_label && field.source_label !== field.label && (
+                  {field.source_label && !isPlaceholderSourceLabel(field.source_label) && field.source_label !== field.label && (
                     <p className="mt-1 text-[11px] text-brand-muted">Source label: {field.source_label}</p>
+                  )}
+                  {field.source_label && isPlaceholderSourceLabel(field.source_label) && (
+                    <p className="mt-1 text-[11px] text-brand-muted">Source label unavailable; check this field in the source PDF before filling.</p>
                   )}
                 </div>
               ))}

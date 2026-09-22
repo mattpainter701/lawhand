@@ -11,7 +11,11 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 import pytest
 import httpx
 
-from app.services.cloud_search import CloudHit, CloudSearchService
+from app.services.cloud_search import (
+    CloudHit,
+    CloudSearchService,
+    _quoted_search_phrase,
+)
 
 
 class _Response:
@@ -1099,6 +1103,219 @@ async def test_graph_file_search_uses_file_fields_only(monkeypatch):
         "parentReference",
         "createdDateTime",
     ]
+
+
+@pytest.mark.asyncio
+async def test_graph_exact_query_quotes_phrase_and_excludes_messages(monkeypatch):
+    service = CloudSearchService()
+    captured: list[dict] = []
+
+    async def fake_token(*_args, **_kwargs):
+        return "access-token"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, *, json, **_kwargs):
+            captured.append(json["requests"][0])
+            return _Response()
+
+    monkeypatch.setattr(service, "_get_microsoft_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_graph(
+        db=None,
+        keywords=["QA PDF Fixture 2026-09-22-d1245828.pdf"],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id="user-1",
+        sources=["onedrive"],
+        exact_query=True,
+    )
+
+    assert len(captured) == 1
+    assert captured[0]["entityTypes"] == ["driveItem", "listItem"]
+    assert captured[0]["query"] == {
+        "queryString": '"QA PDF Fixture 2026-09-22-d1245828.pdf"'
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("keyword", "expected"),
+    [
+        (
+            "QA PDF Fixture.pdf",
+            """(name = 'QA PDF Fixture.pdf' or fullText contains '"QA PDF Fixture.pdf"') and trashed = false""",
+        ),
+        (
+            "O'Reilly.pdf",
+            r"""(name = 'O\'Reilly.pdf' or fullText contains '"O\'Reilly.pdf"') and trashed = false""",
+        ),
+        (
+            r'QA "draft"\copy.pdf',
+            r"""(name = 'QA "draft"\\copy.pdf' or fullText contains '"QA "draft"\\copy.pdf"') and trashed = false""",
+        ),
+    ],
+)
+async def test_google_drive_exact_query_uses_drive_phrase_syntax(
+    monkeypatch, keyword, expected
+):
+    service = CloudSearchService()
+    captured: dict = {}
+
+    async def fake_token(*_args, **_kwargs):
+        return "token"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url, *, params, **_kwargs):
+            captured.update(params)
+            return _Response()
+
+    monkeypatch.setattr(service, "_get_google_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_google_drive(
+        db=None,
+        keywords=[keyword],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id=None,
+        exact_query=True,
+    )
+
+    assert captured["q"] == expected
+
+
+def test_exact_phrase_escapes_embedded_quote_and_backslash_once():
+    assert _quoted_search_phrase('O"Reilly\\draft.pdf') == '"O\\"Reilly\\\\draft.pdf"'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("keyword", "expected"),
+    [
+        ("QA PDF Fixture.pdf", '"QA PDF Fixture.pdf"'),
+        ("O'Reilly.pdf", '''"O'Reilly.pdf"'''),
+        (r'QA "draft"\copy.pdf', r'"QA \"draft\"\\copy.pdf"'),
+    ],
+)
+async def test_gmail_exact_query_uses_one_quoted_term(monkeypatch, keyword, expected):
+    service = CloudSearchService()
+    captured: dict = {}
+
+    async def fake_token(*_args, **_kwargs):
+        return "token"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url, *, params, **_kwargs):
+            captured.update(params)
+            return _Response()
+
+    monkeypatch.setattr(service, "_get_google_token", fake_token)
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_gmail(
+        db=None,
+        keywords=[keyword],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id=None,
+        exact_query=True,
+    )
+
+    assert captured["q"] == expected
+
+
+@pytest.mark.asyncio
+async def test_scoped_onedrive_exact_query_quotes_folder_phrase(monkeypatch):
+    service = CloudSearchService()
+    captured: dict = {}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, *, params, **_kwargs):
+            captured.update(url=url, params=params)
+            return _Response()
+
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_onedrive_folder(
+        token="token",
+        keywords=["QA PDF Fixture.pdf"],
+        max_hits=10,
+        folder_id="folder-1",
+        exact_query=True,
+    )
+
+    assert "search(q='\"QA PDF Fixture.pdf\"')" in captured["url"]
+
+
+@pytest.mark.asyncio
+async def test_scoped_sharepoint_exact_query_quotes_folder_phrase(monkeypatch):
+    service = CloudSearchService()
+    captured: dict = {}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, *, params, **_kwargs):
+            captured.update(url=url, params=params)
+            return _Response()
+
+    monkeypatch.setattr(
+        "app.services.cloud_search.httpx.AsyncClient", lambda **_kwargs: _Client()
+    )
+
+    await service._search_sharepoint_folder(
+        db=None,
+        keywords=["QA PDF Fixture.pdf"],
+        max_hits=10,
+        tenant_id="tenant-1",
+        user_id=None,
+        drive_id="drive-1",
+        folder_id="folder-1",
+        token="token",
+        exact_query=True,
+    )
+
+    assert "search(q='\"QA PDF Fixture.pdf\"')" in captured["url"]
 
 
 @pytest.mark.asyncio

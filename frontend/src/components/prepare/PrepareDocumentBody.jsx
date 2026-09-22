@@ -71,6 +71,24 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     handleRender,
     handleSave,
   } = fill
+  const clearReviewedValue = (name) => setReviewedValues(prev => ({ ...prev, [name]: undefined }))
+  const updateValue = (name, value) => {
+    clearReviewedValue(name)
+    setVariable(name, value)
+  }
+  const verifyCurrentValue = (name, value) => {
+    setReviewedValues(prev => ({ ...prev, [name]: fillValue(value) }))
+    toggleVerified(name)
+  }
+  const verifyAndAdvanceCurrentValue = (name) => {
+    setReviewedValues(prev => ({ ...prev, [name]: fillValue(variables[name]) }))
+    verifyAndAdvance(name)
+  }
+  const toggleValueVerified = (name, value, currentlyVerified) => {
+    if (currentlyVerified) clearReviewedValue(name)
+    else verifyCurrentValue(name, value)
+    if (currentlyVerified) toggleVerified(name)
+  }
   const saving = savingState || completionPending
   // The UUID fallback is committed on blur or Enter, not on every keystroke:
   // each character would otherwise change the matter and reset the form (and
@@ -222,7 +240,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                         id={inputId}
                         type="checkbox"
                         checked={variables[name] === 'true'}
-                        onChange={(e) => setVariable(name, e.target.checked ? 'true' : 'false')}
+                        onChange={(e) => updateValue(name, e.target.checked ? 'true' : 'false')}
                         disabled={saving}
                         className="h-4 w-4 rounded border-brand-line text-brand-accent focus:ring-brand-accent"
                       />
@@ -232,8 +250,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                     <select
                       id={inputId}
                       value={variables[name] || ''}
-                      onChange={(e) => setVariable(name, e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); verifyAndAdvance(name) } }}
+                      onChange={(e) => updateValue(name, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); verifyAndAdvanceCurrentValue(name) } }}
                       disabled={saving}
                       className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
                     >
@@ -245,7 +263,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                       id={inputId}
                       rows={3}
                       value={variables[name] || ''}
-                      onChange={(e) => setVariable(name, e.target.value)}
+                      onChange={(e) => updateValue(name, e.target.value)}
                       disabled={saving}
                       className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
                       placeholder={`Enter ${label}`}
@@ -255,8 +273,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                       id={inputId}
                       type="text"
                       value={variables[name] || ''}
-                      onChange={(e) => setVariable(name, e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); verifyAndAdvance(name) } }}
+                      onChange={(e) => updateValue(name, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); verifyAndAdvanceCurrentValue(name) } }}
                       disabled={saving}
                       className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
                       placeholder={`Enter ${label}`}
@@ -269,8 +287,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                         type="checkbox"
                         aria-label={`Verified: ${label}`}
                         checked={Boolean(review.verified)}
-                        onChange={() => toggleVerified(name)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyAndAdvance(name) } }}
+                        onChange={() => toggleValueVerified(name, variables[name], review.verified)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyAndAdvanceCurrentValue(name) } }}
                         disabled={saving}
                         className="h-3.5 w-3.5 rounded border-brand-line text-brand-green focus:ring-brand-green"
                       />

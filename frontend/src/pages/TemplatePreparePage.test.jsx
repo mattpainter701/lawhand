@@ -201,13 +201,14 @@ describe('the Prepare route', () => {
     })
     api.discoverTemplateVariables.mockResolvedValue({ variables: [
       { variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false },
-      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: false },
+      { variable: 'matter_name', suggested_value: 'Smith v. Jones', source_type: 'matter', confidence: 1, review_required: true },
     ] })
     renderAt(`?template=${T}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
     const completion = screen.getByRole('region', { name: 'Document completion' })
     expect(completion).toHaveTextContent('0 of 2 verified')
+    expect(completion).toHaveTextContent('2 suggestions to review')
     expect(screen.getByRole('button', { name: 'Unverified (2)' })).toBeInTheDocument()
     // Enter on the first row's Verified control verifies it and moves on to the next unverified row.
     const first = screen.getByRole('checkbox', { name: 'Verified: Client name' })
@@ -216,15 +217,18 @@ describe('the Prepare route', () => {
     await waitFor(() => expect(first).toBeChecked())
     expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
     expect(completion).toHaveTextContent('1 of 2 verified')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    await waitFor(() => expect(completion).toHaveTextContent('0 suggestions to review'))
+    expect(screen.getByRole('button', { name: 'Next field needing attention' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
+    expect(completion).toHaveTextContent('1 suggestions to review')
+    expect(completion).toHaveTextContent('1 of 2 verified')
     // Typing a value counts as checking it; clearing it does not.
     fireEvent.change(screen.getByRole('textbox', { name: /Matter name/ }), { target: { value: 'Smith v. Jones (2026)' } })
     expect(screen.getByRole('checkbox', { name: 'Verified: Matter name' })).toBeChecked()
     expect(completion).toHaveTextContent('2 of 2 verified')
     fireEvent.click(screen.getByRole('button', { name: 'Unverified (0)' }))
     expect(screen.getByText('Every filled field is verified.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'All fields (2)' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Verified: Matter name' }))
-    expect(completion).toHaveTextContent('1 of 2 verified')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
@@ -232,7 +236,7 @@ describe('the Prepare route', () => {
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, {
       variables: { client_name: 'Ada Smith', matter_name: 'Smith v. Jones (2026)' },
       matter_id: M,
-      verified_fields: ['client_name'],
+      verified_fields: ['client_name', 'matter_name'],
       fill_session_id: '99999999-9999-4999-8999-999999999999',
     })
   })
@@ -338,14 +342,25 @@ describe('the Prepare route', () => {
     api.getTemplateSetDocumentsVariables.mockResolvedValue({ set_id: S, documents: { [A]: { def_name: 'Ada Lovelace' }, [B]: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' } }, unanswered_required: [], unavailable: [], resolved_versions: { [A]: 2, [B]: 1 } })
     let motionPreviews = 0
     api.renderTemplateFile.mockImplementation(async () => { motionPreviews += 1; if (motionPreviews === 1) throw new Error('Renderer busy'); return { blob: new Blob(['%PDF']), previewId: 'prev-a', previewPurpose: 'generation', filename: 'motion.pdf' } })
-    const saves = []
     api.renderTemplate.mockImplementation(async (id, payload) => {
-      if (!payload.matter_id) return { rendered: 'Ada Lovelace 2026-10-01', output_format: 'markdown', output_filename: 'order.md' }
-      saves.push(id)
-      if (id === B && saves.filter((s) => s === B).length === 1) { const err = new Error('Storage unavailable'); err.response = { status: 500, data: { detail: 'Storage unavailable' } }; throw err }
-      return id === A
-        ? { rendered: 'PDF saved', matter_document_id: DOC, output_format: 'pdf', output_filename: 'motion.pdf', signing_roles: ['client'], positioned_fields: [{ field_id: 'sig', role: 'client' }], signing_placement_problems: [] }
-        : { rendered: 'saved', matter_document_id: '99999999-9999-4999-8999-999999999999', output_format: 'markdown', output_filename: 'order.md' }
+      expect(payload.matter_id).toBeUndefined()
+      return { rendered: 'Ada Lovelace 2026-10-01', output_format: 'markdown', output_filename: 'order.md' }
+    })
+    const savedMotion = { template_id: A, status: 'saved', matter_document_id: DOC, output_filename: 'motion.pdf', output_format: 'pdf', signing_roles: ['client'], positioned_fields: [{ field_id: 'sig', role: 'client' }] }
+    const failedOrder = { template_id: B, status: 'failed', detail: 'Storage unavailable' }
+    const savedOrder = { template_id: B, status: 'saved', matter_document_id: '99999999-9999-4999-8999-999999999999', output_filename: 'order.md', output_format: 'markdown' }
+    let queueCount = 0
+    let firstPollDone = false
+    let resolveFirstPoll
+    api.getFillSession.mockImplementation(async () => {
+      if (!queueCount) return { id: '99999999-9999-4999-8999-999999999999', status: 'open', members: [] }
+      if (queueCount === 1 && !firstPollDone) return new Promise((resolve) => { resolveFirstPoll = (value) => { firstPollDone = true; resolve(value) } })
+      if (queueCount === 1) return { id: '99999999-9999-4999-8999-999999999999', status: 'failed', members: [savedMotion, failedOrder] }
+      return { id: '99999999-9999-4999-8999-999999999999', status: 'saved', members: [savedMotion, savedOrder] }
+    })
+    api.renderFillSession.mockImplementation(async () => {
+      queueCount += 1
+      return { id: '99999999-9999-4999-8999-999999999999', status: 'saving', members: queueCount === 1 ? [{ template_id: A, status: 'queued' }, { template_id: B, status: 'queued' }] : [savedMotion, { template_id: B, status: 'queued' }] }
     })
     api.getMatterV2.mockResolvedValue({ id: M, client_name: 'Ada Lovelace', client_email: 'ada@example.test' })
     renderAt(`?set=${S}&matter=${M}`)
@@ -367,14 +382,23 @@ describe('the Prepare route', () => {
     expect(api.renderTemplateFile).toHaveBeenCalledTimes(2)
     expect(api.renderTemplateFile).toHaveBeenLastCalledWith(A, { variables: { def_name: 'Ada Lovelace' }, matter_id: M, preview_purpose: 'generation' })
     fireEvent.click(screen.getByRole('button', { name: 'Save all to matter' }))
+    await waitFor(() => expect(api.renderFillSession).toHaveBeenCalledTimes(1))
+    await screen.findByRole('button', { name: 'Saving…' })
+    expect(screen.getByRole('textbox', { name: /Defendant/ })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Verified: Defendant' })).toBeDisabled()
+    resolveFirstPoll({ id: '99999999-9999-4999-8999-999999999999', status: 'failed', members: [savedMotion, failedOrder] })
     await screen.findByText('Save failed: Storage unavailable')
-    expect(saves).toEqual([A, B])
-    expect(api.renderTemplate).toHaveBeenCalledWith(A, { matter_id: M, preview_id: 'prev-a', variables: { def_name: 'Ada Lovelace' } })
-    // The typed hearing date is verified by the act of typing it; the suggested defendant was not ticked.
-    expect(api.renderTemplate).toHaveBeenCalledWith(B, { matter_id: M, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, verified_fields: ['hearing'] })
+    expect(api.renderFillSession).toHaveBeenNthCalledWith(1, '99999999-9999-4999-8999-999999999999', {
+      members: [
+        { template_id: A, variables: { def_name: 'Ada Lovelace' }, preview_id: 'prev-a', convert_to_pdf: false, output_format: 'pdf' },
+        { template_id: B, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, preview_id: null, convert_to_pdf: false, output_format: 'markdown', verified_fields: ['hearing'] },
+      ],
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Retry failed saves' }))
     await waitFor(() => expect(screen.getAllByText('Saved')).toHaveLength(2))
-    expect(saves).toEqual([A, B, B])
+    expect(api.renderFillSession).toHaveBeenNthCalledWith(2, '99999999-9999-4999-8999-999999999999', {
+      members: [{ template_id: B, variables: { DEFENDANT: 'Ada Lovelace', hearing: '2026-10-01' }, preview_id: null, convert_to_pdf: false, output_format: 'markdown', verified_fields: ['hearing'] }],
+    })
     // Every document is saved; the PDF with a signing role gets a Send card.
     await screen.findByText('Every document is saved to the matter.')
     await screen.findByRole('heading', { name: 'Send for signature' })
@@ -470,7 +494,7 @@ describe('the Prepare route', () => {
     await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ answers: { client_name: 'Last keystroke' } })))
   })
 
-  it('saves a previewed packet in the background and follows the session until it settles', async () => {
+  it('saves a previewed packet through the durable session and follows it until it settles', async () => {
     const S = '55555555-5555-4555-8555-555555555555'
     const A = '66666666-6666-4666-8666-666666666666'
     const X = '99999999-9999-4999-8999-999999999999'
@@ -481,21 +505,46 @@ describe('the Prepare route', () => {
     ], unavailable: [] })
     api.getTemplateSetDocumentsVariables.mockResolvedValue({ set_id: S, documents: { [A]: { def_name: 'Ada' } }, unanswered_required: [], unavailable: [], resolved_versions: { [A]: 2 } })
     api.renderTemplateFile.mockResolvedValue({ blob: new Blob(['%PDF']), previewId: 'prev-a', previewPurpose: 'generation', filename: 'motion.pdf' })
-    api.renderFillSession.mockResolvedValue({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
     api.getFillSession
-      .mockResolvedValueOnce({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
+      .mockResolvedValueOnce({ id: X, status: 'open', members: [] })
       .mockResolvedValue({ id: X, status: 'saved', members: [{ template_id: A, status: 'saved', matter_document_id: DOC, output_filename: 'motion.pdf' }] })
+    api.renderFillSession.mockResolvedValue({ id: X, status: 'saving', members: [{ template_id: A, status: 'queued' }] })
     renderAt(`?set=${S}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare a packet' })
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Defendant/ })).toHaveValue('Ada'))
     fireEvent.click(screen.getByRole('button', { name: 'Generate all' }))
     await screen.findByText('Preview ready')
-    fireEvent.click(screen.getByRole('button', { name: 'Save all in the background' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save all to matter' }))
     await waitFor(() => expect(api.renderFillSession).toHaveBeenCalledWith(X, { members: [{ template_id: A, variables: { def_name: 'Ada' }, preview_id: 'prev-a', convert_to_pdf: false, output_format: 'pdf' }] }))
-    await screen.findByText(/Saving in the background/)
     await waitFor(() => expect(screen.getByText('Saved')).toBeInTheDocument(), { timeout: 8000 })
     await screen.findByText('Every document is saved to the matter.')
   }, 15000)
+
+  it('keeps a reviewed packet suggestion cleared after resuming an answer', async () => {
+    const S = '55555555-5555-4555-8555-555555555555'
+    const A = '66666666-6666-4666-8666-666666666666'
+    const X = '99999999-9999-4999-8999-999999999999'
+    const key = `manual:${A}:client_name`
+    api.getTemplateSet.mockResolvedValue({ id: S, title: 'Packet', items: [{ template_id: A, title: 'Motion', position: 0, resolved_version_no: 1 }] })
+    api.getTemplate.mockResolvedValue({ id: A, title: 'Motion', format: 'markdown', body: '{{client_name}}', is_active: true, variable_schema: { fields: [{ name: 'client_name', binding: '' }] } })
+    api.getTemplateSetInterview.mockResolvedValue({ set_id: S, title: 'Packet', questions: [{ key, label: 'Client name', value_kind: 'text', required: true, card: '', binding: '', appears_in: [{ template_id: A, template_title: 'Motion', field_name: 'client_name', label: 'Client name' }], suggested_value: 'Ada', provenance: { source_type: 'matter_party', confidence: 1 }, review_required: true }], unavailable: [] })
+    api.getFillSession.mockResolvedValue({ id: X, set_id: S, status: 'open', matter_id: M, answers: { [key]: 'Ada' }, verified: [key], members: [] })
+
+    renderAt(`?set=${S}&matter=${M}&session=${X}`)
+    await screen.findByRole('heading', { name: 'Prepare a packet' })
+    const completion = await screen.findByRole('region', { name: 'Document completion' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada'))
+    expect(completion).toHaveTextContent('0 suggestions to review')
+    const verified = screen.getByRole('checkbox', { name: 'Verified: Client name' })
+    expect(verified).toBeChecked()
+    fireEvent.click(verified)
+    await waitFor(() => expect(completion).toHaveTextContent('1 suggestions to review'))
+    fireEvent.click(verified)
+    await waitFor(() => expect(completion).toHaveTextContent('0 suggestions to review'))
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Grace' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Ada' } })
+    await waitFor(() => expect(completion).toHaveTextContent('1 suggestions to review'))
+  })
 
   it('explains itself without a template and reports a load failure', async () => {
     renderAt('')
