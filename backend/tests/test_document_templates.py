@@ -229,8 +229,10 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
     from unittest.mock import AsyncMock
     import app.routers.esignature as esign
     from app.models.document_template import DocumentTemplate
+    from app.models.document_fill_session import DocumentFillSession
     from app.models.matter_document import MatterDocument
     from app.models.plugin import MatterEvent
+    from app.services.fill_sessions import _digest, encrypt_answers
     from sqlalchemy import select
 
     template_id, matter, values, _ = await _prepare_active_pdf_generation(
@@ -286,22 +288,54 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
         json={"name": "Prepared paperwork"},
     )
     assert folder.status_code == 201, folder.text
+    fill_session_id = uuid.uuid4()
+    fill_session = DocumentFillSession(
+        id=fill_session_id, tenant_id=test_tenant.id, user_id=test_user.id,
+        matter_id=matter.id, template_id=uuid.UUID(template_id),
+        title="Prepared session", answers_ciphertext=encrypt_answers(values),
+        answers_sha256=_digest(values), status="open",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    db_session.add(fill_session)
+    await db_session.commit()
     payload = {
         "variables": values,
         "matter_id": str(matter.id),
+        "fill_session_id": str(fill_session_id),
         "preview_id": preview.headers["x-clarity-preview-id"],
         "folder_id": folder.json()["id"],
         "verified_fields": ["client_name", "notes", "client_name"],
     }
+    mismatched_values = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={**payload, "variables": {**values, "notes": "changed"}},
+    )
+    assert mismatched_values.status_code == 409
+    extra_value = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={**payload, "variables": {**values, "unexpected": "value"}},
+    )
+    assert extra_value.status_code == 409
+    fill_session.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_session.commit()
+    expired_session = await client.post(f"/api/templates/{template_id}/render", json=payload)
+    assert expired_session.status_code == 409
+    fill_session.expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+    await db_session.commit()
     unknown_verified = await client.post(
         f"/api/templates/{template_id}/render",
         json={**payload, "verified_fields": ["client_name", "not_a_variable"]},
     )
     assert unknown_verified.status_code == 422
     missing_matter = await client.post(
-        f"/api/templates/{template_id}/render", json={**payload, "matter_id": None}
+        f"/api/templates/{template_id}/render",
+        json={**payload, "matter_id": None, "fill_session_id": None},
     )
     assert missing_matter.status_code == 400
+    missing_session_matter = await client.post(
+        f"/api/templates/{template_id}/render", json={**payload, "matter_id": None}
+    )
+    assert missing_session_matter.status_code == 422
     foreign_folder = await client.post(
         f"/api/templates/{template_id}/render",
         json={**payload, "folder_id": str(uuid.uuid4())},
@@ -349,6 +383,23 @@ async def test_generated_pdf_persists_positioned_signing_descriptor_and_lists_it
     assert document.signing_roles == ["attorney", "client"]
     assert document.positioned_fields[0]["source_sha256"] == document.document_sha256
     assert document.document_sha256 == hashlib.sha256(preview.content).hexdigest()
+    assert document.generation_summary["fill_session_id"] == payload["fill_session_id"]
+    # A same-template session cannot silently claim a preview/document already
+    # bound to another session.
+    other_session = DocumentFillSession(
+        id=uuid.uuid4(), tenant_id=test_tenant.id, user_id=test_user.id,
+        matter_id=matter.id, template_id=uuid.UUID(template_id),
+        title="Other session", answers_ciphertext=encrypt_answers(values),
+        answers_sha256=_digest(values), status="open",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    db_session.add(other_session)
+    await db_session.commit()
+    wrong_session = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={**payload, "fill_session_id": str(other_session.id)},
+    )
+    assert wrong_session.status_code == 409
     listed = await client.get(f"/api/matters/{matter.id}/documents")
     assert listed.status_code == 200, listed.text
     listed_document = next(

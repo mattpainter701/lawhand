@@ -881,62 +881,106 @@ class CloudSearchService:
 
         query_string = " ".join(keywords) if keywords else "*"
 
-        body: dict[str, Any] = {
-            "requests": [
-                {
-                    "entityTypes": ["driveItem", "listItem", "message"],
-                    "query": {"queryString": query_string},
-                    "from": 0,
-                    "size": min(max_hits, 200),
-                    "fields": [
-                        "title",
-                        "subject",
-                        "bodyPreview",
-                        "webUrl",
-                        "lastModifiedDateTime",
-                        "name",
-                        "from",
-                        "toRecipients",
-                        "createdDateTime",
-                    ],
-                }
-            ]
+        hits: list[CloudHit] = []
+        # Graph accepts one searchRequest per HTTP call, and message cannot be
+        # combined with file entities. Run compatible groups concurrently so
+        # splitting the request does not double the outer search budget.
+        entity_type_groups: list[list[str]] = []
+        if _source_enabled(sources, "onedrive") or _source_enabled(
+            sources, "sharepoint"
+        ):
+            entity_type_groups.append(["driveItem", "listItem"])
+        if _source_enabled(sources, "outlook"):
+            entity_type_groups.append(["message"])
+        if not entity_type_groups:
+            return hits
+
+        fields_by_group = {
+            "files": [
+                "name",
+                "webUrl",
+                "lastModifiedDateTime",
+                "file",
+                "parentReference",
+                "createdDateTime",
+            ],
+            "messages": [
+                "subject",
+                "bodyPreview",
+                "webUrl",
+                "from",
+                "toRecipients",
+                "receivedDateTime",
+                "createdDateTime",
+            ],
         }
 
         async with httpx.AsyncClient(timeout=30) as client:
-            try:
-                resp = await client.post(
-                    f"{GRAPH_BASE}/search/query",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    },
-                    json=body,
-                )
-                if resp.status_code != 200:
-                    logger.warning(
-                        "Graph search failed: %s %s",
-                        resp.status_code,
-                        resp.text[:300],
-                    )
-                    return []
 
-                data = resp.json()
-            except httpx.RequestError as exc:
-                logger.warning("Graph search request error: %s", exc)
-                return []
-
-        hits: list[CloudHit] = []
-        search_sets = data.get("value", [{}])[0].get("hitsContainers", [])
-        for container in search_sets:
-            total_results = container.get("total", 0)
-            for raw_hit in container.get("hits", []):
+            async def search_group(
+                entity_types: list[str], fields: list[str]
+            ) -> dict[str, Any] | None:
+                body: dict[str, Any] = {
+                    "requests": [
+                        {
+                            "entityTypes": entity_types,
+                            "query": {"queryString": query_string},
+                            "from": 0,
+                            "size": min(
+                                max_hits, 25 if entity_types == ["message"] else 200
+                            ),
+                            "fields": fields,
+                        }
+                    ]
+                }
                 try:
-                    hit = self._parse_graph_hit(raw_hit, total_results)
-                    if hit and _source_enabled(sources, hit.source):
-                        hits.append(hit)
-                except Exception:
-                    logger.debug("Failed to parse Graph hit", exc_info=True)
+                    resp = await client.post(
+                        f"{GRAPH_BASE}/search/query",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        },
+                        json=body,
+                    )
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "Graph search failed for %s: status=%s",
+                            entity_types,
+                            resp.status_code,
+                        )
+                        return None
+                    return resp.json()
+                except httpx.RequestError as exc:
+                    logger.warning(
+                        "Graph search request error for %s: %s", entity_types, exc
+                    )
+                    return None
+
+            responses = await asyncio.gather(
+                *(
+                    search_group(
+                        group,
+                        fields_by_group[
+                            "messages" if group == ["message"] else "files"
+                        ],
+                    )
+                    for group in entity_type_groups
+                )
+            )
+
+        for data in responses:
+            if not data:
+                continue
+            search_sets = data.get("value", [{}])[0].get("hitsContainers", [])
+            for container in search_sets:
+                total_results = container.get("total", 0)
+                for raw_hit in container.get("hits", []):
+                    try:
+                        hit = self._parse_graph_hit(raw_hit, total_results)
+                        if hit and _source_enabled(sources, hit.source):
+                            hits.append(hit)
+                    except Exception:
+                        logger.debug("Failed to parse Graph hit", exc_info=True)
 
         return hits
 

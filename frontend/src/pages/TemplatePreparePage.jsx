@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import { getFillSession, getMattersV2, getTemplate } from '../api'
+import { completeFillSession, getFillSession, getMattersV2, getTemplate } from '../api'
 import useFillDraft from '../components/prepare/useFillDraft'
 import usePrepareFill, { templateHasSigningFields } from '../components/prepare/usePrepareFill'
 import SendStep, { renderIsSendable, savedDocumentFromRender } from '../components/prepare/SendStep'
@@ -38,15 +38,51 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
   // everything else hands over to the matter's documents.
   const [sendable, setSendable] = useState(null)
   const [sent, setSent] = useState(false)
+  const draftRef = useRef(null)
+  const [completionIssue, setCompletionIssue] = useState('')
+  const [pendingCompletion, setPendingCompletion] = useState(null)
+  const finishSavedDocument = useCallback(async (pending) => {
+    const drained = await draftRef.current?.flush?.()
+    if (drained === false) {
+      setPendingCompletion(pending)
+      setCompletionIssue('Your document was saved, but your latest answers could not be finalized. Retry to finish closing this draft.')
+      return false
+    }
+    const sessionId = pending.sessionId || sessionRef.current?.id
+    if (!sessionId) {
+      setPendingCompletion({ ...pending, sessionId: null })
+      setCompletionIssue('Your document was saved, but this draft could not be closed because its saved answers are still unavailable. Retry to finish closing it.')
+      return false
+    }
+    try {
+      await completeFillSession(sessionId, pending.documentId)
+      setPendingCompletion(null)
+      setCompletionIssue('')
+      return true
+    } catch {
+      setPendingCompletion(pending)
+      setCompletionIssue('Your document was saved, but this draft could not be closed. Retry to finish closing it.')
+      return false
+    }
+  }, [])
+  const beforeSave = useCallback(async () => {
+    const drained = await draftRef.current?.flush?.()
+    if (drained === false) return null
+    return sessionRef.current?.id || null
+  }, [])
   const fill = usePrepareFill({
     template,
     initialMatterId: query.matterId || '',
     folderId: query.folderId || null,
     autoFillEnabled: restored,
-    onSaved: (res) => {
+    beforeSave,
+    onSaved: async (res) => {
       const matterId = matterRef.current
+      const pending = { sessionId: sessionRef.current?.id, documentId: res?.matter_document_id, res, matterId }
+      if (pending.documentId && !(await finishSavedDocument(pending))) return false
       if (renderIsSendable(res)) setSendable({ matterId, document: savedDocumentFromRender(res) })
       else onSaved(res, matterId)
+      return true
     },
   })
   matterRef.current = fill.matterId
@@ -73,11 +109,11 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
       .catch(() => { if (active) setRestoreError('We couldn’t restore your saved answers. Retry before continuing; your draft has not been replaced.') })
     return () => { active = false }
   }, [query.sessionId, restoreAttempt, template.id, setVariables, setVerifiedNames, setMatterId])
-  const { variables, verifiedNames, matterId, saved } = fill
+  const { variables, verifiedNames, matterId, saved, completionPending } = fill
   const draftPayload = useMemo(() => {
-    if (!restored || saved) return null
+    if (!restored || (saved && !completionPending)) return null
     const answers = Object.fromEntries(Object.entries(variables).filter(([, value]) => String(value ?? '').trim()))
-    if (!Object.keys(answers).length && !sessionRef.current) return null
+    if (!Object.keys(answers).length && !sessionRef.current && !matterId.trim()) return null
     return {
         matter_id: matterId.trim() || null,
         template_id: template.id,
@@ -86,7 +122,7 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
         answers,
         verified: Object.keys(verifiedNames).filter((name) => verifiedNames[name] && String(variables[name] ?? '').trim()),
     }
-  }, [restored, template, variables, verifiedNames, matterId, saved])
+  }, [restored, template, variables, verifiedNames, matterId, saved, completionPending])
   const onDraftCreated = useCallback((id) => {
     const params = new URLSearchParams(location.search)
     if (params.get('session') === id) return
@@ -94,6 +130,13 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
     navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
   }, [navigate, location.pathname, location.search])
   const draft = useFillDraft({ payload: draftPayload, sessionRef, onCreated: onDraftCreated })
+  draftRef.current = draft
+  const retryCompletion = async () => {
+    if (!pendingCompletion || !(await finishSavedDocument(pendingCompletion))) return
+    fill.setCompletionPending(false)
+    if (renderIsSendable(pendingCompletion.res)) setSendable({ matterId: pendingCompletion.matterId, document: savedDocumentFromRender(pendingCompletion.res) })
+    else onSaved(pendingCompletion.res, pendingCompletion.matterId)
+  }
   const steps = prepareSteps({
     template,
     matterId: fill.matterId,
@@ -118,6 +161,11 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
         />
       ) : (
         <>
+          {completionIssue && <div role="alert" className="rounded border border-brand-rose/30 p-3 text-sm">
+            <p>{completionIssue}</p>
+            {pendingCompletion?.res?.download_url && <a className="mt-2 inline-block underline" href={pendingCompletion.res.download_url}>Open the saved document</a>}
+            {pendingCompletion && <button type="button" className="ml-3 underline" onClick={retryCompletion}>Retry closing this draft</button>}
+          </div>}
           {draft.status === 'error' ? <div role="alert" className="rounded border border-brand-rose/30 p-3 text-sm">Your latest answers haven’t been saved. Keep this page open. <button type="button" className="underline" onClick={draft.retry}>Retry saving answers</button></div>
             : draft.status !== 'idle' && <p role="status" className="text-xs text-brand-muted">{draft.status === 'saved' ? 'Answers saved · available from this matter for 14 days' : 'Saving answers…'}</p>}
           <PrepareDocumentBody fill={fill} template={template} matters={matters} matterLoading={matterLoading} layout="page" />

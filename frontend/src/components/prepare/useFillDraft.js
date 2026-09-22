@@ -16,29 +16,37 @@ export default function useFillDraft({ payload, sessionRef, onCreated }) {
 
   const flush = useCallback(async () => {
     if (inFlight.current) return inFlight.current
-    const snapshot = latest.current
-    if (!snapshot || snapshot.key === lastSaved.current) return undefined
-    if (mounted.current) setStatus('saving')
-    const request = writeFillSession({
-      ...snapshot.payload,
-      ...(sessionRef.current?.id ? { id: sessionRef.current.id } : {}),
-    }).then(value => {
-      sessionRef.current = value
-      lastSaved.current = snapshot.key
-      if (mounted.current) {
-        setStatus('saved')
-        created.current?.(value.id)
+    const operation = (async () => {
+      while (true) {
+        const snapshot = latest.current
+        if (!snapshot || snapshot.key === lastSaved.current) return true
+        if (mounted.current) setStatus('saving')
+        try {
+          const value = await writeFillSession({
+            ...snapshot.payload,
+            ...(sessionRef.current?.id ? { id: sessionRef.current.id } : {}),
+          })
+          sessionRef.current = value
+          lastSaved.current = snapshot.key
+          if (mounted.current) {
+            setStatus('saved')
+            created.current?.(value.id)
+          }
+        } catch {
+          if (mounted.current) setStatus('error')
+          return false
+        }
+        // Edits made during the request are queued, including a final edit made
+        // immediately before navigating away. A failed unchanged write waits for Retry.
+        if (!latest.current || latest.current.key === lastSaved.current) return true
       }
-    }).catch(() => {
-      if (mounted.current) setStatus('error')
-    })
-    inFlight.current = request
-    await request
-    inFlight.current = null
-    // Edits made during the request are queued, including a final edit made
-    // immediately before navigating away. A failed unchanged write waits for Retry.
-    if (latest.current && latest.current.key !== snapshot.key) return flushRef.current?.()
-    return undefined
+    })()
+    inFlight.current = operation
+    try {
+      return await operation
+    } finally {
+      if (inFlight.current === operation) inFlight.current = null
+    }
   }, [sessionRef])
   useEffect(() => { flushRef.current = flush }, [flush])
 
@@ -66,5 +74,5 @@ export default function useFillDraft({ payload, sessionRef, onCreated }) {
     }
   }, [])
 
-  return { status, retry: flush }
+  return { status, retry: flush, flush }
 }

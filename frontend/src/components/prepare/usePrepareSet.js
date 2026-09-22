@@ -6,6 +6,34 @@ import { renderIsSendable, savedDocumentFromRender } from './SendStep'
 
 const PREVIEW_CONCURRENCY = 3
 
+const US_STATE_NAMES = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', PR: 'Puerto Rico', GU: 'Guam', VI: 'U.S. Virgin Islands',
+}
+
+const choiceForms = (value) => {
+  const text = fillValue(value).trim()
+  const forms = new Set([text.toLocaleLowerCase()])
+  const stateName = US_STATE_NAMES[text.toUpperCase()]
+  if (stateName) forms.add(stateName.toLocaleLowerCase())
+  const stateCode = Object.entries(US_STATE_NAMES).find(([, name]) => name.toLocaleLowerCase() === text.toLocaleLowerCase())?.[0]
+  if (stateCode) forms.add(stateCode.toLocaleLowerCase())
+  return forms
+}
+
+const normalizeChoiceSuggestion = (question) => {
+  const raw = question?.suggested_value
+  if (raw == null || fillValue(raw).trim() === '') return question
+  const kind = fillValue(question.value_kind).toLocaleLowerCase()
+  if (!['choice', 'radio', 'select'].includes(kind) || !Array.isArray(question.options) || !question.options.length) return question
+  const options = question.options.map((option) => {
+    if (option && typeof option === 'object') return { value: fillValue(option.value ?? option.label), label: fillValue(option.label ?? option.value) }
+    return { value: fillValue(option), label: fillValue(option) }
+  }).filter((option) => option.value)
+  const rawForms = choiceForms(raw)
+  const selected = options.find((option) => [...choiceForms(option.value)].some((form) => rawForms.has(form)) || [...choiceForms(option.label)].some((form) => rawForms.has(form)))
+  return { ...question, suggested_value: selected?.value ?? null }
+}
+
 // A member's output: a PDF template renders PDF; a Word template with
 // signature fields renders PDF (only a PDF can be sent); other Word
 // templates stay Word; anything else is text.
@@ -176,9 +204,13 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
     try {
       const response = await getTemplateSetInterview(setId, nextMatterId || undefined)
       if (!mountedRef.current || generationRef.current !== generation) return
-      setInterview(response)
+      const normalizedResponse = {
+        ...response,
+        questions: (response.questions || []).map(normalizeChoiceSuggestion),
+      }
+      setInterview(normalizedResponse)
       const suggested = {}
-      for (const question of response.questions || []) {
+      for (const question of normalizedResponse.questions) {
         if (question.suggested_value != null && String(question.suggested_value) !== '') suggested[question.key] = fillValue(question.suggested_value)
       }
       const previousAnswers = answersRef.current

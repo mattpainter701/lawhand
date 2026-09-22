@@ -35,7 +35,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     setConvertDocxToPdf,
     rendering,
     renderPurpose,
-    saving,
+    saving: savingState,
+    completionPending,
     saved,
     setSaved,
     error,
@@ -70,6 +71,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     handleRender,
     handleSave,
   } = fill
+  const saving = savingState || completionPending
   // The UUID fallback is committed on blur or Enter, not on every keystroke:
   // each character would otherwise change the matter and reset the form (and
   // fire a Smart Fill request) mid-paste.

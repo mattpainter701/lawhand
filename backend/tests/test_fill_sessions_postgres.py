@@ -1,17 +1,21 @@
 """Resumable fill sessions: owned, encrypted, resumable, and saved in the background."""
 
 import uuid
+import asyncio
 
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.database import set_tenant_context
 from app.models.document_fill_session import DocumentFillSession
+from app.models.matter_document import MatterDocument
 from app.models.plugin import Matter
 from app.models.user import User
+from app.schemas.fill_session import FillSessionWrite
 from app.services import fill_sessions
 from tests.test_document_templates import _grant_manage_documents
 
@@ -110,6 +114,143 @@ async def test_a_finished_session_is_not_reopened_by_a_later_write(client, db_se
     assert again.status_code == 200, again.text
     assert again.json()["status"] == "saved"
     assert again.json()["members"][0]["status"] == "saved"
+    assert (await client.get(f"/api/fill-sessions/{session_id}")).json()["answers"] == {"q": "v"}
+
+
+async def test_single_session_complete_validates_document_binding_and_is_idempotent(
+    client, db_session, test_tenant, test_user
+):
+    await _grant_manage_documents(db_session, test_tenant, test_user)
+    await set_tenant_context(db_session, str(test_tenant.id))
+    matter = await _matter(db_session, test_tenant.id, test_user.id)
+    template_id = uuid.uuid4()
+    owner = SimpleNamespace(id=test_user.id, tenant_id=test_tenant.id)
+    session = await fill_sessions.upsert(db_session, owner, FillSessionWrite(
+        matter_id=matter.id, template_id=template_id, answers={"q": "v"}
+    ))
+    wrong_matter = await _matter(db_session, test_tenant.id, test_user.id)
+    other_user = User(
+        id=uuid.uuid4(), tenant_id=test_tenant.id,
+        email=f"other-{uuid.uuid4().hex[:8]}@testfirm.com", full_name="Other Attorney",
+        role="admin", oauth_provider="google", oauth_subject=f"google-other-{uuid.uuid4().hex}",
+        is_active=True,
+    )
+    db_session.add(other_user)
+    await db_session.flush()
+    wrong_matter_doc = MatterDocument(
+        id=uuid.uuid4(), tenant_id=test_tenant.id, matter_id=wrong_matter.id,
+        uploaded_by_user_id=test_user.id, filename="wrong-matter.pdf",
+        generation_summary={"template_id": str(template_id)},
+    )
+    wrong_template_doc = MatterDocument(
+        id=uuid.uuid4(), tenant_id=test_tenant.id, matter_id=matter.id,
+        uploaded_by_user_id=test_user.id, filename="wrong-template.pdf",
+        generation_summary={"template_id": str(uuid.uuid4())},
+    )
+    wrong_session_doc = MatterDocument(
+        id=uuid.uuid4(), tenant_id=test_tenant.id, matter_id=matter.id,
+        uploaded_by_user_id=test_user.id, filename="wrong-session.pdf",
+        generation_summary={
+            "template_id": str(template_id), "fill_session_id": str(uuid.uuid4())
+        },
+    )
+    wrong_owner_doc = MatterDocument(
+        id=uuid.uuid4(), tenant_id=test_tenant.id, matter_id=matter.id,
+        uploaded_by_user_id=other_user.id, filename="wrong-owner.pdf",
+        generation_summary={"template_id": str(template_id)},
+    )
+    valid_doc = MatterDocument(
+        id=uuid.uuid4(), tenant_id=test_tenant.id, matter_id=matter.id,
+        uploaded_by_user_id=test_user.id, filename="valid.pdf",
+        generation_summary={
+            "template_id": str(template_id), "fill_session_id": str(session.id)
+        },
+    )
+    db_session.add_all([
+        wrong_matter_doc, wrong_template_doc, wrong_session_doc, wrong_owner_doc, valid_doc
+    ])
+    await db_session.commit()
+    for document_id in (
+        wrong_matter_doc.id, wrong_template_doc.id, wrong_session_doc.id, wrong_owner_doc.id
+    ):
+        with pytest.raises(HTTPException) as caught:
+            await fill_sessions.complete(db_session, owner, session.id, document_id)
+        assert caught.value.status_code == 409
+    session.status = "saving"
+    await db_session.commit()
+    with pytest.raises(HTTPException) as caught:
+        await fill_sessions.complete(db_session, owner, session.id, valid_doc.id)
+    assert caught.value.status_code == 409
+    session.status = "open"
+    await db_session.commit()
+    completed_response = await client.post(
+        f"/api/fill-sessions/{session.id}/complete",
+        json={"matter_document_id": str(valid_doc.id)},
+    )
+    assert completed_response.status_code == 200, completed_response.text
+    assert completed_response.json()["status"] == "saved"
+    assert completed_response.json()["members"][0]["matter_document_id"] == str(valid_doc.id)
+    repeated = await fill_sessions.complete(db_session, owner, session.id, valid_doc.id)
+    assert repeated.status == "saved"
+    with pytest.raises(HTTPException) as caught:
+        await fill_sessions.complete(db_session, owner, session.id, wrong_template_doc.id)
+    assert caught.value.status_code == 409
+    late = await fill_sessions.upsert(db_session, owner, FillSessionWrite(
+        id=session.id, matter_id=matter.id, template_id=template_id, answers={"q": "late"}
+    ))
+    assert late.status == "saved"
+    assert fill_sessions.decrypt_answers(late.answers_ciphertext) == {"q": "v"}
+
+
+async def test_single_session_complete_rejects_a_foreign_tenant_user(
+    db_session, test_tenant, test_user
+):
+    await set_tenant_context(db_session, str(test_tenant.id))
+    matter = await _matter(db_session, test_tenant.id, test_user.id)
+    session = await fill_sessions.upsert(
+        db_session, SimpleNamespace(id=test_user.id, tenant_id=test_tenant.id),
+        FillSessionWrite(matter_id=matter.id, template_id=uuid.uuid4()),
+    )
+    with pytest.raises(HTTPException) as caught:
+        await fill_sessions.complete(
+            db_session, SimpleNamespace(id=uuid.uuid4(), tenant_id=uuid.uuid4()),
+            session.id, uuid.uuid4(),
+        )
+    assert caught.value.status_code == 404
+
+
+async def test_upsert_waits_for_completion_lock_before_reading_saved_status(
+    db_session, test_engine, test_tenant, test_user
+):
+    await set_tenant_context(db_session, str(test_tenant.id))
+    matter = await _matter(db_session, test_tenant.id, test_user.id)
+    owner = SimpleNamespace(id=test_user.id, tenant_id=test_tenant.id)
+    session = await fill_sessions.upsert(
+        db_session, owner, FillSessionWrite(
+            matter_id=matter.id, template_id=uuid.uuid4(), answers={"q": "original"}
+        )
+    )
+    session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    first, second = session_factory(), session_factory()
+    try:
+        locked = await fill_sessions._own_session(first, owner, session.id, for_update=True)
+        locked.status = "saved"
+        locked.members_json = [{"template_id": str(session.template_id), "status": "saved"}]
+        late_write = asyncio.create_task(fill_sessions.upsert(
+            second, owner, FillSessionWrite(
+                id=session.id, matter_id=matter.id, template_id=session.template_id,
+                answers={"q": "stale"},
+            )
+        ))
+        await asyncio.sleep(0.05)
+        assert not late_write.done(), "upsert must wait on the completion row lock"
+        await first.commit()
+        result = await asyncio.wait_for(late_write, timeout=2)
+        assert result.status == "saved"
+        assert fill_sessions.decrypt_answers(result.answers_ciphertext) == {"q": "original"}
+    finally:
+        await first.close()
+        await second.close()
 
 
 async def test_verified_counts_feed_the_readiness_record(db_session, test_tenant, test_user):

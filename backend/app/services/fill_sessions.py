@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import set_tenant_context
 from app.models.document_fill_session import DocumentFillSession
+from app.models.matter_document import MatterDocument
 from app.models.user import User
 from app.schemas.fill_session import (
     FillSessionMemberStatus,
@@ -145,7 +146,9 @@ async def _own_session(
     )
     if for_update:
         # Serialize a claim against a concurrent read/write of the same row.
-        query = query.with_for_update()
+        # Refresh an already-cached identity-map instance before inspecting its
+        # status; expire_on_commit is disabled in the request/test sessions.
+        query = query.with_for_update().execution_options(populate_existing=True)
     session = await db.scalar(query)
     if session is None or session.expires_at <= _now():
         raise HTTPException(status_code=404, detail="Fill session not found")
@@ -167,8 +170,10 @@ async def upsert(
         )
     tenant_id = uuid.UUID(str(user.tenant_id))
     if payload.id:
-        session = await _own_session(db, user, payload.id)
-        if session.status == "saving":
+        # Serialize autosave against completion so a request that starts before
+        # completion cannot apply its stale payload after the row is sealed.
+        session = await _own_session(db, user, payload.id, for_update=True)
+        if session.status in ("saving", "saved"):
             return session
     else:
         session = DocumentFillSession(
@@ -196,6 +201,74 @@ async def upsert(
     session.expires_at = _now() + timedelta(days=SESSION_DAYS)
     await db.commit()
     await set_tenant_context(db, str(tenant_id))
+    await db.refresh(session)
+    return session
+
+
+async def complete(
+    db: AsyncSession, user, session_id: uuid.UUID, matter_document_id: uuid.UUID
+) -> DocumentFillSession:
+    """Complete a single-template session only for its own generated document.
+
+    The document is checked against the session tenant, matter, creator, and
+    template metadata before the session is sealed. Repeating completion with
+    the same recorded document is idempotent; another document cannot replace
+    a saved result.
+    """
+
+    session = await _own_session(db, user, session_id, for_update=True)
+    recorded = {
+        str(item.get("matter_document_id"))
+        for item in (session.members_json or [])
+        if item.get("matter_document_id")
+    }
+    if session.status == "saved":
+        if str(matter_document_id) in recorded:
+            return session
+        raise HTTPException(
+            status_code=409, detail="This fill session is already saved."
+        )
+    if session.status == "abandoned":
+        raise HTTPException(status_code=409, detail="This fill session is abandoned.")
+    if session.status == "saving":
+        raise HTTPException(status_code=409, detail="This fill session is being saved.")
+    if not session.template_id or not session.matter_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Only a single-template session can be completed this way.",
+        )
+    document = await db.scalar(
+        select(MatterDocument).where(
+            MatterDocument.id == matter_document_id,
+            MatterDocument.tenant_id == session.tenant_id,
+            MatterDocument.matter_id == session.matter_id,
+            MatterDocument.uploaded_by_user_id == user.id,
+        )
+    )
+    summary = document.generation_summary if document is not None else None
+    if (
+        document is None
+        or not isinstance(summary, dict)
+        or str(summary.get("template_id")) != str(session.template_id)
+        or str(summary.get("fill_session_id")) != str(session.id)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="The saved document does not belong to this fill session.",
+        )
+    session.members_json = [
+        {
+            "template_id": str(session.template_id),
+            "status": "saved",
+            "matter_document_id": str(document.id),
+            "output_filename": document.filename,
+        }
+    ]
+    session.status = "saved"
+    session.last_error = None
+    session.job_id = None
+    await db.commit()
+    await set_tenant_context(db, str(session.tenant_id))
     await db.refresh(session)
     return session
 

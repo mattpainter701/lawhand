@@ -25,6 +25,7 @@ const api = vi.hoisted(() => ({
   getTemplateSetDocumentsVariables: vi.fn(),
   getFillSession: vi.fn(),
   writeFillSession: vi.fn(),
+  completeFillSession: vi.fn(),
   renderFillSession: vi.fn(),
 }))
 vi.mock('../api', () => api)
@@ -63,6 +64,7 @@ beforeEach(() => {
   api.getMattersV2.mockResolvedValue({ items: [{ id: M, matter_name: 'Smith Matter', client_name: 'Ada Smith' }] })
   api.discoverTemplateVariables.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false }] })
   api.renderTemplate.mockResolvedValue({ rendered: 'Dear Ada Smith', matter_document_id: DOC, output_format: 'markdown', output_filename: 'fee.md' })
+  api.completeFillSession.mockResolvedValue({ status: 'saved' })
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -87,7 +89,108 @@ describe('the Prepare route', () => {
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
-    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M })
+    await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999', DOC))
+    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, fill_session_id: '99999999-9999-4999-8999-999999999999' })
+  })
+
+  it('keeps the saved document and retries session completion without rendering twice', async () => {
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('Dear Ada Smith')
+    api.completeFillSession.mockRejectedValueOnce(new Error('temporary completion failure'))
+    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await screen.findByRole('alert', { name: '' })
+    expect(screen.getByText(/document was saved, but this draft could not be closed/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry closing this draft' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Client name/ })).toBeDisabled()
+    const renderCountAfterSave = api.renderTemplate.mock.calls.length
+    expect(renderCountAfterSave).toBeGreaterThan(0)
+    api.completeFillSession.mockResolvedValueOnce({ status: 'saved' })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry closing this draft' }))
+    await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
+    expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountAfterSave)
+  })
+
+  it('waits for an in-flight first autosave before completing the saved document', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let resolveSession
+      const sessionId = '88888888-8888-4888-8888-888888888888'
+      api.writeFillSession.mockImplementationOnce(() => new Promise(resolve => { resolveSession = resolve }))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'Latest before save' } })
+      await vi.advanceTimersByTimeAsync(900)
+      expect(api.writeFillSession).toHaveBeenCalledTimes(1)
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByText('Dear Ada Smith')
+      const renderCountBeforeSave = api.renderTemplate.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      await waitFor(() => expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave))
+      expect(api.completeFillSession).not.toHaveBeenCalled()
+      resolveSession({ id: sessionId, status: 'open' })
+      await waitFor(() => expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave + 1))
+      await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith(sessionId, DOC))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries a failed autosave with the last answers before completing the saved document', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      api.writeFillSession.mockRejectedValueOnce(new Error('Offline')).mockImplementation(async data => ({ ...data, id: sessionId, status: 'open' }))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'Exact last answer' } })
+      await vi.advanceTimersByTimeAsync(900)
+      await screen.findByRole('button', { name: 'Retry saving answers' })
+      fireEvent.click(screen.getByRole('button', { name: 'Retry saving answers' }))
+      await screen.findByText(/Answers saved/)
+      expect(api.writeFillSession).toHaveBeenLastCalledWith(expect.objectContaining({ answers: { client_name: 'Exact last answer' } }))
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByText('Dear Ada Smith')
+      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith(sessionId, DOC))
+      expect(api.renderTemplate).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not render while the latest autosave is still failed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      api.writeFillSession.mockRejectedValue(new Error('Offline'))
+      renderAt(`?template=${T}&matter=${M}`)
+      const input = await screen.findByRole('textbox', { name: /Client name/ })
+      fireEvent.change(input, { target: { value: 'Unsaved answer' } })
+      await vi.advanceTimersByTimeAsync(900)
+      await screen.findByRole('button', { name: 'Retry saving answers' })
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByText('Dear Ada Smith')
+      const renderCountBeforeSave = api.renderTemplate.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      await screen.findByText(/latest answers could not be saved yet/i)
+      expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('creates and completes a draft for a selected matter even with no answer fields', async () => {
+    api.getTemplate.mockResolvedValue({ ...published, variable_schema: { fields: [] } })
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ matter_id: M, answers: {} })))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('Dear Ada Smith')
+    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999', DOC))
   })
 
   it('lets the preparer verify a filled row and sends the verified names with the save', async () => {
@@ -130,6 +233,7 @@ describe('the Prepare route', () => {
       variables: { client_name: 'Ada Smith', matter_name: 'Smith v. Jones (2026)' },
       matter_id: M,
       verified_fields: ['client_name'],
+      fill_session_id: '99999999-9999-4999-8999-999999999999',
     })
   })
 
@@ -142,7 +246,7 @@ describe('the Prepare route', () => {
     await screen.findByText('Dear Ada Smith')
     fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=probate&document=${DOC}`))
-    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, folder_id: F })
+    expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, folder_id: F, fill_session_id: '99999999-9999-4999-8999-999999999999' })
   })
 
   it('keeps a draft in preview-only mode', async () => {

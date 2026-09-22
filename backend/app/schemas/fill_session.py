@@ -47,6 +47,14 @@ class FillSessionRenderRequest(BaseModel):
     folder_id: Optional[uuid.UUID] = None
 
 
+class FillSessionCompleteRequest(BaseModel):
+    """Bind a directly rendered document to a single fill session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    matter_document_id: uuid.UUID
+
+
 class FillSessionMemberStatus(BaseModel):
     template_id: str
     status: str

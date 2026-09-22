@@ -1117,8 +1117,8 @@ PROSPECTIVE_INTAKE = LibraryForm(
             3,
         ),
         RADIO(
-            "**Is it safe and confidential for us to contact you using the "
-            "information above?**",
+            "Is it safe and confidential for us to contact you using the "
+            "information above?",
             "safe_contact",
             (
                 Choice("yes", "Yes"),
@@ -1195,7 +1195,7 @@ PROSPECTIVE_INTAKE = LibraryForm(
         ),
         H2("Existing court case"),
         RADIO(
-            "**Has a court case already been filed?**",
+            "Has a court case already been filed?",
             "existing_case",
             (
                 Choice("yes", "Yes"),
@@ -1211,8 +1211,8 @@ PROSPECTIVE_INTAKE = LibraryForm(
         ),
         H2("Deadlines and urgent issues"),
         RADIO(
-            "**Are you aware of any hearing, filing deadline, statute of limitations, "
-            "response deadline, or other date requiring immediate attention?**",
+            "Are you aware of any hearing, filing deadline, statute of limitations, "
+            "response deadline, or other date requiring immediate attention?",
             "urgent_deadline",
             (
                 Choice("yes", "Yes"),
@@ -1228,7 +1228,7 @@ PROSPECTIVE_INTAKE = LibraryForm(
             )
         ),
         RADIO(
-            "**Have you been served with court papers or other legal documents?**",
+            "Have you been served with court papers or other legal documents?",
             "served",
             (
                 Choice("yes", "Yes"),
@@ -1241,8 +1241,8 @@ PROSPECTIVE_INTAKE = LibraryForm(
         ),
         H2("Current or previous attorneys"),
         RADIO(
-            "**Are you currently represented by another attorney regarding this "
-            "matter?**",
+            "Are you currently represented by another attorney regarding this "
+            "matter?",
             "currently_represented",
             (
                 Choice("yes", "Yes"),
@@ -1253,8 +1253,8 @@ PROSPECTIVE_INTAKE = LibraryForm(
             Field("current_attorney_firm", "If yes, attorney or firm", "", 3.0),
         ),
         RADIO(
-            "**Have you previously consulted or retained another attorney regarding "
-            "this matter?**",
+            "Have you previously consulted or retained another attorney regarding "
+            "this matter?",
             "prior_counsel_status",
             (
                 Choice("yes", "Yes"),
