@@ -56,3 +56,15 @@ it('renders a dash where a list row has no matter number', () => {
   )
   expect(screen.queryByText('ACME0007')).not.toBeInTheDocument()
 })
+
+it('uses the matter name as the only row link, with no decorative View affordance', () => {
+  render(
+    <MemoryRouter>
+      <table><tbody>
+        <MatterPortfolioRow matter={matter()} />
+      </tbody></table>
+    </MemoryRouter>,
+  )
+  expect(screen.getByRole('link', { name: 'Acme contract review' })).toHaveAttribute('href', '/matters/matter-1')
+  expect(screen.queryByText('View →')).not.toBeInTheDocument()
+})
