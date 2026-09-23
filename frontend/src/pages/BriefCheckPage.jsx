@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Download, FileSearch, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Download, FileSearch, ShieldCheck } from 'lucide-react'
 import { createBriefCheck, decideBriefCheckItem, exportBriefCheck, listBriefChecks } from '../api'
 import { AlertBanner, WorkspacePage, WorkspacePageHeader } from '../components/ui'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 const fmt = (value) => value ? new Date(value).toLocaleString() : '—'
 
@@ -19,7 +19,7 @@ export default function BriefCheckPage() {
   const run = async (event) => { event.preventDefault(); if (!file) return; setBusy(true); setError(''); try { const result = await createBriefCheck(matterId, { file, opposingFile }); setItems((current) => [result, ...current.filter((item) => item.id !== result.id)]); setSelected(result); setFile(null); event.target.reset() } catch (err) { setError(err?.response?.data?.detail || 'Brief Check could not be completed.') } finally { setBusy(false) } }
   const decide = async (item, decision) => { try { const result = await decideBriefCheckItem(matterId, selected.id, { item_id: item.id, decision }); setSelected(result); setItems((current) => current.map((entry) => entry.id === result.id ? result : entry)) } catch { setError('Decision could not be saved.') } }
   const result = selected?.result || {}
-  return <WorkspacePage><WorkspacePageHeader title="Brief Check" description="Review-first citation, quotation, and authority quality control. No absence-of-evidence result is a good-law determination." />
+  return <WorkspacePage><WorkspacePageHeader title="Brief Check" description="Review-first citation, quotation, and authority quality control. No absence-of-evidence result is a good-law determination." actions={<Link to={`/matters/${matterId}?tab=documents`} className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm font-semibold text-brand-ink hover:border-brand-line-2"><ArrowLeft size={15} aria-hidden="true" /> Back to matter</Link>} />
     {error && <AlertBanner variant="error">{error}</AlertBanner>}
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <section className="rounded-xl border border-brand-line bg-white p-5"><div className="flex items-center gap-2 font-semibold"><FileSearch size={18} /> Run a Brief Check</div><p className="mt-2 text-sm text-brand-muted">DOCX/PDF only; processing is bounded to 15 MB and 300 pages.</p><form onSubmit={run} className="mt-4 space-y-3"><input aria-label="Brief file" type="file" accept=".docx,.pdf" required onChange={(event) => setFile(event.target.files?.[0] || null)} className="block w-full text-sm" /><input aria-label="Opposing brief file" type="file" accept=".docx,.pdf" onChange={(event) => setOpposingFile(event.target.files?.[0] || null)} className="block w-full text-sm" /><button disabled={busy} className="rounded-lg bg-brand-ink px-4 py-2 text-sm font-semibold text-white">{busy ? 'Checking…' : 'Run review'}</button></form><div className="mt-6 border-t border-brand-line pt-4"><p className="text-xs font-semibold uppercase tracking-wide text-brand-muted">Previous checks</p>{items.map((item) => <button key={item.id} onClick={() => setSelected(item)} className={`mt-2 block w-full rounded-lg p-3 text-left text-sm ${selected?.id === item.id ? 'bg-brand-bg-soft' : 'hover:bg-brand-bg-soft'}`}><span className="font-medium">{item.input_filename}</span><span className="block text-xs text-brand-muted">{item.status} · {fmt(item.created_at)}</span></button>)}</div></section>

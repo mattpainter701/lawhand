@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -8,38 +8,81 @@ import {
   BarChart3,
   BookOpen,
   BriefcaseBusiness,
+  CalendarDays,
   CheckSquare2,
+  CircleAlert,
   Clock3,
+  Cloud,
   Compass,
+  ExternalLink,
+  FileText,
+  Info,
+  KeyRound,
   LayoutDashboard,
+  LifeBuoy,
+  Lightbulb,
+  Mail,
   Network,
+  OctagonAlert,
+  PhoneCall,
   PlugZap,
+  Receipt,
+  Rocket,
   Search,
   Settings2,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
   UsersRound,
 } from 'lucide-react'
-import { slugifyHeading } from '../platformDocs'
+import { remarkGuideCallouts, slugifyHeading } from '../platformDocs'
+import { guideHref, screensForChapter } from '../guideTopics'
 
+// Chapter front matter names one of these keys in `icon`. The docs check reads
+// this map, so a chapter cannot name an icon that does not exist.
 const ICONS = {
   briefcase: BriefcaseBusiness,
+  calendar: CalendarDays,
   chart: BarChart3,
   checklist: CheckSquare2,
   clock: Clock3,
+  cloud: Cloud,
   compass: Compass,
+  file: FileText,
+  key: KeyRound,
   layout: LayoutDashboard,
+  lifebuoy: LifeBuoy,
+  mail: Mail,
   network: Network,
+  phone: PhoneCall,
   plug: PlugZap,
+  receipt: Receipt,
+  rocket: Rocket,
+  search: Search,
   settings: Settings2,
   shield: ShieldCheck,
   sparkles: Sparkles,
   users: UsersRound,
 }
 
+const CALLOUTS = {
+  note: { label: 'Note', icon: Info },
+  tip: { label: 'Tip', icon: Lightbulb },
+  important: { label: 'Important', icon: CircleAlert },
+  warning: { label: 'Warning', icon: TriangleAlert },
+  caution: { label: 'Caution', icon: OctagonAlert },
+}
+
+const HELP_CHAPTER = {
+  user: { chapter: 'account-safety-and-support', label: 'How to get help' },
+  admin: { chapter: 'support-and-escalation', label: 'Support and escalation' },
+}
+
 function textFromChildren(children) {
   if (Array.isArray(children)) return children.map(textFromChildren).join(' ')
-  return typeof children === 'string' || typeof children === 'number' ? String(children) : ''
+  if (typeof children === 'string' || typeof children === 'number') return String(children)
+  if (children && typeof children === 'object' && 'props' in children) return textFromChildren(children.props.children)
+  return ''
 }
 
 function MarkdownLink({ href = '', children, node: _node, ...props }) {
@@ -55,23 +98,54 @@ function Heading({ level: Level, children }) {
   return <Level id={id} className="scroll-mt-24">{children}</Level>
 }
 
+function Callout({ node, children }) {
+  const kind = node?.properties?.dataCallout
+  const callout = CALLOUTS[kind]
+  if (!callout) return <blockquote>{children}</blockquote>
+  const Icon = callout.icon
+  return (
+    <div role="note" aria-label={callout.label} className={`guide-callout guide-callout-${kind}`}>
+      <p className="guide-callout-title"><Icon aria-hidden="true" className="h-4 w-4" />{callout.label}</p>
+      <div className="guide-callout-body">{children}</div>
+    </div>
+  )
+}
+
+// Screenshots render as figures, which may not sit inside a paragraph.
+function Paragraph({ node, children }) {
+  const only = node?.children?.length === 1 ? node.children[0] : null
+  if (only?.type === 'element' && only.tagName === 'img') return <>{children}</>
+  return <p>{children}</p>
+}
+
+function Figure({ alt, title, src, node: _node, ...props }) {
+  const caption = title || alt
+  return (
+    <figure className="my-8 overflow-hidden rounded-2xl border border-brand-line bg-brand-surface-2 p-2 shadow-sm">
+      <a href={src} target="_blank" rel="noreferrer" className="block" aria-label={`Open full-size image: ${alt || caption || 'screenshot'}`}>
+        <img src={src} alt={alt || ''} className="w-full rounded-xl" loading="lazy" {...props} />
+      </a>
+      {caption && <figcaption className="px-2 pb-1 pt-3 text-center text-xs text-brand-muted">{caption}</figcaption>}
+    </figure>
+  )
+}
+
 const MARKDOWN_COMPONENTS = {
   h1: () => null,
   h2: ({ children }) => <Heading level="h2">{children}</Heading>,
   h3: ({ children }) => <Heading level="h3">{children}</Heading>,
   a: MarkdownLink,
+  p: Paragraph,
+  blockquote: Callout,
   table: ({ children }) => (
     <div className="my-6 overflow-x-auto rounded-xl border border-brand-line">
       <table>{children}</table>
     </div>
   ),
-  img: ({ alt, node: _node, ...props }) => (
-    <figure className="my-8 overflow-hidden rounded-2xl border border-brand-line bg-brand-surface-2 p-2 shadow-sm">
-      <img alt={alt || ''} className="w-full rounded-xl" loading="lazy" {...props} />
-      {alt && <figcaption className="px-2 pb-1 pt-3 text-center text-xs text-brand-muted">{alt}</figcaption>}
-    </figure>
-  ),
+  img: Figure,
 }
+
+const REMARK_PLUGINS = [remarkGfm, remarkGuideCallouts]
 
 function ChapterIcon({ name, className = 'h-4 w-4' }) {
   const Icon = ICONS[name] || BookOpen
@@ -87,6 +161,9 @@ export default function GuideViewer({
 }) {
   const [internalSlug, setInternalSlug] = useState(documents[0]?.slug)
   const [query, setQuery] = useState('')
+  const location = useLocation()
+  const articleRef = useRef(null)
+  const shownSlug = useRef(null)
   const selectedSlug = activeSlug || internalSlug
   const selectedIndex = documents.findIndex((document) => document.slug === selectedSlug)
   const selected = documents[selectedIndex] || documents[0]
@@ -94,6 +171,24 @@ export default function GuideViewer({
   useEffect(() => {
     if (activeSlug && selectedIndex === -1 && documents[0]) onSelect?.(documents[0].slug, { replace: true })
   }, [activeSlug, documents, onSelect, selectedIndex])
+
+  // Deep links such as /guide/<chapter>#<section> land on the section. A
+  // chapter change without a section returns the reader to the chapter's top
+  // when they had scrolled past it (for example from the Next button).
+  useEffect(() => {
+    const slug = selected?.slug
+    const changedChapter = shownSlug.current !== null && shownSlug.current !== slug
+    shownSlug.current = slug
+    const section = decodeURIComponent(location.hash.replace(/^#/, ''))
+    const frame = window.requestAnimationFrame(() => {
+      if (section) {
+        document.getElementById(section)?.scrollIntoView?.({ block: 'start' })
+      } else if (changedChapter && articleRef.current?.getBoundingClientRect().top < 0) {
+        articleRef.current.scrollIntoView?.({ block: 'start' })
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selected?.slug, location.hash])
 
   const visibleDocuments = useMemo(() => {
     const terms = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean)
@@ -111,6 +206,9 @@ export default function GuideViewer({
   const previous = documents[selectedIndex - 1]
   const next = documents[selectedIndex + 1]
   const isAdmin = audience === 'admin'
+  const screens = screensForChapter(audience, selected.slug)
+  const help = HELP_CHAPTER[isAdmin ? 'admin' : 'user']
+  const showHelpLink = help.chapter !== selected.slug && documents.some((document) => document.slug === help.chapter)
 
   return (
     <section className={embedded ? '' : 'mx-auto max-w-7xl px-4 py-8 md:px-8 md:py-12'} aria-label={isAdmin ? 'Administrative guide' : 'User guide'}>
@@ -133,7 +231,7 @@ export default function GuideViewer({
           <div className="mt-5 flex flex-wrap gap-2 text-xs text-white/70">
             <span className="rounded-full border border-white/10 bg-black/10 px-3 py-1.5">{documents.length} chapters</span>
             <span className="rounded-full border border-white/10 bg-black/10 px-3 py-1.5">Searchable</span>
-            <span className="rounded-full border border-white/10 bg-black/10 px-3 py-1.5">Linked to settings</span>
+            <span className="rounded-full border border-white/10 bg-black/10 px-3 py-1.5">Linked to every screen</span>
           </div>
         </div>
       </div>
@@ -182,7 +280,7 @@ export default function GuideViewer({
           </div>
         </aside>
 
-        <article className="min-w-0 overflow-hidden rounded-2xl border border-brand-line bg-brand-surface shadow-sm">
+        <article ref={articleRef} className="min-w-0 scroll-mt-4 overflow-hidden rounded-2xl border border-brand-line bg-brand-surface shadow-sm">
           <header className="border-b border-brand-line bg-brand-surface-2 px-6 py-7 md:px-10 md:py-9">
             <div className="flex items-start gap-4">
               <span className="rounded-2xl bg-brand-accent p-3 text-white shadow-sm">
@@ -194,8 +292,19 @@ export default function GuideViewer({
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-brand-ink-2 md:text-base">{selected.description}</p>
               </div>
             </div>
+            {screens.length > 0 && (
+              <nav className="mt-6 flex flex-wrap items-center gap-2" aria-label="Open in LawHand">
+                <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-muted">Open in LawHand</span>
+                {screens.map((screen) => (
+                  <Link key={screen.key} to={screen.href} className="inline-flex items-center gap-1.5 rounded-full bg-brand-ink px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-ink-2">
+                    {screen.label}
+                    <ExternalLink aria-hidden="true" className="h-3 w-3" />
+                  </Link>
+                ))}
+              </nav>
+            )}
             {selected.headings.length > 0 && (
-              <nav className="mt-6 flex flex-wrap gap-2" aria-label="On this page">
+              <nav className="mt-4 flex flex-wrap gap-2" aria-label="On this page">
                 {selected.headings.map((heading) => (
                   <a key={heading.id} href={`#${heading.id}`} className="rounded-full border border-brand-line bg-white px-3 py-1.5 text-xs font-medium text-brand-ink-2 hover:border-brand-accent hover:text-brand-accent">
                     {heading.title}
@@ -206,10 +315,18 @@ export default function GuideViewer({
           </header>
 
           <div className="guide-prose px-6 py-8 md:px-10 md:py-10">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
               {selected.content}
             </ReactMarkdown>
           </div>
+
+          {showHelpLink && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-brand-line px-6 py-4 text-sm text-brand-ink-2 md:px-10">
+              <LifeBuoy aria-hidden="true" className="h-4 w-4 text-brand-muted" />
+              Still stuck?
+              <Link to={guideHref(audience, help.chapter)} className="font-semibold text-brand-accent hover:text-brand-accent-2">{help.label}</Link>
+            </p>
+          )}
 
           <footer className="grid gap-3 border-t border-brand-line bg-brand-surface-2 px-6 py-5 sm:grid-cols-2 md:px-10">
             {previous ? (

@@ -25,6 +25,8 @@ import { looksLikeMatterNumber, normalizeMatterNumber } from '../utils/matterNum
 import { readRememberedListUrl } from '../utils/matterListMemory'
 import MatterDocumentsTab from '../components/MatterDocumentsTab'
 import MatterViewGear, { MatterViewContext, useFieldHidden, useMatterView } from '../components/MatterViewGear'
+import { usePageGuideTopic } from '../components/GuideLink'
+import { MATTER_SECTION_GUIDES } from '../guideTopics'
 import WorkflowRunsPanel from '../components/workflows/WorkflowRunsPanel'
 import MatterCorrespondenceTab from '../components/MatterCorrespondenceTab'
 import MatterPartiesTab from '../components/MatterPartiesTab'
@@ -80,6 +82,7 @@ const Icons = {
   chevronDown: 'M6 9l6 6 6-6',
   chevronRight: 'M9 18l6-6-6-6',
   checkCircle: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
+  search: 'M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0',
 }
 
 // ── Small UI pieces ───────────────────────────────────────────────────────────
@@ -397,6 +400,8 @@ function MatterWorkspace() {
   const requestedTab = searchParams.get('tab')
   const hiddenPanels = user?.hidden_matter_panels || []
   const activeTab = MATTER_SECTIONS.has(requestedTab) && !hiddenPanels.includes(requestedTab) ? requestedTab : 'dashboard'
+  const sectionGuide = MATTER_SECTION_GUIDES[activeTab]
+  usePageGuideTopic('user', sectionGuide.chapter, sectionGuide.anchor, sectionGuide.label)
   const setActiveTab = (tab) => setSearchParams(previous => {
     const next = new URLSearchParams(previous)
     if (tab === 'dashboard') next.delete('tab')
@@ -1149,6 +1154,10 @@ function MatterWorkspace() {
                   { label: 'Add Task', icon: Icons.plus, action: () => setShowAddTask(true) },
                   { label: 'Start Chat', icon: Icons.messageSquare, action: handleStartChat },
                   { label: 'Add Note', icon: Icons.edit, action: () => { setActiveTab('activity'); setShowAddNote(true) } },
+                  // The matter's research trail and brief review live on their
+                  // own pages; these are the ways in from the matter.
+                  { label: 'Research', icon: Icons.search, action: () => navigate(`/matters/${id}/research`) },
+                  { label: 'Brief Check', icon: Icons.checkCircle, action: () => navigate(`/matters/${id}/brief-check`) },
                 ].map((a, i) => (
                   <button
                     key={i}

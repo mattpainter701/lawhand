@@ -54,3 +54,18 @@ it('leads the overview with next work, ahead of optional setup', async () => {
   expect(before(keyDates, setup)).toBe(true)
   expect(before(keyDates, conversation)).toBe(true)
 })
+
+it('offers the matter research and brief review pages as quick actions', async () => {
+  render(
+    <MemoryRouter initialEntries={['/matters/A']}>
+      <Routes>
+        <Route path="/matters/:id" element={<MatterDetailPage />} />
+        <Route path="/matters/:matterId/research" element={<div>Research page</div>} />
+        <Route path="/matters/:matterId/brief-check" element={<div>Brief Check page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  await screen.findByRole('heading', { name: 'Matter A' })
+  screen.getByRole('button', { name: 'Research' }).click()
+  expect(await screen.findByText('Research page')).toBeInTheDocument()
+})

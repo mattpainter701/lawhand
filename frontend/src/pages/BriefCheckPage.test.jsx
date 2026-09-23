@@ -16,5 +16,6 @@ describe('BriefCheckPage', () => {
     expect(await screen.findByRole('heading', { name: 'Brief Check' })).toBeInTheDocument()
     expect(screen.getByText(/No absence-of-evidence result is a good-law determination/i)).toBeInTheDocument()
     expect(screen.getByText(/15 MB and 300 pages/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to matter' })).toHaveAttribute('href', '/matters/m-1?tab=documents')
   })
 })

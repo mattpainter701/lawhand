@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { reportError } from '../utils/reportError'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import Sidebar from './Sidebar'
 import { visibleNavigation, mobileNavigation, isNavigationActive } from '../navigation'
@@ -8,8 +8,11 @@ import BillingStatusBanner from './BillingStatusBanner'
 import TrialBanner from './TrialBanner'
 import { getConversations, createConversation, deleteConversation, getDocuments, deleteDocument, logout, updateMe } from '../api'
 import { canAccessModuleList } from '../moduleAccess'
+import { canOpenAdminGuide } from '../adminTabs'
+import { guideTopicForLocation } from '../guideTopics'
+import { PageGuideTopicContext } from './GuideLink'
 import { useConfirm } from './dialog/ConfirmProvider'
-import { Briefcase, GripVertical, Menu, Shield } from 'lucide-react'
+import { BookOpen, Briefcase, GripVertical, Menu, Shield } from 'lucide-react'
 
 const AppShellContext = createContext(null)
 
@@ -66,8 +69,9 @@ export default function AppShell({ children, title }) {
   const { user, logout: authLogout, refreshUser } = useAuth()
   const confirmAction = useConfirm()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [pageGuideTopic, setPageGuideTopic] = useState(null)
   const [desktopSidebarWidth, setDesktopSidebarWidth] = useState(readStoredSidebarWidth)
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(readStoredSidebarCollapsed)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
@@ -281,6 +285,12 @@ export default function AppShell({ children, title }) {
 
   const navigationItems = visibleNavigation(user)
   const visibleMobileNavItems = mobileNavigation(user)
+  // Every documented screen links to the guide section that explains it; a
+  // page may narrow that to the panel in view. Administrator chapters open
+  // inside Administration, so they are only offered to people who can open it.
+  const guideTopic = pageGuideTopic || guideTopicForLocation(pathname, search)
+  const showGuideLink = Boolean(guideTopic) && (guideTopic.audience !== 'admin' || canOpenAdminGuide(user))
+  const guideLabel = guideTopic?.label || 'this page'
   const saveNavigation = async (preferences) => {
     await updateMe({ navigation_preferences: preferences })
     await refreshUser()
@@ -355,6 +365,18 @@ export default function AppShell({ children, title }) {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              {showGuideLink && (
+                <Link
+                  to={guideTopic.href}
+                  title={`Guide: ${guideLabel}`}
+                  aria-label={`Open the guide for ${guideLabel}`}
+                  data-testid="shell-guide-link"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line bg-brand-surface p-2 text-brand-ink transition-colors hover:border-brand-line-2 hover:bg-brand-bg-soft sm:px-3 sm:py-1.5"
+                >
+                  <BookOpen size={15} className="sm:h-[13px] sm:w-[13px]" aria-hidden="true" />
+                  <span className="hidden sm:inline text-xs font-sans font-semibold uppercase tracking-wider">Guide</span>
+                </Link>
+              )}
               {navigationItems.some((item) => item.path === '/matters') && (
                 <button
                   onClick={() => handleShellNavigate('/matters')}
@@ -397,7 +419,9 @@ export default function AppShell({ children, title }) {
 
           {/* Main content */}
           <main data-app-scroll className="flex-1 overflow-auto [scrollbar-gutter:stable]">
-            {children}
+            <PageGuideTopicContext.Provider value={setPageGuideTopic}>
+              {children}
+            </PageGuideTopicContext.Provider>
           </main>
 
           <nav

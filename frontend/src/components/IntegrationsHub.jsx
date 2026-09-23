@@ -30,6 +30,15 @@ import FirmEmailIntake from './FirmEmailIntake'
 import StorageMigrationSection from './StorageMigrationSection'
 import Tabs3ImportPanel from './Tabs3ImportPanel'
 import IntegrationReadinessCard from './IntegrationReadinessCard'
+import GuideLink from './GuideLink'
+import { canOpenAdminGuide } from '../adminTabs'
+import { adminGuideHref, guideTopicForIntegrationSection } from '../guideTopics'
+
+// Each section's setup guide comes from platform_docs/coverage.json, the same
+// registry the docs check validates, so a section and its chapter cannot drift.
+function integrationGuideHref(section) {
+  return guideTopicForIntegrationSection(section)?.href || adminGuideHref('integrations')
+}
 
 /*
  * Audience decides who a section is for, and it is authorization, not
@@ -58,7 +67,7 @@ export const INTEGRATION_SECTIONS = [
     description: 'Give staff one LawHand contact for forwarding email into matter to-dos.',
     permissions: ['Accepts registered staff senders with verified DKIM signatures', 'Staff review the matter, owner and date before filing'],
     setup: ['Enable the firm address and choose the firm time zone', 'Save the LawHand contact on staff phones', 'Forward a test email with [TASK] at the start of its subject'],
-    guide: '/guide/email-intake', guideLabel: 'Email to-dos user guide',
+    guideLabel: 'Email intake setup guide',
     render: () => <FirmEmailIntake admin />,
   },
   {
@@ -78,7 +87,6 @@ export const INTEGRATION_SECTIONS = [
       'Approved OAuth redirect URLs and application credentials',
       'A documented storage owner and destination',
     ],
-    guide: '/guide/integrations',
     guideLabel: 'Integration setup guide',
     audience: 'firm',
     status: cloudStatus,
@@ -100,7 +108,6 @@ export const INTEGRATION_SECTIONS = [
       'Confirm the permitted site, drive, or mailbox boundary',
       'Run a non-sensitive test query before broader use',
     ],
-    guide: '/guide/cloud-search-operations',
     guideLabel: 'Cloud Search operations guide',
     audience: 'firm',
     status: (summary) => {
@@ -126,7 +133,6 @@ export const INTEGRATION_SECTIONS = [
       'A least-privilege service account and approved root paths',
       'Agent installation, registration, and connectivity validation',
     ],
-    guide: '/guide/file-share-operations',
     guideLabel: 'File Share operations guide',
     audience: 'firm',
     render: () => <SmbAdminPage />,
@@ -147,7 +153,6 @@ export const INTEGRATION_SECTIONS = [
       'Approved team/channel mappings and audience review',
       'Separate administrator consent for Teams Phone capture',
     ],
-    guide: '/guide/microsoft-teams-administration',
     guideLabel: 'Microsoft Teams administration guide',
     audience: 'firm',
     status: (summary) => {
@@ -177,7 +182,6 @@ export const INTEGRATION_SECTIONS = [
       'OAuth application credentials and redirect configuration',
       'Webhook verification plus recording/transcription consent policy',
     ],
-    guide: '/guide/zoom-phone-administration',
     guideLabel: 'Zoom administration guide',
     audience: 'all',
     status: (summary) => {
@@ -204,7 +208,6 @@ export const INTEGRATION_SECTIONS = [
       'Approved service-item and account mappings',
       'An accounting owner for reconciliation and exception review',
     ],
-    guide: '/guide/quickbooks-administration',
     guideLabel: 'QuickBooks administration guide',
     audience: 'accounting',
     status: (summary) => {
@@ -230,7 +233,6 @@ export const INTEGRATION_SECTIONS = [
       'Approve the exact assistant client and requested scopes',
       'For Research MCP, issue a named key and review its allowlist and owner',
     ],
-    guide: '/guide/mcp-server-operations',
     guideLabel: 'MCP server operations guide',
     audience: 'operator',
     render: () => <MCPPage embedded />,
@@ -251,8 +253,7 @@ export const INTEGRATION_SECTIONS = [
       'A reconciliation pass with zero missing or ambiguous matters',
       'A named operator who confirms the evidence before cutover',
     ],
-    guide: '/guide/integrations',
-    guideLabel: 'Integration setup guide',
+    guideLabel: 'Storage, imports & readiness guide',
     audience: 'operator',
     render: () => <StorageMigrationSection />,
   },
@@ -270,8 +271,7 @@ export const INTEGRATION_SECTIONS = [
       'An exported Tabs3 bundle and its passphrase',
       'An accounting mode decision for imported billing records',
     ],
-    guide: '/guide/integrations',
-    guideLabel: 'Integration setup guide',
+    guideLabel: 'Storage, imports & readiness guide',
     audience: 'operator',
     render: () => <Tabs3ImportPanel />,
   },
@@ -284,8 +284,7 @@ export const INTEGRATION_SECTIONS = [
     description: 'Redacted view of which provider application settings are present and the redirect URIs the provider consoles must carry.',
     permissions: ['Reports only whether a setting is present; values are never shown'],
     setup: ['Compare the expected redirect URIs with the Google and Microsoft app registrations'],
-    guide: '/guide/integrations',
-    guideLabel: 'Integration setup guide',
+    guideLabel: 'Storage, imports & readiness guide',
     audience: 'operator',
     render: () => <IntegrationReadinessCard />,
   },
@@ -368,7 +367,7 @@ function useIntegrationSummary(user) {
   return summary
 }
 
-function IntegrationDetails({ item }) {
+function IntegrationDetails({ item, showGuide }) {
   return (
     <details className="group border-t border-brand-line bg-brand-bg/55 px-5 py-3">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-bold text-brand-ink marker:hidden">
@@ -389,14 +388,16 @@ function IntegrationDetails({ item }) {
           </ul>
         </div>
       </div>
-      <Link to={item.guide} className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-brand-accent hover:text-brand-ink">
-        <BookOpen size={14} /> {item.guideLabel} <ArrowRight size={13} />
-      </Link>
+      {showGuide && (
+        <Link to={integrationGuideHref(item.id)} className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-brand-accent hover:text-brand-ink">
+          <BookOpen size={14} /> {item.guideLabel} <ArrowRight size={13} />
+        </Link>
+      )}
     </details>
   )
 }
 
-function SectionCard({ item, status, onSelect }) {
+function SectionCard({ item, status, onSelect, showGuide }) {
   const Icon = item.icon
   const actionLabel = status?.tone === 'off' ? 'Set up' : 'Open'
   return (
@@ -413,12 +414,12 @@ function SectionCard({ item, status, onSelect }) {
           <span className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-brand-accent">{actionLabel} <ArrowRight size={13} /></span>
         </span>
       </button>
-      <IntegrationDetails item={item} />
+      <IntegrationDetails item={item} showGuide={showGuide} />
     </article>
   )
 }
 
-function Overview({ sections, operatorSections, summary, onSelect }) {
+function Overview({ sections, operatorSections, summary, onSelect, showGuide }) {
   return (
     <div className="space-y-6" data-testid="integrations-overview">
       <div className="rounded-2xl border border-brand-line bg-brand-ink px-6 py-7 text-white shadow-sm md:px-8">
@@ -428,15 +429,17 @@ function Overview({ sections, operatorSections, summary, onSelect }) {
             <h2 className="font-serif text-2xl font-bold tracking-tight md:text-3xl">Every external connection, in one place.</h2>
             <p className="mt-3 text-sm leading-6 text-white/70">Each card shows whether the connection is working. Open one to connect it, review its permissions, or fix what needs attention.</p>
           </div>
-          <Link to="/guide/integration-data-visibility" className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">
-            <BookOpen size={15} /> Full data visibility guide
-          </Link>
+          {showGuide && (
+            <Link to={adminGuideHref('integration-data-visibility')} className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">
+              <BookOpen size={15} /> Full data visibility guide
+            </Link>
+          )}
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {sections.map((item) => (
-          <SectionCard key={item.id} item={item} status={item.status ? item.status(summary) : null} onSelect={onSelect} />
+          <SectionCard key={item.id} item={item} status={item.status ? item.status(summary) : null} onSelect={onSelect} showGuide={showGuide} />
         ))}
       </div>
 
@@ -454,7 +457,7 @@ function Overview({ sections, operatorSections, summary, onSelect }) {
           </summary>
           <div className="grid gap-4 border-t border-brand-line px-5 py-5 lg:grid-cols-2">
             {operatorSections.map((item) => (
-              <SectionCard key={item.id} item={item} status={null} onSelect={onSelect} />
+              <SectionCard key={item.id} item={item} status={null} onSelect={onSelect} showGuide={showGuide} />
             ))}
           </div>
         </details>
@@ -482,6 +485,10 @@ export default function IntegrationsHub({ user, section = 'overview', onSectionC
   const showOperatorNav = operatorSections.length > 0 && (advancedNav || activeIsOperator)
   const ActiveIcon = selected?.icon || Boxes
   const selectedStatus = selected?.status ? selected.status(summary) : null
+  // Setup guides open in Administration → Admin Guide, which accountants do
+  // not have, so the links are only offered where they will open.
+  const showGuide = canOpenAdminGuide(user)
+  const selectedGuide = selected ? guideTopicForIntegrationSection(selected.id) : null
 
   return (
     <section aria-labelledby="integrations-heading">
@@ -517,7 +524,7 @@ export default function IntegrationsHub({ user, section = 'overview', onSectionC
       </nav>
 
       {activeSection === 'overview' ? (
-        <Overview sections={sections} operatorSections={operatorSections} summary={summary} onSelect={onSectionChange} />
+        <Overview sections={sections} operatorSections={operatorSections} summary={summary} onSelect={onSectionChange} showGuide={showGuide} />
       ) : (
         <div className="space-y-6" data-testid={`integration-section-${selected.id}`}>
           <div className="overflow-hidden rounded-2xl border border-brand-line bg-brand-surface shadow-sm">
@@ -534,8 +541,20 @@ export default function IntegrationsHub({ user, section = 'overview', onSectionC
                 <h3 className="mt-1 font-serif text-xl font-bold text-brand-ink">{selected.label}</h3>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-ink-2">{selected.description}</p>
               </div>
+              {showGuide && selectedGuide && (
+                <GuideLink
+                  audience="admin"
+                  chapter={selectedGuide.chapter}
+                  anchor={selectedGuide.anchor}
+                  variant="pill"
+                  className="shrink-0"
+                  aria-label={selected.guideLabel}
+                >
+                  Guide
+                </GuideLink>
+              )}
             </div>
-            <IntegrationDetails item={selected} />
+            <IntegrationDetails item={selected} showGuide={showGuide} />
           </div>
           {selected.render()}
         </div>
