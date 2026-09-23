@@ -37,7 +37,7 @@ const CONNECTION_TYPES = [
 ]
 
 export default function McpProductPage() {
-  const contactUrl = import.meta.env.VITE_CONTACT_URL || 'mailto:support@getlawhand.com'
+  const demoUrl = '/request-demo?source=mcp'
 
   return (
     <MarketingPageLayout>
@@ -54,9 +54,9 @@ export default function McpProductPage() {
             Connect ChatGPT, Claude, and other MCP clients to LawHand through Model Context Protocol for research-only retrieval, with OAuth or a scoped API token, PAYG metering, and a visible usage record.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <a href={contactUrl} className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-brand-accent px-6 text-[14px] font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-accent-2">
+            <Link to={demoUrl} className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-brand-accent px-6 text-[14px] font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-accent-2">
               Get Research access <ArrowRight size={17} />
-            </a>
+            </Link>
             <Link to="/pricing" className="inline-flex min-h-12 items-center rounded-lg border border-brand-line-2 bg-brand-surface px-6 text-[14px] font-semibold text-brand-ink hover:border-brand-ink">
               See pricing
             </Link>

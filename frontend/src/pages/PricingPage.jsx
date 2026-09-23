@@ -18,7 +18,7 @@ const PLATFORM_FEATURES = [
 ]
 
 export default function PricingPage() {
-  const contactUrl = import.meta.env.VITE_CONTACT_URL || 'mailto:support@getlawhand.com'
+  const demoUrl = '/request-demo?source=pricing'
 
   return (
     <MarketingPageLayout>
@@ -56,7 +56,7 @@ export default function PricingPage() {
               ))}
             </ul>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <a href={contactUrl} className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-brand-accent px-6 text-[14px] font-semibold text-white transition-all hover:-translate-y-px hover:bg-brand-accent-2">Book a demo <ArrowRight size={16} /></a>
+              <Link to={demoUrl} className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-brand-accent px-6 text-[14px] font-semibold text-white transition-all hover:-translate-y-px hover:bg-brand-accent-2">Book a demo <ArrowRight size={16} /></Link>
               <Link to="/product/chat" className="inline-flex min-h-12 items-center rounded-lg border border-brand-line-2 bg-white px-6 text-[14px] font-semibold hover:border-brand-ink">Explore AI Chat</Link>
             </div>
           </div>
@@ -81,7 +81,7 @@ export default function PricingPage() {
             <PhoneIncoming size={24} className="text-brand-accent-2" />
             <h2 className="mt-4 font-serif text-[22px] font-bold">Call Intake</h2>
             <p className="mt-2 text-[13.5px] leading-relaxed text-brand-ink-2">Start with caller history, outcomes, assignments, and an optional verified Zoom Phone connection.</p>
-            <a href={contactUrl} className="mt-5 inline-flex items-center gap-2 text-[13px] font-bold text-brand-accent-2 hover:underline">Configure an intake rollout <ArrowRight size={14} /></a>
+            <Link to={demoUrl} className="mt-5 inline-flex items-center gap-2 text-[13px] font-bold text-brand-accent-2 hover:underline">Configure an intake rollout <ArrowRight size={14} /></Link>
           </article>
         </div>
       </section>

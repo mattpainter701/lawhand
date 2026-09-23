@@ -12,7 +12,7 @@ import balancedAccessImg from '../assets/home/lawhand-controlled-handoff-editori
 import balancedAccessSmallImg from '../assets/home/lawhand-controlled-handoff-editorial-v2-720.webp'
 import secureArchiveImg from '../assets/home/secure-source-archive-cta-v1-1280.webp'
 import secureArchiveSmallImg from '../assets/home/secure-source-archive-cta-v1-720.webp'
-import { MarketingFooter, MarketingHeader } from '../components/MarketingChrome'
+import { MarketingFooter, MarketingHeader, trackDemoCtaClick } from '../components/MarketingChrome'
 import MarketingChatWorkspace from '../components/MarketingChatWorkspace'
 import { PRACTICE_SKILLS, WORKSPACE_MODULES } from '../marketing/catalog'
 import { CAPABILITY_STATES, CORE_CAPABILITIES } from '../marketing/capabilities'
@@ -267,7 +267,7 @@ export default function HomePage() {
   }, [hash])
 
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-ink">
+    <div className="min-h-screen bg-brand-bg text-brand-ink" onClickCapture={trackDemoCtaClick}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-brand-ink focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
