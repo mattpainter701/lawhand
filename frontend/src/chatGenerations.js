@@ -10,7 +10,9 @@
  * user came back.
  *
  * Keyed by conversation id, matching the server's per-conversation generation
- * lease: one answer per conversation can be in flight at a time.
+ * lease: one answer per conversation can be in flight at a time. Different
+ * conversations stream side by side; `MAX_PARALLEL_CHAT_RESPONSES` caps how many
+ * a single tab asks for at once.
  */
 
 export const GENERATION_STREAMING = 'streaming'
@@ -23,6 +25,13 @@ export const GENERATION_ABORTED = 'aborted'
 // reopens, so cap what a single tab can accumulate.
 const SETTLED_TTL_MS = 15 * 60 * 1000
 const MAX_GENERATIONS = 12
+
+// The server gives every conversation its own lease, but each turn also pins a
+// connection from a small per-worker generation pool (see
+// DATABASE_GENERATION_POOL_SIZE), so one person fanning out every thread they
+// have open would crowd out the rest of the firm. Anything beyond this waits in
+// its conversation's queue until a slot frees.
+export const MAX_PARALLEL_CHAT_RESPONSES = 3
 
 const generations = new Map()
 const listeners = new Set()
@@ -66,6 +75,11 @@ export function getChatGeneration(conversationId) {
   return generations.get(conversationId) || null
 }
 
+/** Every generation the registry holds, streaming or settled-but-unreconciled. */
+export function listChatGenerations() {
+  return [...generations.values()]
+}
+
 /** How many answers are still being read, across every conversation. */
 export function countStreamingChatGenerations() {
   let count = 0
@@ -81,6 +95,7 @@ export function beginChatGeneration({
   controller = null,
   userMessage,
   assistantMessage,
+  attached = true,
 }) {
   if (!conversationId || !clientTurnId) return null
   prune()
@@ -93,7 +108,7 @@ export function beginChatGeneration({
     status: GENERATION_STREAMING,
     error: null,
     errorSource: null,
-    attached: true,
+    attached: Boolean(attached),
     startedAt: Date.now(),
     settledAt: null,
   }
@@ -120,15 +135,33 @@ export function patchChatGeneration(conversationId, clientTurnId, { assistant = 
 }
 
 /**
+ * Let go of every in-flight turn a page was showing. The reads keep draining;
+ * only the binding changes, so the page that eventually settles a detached turn
+ * re-reads the persisted outcome instead of reconciling an optimistic one it may
+ * no longer be displaying.
+ */
+export function detachChatGenerations() {
+  let changed = false
+  for (const [conversationId, record] of generations) {
+    if (record.status !== GENERATION_STREAMING || !record.attached) continue
+    generations.set(conversationId, { ...record, attached: false })
+    changed = true
+  }
+  if (changed) notify()
+  return changed
+}
+
+/**
  * Mark the read finished. `attached` records whether a page was still bound to
  * this turn when it ended, which decides whether a failure is shown in place or
- * re-read from the server's persisted interruption.
+ * re-read from the server's persisted interruption. When the caller does not
+ * say, the binding the registry tracked for the turn stands.
  */
 export function settleChatGeneration(conversationId, clientTurnId, {
   status = GENERATION_COMPLETE,
   error = null,
   errorSource = null,
-  attached = false,
+  attached,
   assistant = null,
 } = {}) {
   const record = generations.get(conversationId)
@@ -139,7 +172,7 @@ export function settleChatGeneration(conversationId, clientTurnId, {
     status,
     error,
     errorSource,
-    attached,
+    attached: attached === undefined ? record.attached : Boolean(attached),
     controller: null,
     settledAt: Date.now(),
   }
@@ -174,6 +207,18 @@ export function abortChatGeneration(conversationId) {
   })
   notify()
   return true
+}
+
+/**
+ * Signing out does not reload the page, so the next person to sign in on this tab
+ * would otherwise inherit these records and the streams still writing into them.
+ * Cancel every one and forget it; subscribers stay armed for the next session.
+ */
+export function clearChatGenerationsForSignOut() {
+  if (!generations.size) return
+  for (const record of generations.values()) record.controller?.abort()
+  generations.clear()
+  notify()
 }
 
 /** Test helper: drop every record without aborting, leaving no listeners armed. */

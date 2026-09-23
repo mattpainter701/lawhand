@@ -32,10 +32,25 @@ vi.mock('react-router-dom', () => ({
   useSearchParams: () => [new URLSearchParams(routerHarness.query)],
 }))
 vi.mock('../components/ChatHeader', () => ({
-  default: ({ activeConvTitle }) => <div data-testid="chat-title">{activeConvTitle}</div>,
+  default: ({ activeConvTitle, context }) => (
+    <div>
+      <div data-testid="chat-title">{activeConvTitle}</div>
+      {context}
+    </div>
+  ),
 }))
 vi.mock('../components/ChatInput', () => ({
-  default: ({ inputValue, onInputChange, onSend, isSending, sendDisabled, sendDisabledLabel }) => (
+  default: ({
+    inputValue,
+    onInputChange,
+    onSend,
+    isSending,
+    willQueue,
+    queuedMessages = [],
+    queuePaused,
+    onResumeQueue,
+    onRemoveQueued,
+  }) => (
     <div>
       <textarea
         aria-label="Message the assistant"
@@ -45,11 +60,25 @@ vi.mock('../components/ChatInput', () => ({
       <button
         type="button"
         onClick={onSend}
-        disabled={isSending || sendDisabled || !inputValue.trim()}
-        aria-label={sendDisabled ? sendDisabledLabel : 'Send message'}
+        disabled={isSending || !inputValue.trim()}
+        aria-label={willQueue ? 'Queue message' : 'Send message'}
       >
         Send message
       </button>
+      <ol aria-label="Queued messages">
+        {queuedMessages.map((item) => (
+          <li key={item.id}>
+            {item.content}
+            <button type="button" onClick={() => onRemoveQueued(item.id)}>Remove {item.content}</button>
+          </li>
+        ))}
+      </ol>
+      {queuePaused && (
+        <p>
+          {queuePaused}
+          <button type="button" onClick={onResumeQueue}>Resume queue</button>
+        </p>
+      )}
     </div>
   ),
 }))
@@ -87,6 +116,7 @@ vi.mock('../components/chat/ChatRail', () => ({
 }))
 
 import { getChatGeneration, resetChatGenerations } from '../chatGenerations'
+import { resetChatQueue } from '../chatQueue'
 import ChatPage, { mergeRefreshedTranscript, upsertGenerationTurn } from './ChatPage'
 
 const conversation = (id, title, messages = []) => ({
@@ -246,6 +276,7 @@ describe('ChatPage guarded stream lifecycle', () => {
     // Generations are module state by design — they outlive the page so that
     // leaving Chat cannot cancel an answer. Each test needs its own registry.
     resetChatGenerations()
+    resetChatQueue()
     authHarness.value = {
       user: { privacy_mode: false },
       refreshUser: vi.fn(),
@@ -286,6 +317,7 @@ describe('ChatPage guarded stream lifecycle', () => {
   afterEach(() => {
     cleanup()
     resetChatGenerations()
+    resetChatQueue()
   })
 
   it('keeps streamed answer text visible and offers a retry when source metadata refresh fails', async () => {
@@ -556,7 +588,7 @@ describe('ChatPage guarded stream lifecycle', () => {
     expect(await screen.findByText('Answer text')).toBeInTheDocument()
   })
 
-  it('does not let a late stream from conversation A overwrite conversation B', async () => {
+  it('answers conversation B while conversation A is still streaming, without mixing the two', async () => {
     let releaseStream
     let observedSignal
     let streamFinished = false
@@ -568,8 +600,13 @@ describe('ChatPage guarded stream lifecycle', () => {
           ])
         : conversation('conversation-a', 'Conversation A')
     ))
-    apiMocks.streamMessage.mockImplementation(async function* (...args) {
-      observedSignal = args[5]?.signal
+    apiMocks.streamMessage.mockImplementation(async function* (conversationId, ...args) {
+      if (conversationId === 'conversation-b') {
+        yield 'Answer for B'
+        yield '[STREAM_COMPLETE]'
+        return
+      }
+      observedSignal = args[4]?.signal
       try {
         yield 'Conversation A partial answer'
         await streamGate
@@ -591,24 +628,27 @@ describe('ChatPage guarded stream lifecycle', () => {
     await user.click(screen.getAllByRole('button', { name: 'Conversation B' })[0])
     expect(await screen.findByText('Conversation B transcript')).toBeInTheDocument()
     expect(observedSignal.aborted).toBe(false)
-    expect(screen.getByRole('status')).toHaveTextContent(/response is finishing in the background/i)
+
+    // Each conversation holds its own server lease, so B sends straight away
+    // instead of waiting behind A.
     await user.type(screen.getByLabelText('Message the assistant'), 'Question for B')
-    expect(screen.getByRole('button', {
-      name: 'Another conversation response is finishing',
-    })).toBeDisabled()
-    expect(apiMocks.streamMessage).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(apiMocks.streamMessage).toHaveBeenCalledTimes(2))
+    expect(apiMocks.streamMessage.mock.calls[1][0]).toBe('conversation-b')
+    expect(apiMocks.streamMessage.mock.calls[1][1]).toBe('Question for B')
+    expect(await screen.findByText('Answer for B')).toBeInTheDocument()
+    expect(screen.queryByText('Conversation A partial answer')).not.toBeInTheDocument()
 
     await act(async () => {
       releaseStream()
       await Promise.resolve()
     })
+    await waitFor(() => expect(streamFinished).toBe(true))
     expect(screen.getByText('Conversation B transcript')).toBeInTheDocument()
     expect(screen.queryByText(/late completion/)).not.toBeInTheDocument()
-    await waitFor(() => expect(streamFinished).toBe(true))
-    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled()
   })
 
-  it('keeps matter linking disabled in an empty thread while another response finishes', async () => {
+  it('lets an empty thread link a matter while another conversation is still answering', async () => {
     let releaseStream
     const streamGate = new Promise((resolve) => { releaseStream = resolve })
     apiMocks.getConversation.mockImplementation(async (id) => (
@@ -629,16 +669,181 @@ describe('ChatPage guarded stream lifecycle', () => {
     await user.type(screen.getByLabelText('Message the assistant'), 'Question for A')
     await user.click(screen.getByRole('button', { name: 'Send message' }))
     expect(await screen.findByText('Conversation A partial answer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Link matter/i })).toBeDisabled()
 
     await user.click(screen.getAllByRole('button', { name: 'Conversation B' })[0])
     await waitFor(() => expect(apiMocks.getConversation).toHaveBeenCalledWith('conversation-b'))
-    expect(screen.getByRole('button', { name: /Link matter/i })).toBeDisabled()
+    await waitFor(() => expect(screen.getByRole('button', { name: /Link matter/i })).toBeEnabled())
 
     await act(async () => {
       releaseStream()
       await Promise.resolve()
     })
-    await waitFor(() => expect(screen.getByRole('button', { name: /Link matter/i })).toBeEnabled())
+  })
+
+  it('queues a follow-up typed while the conversation answers and sends it next', async () => {
+    let releaseFirst
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve })
+    // The server keeps every finished turn, so each refresh returns them all.
+    const persisted = []
+    const persist = (content, answer) => {
+      const turn = persisted.length / 2 + 1
+      persisted.push(
+        { id: `user-${turn}`, role: 'user', content, created_at: '2099-01-01T00:00:01Z' },
+        assistantMessage(`answer-${turn}`, answer),
+      )
+    }
+    apiMocks.getConversation.mockImplementation(async () => (
+      conversation('conversation-a', 'Conversation A', [...persisted])
+    ))
+    apiMocks.streamMessage.mockImplementation(async function* (_conversationId, content) {
+      if (content === 'First question') {
+        yield 'First answer'
+        await firstGate
+        persist(content, 'First answer')
+        yield '[STREAM_COMPLETE]'
+        return
+      }
+      yield 'Second answer'
+      persist(content, 'Second answer')
+      yield '[STREAM_COMPLETE]'
+    })
+
+    render(<ChatPage />)
+    await waitFor(() => expect(apiMocks.getConversation).toHaveBeenCalledWith('conversation-a'))
+    const user = userEvent.setup()
+    const composer = screen.getByLabelText('Message the assistant')
+    await user.type(composer, 'First question')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(await screen.findByText('First answer')).toBeInTheDocument()
+
+    // The composer stays open while the answer streams; sending queues.
+    await user.type(composer, 'Second question')
+    await user.click(screen.getByRole('button', { name: 'Queue message' }))
+    expect(composer).toHaveValue('')
+    expect(within(screen.getByRole('list', { name: 'Queued messages' })).getByText('Second question')).toBeInTheDocument()
+    expect(apiMocks.streamMessage).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      releaseFirst()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(apiMocks.streamMessage).toHaveBeenCalledTimes(2))
+    expect(apiMocks.streamMessage.mock.calls[1].slice(0, 2)).toEqual(['conversation-a', 'Second question'])
+    expect(await screen.findByText('Second answer')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: 'Queued messages' })).queryByText('Second question')).not.toBeInTheDocument()
+    expect(screen.getByText('First answer')).toBeInTheDocument()
+  })
+
+  it('holds queued follow-ups after a failed answer until the user resumes', async () => {
+    let failFirst
+    const firstGate = new Promise((resolve) => { failFirst = resolve })
+    apiMocks.getConversation.mockResolvedValue(conversation('conversation-a', 'Conversation A'))
+    apiMocks.streamMessage.mockImplementation(async function* (_conversationId, content) {
+      if (content === 'First question') {
+        yield 'Partial'
+        await firstGate
+        yield '[ERROR]Model unavailable'
+        return
+      }
+      yield 'Answer after resuming'
+      yield '[STREAM_COMPLETE]'
+    })
+
+    render(<ChatPage />)
+    await waitFor(() => expect(apiMocks.getConversation).toHaveBeenCalledWith('conversation-a'))
+    const user = userEvent.setup()
+    const composer = screen.getByLabelText('Message the assistant')
+    await user.type(composer, 'First question')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(await screen.findByText('Partial')).toBeInTheDocument()
+    await user.type(composer, 'Follow-up question')
+    await user.click(screen.getByRole('button', { name: 'Queue message' }))
+
+    await act(async () => {
+      failFirst()
+      await Promise.resolve()
+    })
+    expect(await screen.findByText(/An error occurred: Model unavailable/)).toBeInTheDocument()
+    expect(screen.getByText(/failed, so they were held/)).toBeInTheDocument()
+    expect(apiMocks.streamMessage).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Resume queue' }))
+    await waitFor(() => expect(apiMocks.streamMessage).toHaveBeenCalledTimes(2))
+    expect(apiMocks.streamMessage.mock.calls[1][1]).toBe('Follow-up question')
+    expect(await screen.findByText('Answer after resuming')).toBeInTheDocument()
+  })
+
+  it('keeps draining a queued follow-up after the user opens another conversation', async () => {
+    let releaseFirst
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve })
+    apiMocks.getConversation.mockImplementation(async (id) => (
+      id === 'conversation-b'
+        ? conversation('conversation-b', 'Conversation B', [
+            assistantMessage('answer-b', 'Conversation B transcript'),
+          ])
+        : conversation('conversation-a', 'Conversation A')
+    ))
+    apiMocks.streamMessage.mockImplementation(async function* (_conversationId, content) {
+      if (content === 'First question') {
+        yield 'First answer'
+        await firstGate
+        yield '[STREAM_COMPLETE]'
+        return
+      }
+      yield 'Queued answer for A'
+      yield '[STREAM_COMPLETE]'
+    })
+
+    render(<ChatPage />)
+    await waitFor(() => expect(apiMocks.getConversation).toHaveBeenCalledWith('conversation-a'))
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Message the assistant'), 'First question')
+    await user.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(await screen.findByText('First answer')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Message the assistant'), 'Queued question')
+    await user.click(screen.getByRole('button', { name: 'Queue message' }))
+
+    await user.click(screen.getAllByRole('button', { name: 'Conversation B' })[0])
+    expect(await screen.findByText('Conversation B transcript')).toBeInTheDocument()
+    // B's own composer is free and has nothing queued.
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: 'Queued messages' })).queryAllByRole('listitem')).toHaveLength(0)
+
+    await act(async () => {
+      releaseFirst()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(apiMocks.streamMessage).toHaveBeenCalledTimes(2))
+    expect(apiMocks.streamMessage.mock.calls[1].slice(0, 2)).toEqual(['conversation-a', 'Queued question'])
+    expect(getChatGeneration('conversation-a')?.attached).toBe(false)
+    expect(screen.getByText('Conversation B transcript')).toBeInTheDocument()
+    expect(screen.queryByText('Queued answer for A')).not.toBeInTheDocument()
+  })
+
+  it('keeps a half-typed draft with the conversation it was typed in', async () => {
+    apiMocks.getConversation.mockImplementation(async (id) => (
+      id === 'conversation-b'
+        ? conversation('conversation-b', 'Conversation B', [
+            assistantMessage('answer-b', 'Conversation B transcript'),
+          ])
+        : conversation('conversation-a', 'Conversation A', [
+            assistantMessage('answer-a', 'Conversation A transcript'),
+          ])
+    ))
+
+    render(<ChatPage />)
+    expect(await screen.findByText('Conversation A transcript')).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Message the assistant'), 'Draft meant for A')
+
+    await user.click(screen.getAllByRole('button', { name: 'Conversation B' })[0])
+    expect(await screen.findByText('Conversation B transcript')).toBeInTheDocument()
+    expect(screen.getByLabelText('Message the assistant')).toHaveValue('')
+
+    await user.click(screen.getAllByRole('button', { name: 'Conversation A' })[0])
+    expect(await screen.findByText('Conversation A transcript')).toBeInTheDocument()
+    expect(screen.getByLabelText('Message the assistant')).toHaveValue('Draft meant for A')
   })
 
   it('does not send or mount a new-conversation turn after the user switches threads', async () => {

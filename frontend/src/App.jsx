@@ -11,6 +11,8 @@ import ReleaseWindowBanner from './components/ReleaseWindowBanner'
 import WorkspaceMcpReconnectBanner from './components/WorkspaceMcpReconnectBanner'
 import AppErrorBoundary from './components/AppErrorBoundary'
 import { getMe } from './api'
+import { clearChatGenerationsForSignOut } from './chatGenerations'
+import { clearChatQueueForSignOut } from './chatQueue'
 import { canAccessAddonList, canAccessModuleList } from './moduleAccess'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -137,6 +139,11 @@ export function AuthProvider({ children }) {
     // Invalidate any older session probe so it cannot restore a user after a
     // logout or overwrite a newer login result when its refresh finishes late.
     authRequestSequence.current += 1
+    // Chat keeps drafts, queued follow-ups and live answers outside React so
+    // they survive navigation; a sign-out must not hand them to the next user.
+    // Queue first, so aborting the answers does not dispatch what was waiting.
+    clearChatQueueForSignOut()
+    clearChatGenerationsForSignOut()
     setUser(null)
   }, [])
 

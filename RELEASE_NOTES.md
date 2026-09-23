@@ -5,6 +5,19 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.23.01 — Run several assistant chats and queue follow-ups
+
+Released September 23, 2026.
+
+The assistant can answer in several conversations at once and lets you queue your next question while it works. Review tags are easier to read, and the chat makes better use of a phone screen.
+
+- **Keep several chats going.** Up to three conversations can answer at the same time. The conversation list shows which are responding, which have a new reply and which need a look.
+- **Queue your next question.** Keep typing while an answer streams. What you send waits in a queue and goes out in order as each answer finishes; edit or remove it before then.
+- **Nothing builds on a failed answer.** If an answer fails, anything queued behind it is held until you choose to resume, so a follow-up never builds on a reply you did not see.
+- **Review tags you can read.** Cited, verify and model tags use stronger colors and explain themselves on hover. The full key opens from the chat header instead of covering your answers.
+- **More room on a phone.** Matter context sits under the conversation title, answers no longer pull you down while you read back, and Return starts a new line on touch keyboards.
+- **Drafts stay with their conversation.** A half-typed question stays in the conversation you typed it in when you switch to another one and back.
+
 ## 2026.09.22.08 — Find and review firm and global templates
 
 Released September 22, 2026.

@@ -1,8 +1,12 @@
-import { useEffect, useRef } from 'react'
-import { FileSearch, ListTree, PenLine, Scale, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ArrowDown, FileSearch, ListTree, PenLine, Scale, Sparkles } from 'lucide-react'
 import ChatMessage from './ChatMessage'
 import { MessageSkeleton } from './LoadingSkeleton'
-import { ReviewTagLegend } from './legalMarkdown'
+
+// How close to the bottom still counts as "following along". Anything further
+// up means the reader scrolled back on purpose, and streaming must not yank
+// them down again.
+const STICK_TO_BOTTOM_PX = 96
 
 const STARTER_ACTIONS = [
   {
@@ -74,33 +78,69 @@ export default function Messages({
   messages,
   isLoading,
   isSending,
+  conversationKey = null,
   onMessageScroll,
   onPromptSelect,
 }) {
-  const messagesEndRef = useRef(null)
+  const scrollRef = useRef(null)
+  const followingRef = useRef(true)
+  const [following, setFollowing] = useState(true)
 
+  const scrollToLatest = useCallback((behavior = 'auto') => {
+    const element = scrollRef.current
+    if (!element) return
+    followingRef.current = true
+    setFollowing(true)
+    if (typeof element.scrollTo === 'function') {
+      element.scrollTo({ top: element.scrollHeight, behavior })
+    } else {
+      element.scrollTop = element.scrollHeight
+    }
+  }, [])
+
+  // A different conversation always opens at its latest message.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' })
-  }, [messages, isSending])
+    followingRef.current = true
+    setFollowing(true)
+  }, [conversationKey])
+
+  // Keep up with a streaming answer only while the reader is at the bottom.
+  // Layout effect, so each token lands already in view rather than a frame late.
+  useLayoutEffect(() => {
+    if (!followingRef.current) return
+    const element = scrollRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [messages, isSending, isLoading, conversationKey])
+
+  const handleScroll = (event) => {
+    const element = event.currentTarget
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    const atBottom = distance <= STICK_TO_BOTTOM_PX
+    if (atBottom !== followingRef.current) {
+      followingRef.current = atBottom
+      setFollowing(atBottom)
+    }
+    onMessageScroll?.(event)
+  }
+
+  const hasMessages = Array.isArray(messages) && messages.length > 0
 
   return (
     <div
-      className="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-5 sm:py-4 md:px-8 md:py-6"
-      onScroll={onMessageScroll}
+      ref={scrollRef}
+      className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-5 md:px-8 md:py-6"
+      onScroll={handleScroll}
       aria-live={isSending ? 'polite' : 'off'}
     >
-      <div className="sticky top-0 z-20 -mx-1 bg-brand-bg/95 px-1 py-1 backdrop-blur" aria-label="Review tag legend">
-        <ReviewTagLegend compact />
-      </div>
-      {!messages || messages.length === 0 ? (
-        <EmptyState onPromptSelect={onPromptSelect} />
-      ) : isLoading ? (
-        <div className="mx-auto w-full max-w-none">
+      {isLoading ? (
+        <div className="mx-auto w-full max-w-4xl">
           <MessageSkeleton />
           <MessageSkeleton />
         </div>
+      ) : !hasMessages ? (
+        <EmptyState onPromptSelect={onPromptSelect} />
       ) : (
-        <div className="mx-auto w-full max-w-none">
+        <div className="mx-auto w-full max-w-4xl">
           {messages.map((message, index) => (
             <div
               key={message.id}
@@ -110,7 +150,19 @@ export default function Messages({
               <ChatMessage message={message} />
             </div>
           ))}
-          <div ref={messagesEndRef} />
+        </div>
+      )}
+
+      {hasMessages && !isLoading && !following && (
+        <div className="pointer-events-none sticky bottom-2 z-10 flex justify-center">
+          <button
+            type="button"
+            onClick={() => scrollToLatest('smooth')}
+            className="pointer-events-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-brand-line bg-brand-surface px-3.5 text-xs font-semibold text-brand-ink shadow-lg hover:bg-brand-bg-soft"
+          >
+            <ArrowDown size={14} aria-hidden="true" />
+            {isSending ? 'Jump to the answer' : 'Jump to latest'}
+          </button>
         </div>
       )}
     </div>

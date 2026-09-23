@@ -1,10 +1,9 @@
 
 export function MessageSkeleton() {
   return (
-    <div className="flex justify-start mb-8 animate-fade-in">
+    <div className="flex justify-start mb-6 animate-fade-in">
       <div className="max-w-3xl w-full space-y-3">
-        <div className="bg-brand-surface border border-brand-line p-8 relative">
-          <div className="absolute top-0 left-0 w-full h-1 bg-brand-gold"></div>
+        <div className="bg-brand-surface border border-brand-line rounded-2xl p-4 sm:p-6 relative">
 
           {/* Header skeleton */}
           <div className="flex items-center gap-2 mb-6 pb-4 border-b border-brand-line">
