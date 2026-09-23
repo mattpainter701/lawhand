@@ -144,6 +144,41 @@ describe('firm directory', () => {
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith({ q: 'north', page: 1 }, { replace: true }))
   })
 
+  it('keeps a trailing space while typing after the search is committed', async () => {
+    const user = userEvent.setup()
+    const { onNavigate, rerender } = renderTab()
+    const search = await screen.findByRole('searchbox', { name: 'Search firms' })
+
+    await user.type(search, 'north ')
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith({ q: 'north', page: 1 }, { replace: true }))
+    // The page commits the trimmed query to the URL and passes it back down.
+    rerender(
+      <ConfirmProvider>
+        <TenantsTab
+          platformKey="token" session={{ scopes: [] }} llmConfig={null} view="platform" query="north"
+          page={1} expandedId="" onNavigate={onNavigate} onOpenTenant={vi.fn()} onOpenLogs={vi.fn()} onAuthError={vi.fn()}
+        />
+      </ConfirmProvider>,
+    )
+    await user.type(search, 'wind')
+
+    expect(search).toHaveValue('north wind')
+  })
+
+  it('adopts a query set elsewhere, such as opening a firm by id', async () => {
+    const { rerender, onNavigate } = renderTab()
+    const search = await screen.findByRole('searchbox', { name: 'Search firms' })
+    rerender(
+      <ConfirmProvider>
+        <TenantsTab
+          platformKey="token" session={{ scopes: [] }} llmConfig={null} view="all" query={TENANT_ID}
+          page={1} expandedId={TENANT_ID} onNavigate={onNavigate} onOpenTenant={vi.fn()} onOpenLogs={vi.fn()} onAuthError={vi.fn()}
+        />
+      </ConfirmProvider>,
+    )
+    await waitFor(() => expect(search).toHaveValue(TENANT_ID))
+  })
+
   it('passes the committed search and view to the API', async () => {
     renderTab({ view: 'pending', query: 'north', page: 2 })
     await waitFor(() => expect(getPlatformTenants).toHaveBeenCalledWith('token', 2, { status: 'pending', limit: 50, q: 'north' }))

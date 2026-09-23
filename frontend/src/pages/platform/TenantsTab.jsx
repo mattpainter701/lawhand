@@ -169,7 +169,12 @@ export default function TenantsTab({
   const callbacks = useLatest({ onAuthError, onNavigate })
   const canDebug = sessionHasScope(session, DEBUG_SCOPE)
 
-  useEffect(() => { setDraft(query) }, [query])
+  // Follow the URL when it changes elsewhere (a firm opened by id, Clear), but
+  // keep what is being typed: the committed query is trimmed, and copying it
+  // back would eat the space between two words mid-typing.
+  useEffect(() => {
+    setDraft((current) => (current.trim() === query ? current : query))
+  }, [query])
 
   // Commit the search box to the URL a moment after typing stops.
   useEffect(() => {
