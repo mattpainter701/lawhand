@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.08",
+      "version": "2026.09.22.08",
+      "title": "Find and review firm and global templates",
+      "published_at": "2026-09-22",
+      "summary": "Search firm and global forms from a matter, preview shared sources and bring a reviewed copy into your firm. The new draft keeps its matter context and stays unavailable until tested and published.",
+      "highlights": [
+        {
+          "title": "Search firm and global forms",
+          "description": "Search both catalogs by title and form details, then filter results to your firm's templates or the shared global library."
+        },
+        {
+          "title": "See which forms are ready to use",
+          "description": "Published firm forms show their available version. Draft and paused forms are labeled and open in Studio for review."
+        },
+        {
+          "title": "Bring a global form into your firm",
+          "description": "Preview the read-only source, then add it as a firm draft. The PDF and suggested fields enter the usual review flow with matter context; test and publish before use."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.07",
       "version": "2026.09.22.07",
       "title": "PDF previews update as you work",

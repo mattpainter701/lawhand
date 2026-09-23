@@ -126,7 +126,7 @@ export default function MatterTemplatePicker({ matterId, folderId, onClose, onSa
       <p className="my-2 text-sm text-brand-muted">Search your firm’s templates and the global library. Firm templates must be published before they can be used on a matter. Global samples need firm review before use.</p>
       <label className="block text-sm">Search templates<input autoFocus value={query} onChange={event => { setQuery(event.target.value); setPage(0); setGlobalPage(0) }} className="my-2 w-full rounded border border-brand-line p-2" /></label>
       <div role="group" aria-label="Template source" className="mb-4 flex flex-wrap gap-2">
-        {[['all', 'All'], ['firm', 'Firm templates'], ['global', 'Global library']].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className="rounded border px-3 py-1.5">{label}</button>)}
+        {[['all', 'All'], ['firm', 'Firm templates'], ['global', 'Global library']].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={`rounded border px-3 py-1.5 text-sm font-semibold ${filter === value ? 'border-brand-ink bg-brand-ink text-white' : 'border-brand-line text-brand-muted hover:bg-brand-bg'}`}>{label}</button>)}
       </div>
       {showFirm && <section aria-labelledby="firm-templates-heading" className="mb-5">
         <h3 id="firm-templates-heading" className="mb-2 font-semibold">Firm templates <span className="text-xs font-normal text-brand-muted">Your workspace</span></h3>

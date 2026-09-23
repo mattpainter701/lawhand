@@ -1469,7 +1469,7 @@ export default function TemplatesPage() {
     await load()
     if (activeTab === 'generate') await loadGenerationTemplates()
     if (created?.id) navigate(`/templates/${encodeURIComponent(created.id)}/studio`, {
-      state: { preparationContext, studioStatus: 'Firm draft created. Review the fields, test and publish it, then use it on your matter.' },
+      state: { preparationContext, studioStatus: preparationContext ? 'Firm draft created. Review the fields, test and publish it, then use it on your matter.' : 'Firm draft created. Review the fields, test and publish it before use.' },
     })
     else if (isNewRoute) navigate('/templates')
   }
