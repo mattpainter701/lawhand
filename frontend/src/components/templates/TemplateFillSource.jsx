@@ -4,7 +4,7 @@ import { PdfPageCanvas, useTemplatePdfDocument } from './PdfDocumentCanvas'
 import WordPlaceholderLayer from './WordPlaceholderLayer'
 import { fieldIdentity, overlayToCanvasRect, placementsFor } from './pdfFieldGeometry'
 
-export default function TemplateFillSource({ template, fields, values, onSelectField }) {
+export default function TemplateFillSource({ template, fields, values, onSelectField, autoPreview = false }) {
   const [source, setSource] = useState(null)
   const [paragraphs, setParagraphs] = useState([])
   const [failed, setFailed] = useState(false)
@@ -39,7 +39,7 @@ export default function TemplateFillSource({ template, fields, values, onSelectF
     const field = fields.find((item, index) => fieldIdentity(item, index) === identity)
     if (field) onSelectField(field.name)
   }
-  if (newerDraft) return <p className="p-6 text-sm text-brand-muted">This template has newer draft edits. Choose Preview to inspect the published document with your values.</p>
+  if (newerDraft) return <p className="p-6 text-sm text-brand-muted">{autoPreview ? 'This template has newer draft edits. Your preview uses the published document and your current answers.' : 'This template has newer draft edits. Choose Preview to inspect the published document with your values.'}</p>
   if (!fileTemplate) return <article aria-label="Working document values" className="mx-auto min-h-[60vh] max-w-[7in] whitespace-pre-wrap bg-white p-8 text-sm leading-7 text-slate-900 shadow-sm">
     {String(template.body || '').split(/(\{\{[A-Za-z][A-Za-z0-9_.-]*\}\})/g).map((part, index) => {
       const name = part.match(/^\{\{(.+)\}\}$/)?.[1]
@@ -47,7 +47,7 @@ export default function TemplateFillSource({ template, fields, values, onSelectF
       return field ? <button key={index} type="button" aria-label={`Fill ${field.label || name}`} onClick={() => onSelectField(name)} className="rounded border border-amber-500 bg-amber-50 px-1 text-left">{String(values[name] ?? '').trim() || field.label || name}</button> : <span key={index}>{part}</span>
     })}
   </article>
-  if (failed || error) return <p role="status" className="p-6 text-sm text-brand-muted">The source reference could not be displayed. Fill the fields, then choose Preview to check the generated document.</p>
+  if (failed || error) return <p role="status" className="p-6 text-sm text-brand-muted">{autoPreview ? 'The source reference could not be displayed. You can keep filling the fields while the generated preview updates.' : 'The source reference could not be displayed. Fill the fields, then choose Preview to check the generated document.'}</p>
   return <section aria-label="Source document reference">
     <div className="mb-3 flex items-center justify-between gap-2 text-xs"><button type="button" disabled={pageNumber <= 1} onClick={() => { setViewport(null); setPageNumber(value => value - 1) }}>Previous source page</button><span>Page {pageNumber} of {pages.length || '…'}</span><button type="button" disabled={pageNumber >= pages.length} onClick={() => { setViewport(null); setPageNumber(value => value + 1) }}>Next source page</button></div>
     {!document && <p role="status">Loading source document…</p>}

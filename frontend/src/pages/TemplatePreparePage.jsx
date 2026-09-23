@@ -142,7 +142,7 @@ function PrepareDocument({ template, matters, matterLoading, query, onSaved }) {
     matterId: fill.matterId,
     progress: fill.progress,
     requiredMissing: fill.requiredUnresolvedNames.length,
-    previewReady: Boolean(fill.previewId || fill.filePreview || fill.rendered),
+    previewReady: fill.isPdfOutput ? Boolean(fill.previewId) : Boolean(fill.filePreview || fill.rendered),
     saved: fill.saved,
     signing,
   })

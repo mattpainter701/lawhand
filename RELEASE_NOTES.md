@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.07 — PDF previews update as you work
+
+Released September 22, 2026.
+
+Preparing a published PDF now fills available matter values and updates the preview automatically. Finish the missing answers, review the document and choose Save to matter.
+
+- **See your answers without another click.** The matter dialog and single-document Prepare page refresh PDF previews after a short pause in typing, including Word templates generated as PDFs.
+- **Keep your place while reviewing.** Page and zoom choices stay in place as the preview updates. An older preview is clearly marked while your latest answers are being rendered.
+- **Save when the document is ready.** Save to matter waits for required answers and an up-to-date preview. If previewing fails, a Retry preview action keeps your answers available.
+
 ## 2026.09.22.06 — Find matters that need attention
 
 Released September 22, 2026.

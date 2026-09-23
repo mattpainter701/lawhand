@@ -164,7 +164,7 @@ describe('document template workflow', () => {
     expect(renderTemplate).toHaveBeenNthCalledWith(1, 'template-1', expect.objectContaining({ matter_id: null }))
     expect(screen.queryByText(/Saved to the matter/)).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
     await waitFor(() => expect(renderTemplate).toHaveBeenCalledTimes(2))
     expect(renderTemplate).toHaveBeenNthCalledWith(2, 'template-1', expect.objectContaining({ matter_id: 'matter-1' }))
     expect(await screen.findByRole('link', { name: /Download saved document/ })).toHaveAttribute('href', '/api/matters/matter-1/documents/document-1/download')
@@ -965,8 +965,6 @@ describe('document template workflow', () => {
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
     await user.type(screen.getByPlaceholderText('Enter Client Name'), 'Ada')
-    await user.click(screen.getByRole('button', { name: 'Preview' }))
-
     await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith('pdf-template', {
       variables: { client_name: 'Ada' },
       matter_id: 'matter-1',
@@ -977,10 +975,11 @@ describe('document template workflow', () => {
     expect(screen.getByRole('button', { name: 'Download preview' })).toBeInTheDocument()
     expect(URL.createObjectURL).toHaveBeenCalledWith(pdfBlob)
 
-    expect(screen.getByText(/These exact values and this matter are previewed/)).toBeInTheDocument()
+    expect(screen.getByText('Preview is up to date. Review every page, then save to your matter.')).toBeInTheDocument()
     await user.type(screen.getByPlaceholderText('Enter Client Name'), ' Lovelace')
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Preview of Court Form' })).not.toBeInTheDocument())
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:pdf-preview')
+    expect(screen.getByRole('region', { name: 'Preview of Court Form' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download preview' })).toBeDisabled()
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
 
   })
 
@@ -1000,7 +999,6 @@ describe('document template workflow', () => {
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
     await user.type(screen.getByRole('textbox', { name: /Client name/i }), 'Grace Hopper')
     await user.click(screen.getByRole('button', { name: 'Preview' }))
-
     await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith(
       'docx-template',
       expect.objectContaining({ variables: { client_name: 'Grace Hopper' }, matter_id: null }),
@@ -1034,8 +1032,6 @@ describe('document template workflow', () => {
     await user.click(screen.getByRole('radio', { name: /PDF for signature/ }))
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
     await user.type(screen.getByRole('textbox', { name: /Client name/i }), 'Ada')
-    await user.click(screen.getByRole('button', { name: 'Preview' }))
-
     await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith(
       'signature-docx',
       expect.objectContaining({
@@ -1046,14 +1042,16 @@ describe('document template workflow', () => {
       }),
     ))
     expect(screen.getByRole('region', { name: 'Preview of Signature Packet' })).toBeVisible()
-    expect(screen.getByText(/These exact values and this matter are previewed/)).toBeInTheDocument()
+    expect(screen.getByText('Preview is up to date. Review every page, then save to your matter.')).toBeInTheDocument()
   })
 
-  it('discards and revokes a stale PDF response when values change in flight', async () => {
+  it('keeps the last PDF visible while a changed answer refreshes the preview', async () => {
     getTemplates.mockResolvedValueOnce({ items: [{ id: 'race-pdf', title: 'Race Form', body: '{{client_name}}', category: 'other', format: 'pdf', source_filename: 'race.pdf', source_sha256: 'abc', is_active: true }] })
-    let resolvePreview
-    renderTemplateFile.mockImplementation(() => new Promise((resolve) => { resolvePreview = resolve }))
-    URL.createObjectURL = vi.fn().mockReturnValue('blob:stale-preview')
+    const previewResolvers = []
+    renderTemplateFile.mockImplementation(() => new Promise((resolve) => { previewResolvers.push(resolve) }))
+    URL.createObjectURL = vi.fn()
+      .mockReturnValueOnce('blob:first-preview')
+      .mockReturnValueOnce('blob:latest-preview')
     URL.revokeObjectURL = vi.fn()
     const user = userEvent.setup()
     render(<TemplatesPage />)
@@ -1062,26 +1060,37 @@ describe('document template workflow', () => {
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
     const clientName = screen.getByPlaceholderText('Enter Client Name')
     await user.type(clientName, 'Ada')
-    await user.click(screen.getByRole('button', { name: 'Preview' }))
     await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledTimes(1))
-
-    await user.type(clientName, ' Lovelace')
     await act(async () => {
-      resolvePreview({
-        blob: new Blob(['%PDF-1.7 stale'], { type: 'application/pdf' }),
+      previewResolvers[0]({
+        blob: new Blob(['%PDF-1.7 first'], { type: 'application/pdf' }),
         filename: 'Race_Form.pdf',
         contentType: 'application/pdf',
-        previewId: 'stale-preview-id',
+        previewId: 'first-preview-id',
         previewPurpose: 'generation',
       })
       await Promise.resolve()
     })
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
 
-    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:stale-preview')
-    expect(screen.queryByTitle('Preview of Race Form')).not.toBeInTheDocument()
-    expect(screen.queryByText(/These exact values and this matter are previewed/)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).toBeDisabled()
+    await user.type(clientName, ' Lovelace')
+    expect(screen.getByRole('region', { name: 'Preview of Race Form' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download preview' })).toBeDisabled()
+    expect(screen.getAllByText(/Updating preview/).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeDisabled()
+    await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      previewResolvers[1]({
+        blob: new Blob(['%PDF-1.7 latest'], { type: 'application/pdf' }),
+        filename: 'Race_Form.pdf',
+        contentType: 'application/pdf',
+        previewId: 'latest-preview-id',
+        previewPurpose: 'generation',
+      })
+      await Promise.resolve()
+    })
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:first-preview')
   })
 
   it('locks form controls and prevents modal close while a PDF save is in flight', async () => {
@@ -1105,9 +1114,8 @@ describe('document template workflow', () => {
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
     const clientName = screen.getByRole('textbox', { name: /Client name/ })
     await user.type(clientName, 'Ada')
-    await user.click(screen.getByRole('button', { name: 'Preview' }))
-    await screen.findByText(/These exact values and this matter are previewed/)
-    await user.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
     await waitFor(() => expect(renderTemplate).toHaveBeenCalledTimes(1))
 
     expect(clientName).toBeDisabled()
@@ -1236,15 +1244,71 @@ describe('document template workflow', () => {
     getTemplates.mockResolvedValueOnce({ items: [{ id: 'pdf-template', title: 'Flat Scan', body: '', category: 'other', format: 'pdf', source_filename: 'scan.pdf', source_sha256: 'abc', is_active: true, variable_schema: { fields: [] } }] })
     const error = new Error('This PDF has no fillable AcroForm fields.')
     error.response = { status: 422, data: { detail: error.message } }
-    renderTemplateFile.mockRejectedValue(error)
+    renderTemplateFile
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({
+        blob: new Blob(['%PDF-1.7 recovered'], { type: 'application/pdf' }),
+        filename: 'Flat_Scan.pdf',
+        contentType: 'application/pdf',
+        previewId: 'recovered-preview',
+        previewPurpose: 'generation',
+      })
     const user = userEvent.setup()
     render(<TemplatesPage />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
-    await user.click(screen.getByRole('button', { name: 'Preview' }))
-
     expect(await screen.findByText('This PDF has no fillable AcroForm fields.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry preview' }))
+    await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('region', { name: 'Preview of Flat Scan' })).toBeInTheDocument()
+  })
+
+  it('requires a fresh preview when a saved PDF preview has expired', async () => {
+    getTemplates.mockResolvedValueOnce({ items: [{
+      id: 'expired-pdf', title: 'Expired Preview Form', body: '{{client_name}}', category: 'other',
+      format: 'pdf', source_filename: 'expired.pdf', source_sha256: 'abc', is_active: true,
+      variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }] },
+    }] })
+    discoverTemplateVariables.mockResolvedValueOnce({ variables: [{
+      variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false,
+    }] })
+    const firstPreview = { blob: new Blob(['%PDF-1.7 first']), filename: 'Expired_Preview_Form.pdf', previewId: 'preview-old', previewPurpose: 'generation' }
+    const refreshedPreview = { blob: new Blob(['%PDF-1.7 refreshed']), filename: 'Expired_Preview_Form.pdf', previewId: 'preview-new', previewPurpose: 'generation' }
+    renderTemplateFile.mockResolvedValueOnce(firstPreview).mockResolvedValueOnce(refreshedPreview)
+    const expired = new Error('Preview evidence expired. Generate a new preview.')
+    expired.response = { status: 409, data: { detail: expired.message } }
+    renderTemplate.mockRejectedValueOnce(expired).mockResolvedValueOnce({
+      matter_document_id: 'expired-document', output_format: 'pdf', output_filename: 'Expired_Preview_Form.pdf',
+    })
+    const user = userEvent.setup()
+    render(<TemplatesPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Generate' }))
+    await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
+    await screen.findByDisplayValue('Ada Smith')
+    await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith('expired-pdf', expect.objectContaining({
+      matter_id: 'matter-1', preview_purpose: 'generation', variables: { client_name: 'Ada Smith' },
+    })))
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
+
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
+    expect(await screen.findByRole('button', { name: 'Retry preview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Download preview' })).toBeDisabled()
+    expect(renderTemplate).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Retry preview' }))
+    await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledTimes(2))
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
+    expect(renderTemplate).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
+    await waitFor(() => expect(renderTemplate).toHaveBeenCalledTimes(2))
+    expect(renderTemplate).toHaveBeenLastCalledWith('expired-pdf', expect.objectContaining({
+      matter_id: 'matter-1', preview_id: 'preview-new', variables: { client_name: 'Ada Smith' },
+    }))
   })
 
   it('uses linked Word values and clears the other answer in an exclusive choice group', async () => {
@@ -1309,14 +1373,13 @@ describe('document template workflow', () => {
     await user.type(screen.getByRole('textbox', { name: /Client name/ }), 'Jane')
     await user.selectOptions(screen.getByRole('combobox', { name: /Venue/ }), 'Cook County')
     expect(screen.getByText(/1 optional field left unfilled/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeDisabled()
     await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith('schema-pdf', {
       matter_id: 'matter-1',
       preview_purpose: 'generation',
       variables: { client_name: 'Jane', approved: 'false', venue: 'Cook County', notes: '' },
     }))
-    await user.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
 
     // The two values the reviewer typed or chose are the two they verified.
     await waitFor(() => expect(renderTemplate).toHaveBeenCalledWith('schema-pdf', {
@@ -1396,7 +1459,7 @@ describe('document template workflow', () => {
     await user.click(await screen.findByRole('button', { name: 'Preview draft' }))
     expect(screen.getByText(/Draft preview. Test and publish/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
-    expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeDisabled()
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Preview draft' }))
     await waitFor(() => expect(renderTemplate).toHaveBeenCalledWith('draft-template', expect.objectContaining({ matter_id: null })))
 
