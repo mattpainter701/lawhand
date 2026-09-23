@@ -1,3 +1,10 @@
+## 2026.09.22.07 — Automatic previews while preparing PDFs
+
+- Published single-document PDFs and Word-to-PDF output render automatically after draft restoration and matter prefill, then after a 650 ms typing pause. The shared matter dialog and Prepare route use the same scheduler, serialize requests and discard stale responses; failed inputs require an explicit retry or changed answers.
+- The previous PDF remains visible with an out-of-date notice during refresh; its preview evidence is invalidated immediately and Save/download stay disabled until current output arrives. The Prepare stepper also requires current PDF evidence. Required blanks disable Save, which is now labeled "Save to matter."
+- Generated previews preserve page/zoom choices across blob updates, clamp pages for shorter output, and clear old canvas errors. Source-reference help matches automatic previews, and source-correction guidance is collapsed by default.
+- No automatic save, publication, verification or signing actions were added. Existing tenant/matter/value-bound preview validation and explicit activation tests are unchanged.
+
 ## 2026.09.22.06 — Reliable matter attention entry and visible list scope
 
 - The My Matters attention entry changes view and personal filters in one URL update. Clear filter clears keyword/status/attention together; chip removal preserves other filters. Board selection clears the unsupported attention mode.

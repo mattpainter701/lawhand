@@ -47,6 +47,15 @@ it('keeps filling available when the source reference fails', async () => {
   expect(await screen.findByText(/source reference could not be displayed/)).toBeVisible()
 })
 
+it('does not ask for a manual preview when automatic preview is enabled', async () => {
+  getTemplateSource.mockRejectedValue(new Error('unavailable'))
+  const view = render(<TemplateFillSource autoPreview template={{ id: 'one', format: 'pdf' }} fields={fields} values={{}} />)
+  expect(await screen.findByText(/while the generated preview updates/)).toBeVisible()
+  expect(screen.queryByText(/choose Preview/i)).not.toBeInTheDocument()
+  view.rerender(<TemplateFillSource autoPreview template={{ id: 'one', format: 'pdf', is_active: true, published_version_no: 2, current_version_no: 3 }} fields={fields} values={{}} />)
+  expect(screen.getByText(/Your preview uses the published document/)).toBeVisible()
+})
+
 it('links PDF placements and clears old source pages when switching templates', async () => {
   getTemplateSource.mockResolvedValue(new Blob(['pdf']))
   const select = vi.fn()

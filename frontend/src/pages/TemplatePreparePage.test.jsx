@@ -87,7 +87,7 @@ describe('the Prepare route', () => {
     expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('1 of 1 filled')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
-    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
     await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999', DOC))
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, fill_session_id: '99999999-9999-4999-8999-999999999999' })
@@ -100,7 +100,7 @@ describe('the Prepare route', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
     api.completeFillSession.mockRejectedValueOnce(new Error('temporary completion failure'))
-    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
     await screen.findByRole('alert', { name: '' })
     expect(screen.getByText(/document was saved, but this draft could not be closed/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry closing this draft' })).toBeInTheDocument()
@@ -127,7 +127,7 @@ describe('the Prepare route', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
       await screen.findByText('Dear Ada Smith')
       const renderCountBeforeSave = api.renderTemplate.mock.calls.length
-      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
       await waitFor(() => expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave))
       expect(api.completeFillSession).not.toHaveBeenCalled()
       resolveSession({ id: sessionId, status: 'open' })
@@ -153,7 +153,7 @@ describe('the Prepare route', () => {
       expect(api.writeFillSession).toHaveBeenLastCalledWith(expect.objectContaining({ answers: { client_name: 'Exact last answer' } }))
       fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
       await screen.findByText('Dear Ada Smith')
-      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
       await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith(sessionId, DOC))
       expect(api.renderTemplate).toHaveBeenCalledTimes(2)
     } finally {
@@ -173,7 +173,7 @@ describe('the Prepare route', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
       await screen.findByText('Dear Ada Smith')
       const renderCountBeforeSave = api.renderTemplate.mock.calls.length
-      fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
       await screen.findByText(/latest answers could not be saved yet/i)
       expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountBeforeSave)
     } finally {
@@ -189,7 +189,7 @@ describe('the Prepare route', () => {
     await waitFor(() => expect(api.writeFillSession).toHaveBeenCalledWith(expect.objectContaining({ matter_id: M, answers: {} })))
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
-    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
     await waitFor(() => expect(api.completeFillSession).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999', DOC))
   })
 
@@ -231,7 +231,7 @@ describe('the Prepare route', () => {
     expect(screen.getByText('Every filled field is verified.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
-    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
     await waitFor(() => expect(api.renderTemplate).toHaveBeenCalled())
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, {
       variables: { client_name: 'Ada Smith', matter_name: 'Smith v. Jones (2026)' },
@@ -248,7 +248,7 @@ describe('the Prepare route', () => {
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', `/matters/${M}?tab=probate`)
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByText('Dear Ada Smith')
-    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=probate&document=${DOC}`))
     expect(api.renderTemplate).toHaveBeenLastCalledWith(T, { variables: { client_name: 'Ada Smith' }, matter_id: M, folder_id: F, fill_session_id: '99999999-9999-4999-8999-999999999999' })
   })
@@ -258,7 +258,7 @@ describe('the Prepare route', () => {
     renderAt(`?template=${T}&matter=${M}`)
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     expect(screen.getAllByRole('status').some((node) => /Draft preview/.test(node.textContent))).toBe(true)
-    expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Preview draft' })).toBeEnabled()
   })
 
@@ -282,10 +282,9 @@ describe('the Prepare route', () => {
     await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
     expect(screen.getByRole('navigation', { name: 'Prepare steps' })).toHaveTextContent('6. Send')
     await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await waitFor(() => expect(api.renderTemplateFile).toHaveBeenCalled())
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Render & Save to Matter' })).not.toBeDisabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Render & Save to Matter' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save to matter' })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
     await screen.findByRole('heading', { name: 'Send for signature' })
     // Still on the Prepare route: the Send step is here, not on the matter.
     expect(screen.getByLabelText('Location')).toHaveTextContent('/templates/prepare')

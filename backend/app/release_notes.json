@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.07",
+      "version": "2026.09.22.07",
+      "title": "PDF previews update as you work",
+      "published_at": "2026-09-22",
+      "summary": "Preparing a published PDF now fills available matter values and updates the preview automatically. Finish the missing answers, review the document and choose Save to matter.",
+      "highlights": [
+        {
+          "title": "See your answers without another click",
+          "description": "The matter dialog and single-document Prepare page refresh PDF previews after a short pause in typing, including Word templates generated as PDFs."
+        },
+        {
+          "title": "Keep your place while reviewing",
+          "description": "Page and zoom choices stay in place as the preview updates. An older preview is clearly marked while your latest answers are being rendered."
+        },
+        {
+          "title": "Save when the document is ready",
+          "description": "Save to matter waits for required answers and an up-to-date preview. If previewing fails, a Retry preview action keeps your answers available."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.06",
       "version": "2026.09.22.06",
       "title": "Find matters that need attention",
