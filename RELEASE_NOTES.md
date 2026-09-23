@@ -5,15 +5,28 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.22.09 — Clearer recovery for matter storage
+## 2026.09.23.02 — Clearer recovery for matter storage
 
-Released September 22, 2026.
+Released September 23, 2026.
 
 Missing matter folders now have a direct setup path and clearer retry guidance. Admin storage status distinguishes a saved provider preference and available connection from matter folder access, while Directory Sync remains separate.
 
 - **Find a missing matter folder.** A missing OneDrive or Google Drive matter folder means no file was stored. Use the matter's Document tools; check Administration, Integrations, then Cloud for connection issues.
 - **Set up a folder, then retry.** Use the single Set up folders action and wait for its status before retrying the save. Sync folder remains for a folder that is already provisioned.
 - **Separate provider status from folder access.** Preference saved confirms provider choice, not matter folder access. Connection status does not verify each folder; Directory Sync is separate and may depend on account tier.
+
+## 2026.09.23.01 — Run several assistant chats and queue follow-ups
+
+Released September 23, 2026.
+
+The assistant can answer in several conversations at once and lets you queue your next question while it works. Review tags are easier to read, and the chat makes better use of a phone screen.
+
+- **Keep several chats going.** Up to three conversations can answer at the same time. The conversation list shows which are responding, which have a new reply and which need a look.
+- **Queue your next question.** Keep typing while an answer streams. What you send waits in a queue and goes out in order as each answer finishes; edit or remove it before then.
+- **Nothing builds on a failed answer.** If an answer fails, anything queued behind it is held until you choose to resume, so a follow-up never builds on a reply you did not see.
+- **Review tags you can read.** Cited, verify and model tags use stronger colors and explain themselves on hover. The full key opens from the chat header instead of covering your answers.
+- **More room on a phone.** Matter context sits under the conversation title, answers no longer pull you down while you read back, and Return starts a new line on touch keyboards.
+- **Drafts stay with their conversation.** A half-typed question stays in the conversation you typed it in when you switch to another one and back.
 
 ## 2026.09.22.08 — Find and review firm and global templates
 

@@ -1,8 +1,17 @@
-## 2026.09.22.09 — Matter storage recovery guidance
+## 2026.09.23.02 — Matter storage recovery guidance
 
 - Missing OneDrive and Google Drive matter folder bindings return provider-specific setup guidance and identify that no file was stored. Cloud-bound writes continue to fail closed rather than falling back to another provider or local storage.
 - The matter Documents tools provide one explicit **Set up folders** action for the existing provisioning and sharing workflow; **Sync folder** remains available for already provisioned folders. A failed file write does not automatically provision a folder or change provider roots or grants.
 - Admin storage status distinguishes the saved primary-provider preference and provider connection availability from access to an individual matter folder. Directory Sync remains a separate capability whose availability can depend on account tier.
+
+## 2026.09.23.01 — Parallel assistant chats, follow-up queue and readable review tags
+
+- Chat no longer blocks every send while any conversation is streaming. The server already holds one generation lease per conversation; the client now caps a tab at `MAX_PARALLEL_CHAT_RESPONSES` (3) concurrent turns so one user cannot exhaust the per-worker generation pool (`DATABASE_GENERATION_POOL_SIZE`). Matter linking is blocked only by the conversation's own in-flight or queued work.
+- The stream loop moved from `ChatPage` into `chatTurns.js` so a turn can start without a mounted page. The generation registry now tracks page attachment itself (`detachChatGenerations`), replacing the page-local request counter; settling without an explicit `attached` keeps the tracked binding.
+- New `chatQueue.js` holds follow-ups per conversation in memory only (never browser storage). Sending while a conversation streams, has queued items, or the tab is at the parallel cap enqueues instead. The pump runs on generation-registry changes, sends in FIFO order, waits for the on-screen page to reconcile a finished turn first, pauses on a failed turn until resumed (without re-pausing on the acknowledged failure), and drops a deleted conversation's queue. A `beforeunload` prompt guards unsent queued messages. Composer drafts are kept per conversation in the same module.
+- The composer is never disabled by a streaming answer. It shows the queue with edit (back into an empty composer) and remove, a paused state with Resume/Clear, and per-thread status. Return inserts a newline on coarse-pointer devices; Ctrl/Cmd+Enter always sends; IME composition is ignored.
+- The sticky, translucent review-tag legend over the transcript is replaced by an opaque Review tag key popover in the chat header. Inline tag chips use AA-contrast tones, a larger size, and `title` explanations. Header and settings popovers span the header on phones instead of overflowing the left edge.
+- Matter context moved from its own card into a line under the conversation title (`ChatContextPicker`). The transcript and composer share a readable max width, auto-scroll only while the reader is at the bottom with a Jump to latest control, and show a skeleton instead of the empty state while loading. The conversation rail and phone drawer button show responding, queued, held, new-reply and failed states via `useChatActivity`.
 
 ## 2026.09.22.08 — Firm and global template catalog
 

@@ -8,9 +8,9 @@ import ChatInput from '../components/ChatInput'
 import { citedSourceCount } from '../components/ChatMessage'
 import Messages from '../components/Messages'
 import ChatRail from '../components/chat/ChatRail'
+import ChatContextPicker from '../components/chat/ChatContextPicker'
 import {
   getConversation,
-  streamMessage,
   createConversation,
   updateConversation,
   uploadChatAttachment,
@@ -20,20 +20,31 @@ import {
 } from '../api'
 import {
   GENERATION_ABORTED,
-  GENERATION_COMPLETE,
   GENERATION_ERROR,
   GENERATION_STREAMING,
+  MAX_PARALLEL_CHAT_RESPONSES,
   abortChatGeneration,
-  beginChatGeneration,
-  countStreamingChatGenerations,
+  detachChatGenerations,
   getChatGeneration,
-  patchChatGeneration,
   releaseChatGeneration,
-  settleChatGeneration,
   subscribeToChatGenerations,
 } from '../chatGenerations'
+import { buildReferenceContext, completedStreamStatus, startChatTurn } from '../chatTurns'
+import {
+  chatSendMustQueue,
+  clearChatQueue,
+  enqueueChatMessage,
+  getChatQueue,
+  readChatDraft,
+  rememberChatTranscript,
+  removeQueuedChatMessage,
+  resumeChatQueue,
+  saveChatDraft,
+  setViewedChatConversation,
+  subscribeToChatQueue,
+} from '../chatQueue'
+import { useChatActivity } from '../hooks/useChatActivity'
 import { AlertBanner } from '../components/ui'
-import { Briefcase, ChevronDown, ExternalLink, Link2, Search, Unlink } from 'lucide-react'
 
 const MESSAGE_IDENTITY_KEYS = [
   'id',
@@ -226,129 +237,11 @@ export function upsertGenerationTurn(messages, generation) {
   return merged
 }
 
-function deriveKeyphrases(text) {
-  const stopWords = new Set([
-    'about', 'after', 'before', 'case', 'cases', 'could', 'from', 'have',
-    'legal', 'need', 'that', 'their', 'there', 'this', 'what', 'when',
-    'where', 'which', 'with', 'would',
-  ])
-  return String(text || '')
-    .split(/[^A-Za-z0-9]+/)
-    .map((word) => word.trim())
-    .filter((word) => word && (word.length > 2 || /^[A-Z]{2}$/.test(word)))
-    .filter((word) => !stopWords.has(word.toLowerCase()))
-    .slice(0, 5)
-}
-
-function initialStreamProgress(content, attachmentCount) {
-  const uploads = Number.isFinite(attachmentCount) ? attachmentCount : 0
-  return {
-    type: 'progress',
-    event: 'retrieving',
-    status: 'Retrieving source material',
-    keyphrases: deriveKeyphrases(content),
-    counts: {
-      matter: 0,
-      uploads,
-      firm: 0,
-      courtlistener: 0,
-      total: uploads,
-    },
-    activities: [],
-  }
-}
-
-function completedStreamStatus(publicRetrieval) {
-  if (publicRetrieval?.state === 'service_unavailable') {
-    return 'Response complete — public authority unavailable'
-  }
-  return 'Response complete'
-}
-
 function persistedPublicRetrievalStatus(retrievalMetadata) {
   const publicRetrieval = retrievalMetadata?.public_retrieval
   return publicRetrieval?.state === 'service_unavailable'
     ? completedStreamStatus(publicRetrieval)
     : ''
-}
-
-function mergeStreamProgress(current, event, content) {
-  if (!event || event.type !== 'progress') return current
-  const counts = {
-    ...(current?.counts || {}),
-    ...(event.counts || {}),
-  }
-  const activities = [...(current?.activities || [])]
-  if (event.activity?.id) {
-    const activityIndex = activities.findIndex((item) => item.id === event.activity.id)
-    if (activityIndex >= 0) {
-      activities[activityIndex] = {
-        ...activities[activityIndex],
-        ...event.activity,
-        sources: event.activity.sources || activities[activityIndex].sources || [],
-      }
-    } else {
-      activities.push(event.activity)
-    }
-  }
-  return {
-    ...(current || {}),
-    ...event,
-    counts,
-    activities,
-    keyphrases: event.keyphrases || current?.keyphrases || deriveKeyphrases(content),
-  }
-}
-
-function countSourcesByType(sources) {
-  const counts = {
-    matter: 0,
-    uploads: 0,
-    firm: 0,
-    courtlistener: 0,
-    total: 0,
-  }
-
-  for (const src of Array.isArray(sources) ? sources : []) {
-    const type = src?.source_type || ''
-    if (type === 'public_authority') {
-      counts.courtlistener += 1
-    } else if (type === 'matter_context') {
-      counts.matter += 1
-    } else if (type === 'tenant_document' && src?.source_label === 'Attached document') {
-      counts.uploads += 1
-    } else {
-      counts.firm += 1
-    }
-  }
-  counts.total = counts.matter + counts.uploads + counts.firm + counts.courtlistener
-  return counts
-}
-
-function buildReferenceContext({ progress, sources, status, citedCount } = {}) {
-  const sourceList = Array.isArray(sources) ? sources : []
-  const progressCounts = progress?.counts || null
-  const derivedCounts = countSourcesByType(sourceList)
-  const counts = {
-    matter: Number(progressCounts?.matter ?? derivedCounts.matter ?? 0),
-    uploads: Number(progressCounts?.uploads ?? derivedCounts.uploads ?? 0),
-    firm: Number(progressCounts?.firm ?? derivedCounts.firm ?? 0),
-    courtlistener: Number(progressCounts?.courtlistener ?? derivedCounts.courtlistener ?? 0),
-  }
-  counts.total = Number(progressCounts?.total ?? (counts.matter + counts.uploads + counts.firm + counts.courtlistener))
-  const hasContext = counts.total > 0 || sourceList.length > 0 || progress?.status || status
-  if (!hasContext) return null
-
-  const referenceContext = {
-    counts,
-    source_count: sourceList.length,
-    status: status || progress?.status || (sourceList.length ? 'Materials retrieved for source audit' : ''),
-    complete: Boolean(progress?.complete),
-  }
-  if (Number.isFinite(citedCount)) {
-    referenceContext.cited_count = citedCount
-  }
-  return referenceContext
 }
 
 function attachTurnReferences(messages) {
@@ -401,16 +294,17 @@ export default function ChatPage() {
   const { user, refreshUser } = useAuth()
 
   const [messages, setMessages] = useState([])
-  const [inputValue, setInputValue] = useState('')
+  // Drafts belong to their conversation, so a question half-typed in one thread
+  // is never sent from another one opened in the meantime.
+  const [inputValue, setInputValue] = useState(() => readChatDraft(activeConvId))
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [generationVersion, setGenerationVersion] = useState(0)
+  const [queueVersion, setQueueVersion] = useState(0)
   const [includePublic, setIncludePublic] = useState(true)
   const [usePremium, setUsePremium] = useState(false)
   const [activeConvTitle, setActiveConvTitle] = useState('')
   const [matters, setMatters] = useState([])
-  const [matterQuery, setMatterQuery] = useState('')
-  const [matterPickerOpen, setMatterPickerOpen] = useState(false)
   const [matterLinking, setMatterLinking] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState([])
   const [railOpen, setRailOpen] = useState(false)
@@ -419,13 +313,13 @@ export default function ChatPage() {
   const [metadataRefreshRetrying, setMetadataRefreshRetrying] = useState(false)
   const [privacySaving, setPrivacySaving] = useState(false)
   const fileInputRef = useRef(null)
-  const matterPickerRef = useRef(null)
   const messagesRef = useRef(messages)
+  const inputValueRef = useRef(inputValue)
   const activeConvIdRef = useRef(activeConvId)
+  const draftConversationIdRef = useRef(activeConvId)
   const loadedConversationIdRef = useRef(null)
   const loadingConversationIdRef = useRef(null)
   const conversationLoadRequestRef = useRef(0)
-  const streamRequestRef = useRef(0)
   const metadataRefreshContextRef = useRef(null)
   const metadataRefreshRequestRef = useRef(0)
   const metadataRefreshRetryingRef = useRef(false)
@@ -436,15 +330,22 @@ export default function ChatPage() {
   useEffect(() => subscribeToChatGenerations(
     () => setGenerationVersion((version) => version + 1),
   ), [])
+  useEffect(() => subscribeToChatQueue(
+    () => setQueueVersion((version) => version + 1),
+  ), [])
 
-  // The registry is the real dependency of both; the version counter is how it
-  // reports a change.
+  // The registries are the real dependency of these; the version counters are
+  // how they report a change.
   const liveGeneration = useMemo(
     () => getChatGeneration(activeConvId),
     [activeConvId, generationVersion],
   )
-  const generationCount = useMemo(() => countStreamingChatGenerations(), [generationVersion])
-  const isSending = isSubmitting || liveGeneration?.status === GENERATION_STREAMING
+  const activeQueue = useMemo(
+    () => getChatQueue(activeConvId),
+    [activeConvId, queueVersion],
+  )
+  const activity = useChatActivity()
+  const isResponding = liveGeneration?.status === GENERATION_STREAMING
 
   useEffect(() => {
     activeConvIdRef.current = activeConvId
@@ -455,9 +356,30 @@ export default function ChatPage() {
   }, [messages])
 
   useEffect(() => {
-    if (generationCount !== 0) return
-    setNotice((current) => current?.kind === 'background-generation' ? null : current)
-  }, [generationCount])
+    inputValueRef.current = inputValue
+  }, [inputValue])
+
+  // Park the draft of the thread being left and bring back the one being
+  // opened. A draft typed before any conversation existed follows the
+  // conversation created for it.
+  useEffect(() => {
+    const previousId = draftConversationIdRef.current
+    if (previousId === activeConvId) return
+    draftConversationIdRef.current = activeConvId
+    if (previousId) saveChatDraft(previousId, inputValueRef.current)
+    const restored = readChatDraft(activeConvId)
+    if (restored || previousId) setInputValue(restored)
+  }, [activeConvId])
+
+  // Tell the queue which thread is on screen once its transcript is, so a
+  // queued follow-up waits for this page to reconcile the answer ahead of it.
+  useEffect(() => {
+    const viewing = activeConvId
+      && !isLoadingMessages
+      && loadedConversationIdRef.current === activeConvId
+    setViewedChatConversation(viewing ? activeConvId : null)
+    if (viewing) rememberChatTranscript(activeConvId, messages)
+  }, [activeConvId, isLoadingMessages, messages])
 
   // The response settings a conversation created from this page starts with,
   // read through a ref so a stale closure cannot create a conversation with
@@ -495,22 +417,25 @@ export default function ChatPage() {
     }
   }, [privacySaving, refreshUser, showErrorNotice, user?.demo, user?.privacy_mode])
 
-  // Unbind this page from the turn it started without touching the read itself:
-  // a detached generation keeps draining in the registry so the server still
-  // commits the answer.
+  // Unbind this page from the turns it was showing without touching the reads
+  // themselves: a detached generation keeps draining in the registry so the
+  // server still commits the answer.
   const detachActiveStream = useCallback(() => {
-    streamRequestRef.current += 1
+    detachChatGenerations()
   }, [])
 
   // Leaving Chat must not cancel an answer. The server persists a streamed turn
   // only once the read reaches [STREAM_COMPLETE]; aborting here made it record an
   // interruption instead, so opening another menu lost the response outright.
   // The read and its partial answer live in the generation registry, which
-  // outlives this page — detach UI state and let the read finish.
+  // outlives this page — detach UI state and let the read finish. Queued
+  // follow-ups keep draining too; only the draft needs parking.
   useEffect(() => () => {
     conversationLoadRequestRef.current += 1
-    streamRequestRef.current += 1
     metadataRefreshRequestRef.current += 1
+    detachChatGenerations()
+    setViewedChatConversation(null)
+    saveChatDraft(draftConversationIdRef.current, inputValueRef.current)
   }, [])
 
   const handleUploadClick = () => {
@@ -651,27 +576,6 @@ export default function ChatPage() {
       .catch(() => setSourceHealth({ available: false, status: 'unavailable', sources: [], partitions: [] }))
   }, [])
 
-  useEffect(() => {
-    if (!matterPickerOpen) return undefined
-
-    const handlePointerDown = (event) => {
-      if (!matterPickerRef.current?.contains(event.target)) setMatterPickerOpen(false)
-    }
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        setMatterPickerOpen(false)
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [matterPickerOpen])
-
   // A prompt handed off from another page is a one-time draft, independent of
   // which conversation ultimately loads.
   useEffect(() => {
@@ -724,11 +628,17 @@ export default function ChatPage() {
       // AppShell context performs the API delete + list mutation;
       // here we additionally clear local thread state if it was active.
       // A detached response for a conversation that no longer exists must not
-      // keep consuming model time or attempt a late persistence write.
+      // keep consuming model time or attempt a late persistence write, and
+      // nothing queued for it has anywhere left to go.
       abortChatGeneration(id)
+      clearChatQueue(id)
+      saveChatDraft(id, '')
       if (activeConvIdRef.current === id) {
         detachActiveStream()
         conversationLoadRequestRef.current += 1
+        // Keep what is in the composer rather than filing it under a thread
+        // that no longer exists.
+        draftConversationIdRef.current = null
         activeConvIdRef.current = null
         loadedConversationIdRef.current = null
         loadingConversationIdRef.current = null
@@ -850,7 +760,7 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async () => {
     const content = inputValue.trim()
-    if (!content || isSending) return
+    if (!content || isSubmitting) return
     const hasLinkedMatter = conversations.some(
       (conversation) => conversation.id === activeConvIdRef.current && conversation.matter_id,
     )
@@ -870,24 +780,29 @@ export default function ChatPage() {
       })
       return
     }
-    if (countStreamingChatGenerations() > 0) {
-      setNotice({
-        type: 'info',
-        kind: 'background-generation',
-        title: 'Another response is still finishing',
-        message: 'You can browse and draft in this conversation. Sending is enabled when the earlier response finishes.',
-      })
+
+    const attachments = pendingAttachments
+    const existingConvId = activeConvIdRef.current
+    const clearComposer = (conversationId) => {
+      setInputValue('')
+      setPendingAttachments([])
+      saveChatDraft(conversationId, '')
+      // A draft started before any conversation existed has now been sent.
+      if (!existingConvId) saveChatDraft(null, '')
+    }
+
+    // A conversation that is still answering holds the server's lease, and one
+    // with messages already waiting keeps them ahead of this one — either way
+    // the message waits its turn instead of the composer locking.
+    if (existingConvId && chatSendMustQueue(existingConvId)) {
+      enqueueChatMessage(existingConvId, { content, attachments, includePublic, usePremium })
+      clearComposer(existingConvId)
       return
     }
 
     setIsSubmitting(true)
-    let generation = null
-    let convId = activeConvIdRef.current
-    let clientTurnId = null
-    let assistantMsgId = null
-    let attachmentIds = []
-
     try {
+      let convId = existingConvId
       if (!convId) {
         try {
           const conv = await createConversation({
@@ -915,189 +830,39 @@ export default function ChatPage() {
         }
       }
 
-      attachmentIds = pendingAttachments.map((a) => a.id)
-      const initialProgress = initialStreamProgress(content, attachmentIds.length)
-      const initialReferenceContext = buildReferenceContext({ progress: initialProgress })
-      clientTurnId = globalThis.crypto?.randomUUID?.()
-        || `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const knownServerMessageIds = messagesRef.current
-        .map((message) => String(message?.id || ''))
-        .filter((id) => id && !/^(temp|stream|err)-/.test(id))
-      assistantMsgId = `stream-${clientTurnId}`
-
       metadataRefreshContextRef.current = null
       metadataRefreshRequestRef.current += 1
       metadataRefreshRetryingRef.current = false
       setMetadataRefreshRetrying(false)
       setNotice((current) => current?.kind === 'metadata' ? null : current)
-      setInputValue('')
-      setPendingAttachments([])
+      clearComposer(convId)
+
+      // Other threads may have used every parallel slot while this one was
+      // being created; if so it waits in line like any other follow-up.
+      if (chatSendMustQueue(convId)) {
+        enqueueChatMessage(convId, { content, attachments, includePublic, usePremium })
+        return
+      }
 
       // The registry — not this component — owns the turn from here on, so the
       // optimistic pair is registered rather than pushed into `messages`. An
       // effect renders whichever generation belongs to the conversation on
       // screen, which is what lets a page that mounts later pick this one up.
-      streamRequestRef.current += 1
-      generation = beginChatGeneration({
+      startChatTurn({
         conversationId: convId,
-        clientTurnId,
-        controller: new AbortController(),
-        userMessage: {
-          id: `temp-${clientTurnId}`,
-          role: 'user',
-          content,
-          sources: [],
-          referenceContext: initialReferenceContext,
-          client_turn_id: clientTurnId,
-          _known_server_message_ids: knownServerMessageIds,
-          created_at: new Date().toISOString(),
-        },
-        assistantMessage: {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: '',
-          sources: [],
-          progress: initialProgress,
-          referenceContext: initialReferenceContext,
-          client_turn_id: clientTurnId,
-          created_at: new Date().toISOString(),
-        },
+        content,
+        attachmentIds: attachments.map((attachment) => attachment.id),
+        includePublic,
+        usePremium,
+        knownServerMessageIds: messagesRef.current
+          .map((message) => String(message?.id || ''))
+          .filter((id) => id && !/^(temp|stream|err)-/.test(id)),
+        attached: true,
       })
     } finally {
       setIsSubmitting(false)
     }
-
-    if (!generation) return
-
-    const streamRequestId = streamRequestRef.current
-    // Whether a page is still bound to this turn. A failure seen while bound is
-    // shown in place; once detached, the server's persisted interruption is the
-    // truth and gets re-read instead.
-    const isAttached = () => (
-      streamRequestRef.current === streamRequestId
-      && activeConvIdRef.current === convId
-    )
-    const publish = (assistant, user = null) => {
-      patchChatGeneration(convId, clientTurnId, { assistant, user })
-    }
-
-    let streamProgress = generation.assistantMessage.progress
-    let accumulatedText = ''
-    let streamError = null
-    let sawStreamComplete = false
-    let streamedSources = []
-    let streamedCitationAnnotations = []
-
-    try {
-      for await (const token of streamMessage(
-        convId,
-        content,
-        includePublic,
-        usePremium,
-        attachmentIds,
-        { signal: generation.controller.signal },
-      )) {
-        if (token?.type === 'progress' && token.event === 'citation_metadata') {
-          streamedSources = token.sources || []
-          streamedCitationAnnotations = token.citation_annotations || []
-          if (token.public_retrieval && typeof token.public_retrieval === 'object') {
-            streamProgress = {
-              ...streamProgress,
-              public_retrieval: token.public_retrieval,
-            }
-          }
-          const referenceContext = buildReferenceContext({
-            progress: streamProgress,
-            sources: streamedSources,
-            citedCount: streamedSources.length,
-          })
-          publish({
-            sources: streamedSources,
-            citation_annotations: streamedCitationAnnotations,
-            progress: streamProgress,
-            referenceContext,
-          })
-          continue
-        }
-        if (token?.type === 'progress' && token.event === 'action_proposal') {
-          // Reviewable work the assistant proposed. Attached to the message
-          // rather than merged into progress, since it outlives the stream.
-          publish({ proposed_actions: token.proposed_actions || [] })
-          continue
-        }
-        if (token?.type === 'progress') {
-          streamProgress = mergeStreamProgress(streamProgress, token, content)
-          const referenceContext = buildReferenceContext({
-            progress: streamProgress,
-            sources: streamedSources,
-            citedCount: streamedSources.length,
-          })
-          publish({ progress: streamProgress, referenceContext }, { referenceContext })
-          continue
-        }
-        if (token?.type === 'artifacts') {
-          const streamArtifacts = Array.isArray(token.artifacts) ? token.artifacts : []
-          if (streamArtifacts.length > 0) publish({ artifacts: streamArtifacts })
-          continue
-        }
-        if (token === '[STREAM_COMPLETE]') {
-          sawStreamComplete = true
-          streamProgress = {
-            ...streamProgress,
-            complete: true,
-            status: completedStreamStatus(streamProgress.public_retrieval),
-          }
-          const referenceContext = buildReferenceContext({
-            progress: streamProgress,
-            sources: streamedSources,
-            citedCount: streamedSources.length,
-          })
-          publish({ progress: streamProgress, referenceContext }, { referenceContext })
-          break
-        } else if (typeof token === 'string' && token.startsWith('[ERROR]')) {
-          streamError = token.slice(7)
-          break
-        } else if (typeof token === 'string') {
-          accumulatedText += token
-          publish({ content: accumulatedText })
-        }
-      }
-
-      if (!streamError && !sawStreamComplete) {
-        streamError = 'The assistant stream ended before completion. Please retry.'
-      }
-      if (!streamError && !accumulatedText.trim()) {
-        streamError = 'The assistant completed without a visible answer. Please retry.'
-      }
-
-      settleChatGeneration(convId, clientTurnId, {
-        status: streamError ? GENERATION_ERROR : GENERATION_COMPLETE,
-        error: streamError,
-        errorSource: streamError ? 'stream' : null,
-        attached: isAttached(),
-        assistant: {
-          content: accumulatedText,
-          sources: streamedSources,
-          citation_annotations: streamedCitationAnnotations,
-          progress: { ...streamProgress, complete: true },
-        },
-      })
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        // Only a deleted conversation aborts a read, and its transcript is gone.
-        releaseChatGeneration(convId, clientTurnId)
-        return
-      }
-      reportError('Failed to send message', err)
-      settleChatGeneration(convId, clientTurnId, {
-        status: GENERATION_ERROR,
-        error: err?.response?.data?.detail || err?.message || 'Please try again.',
-        errorSource: 'request',
-        attached: isAttached(),
-        assistant: { content: accumulatedText, progress: streamProgress },
-      })
-    }
-  }, [inputValue, isSending, includePublic, usePremium, conversations, pendingAttachments, setConversations, setActiveConvId, showErrorNotice, navigate])
+  }, [inputValue, isSubmitting, includePublic, usePremium, conversations, pendingAttachments, newConversationPreferences, setConversations, setActiveConvId, showErrorNotice, navigate])
 
   // A generation outlives this page, so the transcript renders from the registry
   // rather than from the send handler: whichever ChatPage is mounted when tokens
@@ -1303,35 +1068,30 @@ export default function ChatPage() {
   }, [persistPreference])
 
   const activeConversation = conversations.find((conv) => conv.id === activeConvId) || null
-  const hasBackgroundGeneration = generationCount > 0 && !isSending
+  const activeQueuedCount = activeQueue.items.length
   const conversationContextLocked = messages.length > 0
     || Number(activeConversation?.message_count || 0) > 0
     || Number(activeConversation?.attachment_count || 0) > 0
     || pendingAttachments.length > 0
+  // Matter context is per conversation, so only this thread's own work in
+  // flight holds it — another thread answering in the background does not.
   const matterLinkBlocked = isLoadingMessages
-    || isSending
-    || generationCount > 0
+    || isSubmitting
+    || isResponding
+    || activeQueuedCount > 0
     || conversationContextLocked
   const linkedMatterId = activeConversation?.matter_id || null
   const linkedMatter = matters.find((matter) => matter.id === linkedMatterId) || null
   const linkedMatterName = linkedMatter?.matter_name || linkedMatter?.name || (linkedMatterId ? 'Linked matter' : '')
-  const filteredMatters = matters
-    .filter((matter) => {
-      const q = matterQuery.trim().toLowerCase()
-      if (!q) return true
-      return [matter.matter_name, matter.name, matter.case_number, matter.client_name]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q))
-    })
-    .slice(0, 20)
 
+  // Returns whether the picker is done: false keeps it open so a failed link
+  // can be retried without searching again.
   const applyMatterLink = useCallback(async (matterId) => {
     if (!activeConvId) {
       setNotice({ type: 'info', title: 'No conversation selected', message: 'Start or select a conversation before linking it to a matter.' })
-      return
+      return true
     }
     if (matterLinkBlocked) {
-      setMatterPickerOpen(false)
       setNotice({
         type: 'info',
         title: 'Matter context is in use',
@@ -1339,7 +1099,7 @@ export default function ChatPage() {
           ? 'Matter context is locked after a conversation has messages or attachments. Start a new conversation for a different matter.'
           : 'Wait for the conversation to load and the active response to finish before changing its matter context.',
       })
-      return
+      return true
     }
     setMatterLinking(true)
     try {
@@ -1347,24 +1107,51 @@ export default function ChatPage() {
       setConversations((prev) =>
         prev.map((conv) => (conv.id === updated.id ? { ...conv, ...updated } : conv))
       )
-      setMatterPickerOpen(false)
-      setMatterQuery('')
       setNotice({
         type: 'success',
         title: matterId ? 'Matter linked' : 'Matter unlinked',
         message: matterId ? 'Future messages in this conversation will use that matter context.' : 'This conversation is no longer tied to a matter.',
       })
+      return true
     } catch (err) {
       showErrorNotice('Matter link failed', 'The conversation could not be updated.', err)
+      return false
     } finally {
       setMatterLinking(false)
     }
   }, [activeConvId, conversationContextLocked, matterLinkBlocked, setConversations, showErrorNotice])
 
-  const activeRef = (() => {
-    const idx = conversations.findIndex((c) => c.id === activeConvId)
-    return idx >= 0 ? String(idx + 1).padStart(2, '0') : '—'
-  })()
+  // Pull a queued message back into the composer to change it. Only offered
+  // while the composer is empty, so nothing already typed is overwritten.
+  const handleEditQueued = useCallback((itemId) => {
+    const convId = activeConvIdRef.current
+    if (!convId || inputValueRef.current.trim()) return
+    const item = removeQueuedChatMessage(convId, itemId)
+    if (!item) return
+    setInputValue(item.content)
+    setPendingAttachments(item.attachments || [])
+  }, [])
+
+  const willQueue = useMemo(
+    () => chatSendMustQueue(activeConvId),
+    [activeConvId, generationVersion, queueVersion],
+  )
+  let otherResponding = 0
+  let otherAttention = 0
+  for (const [conversationId, state] of activity.byConversation) {
+    if (conversationId === activeConvId) continue
+    if (state.responding) otherResponding += 1
+    if (state.replyReady || state.failed || state.paused) otherAttention += 1
+  }
+  const queueHint = !willQueue
+    ? ''
+    : activeQueue.paused
+      ? 'Held until you resume the queue'
+      : isResponding
+        ? 'Sends when this response finishes'
+        : activeQueuedCount > 0
+          ? 'Sends after the messages already queued'
+          : `${MAX_PARALLEL_CHAT_RESPONSES} chats are answering — sends when one finishes`
 
   return (
     <div className="flex h-full bg-brand-bg">
@@ -1395,143 +1182,43 @@ export default function ChatPage() {
       />
 
       {/* Thread column */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Background ledger ruling */}
-        <div
-          className="absolute inset-0 pointer-events-none z-0"
-          style={{
-            backgroundImage: 'linear-gradient(#CFC4AE 1px, transparent 1px)',
-            backgroundSize: '100% 24px',
-            opacity: 0.15,
-          }}
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <ChatHeader
+          activeConvTitle={activeConvTitle}
+          usePremium={usePremium}
+          setUsePremium={changeUsePremium}
+          demoMode={Boolean(user?.demo)}
+          standardMatterContextAllowed={Boolean(user?.standard_matter_context_allowed)}
+          includePublic={includePublic}
+          setIncludePublic={changeIncludePublic}
+          publicCaseLawAllowed={user?.public_case_law_allowed !== false}
+          privacyMode={Boolean(user?.privacy_mode)}
+          privacySaving={privacySaving}
+          onTogglePrivacy={togglePrivacyMode}
+          onExportConversation={handleExportConversation}
+          onRenameConversation={handleRenameConversation}
+          onRenameError={(message) => setNotice({ type: 'error', title: 'Rename failed', message })}
+          onOpenSidebar={() => setRailOpen(true)}
+          backgroundActivity={{ responding: otherResponding, attention: otherAttention }}
+          context={(
+            <ChatContextPicker
+              conversationId={activeConvId}
+              linkedMatterId={linkedMatterId}
+              linkedMatter={linkedMatter}
+              linkedMatterName={linkedMatterName}
+              matters={matters}
+              linking={matterLinking}
+              blocked={matterLinkBlocked}
+              locked={conversationContextLocked}
+              onLink={applyMatterLink}
+              onOpenMatter={(matterId) => navigate(`/matters/${matterId}`)}
+            />
+          )}
         />
 
-        <div className="relative z-10 flex flex-col h-full">
-          <ChatHeader
-            activeRef={activeRef}
-            activeConvTitle={activeConvTitle}
-            usePremium={usePremium}
-            setUsePremium={changeUsePremium}
-            demoMode={Boolean(user?.demo)}
-            standardMatterContextAllowed={Boolean(user?.standard_matter_context_allowed)}
-            includePublic={includePublic}
-            setIncludePublic={changeIncludePublic}
-            publicCaseLawAllowed={user?.public_case_law_allowed !== false}
-            privacyMode={Boolean(user?.privacy_mode)}
-            privacySaving={privacySaving}
-            onTogglePrivacy={togglePrivacyMode}
-            onExportConversation={handleExportConversation}
-            onRenameConversation={handleRenameConversation}
-            onRenameError={(message) => setNotice({ type: 'error', title: 'Rename failed', message })}
-            onOpenSidebar={() => setRailOpen(true)}
-          />
-
-          <div className="relative px-2 pt-2 sm:px-4 sm:pt-3 md:px-6" ref={matterPickerRef}>
-            <div className="flex min-h-10 items-center gap-2 rounded-xl border border-brand-line bg-brand-surface/95 px-2 py-1.5 shadow-sm sm:gap-3 sm:rounded-2xl sm:px-3 sm:py-2.5">
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9 sm:rounded-xl ${
-                linkedMatterId ? 'bg-brand-accent/10 text-brand-accent-2' : 'bg-brand-bg-soft text-brand-muted'
-              }`}>
-                <Briefcase size={17} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="hidden text-[10px] font-bold uppercase tracking-[0.14em] text-brand-muted sm:block">AI context</p>
-                <p className={`truncate text-xs font-semibold sm:mt-0.5 sm:text-sm ${linkedMatterId ? 'text-brand-ink' : 'text-brand-muted'}`}>
-                  {linkedMatterId
-                    ? `Using your profile + ${linkedMatterName}`
-                    : activeConvId
-                      ? 'Using your profile'
-                      : 'Using your profile — start a conversation to add a matter'}
-                  {linkedMatter?.case_number ? (
-                    <span className="ml-2 font-normal text-brand-muted">{linkedMatter.case_number}</span>
-                  ) : null}
-                </p>
-              </div>
-              {linkedMatterId && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/matters/${linkedMatterId}`)}
-                  className="hidden tap-target rounded-xl text-brand-muted hover:bg-brand-bg-soft hover:text-brand-ink sm:inline-flex"
-                  aria-label={`Open ${linkedMatterName}`}
-                  title="Open linked matter"
-                >
-                  <ExternalLink size={16} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setMatterPickerOpen((open) => !open)}
-                disabled={!activeConvId || matterLinking || matterLinkBlocked}
-                title={conversationContextLocked
-                  ? 'Matter context is locked after messages or attachments are added'
-                  : matterLinkBlocked
-                    ? 'Wait for the conversation to load or finish responding'
-                    : linkedMatterId ? 'Change matter context' : 'Link this conversation to a matter'}
-                aria-expanded={matterPickerOpen}
-                aria-haspopup="dialog"
-                className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-brand-line bg-brand-surface px-2 text-xs font-semibold text-brand-ink hover:bg-brand-bg-soft disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10 sm:gap-2 sm:rounded-xl sm:px-3"
-              >
-                <Link2 size={14} className="hidden sm:block" />
-                <span className="hidden sm:inline">{linkedMatterId ? 'Change' : 'Link matter'}</span>
-                <ChevronDown size={13} />
-              </button>
-            </div>
-
-            {matterPickerOpen && !matterLinkBlocked && (
-              <div
-                role="dialog"
-                aria-label="Choose matter context"
-                className="absolute right-3 top-[calc(100%+0.5rem)] z-20 w-[min(430px,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-brand-line bg-brand-surface shadow-xl sm:right-4 md:right-6"
-              >
-                <div className="border-b border-brand-line p-3">
-                  <p className="mb-2 text-xs font-semibold text-brand-ink">Choose matter context</p>
-                  <div className="relative">
-                    <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
-                    <input
-                      value={matterQuery}
-                      onChange={(event) => setMatterQuery(event.target.value)}
-                      aria-label="Search matters"
-                      placeholder="Search by matter, client, or case number"
-                      className="w-full rounded-xl border border-brand-line bg-brand-bg py-2.5 pl-9 pr-3 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-                <div className="max-h-72 overflow-y-auto">
-                  {filteredMatters.length === 0 ? (
-                    <p className="px-4 py-6 text-center text-sm text-brand-muted">No matters found.</p>
-                  ) : filteredMatters.map((matter) => (
-                    <button
-                      key={matter.id}
-                      type="button"
-                      onClick={() => applyMatterLink(matter.id)}
-                      disabled={matterLinking}
-                      className="block w-full border-b border-brand-line px-4 py-3 text-left last:border-0 hover:bg-brand-bg-soft disabled:opacity-50"
-                    >
-                      <span className="block truncate text-sm font-semibold text-brand-ink">{matter.matter_name || matter.name || 'Untitled matter'}</span>
-                      <span className="mt-0.5 block truncate text-xs text-brand-muted">
-                        {[matter.case_number, matter.client_name, matter.status].filter(Boolean).join(' · ') || 'Matter'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {linkedMatterId && (
-                  <div className="border-t border-brand-line p-2">
-                    <button
-                      type="button"
-                      onClick={() => applyMatterLink('')}
-                      disabled={matterLinking}
-                      className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-sm font-medium text-brand-muted hover:bg-brand-rose/10 hover:text-brand-rose disabled:opacity-50"
-                    >
-                      <Unlink size={15} /> Remove matter context
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {notice && (
-            <div className="px-3 pt-3 sm:px-4 md:px-6">
+        {notice && (
+          <div className="px-2 pt-2 sm:px-4 sm:pt-3 md:px-6">
+            <div className="mx-auto w-full max-w-4xl">
               <AlertBanner
                 type={notice.type}
                 title={notice.title}
@@ -1544,45 +1231,49 @@ export default function ChatPage() {
                 {notice.message}
               </AlertBanner>
             </div>
-          )}
+          </div>
+        )}
 
-          <Messages
-            messages={messages}
-            isLoading={isLoadingMessages}
-            isSending={isSending}
-            onPromptSelect={(prompt) => setInputValue(prompt)}
-          />
+        <Messages
+          messages={messages}
+          isLoading={isLoadingMessages}
+          isSending={isResponding}
+          conversationKey={activeConvId}
+          onPromptSelect={(prompt) => setInputValue(prompt)}
+        />
 
-          {hasBackgroundGeneration && (
-            <div role="status" className="border-t border-brand-line bg-amber-50 px-4 py-2 text-center text-xs font-semibold text-amber-900">
-              A response is finishing in the background. You can browse and draft here; sending unlocks when it finishes.
-            </div>
-          )}
-
-          <ChatInput
-            inputValue={inputValue}
-            onInputChange={setInputValue}
-            onSend={handleSend}
-            onUploadClick={handleUploadClick}
-            onDropFiles={handleDropFiles}
-            isSending={isSending}
-            disabled={false}
-            sendDisabled={hasBackgroundGeneration}
-            sendDisabledLabel="Another conversation response is finishing"
-            pendingAttachments={pendingAttachments}
-            onRemoveAttachment={(id) =>
-              setPendingAttachments((prev) => prev.filter((a) => a.id !== id))
-            }
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx,.txt"
-            multiple
-            className="hidden"
-            onChange={handleFilesSelected}
-          />
-        </div>
+        <ChatInput
+          inputValue={inputValue}
+          onInputChange={setInputValue}
+          onSend={handleSend}
+          onUploadClick={handleUploadClick}
+          onDropFiles={handleDropFiles}
+          isSending={isSubmitting}
+          isResponding={isResponding}
+          willQueue={willQueue}
+          queueHint={queueHint}
+          otherRespondingCount={otherResponding}
+          disabled={false}
+          pendingAttachments={pendingAttachments}
+          onRemoveAttachment={(id) =>
+            setPendingAttachments((prev) => prev.filter((a) => a.id !== id))
+          }
+          suggestions={messages.length > 0 ? [] : undefined}
+          queuedMessages={activeQueue.items}
+          queuePaused={activeQueue.paused}
+          onRemoveQueued={(itemId) => removeQueuedChatMessage(activeConvId, itemId)}
+          onEditQueued={handleEditQueued}
+          onResumeQueue={() => resumeChatQueue(activeConvId)}
+          onClearQueue={() => clearChatQueue(activeConvId)}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.txt"
+          multiple
+          className="hidden"
+          onChange={handleFilesSelected}
+        />
       </div>
     </div>
   )

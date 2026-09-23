@@ -9,6 +9,7 @@ import {
   Settings2,
   ShieldCheck,
 } from 'lucide-react'
+import { ReviewTagKey } from './legalMarkdown'
 
 function useDismissablePopover(open, onClose, containerRef) {
   useEffect(() => {
@@ -34,7 +35,6 @@ function useDismissablePopover(open, onClose, containerRef) {
 }
 
 export default function ChatHeader({
-  activeRef,
   activeConvTitle,
   usePremium,
   setUsePremium,
@@ -51,6 +51,8 @@ export default function ChatHeader({
   onRenameConversation,
   onRenameError,
   onOpenSidebar,
+  context = null,
+  backgroundActivity = null,
 }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -113,29 +115,36 @@ export default function ChatHeader({
   }
 
   const canEditTitle = Boolean(activeConvTitle && onRenameConversation)
+  const otherResponding = Number(backgroundActivity?.responding || 0)
+  const otherAttention = Number(backgroundActivity?.attention || 0)
+  const drawerStatus = [
+    otherResponding ? `${otherResponding} other ${otherResponding === 1 ? 'chat' : 'chats'} responding` : '',
+    otherAttention ? `${otherAttention} ${otherAttention === 1 ? 'chat needs' : 'chats need'} a look` : '',
+  ].filter(Boolean).join(', ')
   return (
-    <header className="z-20 flex min-h-12 flex-shrink-0 items-center justify-between gap-2 border-b border-brand-line bg-brand-surface px-2 py-1.5 sm:min-h-16 sm:gap-3 sm:px-4 sm:py-2 md:px-6">
+    // Above the composer (z-20) so header popovers are never drawn beneath it,
+    // and below the phone drawer's backdrop (z-30).
+    <header className="relative z-[25] flex min-h-14 flex-shrink-0 items-center justify-between gap-2 border-b border-brand-line bg-brand-surface px-2 py-1.5 sm:min-h-16 sm:gap-3 sm:px-4 sm:py-2 md:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <button
           type="button"
-          className="tap-target -ml-1 flex-shrink-0 rounded-xl text-brand-muted hover:bg-brand-bg-soft hover:text-brand-ink lg:hidden"
+          className="tap-target relative -ml-1 flex-shrink-0 rounded-xl text-brand-muted hover:bg-brand-bg-soft hover:text-brand-ink lg:hidden"
           onClick={onOpenSidebar}
-          aria-label="Open conversations and sources"
+          aria-label={drawerStatus ? `Open conversations and sources (${drawerStatus})` : 'Open conversations and sources'}
           title="Conversations and sources"
         >
           <PanelLeft size={20} />
+          {(otherResponding > 0 || otherAttention > 0) && (
+            <span
+              aria-hidden="true"
+              className={`absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-brand-surface ${
+                otherAttention > 0 ? 'bg-brand-accent' : 'animate-pulse bg-brand-accent/70'
+              }`}
+            />
+          )}
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className="mb-0.5 hidden items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-brand-muted sm:flex">
-            <span>AI assistant</span>
-            {activeRef !== '—' && (
-              <>
-                <span aria-hidden="true" className="text-brand-line-2">/</span>
-                <span>Conversation {activeRef}</span>
-              </>
-            )}
-          </div>
           {isEditing ? (
             <input
               type="text"
@@ -151,11 +160,11 @@ export default function ChatHeader({
               }}
               disabled={savingTitle}
               aria-label="Conversation title"
-              className="w-full max-w-xl rounded-lg border border-brand-accent bg-brand-bg px-2 py-1 font-serif text-lg font-semibold text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent disabled:opacity-60"
+              className="w-full max-w-xl rounded-lg border border-brand-accent bg-brand-bg px-2 py-0.5 font-serif text-base font-semibold text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent disabled:opacity-60"
               autoFocus
             />
           ) : (
-            <h1 className="min-w-0 truncate font-serif text-base font-semibold text-brand-ink sm:text-xl">
+            <h1 className="min-w-0 truncate font-serif text-[15px] font-semibold leading-tight text-brand-ink sm:text-lg">
               {canEditTitle ? (
                 <button
                   type="button"
@@ -170,19 +179,22 @@ export default function ChatHeader({
               )}
             </h1>
           )}
+          {context && <div className="mt-0.5 min-w-0">{context}</div>}
         </div>
       </div>
 
-      <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
+      <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
         <div
-          className="hidden items-center gap-1.5 rounded-full border border-brand-accent/20 bg-brand-accent/10 px-2.5 py-1 text-[11px] font-semibold text-brand-accent-2 sm:flex"
+          className="hidden items-center gap-1.5 rounded-full border border-brand-accent/20 bg-brand-accent/10 px-2.5 py-1 text-[11px] font-semibold text-brand-accent-2 2xl:flex"
           title="Assistant work should be verified before it is relied upon"
         >
           <ShieldCheck size={14} aria-hidden="true" />
           <span>Review required</span>
         </div>
 
-        <div className="relative" ref={settingsRef}>
+        <ReviewTagKey />
+
+        <div className="sm:relative" ref={settingsRef}>
           <button
             type="button"
             onClick={() => {
@@ -207,7 +219,7 @@ export default function ChatHeader({
             <div
               role="dialog"
               aria-label="Response settings"
-              className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-brand-line bg-brand-surface p-4 shadow-xl"
+              className="absolute inset-x-2 top-[calc(100%+0.25rem)] z-30 rounded-2xl border border-brand-line bg-brand-surface p-4 shadow-xl sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-[22rem]"
             >
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-muted">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Database, FileText, MessageSquare, Plus, Search, X } from 'lucide-react'
 import { useAppShell } from '../AppShell'
+import { useChatActivity } from '../../hooks/useChatActivity'
 import FileUpload from '../FileUpload'
 import ConversationItem from './ConversationItem'
 import DocumentItem from './DocumentItem'
@@ -35,6 +36,7 @@ export default function ChatRail({
     onDocumentDeleted,
   } = useAppShell()
   const handleDeleteConversation = onDeleteConversation || onConversationDeleted
+  const activity = useChatActivity()
   const [activeSection, setActiveSection] = useState('conversations')
   const [searchQuery, setSearchQuery] = useState('')
   const [pinnedConvIds, setPinnedConvIds] = useState(readPinnedConversationIds)
@@ -122,9 +124,17 @@ export default function ChatRail({
       className={`flex flex-col bg-brand-surface-2 ${className}`}
     >
       <div className="flex min-h-16 shrink-0 items-center justify-between border-b border-brand-line px-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-muted">Workspace</p>
-          <p className="mt-0.5 font-serif text-lg font-semibold text-brand-ink">Assistant</p>
+          <p className="mt-0.5 flex items-center gap-2 font-serif text-lg font-semibold text-brand-ink">
+            Assistant
+            {activity.respondingCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand-accent/10 px-2 py-0.5 font-sans text-[10px] font-semibold text-brand-accent-2">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-accent" aria-hidden="true" />
+                {activity.respondingCount} responding
+              </span>
+            )}
+          </p>
         </div>
         {onClose && (
           <button
@@ -245,7 +255,7 @@ export default function ChatRail({
                 No conversations match “{searchQuery}”.
               </p>
             ) : (
-              <div className="flex flex-col">
+              <div className="flex flex-col gap-0.5">
                 {filteredConversations.map((conversation, index) => (
                   <ConversationItem
                     key={conversation.id}
@@ -253,6 +263,7 @@ export default function ChatRail({
                     index={index}
                     isActive={conversation.id === activeConvId}
                     isPinned={pinnedConvIds.includes(conversation.id)}
+                    activity={activity.activityFor(conversation.id)}
                     onClick={() => onSelectConversation?.(conversation.id)}
                     onDelete={handleDeleteConversation}
                     onTogglePin={handleTogglePin}

@@ -338,7 +338,7 @@ function SourcesLedger({ sources, messageId }) {
                     <span className={`mt-1 inline-flex w-fit items-center px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest font-mono border ${badge.classes}`}>
                       {badge.label}
                     </span>
-                    <span className="ml-2 mt-1 inline-flex w-fit border border-brand-green/20 bg-brand-green/10 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest text-brand-green">
+                    <span className="ml-2 mt-1 inline-flex w-fit rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-emerald-800">
                       Cited
                     </span>
                     {evidenceMeta.length > 0 && (
@@ -724,9 +724,9 @@ export default function ChatMessage({ message }) {
 
   if (isUser) {
     return (
-      <div className="group mb-4 flex justify-end sm:mb-7">
-        <div className="max-w-2xl border-l-4 border-brand-accent bg-brand-ink p-3 text-brand-bg shadow-sm transition-shadow hover:shadow-md sm:p-4">
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-brand-bg/55">
+      <div className="group mb-4 flex justify-end sm:mb-6">
+        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-brand-ink px-3.5 py-3 text-brand-bg shadow-sm transition-shadow hover:shadow-md sm:max-w-2xl sm:px-4">
+          <div className="mb-1.5 flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-brand-bg/60">
             <span className="font-bold text-brand-accent">You</span>
             {timestamp && (
               <>
@@ -759,14 +759,13 @@ export default function ChatMessage({ message }) {
   }
 
   return (
-    <div className="group mb-4 flex justify-start sm:mb-8">
-      <div data-testid="assistant-response" className="relative w-full max-w-none border border-brand-line bg-brand-surface p-4 shadow-sm transition-shadow hover:shadow-md sm:p-8">
-        {/* Gold top bar */}
-        <div className="absolute top-0 left-0 w-full h-1 bg-brand-gold"></div>
-
+    <div className="group mb-4 flex justify-start sm:mb-6">
+      <div data-testid="assistant-response" className="relative w-full max-w-none rounded-2xl border border-brand-line bg-brand-surface p-3.5 shadow-sm transition-shadow hover:shadow-md sm:p-6">
         {/* Header */}
-        <div className="mb-3 flex items-center gap-2 border-b border-brand-line pb-2 font-mono text-[10px] uppercase tracking-wider text-brand-muted sm:mb-6 sm:pb-4 sm:text-xs">
-          <Scale className="w-4 h-4 text-brand-gold" strokeWidth={2} />
+        <div className="mb-3 flex items-center gap-2 border-b border-brand-line pb-2 font-mono text-[10px] uppercase tracking-wider text-brand-muted sm:mb-5 sm:pb-3 sm:text-xs">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-brand-accent/10" aria-hidden="true">
+            <Scale className="h-3.5 w-3.5 text-brand-gold" strokeWidth={2} />
+          </span>
           <span className="font-bold text-brand-ink">LawHand Analysis</span>
           {timestamp && <span className="ml-auto">{timestamp}</span>}
           <button

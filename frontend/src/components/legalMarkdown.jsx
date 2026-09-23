@@ -1,122 +1,228 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Tags } from 'lucide-react'
+
+// Review tags are read at a glance mid-sentence, so each tone keeps its text at
+// WCAG AA contrast against its own fill. The brand amber and green used before
+// fell below 3:1 at nine pixels, which is most of why the key was hard to read.
+const TAG_TONES = {
+  cited: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+  verify: 'border-amber-300 bg-amber-50 text-amber-900',
+  model: 'border-blue-200 bg-blue-50 text-blue-800',
+  reasoning: 'border-indigo-200 bg-indigo-50 text-indigo-800',
+  uncertain: 'border-rose-300 bg-rose-50 text-rose-800',
+}
+
+const TAG_CHIP_BASE = 'mx-0.5 inline-flex items-center rounded border px-1.5 py-px align-middle font-mono text-[10px] font-bold uppercase leading-4 tracking-wider sm:text-[11px]'
 
 export const REVIEW_TAGS = [
   {
     label: 'cited',
     text: 'Source-backed',
-    classes: 'bg-brand-green/10 text-brand-green border-brand-green/20',
-    swatch: 'bg-brand-green',
+    detail: 'Supported by a retrieved source. Follow the link to check it.',
+    classes: TAG_TONES.cited,
+    swatch: 'bg-emerald-600',
   },
   {
     label: 'verify',
     text: 'Confirm before relying',
-    classes: 'bg-brand-amber/10 text-brand-amber border-brand-amber/20',
-    swatch: 'bg-brand-amber',
+    detail: 'Plausible but not fully supported. Check the source or the pinpoint.',
+    classes: TAG_TONES.verify,
+    swatch: 'bg-amber-500',
   },
   {
     label: 'model',
     text: 'General reasoning',
-    classes: 'bg-brand-gold/10 text-brand-gold border-brand-gold/20',
-    swatch: 'bg-brand-gold',
+    detail: 'The assistant’s own knowledge, not a retrieved source.',
+    classes: TAG_TONES.model,
+    swatch: 'bg-blue-600',
   },
 ]
 
-// Citation tag definitions: pattern → { label, classes }
+const SECONDARY_REVIEW_TAGS = [
+  {
+    label: 'uncertain',
+    text: 'Flagged doubt',
+    detail: 'The assistant is unsure. Treat it as an open question.',
+    classes: TAG_TONES.uncertain,
+  },
+  {
+    label: 'firm context',
+    text: 'From your material',
+    detail: 'Drawn from matter or firm documents rather than public authority.',
+    classes: TAG_TONES.cited,
+  },
+]
+
+// Citation tag definitions: pattern → { label, classes, meaning }
 const CITATION_PATTERNS = [
   {
     regex: /\[cited\]/gi,
     label: 'cited',
-    classes: 'bg-brand-green/10 text-brand-green border-brand-green/20',
+    classes: TAG_TONES.cited,
+    meaning: 'Source-backed',
   },
   {
     regex: /\[settled\]/gi,
     label: 'cited',
-    classes: 'bg-brand-green/10 text-brand-green border-brand-green/20',
+    classes: TAG_TONES.cited,
+    meaning: 'Source-backed',
   },
   {
     regex: /\[verify-pinpoint\]/gi,
     label: 'verify-pinpoint',
-    classes: 'bg-brand-accent/10 text-brand-accent-2 border-brand-accent/20',
+    classes: TAG_TONES.reasoning,
+    meaning: 'Check the pinpoint citation',
   },
   {
     regex: /\[verify\]/gi,
     label: 'verify',
-    classes: 'bg-brand-amber/10 text-brand-amber border-brand-amber/20',
+    classes: TAG_TONES.verify,
+    meaning: 'Confirm before relying',
   },
   {
     regex: /\[model knowledge\]/gi,
     label: 'model knowledge',
-    classes: 'bg-brand-gold/10 text-brand-gold border-brand-gold/20',
+    classes: TAG_TONES.model,
+    meaning: 'General reasoning, not a retrieved source',
   },
   {
     regex: /\[model reasoning\]/gi,
     label: 'model reasoning',
-    classes: 'bg-brand-accent/10 text-brand-accent-2 border-brand-accent/20',
+    classes: TAG_TONES.reasoning,
+    meaning: 'General reasoning, not a retrieved source',
   },
   {
     regex: /\[well[-\s]known fact\]/gi,
     label: 'well known fact',
-    classes: 'bg-brand-gold/10 text-brand-gold border-brand-gold/20',
+    classes: TAG_TONES.model,
+    meaning: 'Common knowledge, not source-backed',
   },
   {
     regex: /\[cited by context\]/gi,
     label: 'cited by context',
-    classes: 'bg-brand-green/10 text-brand-green border-brand-green/20',
+    classes: TAG_TONES.cited,
+    meaning: 'Supported by matter or firm material',
   },
   {
     regex: /\[cited by context:\s*([^\]]*)\]/gi,
     label: null,
-    classes: 'bg-brand-green/10 text-brand-green border-brand-green/20',
+    classes: TAG_TONES.cited,
+    meaning: 'Supported by matter or firm material',
     dynamic: true,
     prefix: 'cited by context: ',
   },
   {
     regex: /\[firm context\]/gi,
     label: 'firm context',
-    classes: 'bg-brand-green/10 text-brand-green border-brand-green/20',
+    classes: TAG_TONES.cited,
+    meaning: 'Drawn from your firm’s material',
   },
   {
     regex: /\[UNCERTAIN:\s*([^\]]*)\]/gi,
     label: null, // dynamic
-    classes: 'bg-brand-rose/10 text-brand-rose border-brand-rose/20',
+    classes: TAG_TONES.uncertain,
+    meaning: 'The assistant is unsure — confirm independently',
     dynamic: true,
     prefix: 'UNCERTAIN: ',
   },
   {
     regex: /\[VERIFY:\s*([^\]]*)\]/gi,
     label: null,
-    classes: 'bg-brand-amber/10 text-brand-amber border-brand-amber/20',
+    classes: TAG_TONES.verify,
+    meaning: 'Confirm before relying',
     dynamic: true,
     prefix: 'VERIFY: ',
   },
 ]
 
-export function ReviewTagLegend({ compact = false }) {
-  if (compact) {
-    return (
-      <div className="mx-auto mb-3 flex w-fit max-w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 border border-brand-line bg-brand-surface/95 px-3 py-2 text-[11px] shadow-sm">
-        <span className="font-mono uppercase tracking-widest text-brand-muted">Tag legend:</span>
-        {REVIEW_TAGS.map(({ label, text, swatch }) => (
-          <span key={label} className="inline-flex items-center gap-1.5 whitespace-nowrap font-sans text-brand-ink">
-            <span className={`h-2 w-2 ${swatch}`} aria-hidden="true" />
-            <span className="font-bold uppercase tracking-wide">{label}</span>
-            <span className="text-brand-muted">({text})</span>
-          </span>
-        ))}
-      </div>
-    )
-  }
+function TagChip({ label, classes }) {
+  return <span className={`${TAG_CHIP_BASE} ${classes}`}>{label}</span>
+}
+
+/**
+ * What the review tags mean, one tap away from any chat.
+ *
+ * This replaced a legend pinned over the top of the transcript: it was
+ * translucent, so answers scrolled visibly through it, and on a phone it wrapped
+ * to three lines of permanently covered screen. The button itself doubles as a
+ * compact legend on wider screens. On a phone the popover spans the nearest
+ * positioned ancestor (the chat header) instead of hanging off the button,
+ * which would push it past the left edge of a narrow screen.
+ */
+export function ReviewTagKey() {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return undefined
+    const handlePointerDown = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false)
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
-      {REVIEW_TAGS.map(({ label, text, classes }) => (
-        <div key={label} className="flex items-center gap-2 px-3 py-1.5 bg-brand-surface border border-brand-line">
-          <span className={`text-[9px] font-bold uppercase tracking-widest font-mono px-1.5 py-0.5 border ${classes}`}>
-            {label}
-          </span>
-          <span className="text-[12px] font-sans text-brand-ink-2">{text}</span>
+    <div ref={containerRef} className="sm:relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-label="Review tag key"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="What the review tags mean"
+        className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-2 text-xs font-semibold sm:min-h-10 sm:rounded-xl sm:px-2.5 ${
+          open
+            ? 'border-brand-ink bg-brand-ink text-white'
+            : 'border-brand-line bg-brand-surface text-brand-ink hover:bg-brand-bg-soft'
+        }`}
+      >
+        <Tags size={16} aria-hidden="true" className="xl:hidden" />
+        <span className="hidden items-center gap-2 xl:inline-flex" aria-hidden="true">
+          {REVIEW_TAGS.map(({ label, swatch }) => (
+            <span key={label} className="inline-flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full ${swatch}`} />
+              <span className="font-mono text-[10px] uppercase tracking-wider">{label}</span>
+            </span>
+          ))}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Review tags"
+          className="absolute inset-x-2 top-[calc(100%+0.25rem)] z-30 rounded-2xl border border-brand-line bg-brand-surface p-4 text-left shadow-xl sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-[22rem]"
+        >
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-muted">Review tags</p>
+          <dl className="mt-3 space-y-3">
+            {[...REVIEW_TAGS, ...SECONDARY_REVIEW_TAGS].map(({ label, text, detail, classes }) => (
+              <div key={label} className="grid grid-cols-[6.5rem,1fr] items-start gap-3">
+                <dt className="pt-0.5">
+                  <TagChip label={label} classes={classes} />
+                </dt>
+                <dd className="text-xs leading-snug text-brand-ink-2">
+                  <span className="block font-semibold text-brand-ink">{text}</span>
+                  {detail}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 border-t border-brand-line pt-3 text-[11px] leading-relaxed text-brand-muted">
+            Verify cited authority, dates, and legal conclusions before relying on assistant work.
+          </p>
         </div>
-      ))}
+      )}
     </div>
   )
 }
@@ -161,7 +267,8 @@ export function transformCitations(text) {
     parts.push(
       <span
         key={key++}
-        className={`inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest font-mono border mx-0.5 align-middle ${earliestPattern.classes}`}
+        className={`${TAG_CHIP_BASE} ${earliestPattern.classes}`}
+        title={earliestPattern.meaning}
       >
         {label}
       </span>
@@ -212,14 +319,13 @@ export const markdownComponents = {
     const childText = React.Children.toArray(children).join('').trim().toLowerCase()
     const linkedReviewTag = ['cited', 'verify'].includes(childText) ? childText : null
     if (linkedReviewTag) {
-      const classes = linkedReviewTag === 'cited'
-        ? 'bg-brand-green/10 text-brand-green border-brand-green/20'
-        : 'bg-brand-amber/10 text-brand-amber border-brand-amber/20'
+      const classes = linkedReviewTag === 'cited' ? TAG_TONES.cited : TAG_TONES.verify
       return (
         <a
           href={href}
-          className={`mx-0.5 inline-flex items-center border px-1.5 py-0.5 align-middle font-mono text-[9px] font-bold uppercase tracking-widest no-underline ${classes}`}
+          className={`${TAG_CHIP_BASE} no-underline hover:underline ${classes}`}
           aria-label={`${linkedReviewTag} — jump to supporting source`}
+          title={linkedReviewTag === 'cited' ? 'Source-backed — jump to the source' : 'Confirm before relying — jump to the source'}
         >
           {linkedReviewTag}
         </a>

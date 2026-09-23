@@ -2,10 +2,10 @@
   "recent_release_days": 30,
   "releases": [
     {
-      "id": "2026.09.22.09",
-      "version": "2026.09.22.09",
+      "id": "2026.09.23.02",
+      "version": "2026.09.23.02",
       "title": "Clearer recovery for matter storage",
-      "published_at": "2026-09-22",
+      "published_at": "2026-09-23",
       "summary": "Missing matter folders now have a direct setup path and clearer retry guidance. Admin storage status distinguishes a saved provider preference and available connection from matter folder access, while Directory Sync remains separate.",
       "highlights": [
         {
@@ -19,6 +19,39 @@
         {
           "title": "Separate provider status from folder access",
           "description": "Preference saved confirms provider choice, not matter folder access. Connection status does not verify each folder; Directory Sync is separate and may depend on account tier."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.23.01",
+      "version": "2026.09.23.01",
+      "title": "Run several assistant chats and queue follow-ups",
+      "published_at": "2026-09-23",
+      "summary": "The assistant can answer in several conversations at once and lets you queue your next question while it works. Review tags are easier to read, and the chat makes better use of a phone screen.",
+      "highlights": [
+        {
+          "title": "Keep several chats going",
+          "description": "Up to three conversations can answer at the same time. The conversation list shows which are responding, which have a new reply and which need a look."
+        },
+        {
+          "title": "Queue your next question",
+          "description": "Keep typing while an answer streams. What you send waits in a queue and goes out in order as each answer finishes; edit or remove it before then."
+        },
+        {
+          "title": "Nothing builds on a failed answer",
+          "description": "If an answer fails, anything queued behind it is held until you choose to resume, so a follow-up never builds on a reply you did not see."
+        },
+        {
+          "title": "Review tags you can read",
+          "description": "Cited, verify and model tags use stronger colors and explain themselves on hover. The full key opens from the chat header instead of covering your answers."
+        },
+        {
+          "title": "More room on a phone",
+          "description": "Matter context sits under the conversation title, answers no longer pull you down while you read back, and Return starts a new line on touch keyboards."
+        },
+        {
+          "title": "Drafts stay with their conversation",
+          "description": "A half-typed question stays in the conversation you typed it in when you switch to another one and back."
         }
       ]
     },

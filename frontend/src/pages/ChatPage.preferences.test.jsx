@@ -59,6 +59,7 @@ vi.mock('../components/chat/ChatRail', () => ({
 }))
 
 import { resetChatGenerations } from '../chatGenerations'
+import { resetChatQueue } from '../chatQueue'
 import ChatPage from './ChatPage'
 
 const conversation = (overrides = {}) => ({
@@ -78,6 +79,7 @@ describe('ChatPage response settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetChatGenerations()
+    resetChatQueue()
     authHarness.value = { user: { privacy_mode: false }, refreshUser: vi.fn() }
     routerHarness.query = 'conv=conversation-a'
     routerHarness.navigate.mockImplementation((target) => {
@@ -108,6 +110,7 @@ describe('ChatPage response settings', () => {
   afterEach(() => {
     cleanup()
     resetChatGenerations()
+    resetChatQueue()
   })
 
   it('restores the tier and public-case-law choice stored on the conversation', async () => {
