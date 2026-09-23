@@ -1,8 +1,8 @@
 # S1.02 — owners and shared-file turns
 
-Status: **draft** — role names are placeholders until the owner confirms them.
+Status: **active** — role holders confirmed by the owner on 23 September 2026.
 Evidence for the [S1.02 task](./core-ux-execution-plan-2026-09-22.md) in the ordered
-core UX execution plan. It exists to unblock the Phase A gate and stop two people
+core UX execution plan. It unblocks the Phase A ownership gate and stops two people
 editing the same shared file in parallel.
 
 ## 1. Role assignments
@@ -11,13 +11,14 @@ One person may fill several roles; the plan does not assume three engineers.
 
 | Role | Person | Scope |
 | --- | --- | --- |
-| **FE-A** | _to confirm_ | Matter list/portfolio, matter workspace, CRM surfaces (S3, S6) |
-| **FE-B** | _to confirm_ | Task composer/queue, calendar, shell/navigation/preferences (S4, S5) |
-| **BE** | _to confirm_ | API/access/data contracts for matters, tasks, clients/contacts (S1.07, S3.01–03, S4.01–02, S6.01–02) |
-| **product/UX** | _to confirm_ | S1.04 baseline scenarios, S1.05 arrangement review, acceptance calls |
-| **QA** | _to confirm_ | Cross-tenant/isolation checks, dense/restricted fixtures, release validation |
+| **FE-A** | opencode agent | Matter list/portfolio, matter workspace, CRM surfaces (S3, S6) |
+| **FE-B** | Claude Code agent (owner account) | Task composer/queue, calendar, shell/navigation/preferences (S4, S5) |
+| **BE** | opencode agent (Claude Code agent reviews) | API/access/data contracts for matters, tasks, clients/contacts (S1.07, S3.01–03, S4.01–02, S6.01–02) |
+| **product/UX** | mattpainter701 | S1.04 baseline scenarios, S1.05 arrangement review, acceptance calls |
+| **QA** | mattpainter701 | Cross-tenant/isolation checks, dense/restricted fixtures, release validation |
 
-Until these are named, S1.02 stays open and Phase A is not passed.
+The two agent roles may flex between FE-A/FE-B/BE by agreement, but the per-file
+owners in section 2 are binding at any moment.
 
 ## 2. Shared-file turn map
 
