@@ -1097,9 +1097,6 @@ function MatterWorkspace() {
         {/* ── Dashboard Tab ─────────────────────────────────────────────────────── */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            <CaseSetupCard matterId={id} matter={matter} onPacketChange={handlePacketChange} onEngagementRecorded={loadMatter} />
-            <ClientConversation matterId={id} onUnreadChange={setClientUnread} />
-            <SignatureRequestsPanel matterId={id} refreshKey={signatureRefreshKey} />
             {/* Stats bar */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
@@ -1170,6 +1167,10 @@ function MatterWorkspace() {
             </div>
 
             {/* Key Dates + To-Do */}
+            {/* Next work first: key dates and open to-dos, with their add entry
+                points, lead the overview. Optional setup and client
+                communication follow (S3.09). */}
+            <h2 className="font-serif font-bold text-lg text-brand-ink">Next work</h2>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Link to={`/tasks?matter_id=${id}`} className="text-sm font-semibold text-brand-accent hover:underline">Manage matter tasks</Link>
               {tasksError && <div role="alert" className="text-sm text-brand-rose">Open tasks could not load. <button onClick={loadDashboard} className="font-semibold underline">Retry tasks</button></div>}
@@ -1260,6 +1261,12 @@ function MatterWorkspace() {
                 </div>
               </div>
             </div>
+
+            {/* Optional setup and client communication sit below the work so the
+                first thing a reader sees is what to do next (S3.09). */}
+            <CaseSetupCard matterId={id} matter={matter} onPacketChange={handlePacketChange} onEngagementRecorded={loadMatter} />
+            <ClientConversation matterId={id} onUnreadChange={setClientUnread} />
+            <SignatureRequestsPanel matterId={id} refreshKey={signatureRefreshKey} />
 
             {/* Cloud Files */}
             <div className="bg-brand-surface border border-brand-line rounded-2xl shadow-sm">
