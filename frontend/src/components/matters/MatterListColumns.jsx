@@ -129,9 +129,20 @@ export const MATTER_LIST_COLUMN_BY_KEY = Object.fromEntries(
   MATTER_LIST_COLUMN_DEFS.map(def => [def.key, def]),
 )
 
-// Cloud links are bulky and secondary, so they start hidden and can be turned
-// on per user. Everything else is visible out of the box.
-export const MATTER_LIST_DEFAULT_HIDDEN = ['cloud_folder']
+// The everyday arrangement keeps the columns staff read first — matter/client,
+// next deadline, status and the responsible attorney — and tucks the rest away
+// until asked for. S3.05.
+export const MATTER_LIST_EVERYDAY_HIDDEN = [
+  'originating_attorney',
+  'practice_area',
+  'open_date',
+  'risk',
+  'cloud_folder',
+]
+
+// A user with no saved choice starts with the everyday arrangement; anyone who
+// has arranged their own columns keeps them.
+export const MATTER_LIST_DEFAULT_HIDDEN = [...MATTER_LIST_EVERYDAY_HIDDEN]
 
 // The actions cell is frozen to the right edge, so it is sized by the layout
 // rather than by the user.
@@ -305,7 +316,18 @@ export default function MatterListColumnsMenu({ hidden, onChange, onResetWidths,
             </button>
           )}
           <div className="mt-3 flex justify-between border-t border-brand-line pt-3 text-[12px] font-semibold">
-            <button type="button" className="text-brand-muted hover:text-brand-ink" onClick={() => onChange([])}>
+            <button
+              type="button"
+              className="text-brand-muted hover:text-brand-ink"
+              onClick={() => onChange([...MATTER_LIST_EVERYDAY_HIDDEN])}
+            >
+              Reset to everyday
+            </button>
+            <button
+              type="button"
+              className="text-brand-muted hover:text-brand-ink"
+              onClick={() => onChange([])}
+            >
               Show all
             </button>
             <button type="button" className="text-brand-accent" onClick={() => setOpen(false)}>
