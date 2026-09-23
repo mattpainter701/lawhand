@@ -1023,10 +1023,11 @@ async def _my_matters_items(
     db: AsyncSession,
     user,
     tenant_id,
-    *,
-    limit: int | None = 100,
 ) -> list[MatterSummaryMyMatters]:
-    """Load and enrich matters assigned to the user, sorted by deadline (nulls last)."""
+    """Load and enrich every matter assigned to the user, sorted by deadline (nulls last).
+
+    The caller paginates the result; there is no silent row cap.
+    """
     q = (
         select(Matter)
         .options(
@@ -1045,7 +1046,6 @@ async def _my_matters_items(
                 )
             ),
         )
-        .limit(limit)
     )
     result = await db.execute(q)
     matters = result.unique().scalars().all()
@@ -1206,20 +1206,6 @@ async def _my_matters_items(
     return items
 
 
-@router.get("/my", response_model=list[MatterSummaryMyMatters])
-async def get_my_matters(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get matters assigned to the current user, sorted by deadline, role-aware.
-
-    Legacy shape kept for existing callers; it remains capped at 100. Use
-    ``/my/page`` for a bounded page with a scoped total.
-    """
-    user = await get_current_user(request, db)
-    return await _my_matters_items(db, user, user.tenant_id, limit=100)
-
-
 @router.get("/my/page", response_model=MatterMyMattersPage)
 async def get_my_matters_page(
     request: Request,
@@ -1229,7 +1215,7 @@ async def get_my_matters_page(
 ):
     """Bounded, ordered page of the current user's assigned matters with a total."""
     user = await get_current_user(request, db)
-    items = await _my_matters_items(db, user, user.tenant_id, limit=None)
+    items = await _my_matters_items(db, user, user.tenant_id)
     start = (page - 1) * page_size
     return MatterMyMattersPage(
         items=items[start : start + page_size],

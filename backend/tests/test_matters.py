@@ -306,9 +306,9 @@ async def test_matter_summaries_carry_originating_attorney_stage_and_updated_at(
     assert summary["stage"] == "Pre-trial"
     assert summary["updated_at"] is not None
 
-    mine = await client.get("/api/matters/my")
+    mine = await client.get("/api/matters/my/page")
     assert mine.status_code == 200, mine.text
-    my_summary = next(item for item in mine.json() if item["id"] == matter_id)
+    my_summary = next(item for item in mine.json()["items"] if item["id"] == matter_id)
     assert my_summary["partner_attorney_name"] == test_user.full_name
     assert my_summary["stage"] == "Pre-trial"
     assert my_summary["updated_at"] is not None

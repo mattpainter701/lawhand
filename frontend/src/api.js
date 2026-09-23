@@ -2618,8 +2618,6 @@ export const getMatterCloseReadiness = (id) =>
 
 export const reopenMatter = (id) =>
   api.post(`/matters/${id}/reopen`).then((r) => r.data)
-export const getMyMatters = () =>
-  api.get('/matters/my').then(r => r.data)
 export const getMyMattersPage = (params = {}) =>
   api.get('/matters/my/page', { params }).then(r => r.data)
 export const getMatterStats = () =>

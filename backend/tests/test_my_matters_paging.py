@@ -65,9 +65,9 @@ async def test_my_matters_page_reaches_past_the_legacy_cap(
 ):
     await _add_assigned_matters(db_session, test_tenant.id, test_user.id, 105)
 
-    legacy = await client.get("/api/matters/my")
-    assert legacy.status_code == 200, legacy.text
-    assert len(legacy.json()) == 100
+    # The legacy capped endpoint is retired; the page reaches past #100.
+    retired = await client.get("/api/matters/my")
+    assert retired.status_code == 404
 
     last = await client.get(
         "/api/matters/my/page", params={"page": 3, "page_size": 50}

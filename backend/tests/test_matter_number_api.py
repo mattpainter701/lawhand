@@ -48,9 +48,9 @@ async def test_the_number_travels_with_every_matter_view(client):
     numbers = [item["matter_number"] for item in listing.json()["items"]]
     assert created["matter_number"] in numbers
 
-    mine = await client.get("/api/matters/my")
+    mine = await client.get("/api/matters/my/page")
     assert mine.status_code == 200
-    assert created["matter_number"] in [item["matter_number"] for item in mine.json()]
+    assert created["matter_number"] in [item["matter_number"] for item in mine.json()["items"]]
 
 
 @pytest.mark.asyncio

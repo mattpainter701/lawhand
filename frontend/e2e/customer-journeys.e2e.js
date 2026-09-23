@@ -77,9 +77,6 @@ test.describe('/demo customer entry', () => {
       if (sessionCreated && path === '/api/matters' && request.method() === 'GET') {
         return json(route, [])
       }
-      if (sessionCreated && path === '/api/matters/my' && request.method() === 'GET') {
-        return json(route, [])
-      }
       if (sessionCreated && path === '/api/matters/my/page' && request.method() === 'GET') {
         return json(route, { items: [], total: 0, page: 1, page_size: 200 })
       }
