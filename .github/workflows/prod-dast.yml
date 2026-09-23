@@ -33,7 +33,12 @@ jobs:
         continue-on-error: true
         run: |
           set -Eeuo pipefail
-          output="$(sudo -n /usr/local/sbin/lawhand-dast-scan)"
+          # Capture the exit code rather than letting `set -e` abort here: the
+          # entrypoint's stdout is the only record of how far it got, and under
+          # command substitution it is lost unless it is printed on the failing
+          # path too.
+          scan_exit=0
+          output="$(sudo -n /usr/local/sbin/lawhand-dast-scan)" || scan_exit=$?
           printf '%s\n' "$output"
           json="$(printf '%s\n' "$output" | sed -n 's/^ZAP_REPORT_JSON=//p' | tail -n1)"
           md="$(printf '%s\n' "$output" | sed -n 's/^ZAP_REPORT_MD=//p' | tail -n1)"
@@ -46,6 +51,10 @@ jobs:
             fi
           fi
           echo "zap_exit=${zap_exit:-100}" >> "$GITHUB_OUTPUT"
+          if [[ "$scan_exit" -ne 0 ]]; then
+            echo "::error::lawhand-dast-scan exited $scan_exit without a report" >&2
+            exit "$scan_exit"
+          fi
 
       - name: Upload DAST report
         if: always()
@@ -85,7 +94,10 @@ jobs:
         continue-on-error: true
         run: |
           set -Eeuo pipefail
-          output="$(sudo -n /usr/local/sbin/lawhand-active-scan)"
+          # Same capture as the baseline step: keep the entrypoint's stdout on
+          # the failing path so a broken install is legible in the log.
+          scan_exit=0
+          output="$(sudo -n /usr/local/sbin/lawhand-active-scan)" || scan_exit=$?
           printf '%s\n' "$output"
           jsonl="$(printf '%s\n' "$output" | sed -n 's/^NUCLEI_REPORT_JSONL=//p' | tail -n1)"
           nuclei_exit="$(printf '%s\n' "$output" | sed -n 's/^NUCLEI_SCAN_EXIT=//p' | tail -n1)"
@@ -94,6 +106,10 @@ jobs:
             cp "$jsonl" "$RUNNER_TEMP/nuclei/nuclei-report.jsonl"
           fi
           echo "nuclei_exit=${nuclei_exit:-100}" >> "$GITHUB_OUTPUT"
+          if [[ "$scan_exit" -ne 0 ]]; then
+            echo "::error::lawhand-active-scan exited $scan_exit without a report" >&2
+            exit "$scan_exit"
+          fi
 
       - name: Upload Nuclei report
         if: always()

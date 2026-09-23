@@ -242,6 +242,12 @@ Two collisions are handled deliberately, both observed on real stage runs:
   restic's exclusive repository lock when a deploy's proven-backup step runs.
   `backup_db.sh` passes `--retry-lock "${RESTIC_RETRY_LOCK:-10m}"` to
   `restic backup`, so the loser waits a bounded window instead of failing.
+  The restore rehearsals (`restore_rehearsal.sh`,
+  `courtlistener_rag_restore_rehearsal.sh`) read the same repository on their
+  own schedule and pass the same flag for the same reason: before that, a
+  rehearsal that landed inside a backup's lock window aborted with "waiting up
+  to 0s for the lock" and filed a `[dr-alert]` issue that said nothing about
+  whether the snapshot was restorable.
 - A release that recreates the LiteLLM gateway (rare after the content-hash
   cadence) waits up to six minutes for its first healthcheck before the
   release verification gates run, so a slow gateway start is no longer

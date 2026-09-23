@@ -2229,6 +2229,20 @@ def test_production_preflight_allows_zoom_selector_to_be_omitted(
     assert "optional Zoom provider gate cannot be requested" in output
 
 
+def test_restore_rehearsals_wait_out_a_concurrent_backup_lock() -> None:
+    # Every restic command takes a repository lock and `check` takes the
+    # exclusive one. The hourly legalapp-backup.timer can hold it for minutes,
+    # and on 2026-09-21 the Skynet DR rehearsal landed inside that window and
+    # aborted with "waiting up to 0s for the lock", filing a DR alert that said
+    # nothing about whether the backup was restorable. backup_db.sh already
+    # retries for a bounded window; the rehearsals that read the same
+    # repository must too.
+    for name in ("restore_rehearsal.sh", "courtlistener_rag_restore_rehearsal.sh"):
+        script = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert "restic restore latest --retry-lock" in script, name
+        assert '"${RESTIC_RETRY_LOCK:-10m}"' in script, name
+
+
 def test_production_guards_cover_litellm_data_and_schema() -> None:
     data_guard = (ROOT / "scripts" / "prod_data_guard.sh").read_text(encoding="utf-8")
     production_check = (ROOT / "scripts" / "production_check.sh").read_text(
