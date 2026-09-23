@@ -1023,11 +1023,64 @@ async def _my_matters_items(
     db: AsyncSession,
     user,
     tenant_id,
-) -> list[MatterSummaryMyMatters]:
-    """Load and enrich every matter assigned to the user, sorted by deadline (nulls last).
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    search: str | None = None,
+    status: str | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+) -> tuple[list[MatterSummaryMyMatters], int]:
+    """One bounded page of matters assigned to the user, plus the scoped total.
 
-    The caller paginates the result; there is no silent row cap.
+    Filtering, ordering and the page slice happen in SQL over the assignment
+    predicate, so the total counts every permitted match and pages cannot
+    repeat or skip rows. ``Matter.id`` is the tie-break behind the chosen sort
+    column so a tie is still a stable order. Only the page's rows are enriched.
     """
+    conditions = [
+        Matter.tenant_id == tenant_id,
+        Matter.is_closed.is_(False),
+        Matter.id.in_(
+            select(MatterAssignment.matter_id).where(
+                MatterAssignment.user_id == user.id,
+                MatterAssignment.tenant_id == tenant_id,
+            )
+        ),
+    ]
+    if status and status != "all":
+        conditions.append(Matter.status == status)
+    if search:
+        pattern = f"%{search.strip()}%"
+        conditions.append(
+            or_(
+                Matter.matter_name.ilike(pattern),
+                Matter.matter_number.ilike(pattern),
+                Matter.client_contact_id.in_(
+                    select(Contact.id).where(
+                        Contact.tenant_id == tenant_id,
+                        or_(
+                            func.trim(
+                                func.coalesce(Contact.first_name, "")
+                                + " "
+                                + func.coalesce(Contact.last_name, "")
+                            ).ilike(pattern),
+                            Contact.organization_name.ilike(pattern),
+                        ),
+                    )
+                ),
+            )
+        )
+
+    total = (
+        await db.execute(
+            select(func.count()).select_from(Matter).where(and_(*conditions))
+        )
+    ).scalar() or 0
+
+    sort_col = getattr(Matter, sort_by, Matter.updated_at)
+    sort_col = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
+
     q = (
         select(Matter)
         .options(
@@ -1036,16 +1089,10 @@ async def _my_matters_items(
             selectinload(Matter.attorney_of_record),
             selectinload(Matter.partner_attorney),
         )
-        .where(
-            Matter.tenant_id == tenant_id,
-            Matter.is_closed.is_(False),
-            Matter.id.in_(
-                select(MatterAssignment.matter_id).where(
-                    MatterAssignment.user_id == user.id,
-                    MatterAssignment.tenant_id == tenant_id,
-                )
-            ),
-        )
+        .where(and_(*conditions))
+        .order_by(sort_col, Matter.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
     result = await db.execute(q)
     matters = result.unique().scalars().all()
@@ -1196,14 +1243,7 @@ async def _my_matters_items(
             )
         )
 
-    # Sort by next_deadline ascending (nulls last)
-    items.sort(
-        key=lambda x: (
-            x.next_deadline is None,
-            x.next_deadline or datetime.max.replace(tzinfo=timezone.utc),
-        )
-    )
-    return items
+    return items, total
 
 
 @router.get("/my/page", response_model=MatterMyMattersPage)
@@ -1211,15 +1251,28 @@ async def get_my_matters_page(
     request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    q: str | None = Query(None),
+    status: str | None = Query(None),
+    sort_by: str = Query("updated_at"),
+    sort_dir: str = Query("desc"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bounded, ordered page of the current user's assigned matters with a total."""
+    """Bounded, ordered page of the current user's assigned matters with a scoped total."""
     user = await get_current_user(request, db)
-    items = await _my_matters_items(db, user, user.tenant_id)
-    start = (page - 1) * page_size
+    items, total = await _my_matters_items(
+        db,
+        user,
+        user.tenant_id,
+        page=page,
+        page_size=page_size,
+        search=q,
+        status=status,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
     return MatterMyMattersPage(
-        items=items[start : start + page_size],
-        total=len(items),
+        items=items,
+        total=total,
         page=page,
         page_size=page_size,
     )
