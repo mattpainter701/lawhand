@@ -632,7 +632,7 @@ export function MatterLifecycleBoard({ matters, onMove, onToggleActive, toggling
 
 export function MatterPortfolioRow({ matter: m }) {
   return (
-    <tr className="group transition-colors hover:bg-brand-bg-soft">
+    <tr className="transition-colors hover:bg-brand-bg-soft">
       <td className="max-w-xs px-5 py-0 pl-6">
         <Link
           to={`/matters/${m.id}`}
@@ -665,11 +665,8 @@ export function MatterPortfolioRow({ matter: m }) {
       </td>
       <td className="px-5 py-4"><RiskBadge level={m.risk_level} /></td>
       <td className="px-5 py-4"><StatusBadge status={m.status} /></td>
-      <td className="whitespace-nowrap px-5 py-4 font-sans text-[13px] text-brand-muted">
+      <td className="whitespace-nowrap px-5 py-4 pr-6 font-sans text-[13px] text-brand-muted">
         {formatOpenDate(m.opened_on || m.created_at) || '—'}
-      </td>
-      <td className="px-5 py-4 pr-6 text-right">
-        <span className="font-sans text-sm font-semibold text-brand-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">View →</span>
       </td>
     </tr>
   )
@@ -1108,9 +1105,9 @@ export default function MatterPortfolioPage() {
 
         {/* ── Portfolio Header ────────────────────────────────────────────────── */}
         <div className="mb-6">
-          <h2 className="font-serif font-bold text-2xl text-brand-ink mb-1">All Matters</h2>
+          <h2 className="font-serif font-bold text-2xl text-brand-ink mb-1">All accessible matters</h2>
           <p className="text-brand-ink-2 text-[14px] font-sans">
-            {matters.length} matter{matters.length !== 1 ? 's' : ''} in portfolio
+            {matters.length} matter{matters.length !== 1 ? 's' : ''} you can access
           </p>
         </div>
 
@@ -1233,10 +1230,10 @@ export default function MatterPortfolioPage() {
               <table className="min-w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-brand-bg-soft/50 border-b border-brand-line">
-                    {['Matter', 'Number', 'Client', 'Attorney', 'Practice Area', 'Cloud Folder', 'Risk', 'Status', 'Opened', ''].map((h, i) => (
+                    {['Matter', 'Number', 'Client', 'Attorney', 'Practice Area', 'Cloud Folder', 'Risk', 'Status', 'Opened'].map((h, i) => (
                       <th
                         key={i}
-                        className={`px-5 py-4 text-[11px] font-bold text-brand-muted uppercase tracking-widest font-sans whitespace-nowrap ${i === 0 ? 'pl-6' : ''} ${i === 9 ? 'pr-6' : ''}`}
+                        className={`px-5 py-4 text-[11px] font-bold text-brand-muted uppercase tracking-widest font-sans whitespace-nowrap ${i === 0 ? 'pl-6' : ''} ${i === 8 ? 'pr-6' : ''}`}
                       >
                         {h}
                       </th>
