@@ -224,6 +224,17 @@ export function needsAction(m) {
   return false
 }
 
+export function isOpenMatter(m) {
+  return !['closed', 'settled', 'dismissed'].includes(m.status)
+}
+
+// The attention view and its header count must be the same set: open matters
+// that need action. A closed matter with a stale label must not inflate one
+// without the other. S3.04.
+export function needsAttention(m) {
+  return isOpenMatter(m) && needsAction(m)
+}
+
 // Matters due tomorrow (shown as "Upcoming")
 function dueTomorrow(m) {
   if (m.overdue_deadline_label && m.overdue_deadline_label.toLowerCase().includes('due tomorrow')) return true
@@ -828,7 +839,7 @@ export default function MatterPortfolioPage() {
   }, [myMatters])
 
   const myVisible = useMemo(() => myMatters.filter(m => {
-    if (attentionOnly && !needsAction(m)) return false
+    if (attentionOnly && !needsAttention(m)) return false
     if (myStatusFilter !== 'all' && matterLifecycleStatus(m) !== myStatusFilter) return false
     if (mySearch) {
       const q = mySearch.toLowerCase()
@@ -885,8 +896,8 @@ export default function MatterPortfolioPage() {
 
   // Board columns (from myMatters)
   const boardColumns = useMemo(() => {
-    const active = myMatters.filter(m => !['closed', 'settled', 'dismissed'].includes(m.status))
-    const needsActionList = active.filter(m => needsAction(m))
+    const active = myMatters.filter(isOpenMatter)
+    const needsActionList = active.filter(needsAttention)
     const upcomingList = active.filter(m => !needsAction(m) && dueTomorrow(m))
     const skipIds = new Set([...needsActionList, ...upcomingList].map(m => m.id))
     const activeList = active.filter(m => !skipIds.has(m.id) && (m.status === 'active' || m.is_active_working))
