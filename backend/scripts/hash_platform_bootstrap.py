@@ -6,9 +6,12 @@ import hashlib
 import json
 
 
+# Kept in step with app.services.platform_auth.PLATFORM_SCOPES by a test; the
+# script runs standalone in the backend container, so it does not import it.
 ALLOWED_SCOPES = {
     "platform:read",
     "platform:write",
+    "platform:debug",
     "platform:llm:read",
     "platform:llm:write",
 }
