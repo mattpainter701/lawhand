@@ -1264,6 +1264,53 @@ describe('document template workflow', () => {
     expect(await screen.findByRole('region', { name: 'Preview of Flat Scan' })).toBeInTheDocument()
   })
 
+  it('requires a fresh preview when a saved PDF preview has expired', async () => {
+    getTemplates.mockResolvedValueOnce({ items: [{
+      id: 'expired-pdf', title: 'Expired Preview Form', body: '{{client_name}}', category: 'other',
+      format: 'pdf', source_filename: 'expired.pdf', source_sha256: 'abc', is_active: true,
+      variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }] },
+    }] })
+    discoverTemplateVariables.mockResolvedValueOnce({ variables: [{
+      variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false,
+    }] })
+    const firstPreview = { blob: new Blob(['%PDF-1.7 first']), filename: 'Expired_Preview_Form.pdf', previewId: 'preview-old', previewPurpose: 'generation' }
+    const refreshedPreview = { blob: new Blob(['%PDF-1.7 refreshed']), filename: 'Expired_Preview_Form.pdf', previewId: 'preview-new', previewPurpose: 'generation' }
+    renderTemplateFile.mockResolvedValueOnce(firstPreview).mockResolvedValueOnce(refreshedPreview)
+    const expired = new Error('Preview evidence expired. Generate a new preview.')
+    expired.response = { status: 409, data: { detail: expired.message } }
+    renderTemplate.mockRejectedValueOnce(expired).mockResolvedValueOnce({
+      matter_document_id: 'expired-document', output_format: 'pdf', output_filename: 'Expired_Preview_Form.pdf',
+    })
+    const user = userEvent.setup()
+    render(<TemplatesPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Generate' }))
+    await user.click(screen.getByRole('button', { name: /Smith Matter/ }))
+    await screen.findByDisplayValue('Ada Smith')
+    await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledWith('expired-pdf', expect.objectContaining({
+      matter_id: 'matter-1', preview_purpose: 'generation', variables: { client_name: 'Ada Smith' },
+    })))
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
+
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
+    expect(await screen.findByRole('button', { name: 'Retry preview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Download preview' })).toBeDisabled()
+    expect(renderTemplate).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Retry preview' }))
+    await waitFor(() => expect(renderTemplateFile).toHaveBeenCalledTimes(2))
+    await screen.findByText('Preview is up to date. Review every page, then save to your matter.')
+    expect(renderTemplate).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Save to matter' }))
+    await waitFor(() => expect(renderTemplate).toHaveBeenCalledTimes(2))
+    expect(renderTemplate).toHaveBeenLastCalledWith('expired-pdf', expect.objectContaining({
+      matter_id: 'matter-1', preview_id: 'preview-new', variables: { client_name: 'Ada Smith' },
+    }))
+  })
+
   it('uses linked Word values and clears the other answer in an exclusive choice group', async () => {
     getTemplates.mockResolvedValueOnce({ items: [{
       id: 'word-choices', title: 'Word choices', body: '', category: 'other', format: 'docx', source_filename: 'synthetic.docx', source_sha256: 'abc', is_active: true,

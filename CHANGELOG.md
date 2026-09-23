@@ -4,6 +4,7 @@
 - The previous PDF remains visible with an out-of-date notice during refresh; its preview evidence is invalidated immediately and Save/download stay disabled until current output arrives. The Prepare stepper also requires current PDF evidence. Required blanks disable Save, which is now labeled "Save to matter."
 - Generated previews preserve page/zoom choices across blob updates, clamp pages for shorter output, and clear old canvas errors. Source-reference help matches automatic previews, and source-correction guidance is collapsed by default.
 - No automatic save, publication, verification or signing actions were added. Existing tenant/matter/value-bound preview validation and explicit activation tests are unchanged.
+- A save rejected for expired or mismatched preview evidence exposes Retry preview while preserving answers; storage failures keep usable preview evidence for an explicit save retry.
 
 ## 2026.09.22.06 — Reliable matter attention entry and visible list scope
 

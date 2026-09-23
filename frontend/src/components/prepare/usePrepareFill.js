@@ -496,7 +496,20 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         setError('The server rendered the text but did not return a saved matter document.')
       }
     } catch (err) {
-      if (mountedRef.current) setError(getErrorMessage(err, 'Save failed.'))
+      if (mountedRef.current) {
+        const message = getErrorMessage(err, 'Save failed.')
+        setError(message)
+        // Preview evidence expires on the server. Since generation is now
+        // automatic, expose a retry when the server rejects this evidence;
+        // neither changing an answer nor retrying the save should be required
+        // just to obtain a fresh preview. Do not repeat the save automatically.
+        if (isPdfOutput && formRevisionRef.current === saveRevision
+          && err?.response?.status === 409 && /preview/i.test(String(message))) {
+          setPreviewId('')
+          setPreviewPurpose('')
+          setPreviewError(message)
+        }
+      }
     } finally {
       if (mountedRef.current) setSaving(false)
     }
