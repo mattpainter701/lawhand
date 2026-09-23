@@ -187,8 +187,9 @@ describe('ProviderCard states', () => {
     }
     render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={info} />)
     expect(screen.getByText('Healthy')).toBeInTheDocument()
-    expect(screen.getByText(/directory sync not available on this tier/)).toBeInTheDocument()
-    expect(screen.getByText('Not on this tier')).toBeInTheDocument()
+    expect(screen.getByText(/directory sync unavailable for this account/)).toBeInTheDocument()
+    expect(screen.getByText('Unavailable for this account')).toBeInTheDocument()
+    expect(screen.getByText(/Directory sync imports organization users. Its availability is separate from document storage/)).toBeInTheDocument()
     expect(screen.queryByText(info.last_sync_error)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull()
   })
@@ -209,7 +210,7 @@ describe('IntegrationsPanel actions', () => {
     expect(cards.map((el) => el.dataset.testid)).toEqual(['provider-card-microsoft', 'provider-card-google'])
     const storage = screen.getByTestId('document-storage')
     expect(storage).not.toHaveAttribute('open')
-    expect(screen.getByText(/Automatic: OneDrive for Microsoft 365 tenants/)).toBeInTheDocument()
+    expect(screen.getByText(/Automatic provider: Google Drive .* matter folder access is checked when saving/)).toBeInTheDocument()
     // Operator tooling no longer renders inside the firm-admin panel.
     expect(screen.queryByText('Storage migration')).toBeNull()
     expect(screen.queryByText('Tabs3 Import')).toBeNull()
@@ -292,8 +293,9 @@ describe('IntegrationsPanel actions', () => {
     await user.selectOptions(screen.getByLabelText('Primary cloud provider'), 'google_drive')
     await user.click(screen.getByRole('button', { name: 'Confirm change' }))
     expect(updateAdminSettings).toHaveBeenCalledWith({ primary_cloud_provider: 'google_drive' })
-    expect(await screen.findByText('Saved')).toBeInTheDocument()
-    expect(screen.getByText(/Matter documents go to Google Drive/)).toBeInTheDocument()
+    expect(await screen.findByText('Preference saved')).toBeInTheDocument()
+    expect(screen.getByText(/Connection available: Google Drive/)).toBeInTheDocument()
+    expect(screen.getByText(/matter folder access is checked when saving/)).toBeInTheDocument()
   })
 
   it('shows the load error instead of an empty page when permissions fail', async () => {
@@ -332,6 +334,7 @@ describe('PrimaryCloudSelector', () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
     render(<PrimaryCloudSelector value="onedrive" saving={false} saved={false} onChange={onChange} />)
+    expect(screen.getByText(/Saving this preference does not verify an individual matter folder/)).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Primary cloud provider'), 'sharepoint')
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onChange).not.toHaveBeenCalled()

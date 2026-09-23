@@ -28,6 +28,21 @@ describe('deriveStorageReadiness', () => {
     expect(result).toMatchObject({ status: 'ready', ready: true })
   })
 
+  it('keeps file storage available when directory sync is unavailable', () => {
+    const result = deriveStorageReadiness({
+      primaryCloud: 'google_drive',
+      google: {
+        ...healthy,
+        capabilities: {
+          directory_sync: { available: false, status: 'unavailable', reason: 'account type' },
+          cloud_storage: { available: true, status: 'ok', reason: 'available' },
+        },
+      },
+    })
+    expect(result).toMatchObject({ status: 'ready', ready: true })
+    expect(result.reason).toMatch(/connection is available.*each matter folder is checked when saving/i)
+  })
+
   it('requires a verified SharePoint library after Microsoft is healthy', () => {
     const result = deriveStorageReadiness({ primaryCloud: 'sharepoint', microsoft: healthy })
     expect(result).toMatchObject({ status: 'needs_binding', ready: false })

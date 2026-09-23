@@ -51,8 +51,10 @@ describe('ProviderCard tier status', () => {
   it('shows a neutral not-applicable state for personal accounts', () => {
     render(<ProviderCard {...props} info={baseInfo} />)
     expect(screen.getByText('Personal Google (Gmail)')).toBeTruthy()
-    expect(screen.getByText(/directory sync not available on this tier/)).toBeTruthy()
-    expect(screen.getByText('Not on this tier')).toBeTruthy()
+    expect(screen.getByText(/directory sync unavailable for this account/)).toBeTruthy()
+    expect(screen.getByText('Unavailable for this account')).toBeTruthy()
+    expect(screen.getByText(/Directory sync imports organization users. Its availability is separate from document storage/)).toBeTruthy()
+    expect(screen.getByText('Cloud file storage').parentElement).toHaveTextContent('Available')
     expect(screen.queryByText(baseInfo.last_sync_error)).toBeNull()
   })
 

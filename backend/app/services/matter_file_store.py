@@ -97,6 +97,7 @@ class StorageResult:
     drive_id: str | None = None
     parent_id: str | None = None
     error: str | None = None
+    error_code: str | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -640,6 +641,7 @@ class MatterFileStore:
             else ([] if policy_bound else _ordered_providers(None))
         )
 
+        result = None
         for provider in providers:
             if provider == "onedrive":
                 result = await self._try_store_onedrive(
@@ -691,13 +693,28 @@ class MatterFileStore:
         # A cloud-bound tenant never spills into another provider or onto the
         # application host. require_cloud callers retain their structured result.
         if require_cloud:
+            binding_failure = (
+                result
+                if result and result.error_code == "matter_folder_not_provisioned"
+                else None
+            )
+            message = (
+                _matter_folder_setup_required_message(configured_provider)
+                if binding_failure
+                else "Required cloud storage upload failed; local storage is disabled."
+            )
             return StorageResult(
                 provider=configured_provider or "cloud",
                 backend=configured_provider or "cloud",
-                error="Required cloud storage upload failed; local storage is disabled.",
+                error=message,
+                error_code=(binding_failure.error_code if binding_failure else None),
             )
 
         if policy_bound:
+            if result and result.error_code == "matter_folder_not_provisioned":
+                raise MatterFileStoragePolicyError(
+                    _matter_folder_setup_required_message(configured_provider)
+                )
             raise MatterFileStoragePolicyError(
                 _configured_provider_failure_message(configured_provider)
             )
@@ -835,8 +852,11 @@ class MatterFileStore:
                     token, [category], matter_folder_id
                 )
             else:
-                raise MatterFileStoragePolicyError(
-                    "Matter folder is not bound to OneDrive. Provision or remap it in File Shares, then retry."
+                return StorageResult(
+                    provider="microsoft",
+                    backend="onedrive",
+                    error=_matter_folder_setup_required_message("onedrive"),
+                    error_code="matter_folder_not_provisioned",
                 )
 
             if len(content) > self._CHUNK_THRESHOLD_ONEDRIVE:
@@ -1028,8 +1048,11 @@ class MatterFileStore:
                     token, [category], matter_folder_id
                 )
             else:
-                raise MatterFileStoragePolicyError(
-                    "Matter folder is not bound to Google Drive. Provision or remap it in File Shares, then retry."
+                return StorageResult(
+                    provider="google",
+                    backend="google_drive",
+                    error=_matter_folder_setup_required_message("google_drive"),
+                    error_code="matter_folder_not_provisioned",
                 )
 
             # Reuse an earlier crash/retry object only when Google confirms the
@@ -1643,6 +1666,19 @@ def _configured_provider_failure_message(provider: str | None) -> str:
     return (
         f"Configured {label} storage is unavailable. No durable local copy was "
         f"created. Reconnect {label} or verify its folder permissions, then retry."
+    )
+
+
+def _matter_folder_setup_required_message(provider: str | None) -> str:
+    labels = {
+        "onedrive": "OneDrive",
+        "sharepoint": "SharePoint",
+        "google_drive": "Google Drive",
+    }
+    label = labels.get(provider or "", "cloud storage")
+    return (
+        f"This matter's {label} folder is not set up. In Documents > Document tools, "
+        f"choose Set up folders, then retry. No file was stored."
     )
 
 

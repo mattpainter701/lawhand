@@ -199,8 +199,8 @@ export default function IntegrationsPanel() {
   const anyConnected = Boolean(data.microsoft?.connected || data.google?.connected)
   const storageSummary = storageReadiness.ready
     ? (primaryCloud
-      ? `Matter documents go to ${storageReadiness.label}`
-      : `Automatic: OneDrive for Microsoft 365 tenants, otherwise Google Drive · currently ${storageReadiness.label}`)
+      ? `Connection available: ${storageReadiness.label} · matter folder access is checked when saving`
+      : `Automatic provider: ${storageReadiness.label} · connection available; matter folder access is checked when saving`)
     : storageReadiness.reason
   const storageTone = storageReadiness.ready ? 'ok' : storageReadiness.status === 'not_connected' ? 'off' : 'warn'
 
@@ -354,6 +354,7 @@ export function PrimaryCloudSelector({ value, saving, saved, onChange }) {
       <h3 className="text-brand-ink font-sans text-sm font-bold mb-1">Primary provider for matter documents</h3>
       <p className="text-brand-ink-2 font-sans text-xs mb-3">
         Customer-owned storage for matter files. Changing this repoints new writes; existing folders are not moved.
+        {' '}Saving this preference does not verify an individual matter folder; access is checked when saving a document.
         Use Storage migration under Advanced to rebind existing matters.
       </p>
       <div className="flex items-center gap-3 flex-wrap">
@@ -373,7 +374,7 @@ export function PrimaryCloudSelector({ value, saving, saved, onChange }) {
           <span className="w-4 h-4 border-2 border-brand-ink border-t-transparent rounded-full animate-spin" />
         )}
         {!saving && saved && pending === null && (
-          <span className="text-xs text-green-700 font-medium">Saved</span>
+          <span className="text-xs text-green-700 font-medium">Preference saved</span>
         )}
       </div>
       {pending !== null && (
@@ -717,7 +718,7 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
           {info.connected && (
             <p className="mt-1 text-xs text-brand-ink-2 font-sans">
               {info.user_count ?? 0} users synced
-              {info.last_sync_status === 'failed' ? ' · last sync failed' : info.last_sync_status === 'not_applicable' ? ' · directory sync not available on this tier' : ` · last run ${relTime(info.last_sync_at)}`}
+              {info.last_sync_status === 'failed' ? ' · last sync failed' : info.last_sync_status === 'not_applicable' ? ' · directory sync unavailable for this account' : ` · last run ${relTime(info.last_sync_at)}`}
             </p>
           )}
           {info.connected && (
@@ -819,13 +820,19 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
       {info.connected && !unusable && info.capabilities && (
         <div className="mt-4 pt-4 border-t border-brand-line">
           <p className="text-xs font-bold text-brand-ink mb-2 font-sans">Features on this account</p>
+          {info.capabilities.directory_sync?.status === 'unavailable' && (
+            <p className="mb-2 text-xs text-brand-muted font-sans">Directory sync imports organization users. Its availability is separate from document storage.</p>
+          )}
           <div className="space-y-1.5">
             {Object.entries(info.capabilities).map(([key, capability]) => {
               const badge = CAP_BADGE[capability.status] || CAP_BADGE.unavailable
+              const badgeText = key === 'directory_sync' && capability.status === 'unavailable'
+                ? 'Unavailable for this account'
+                : badge.text
               return (
                 <div key={key} className="flex items-center justify-between gap-3" title={capability.reason}>
                   <span className="text-xs text-brand-ink-2 font-sans">{CAPABILITY_LABELS[key] || key}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badge.text}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badgeText}</span>
                 </div>
               )
             })}
