@@ -30,6 +30,7 @@ export default function TemplateStudioWorkspace({
   onSaveFields,
   onRestored,
   onDerived,
+  preparationContext = null,
 }) {
   const base = `/templates/${encodeURIComponent(String(template.id).toLowerCase())}/studio`
   const statusRef = useRef(null)
@@ -64,8 +65,8 @@ export default function TemplateStudioWorkspace({
   return (
     <div className={`studio-shell bg-brand-bg ${focused ? 'fixed inset-0 z-40' : 'h-full'}`} data-focused={focused}>
       <main className="studio-shell-main mx-auto w-full" aria-labelledby="template-studio-title">
-        <div className="flex items-center justify-between gap-3 px-3 pt-2"><Link to="/templates" onClick={guardNavigation} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-muted hover:text-brand-ink">
-          <ArrowLeft size={16} aria-hidden="true" /> Template Studio
+        <div className="flex items-center justify-between gap-3 px-3 pt-2"><Link to={preparationContext?.returnTo || "/templates"} onClick={guardNavigation} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-muted hover:text-brand-ink">
+          <ArrowLeft size={16} aria-hidden="true" /> {preparationContext?.returnTo ? 'Back to matter' : 'Template Studio'}
         </Link><button type="button" onClick={() => setFocused(value => !value)} className="text-xs font-semibold text-brand-muted underline">{focused ? 'Show app navigation' : 'Focus on document'}</button></div>
         <header className="border-b border-brand-line bg-brand-surface-2 px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -90,7 +91,7 @@ export default function TemplateStudioWorkspace({
                   title={template.is_active ? 'Fill this template from a matter, review it, and save it there' : 'Publish a tested version first.'}
                   className="inline-flex items-center gap-2 rounded-lg border border-brand-accent px-3 py-2 text-sm font-semibold text-brand-ink disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <FolderInput size={16} aria-hidden="true" /> Use on a matter
+                  <FolderInput size={16} aria-hidden="true" /> {preparationContext?.matterId ? 'Use on this matter' : 'Use on a matter'}
                 </button>
               )}
               {template.published_version_no !== template.current_version_no && template.tested_version_no === template.current_version_no && template.current_version_no > 0 && (
@@ -106,7 +107,7 @@ export default function TemplateStudioWorkspace({
 
         <nav aria-label="Template Studio workspace sections" className="flex gap-1 overflow-x-auto border-b border-brand-line bg-brand-surface-2 px-2 py-1">
           {tabs.map(({ key, label, suffix, icon: Icon }) => (
-            <Link key={key} to={`${base}${suffix}`} onClick={guardNavigation} aria-current={section === key ? 'page' : undefined} className={`inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${section === key ? 'bg-brand-ink text-white' : 'text-brand-muted hover:bg-brand-bg hover:text-brand-ink'}`}>
+            <Link key={key} to={`${base}${suffix}`} state={preparationContext ? { preparationContext } : undefined} onClick={guardNavigation} aria-current={section === key ? 'page' : undefined} className={`inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${section === key ? 'bg-brand-ink text-white' : 'text-brand-muted hover:bg-brand-bg hover:text-brand-ink'}`}>
               <Icon size={15} aria-hidden="true" /> {label}
             </Link>
           ))}

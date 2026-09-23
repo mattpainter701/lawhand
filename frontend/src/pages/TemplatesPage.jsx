@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useId, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useLocation, useNavigate } from 'react-router-dom'
 import TemplateStudioHome from '../components/templates/TemplateStudioHome'
+import LibraryTemplateImport from '../components/templates/LibraryTemplateImport'
+import { applyLibrarySampleMetadata } from '../components/templates/libraryTemplateIntake'
 import TemplateStudioWorkspace from '../components/templates/TemplateStudioWorkspace'
 import WordImportWorkspace from '../components/templates/WordImportWorkspace'
 import {} from '../components/templates/templateFillReview'
@@ -9,7 +11,7 @@ import TemplateFieldLibrary from '../components/templates/TemplateFieldLibrary'
 import useBindingCatalogue from '../components/templates/useBindingCatalogue'
 import { buildOpenStudioTarget, canonicalStudioServerId, OPEN_STUDIO_EVENT, readStudioFocus } from '../components/templates/studioRouting'
 import usePrepareFill from '../components/prepare/usePrepareFill'
-import { buildPrepareTarget } from '../components/prepare/prepareRouting'
+import { buildPrepareTarget, readPrepareQuery } from '../components/prepare/prepareRouting'
 import PrepareDocumentBody from '../components/prepare/PrepareDocumentBody'
 import { downloadRenderedText, getErrorMessage, getTemplateVariables } from '../components/prepare/prepareHelpers'
 import {
@@ -388,7 +390,7 @@ function replaceSourceText(body, sourceText, token) {
     : part.startsWith('{{') ? part : part.split(sourceText).join(token)).join('')
 }
 
-function UploadTemplateForm({ onCreated, onCancel }) {
+function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySample = null }) {
   // The data-source catalogue the field inspectors bind against. Loaded here
   // rather than inside each workspace so the PDF and the Word intake surfaces
   // share one request and one answer.
@@ -459,7 +461,9 @@ function UploadTemplateForm({ onCreated, onCancel }) {
     setAiConsent(false)
     try {
       const form = buildFormData({ sourceFile: selectedFile })
-      const result = await analyzeTemplateUpload(form)
+      const discovered = await analyzeTemplateUpload(form)
+      const result = selectedFile === initialFile && librarySample
+        ? applyLibrarySampleMetadata(discovered, librarySample) : discovered
       if (analysisRequestRef.current !== requestId) return
       setAnalysis(result)
       setReviewConfirmed(false)
@@ -560,6 +564,14 @@ function UploadTemplateForm({ onCreated, onCancel }) {
     setRejection('')
     if (selectedFile) void handleAnalyze(selectedFile)
   }
+
+  useEffect(() => {
+    if (initialFile) {
+      selectFile(initialFile)
+      setCategory(Object.hasOwn(CATEGORY_LABELS, librarySample?.category) ? librarySample.category : 'other')
+    }
+    return () => { analysisRequestRef.current += 1 }
+  }, [initialFile])
 
   const onDrop = useCallback((acceptedFiles) => {
     if (acceptedFiles[0]) selectFile(acceptedFiles[0])
@@ -1142,6 +1154,11 @@ export function RenderModal({ template, matters = [], matterLoading = false, onC
 export default function TemplatesPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const preparedContext = readPrepareQuery(buildPrepareTarget(location.state?.preparationContext || {}).search)
+  const preparationContext = preparedContext.matterId ? {
+    matterId: preparedContext.matterId, folderId: preparedContext.folderId, returnTo: preparedContext.returnTo,
+  } : null
+  const librarySampleId = new URLSearchParams(location.search).get('sample')
   const [templates, setTemplates] = useState([])
   const [matters, setMatters] = useState([])
   const [generationTemplates, setGenerationTemplates] = useState([])
@@ -1451,7 +1468,9 @@ export default function TemplatesPage() {
     setPage(0)
     await load()
     if (activeTab === 'generate') await loadGenerationTemplates()
-    if (created?.id) navigate(`/templates/${encodeURIComponent(created.id)}/studio`)
+    if (created?.id) navigate(`/templates/${encodeURIComponent(created.id)}/studio`, {
+      state: { preparationContext, studioStatus: 'Firm draft created. Review the fields, test and publish it, then use it on your matter.' },
+    })
     else if (isNewRoute) navigate('/templates')
   }
 
@@ -1875,7 +1894,8 @@ export default function TemplatesPage() {
           statusMessage={routeStatus}
           onEdit={() => setEditTemplate(workspaceTemplate)}
           onGenerate={() => openRender(workspaceTemplate)}
-          onUseOnMatter={() => navigate(buildPrepareTarget({ templateId: workspaceTemplate.id }).url)}
+          preparationContext={preparationContext}
+          onUseOnMatter={() => navigate(buildPrepareTarget({ ...preparationContext, templateId: workspaceTemplate.id }).url)}
           onTest={() => setRenderTarget({ ...workspaceTemplate, is_active: false })}
           onPublish={handlePublishWorkspace}
           source={workspaceSource}
@@ -2030,11 +2050,13 @@ export default function TemplatesPage() {
       )}
 
       {(showUpload || (isNewRoute && new URLSearchParams(location.search).get('mode') !== 'manual')) && (
-          <Modal title="Create Template From Sample" wide onClose={() => { setShowUpload(false); if (isNewRoute) navigate('/templates') }}>
-          <UploadTemplateForm
+          <Modal title={librarySampleId ? 'Add global template to your firm' : 'Create Template From Sample'} wide onClose={() => { setShowUpload(false); if (isNewRoute) navigate(preparationContext?.returnTo || '/templates') }}>
+          {librarySampleId ? <LibraryTemplateImport sampleId={librarySampleId}>
+            {({ file, sample }) => <UploadTemplateForm initialFile={file} librarySample={sample} onCreated={handleUploadedTemplate} onCancel={() => navigate(preparationContext?.returnTo || '/templates')} />}
+          </LibraryTemplateImport> : <UploadTemplateForm
             onCreated={handleUploadedTemplate}
             onCancel={() => { setShowUpload(false); if (isNewRoute) navigate('/templates') }}
-          />
+          />}
         </Modal>
       )}
 
