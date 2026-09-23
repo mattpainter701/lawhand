@@ -396,7 +396,7 @@ export default function AppShell({ children, title }) {
           )}
 
           {/* Main content */}
-          <main className="flex-1 overflow-auto [scrollbar-gutter:stable]">
+          <main data-app-scroll className="flex-1 overflow-auto [scrollbar-gutter:stable]">
             {children}
           </main>
 

@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { reportError } from '../utils/reportError'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  readListScroll,
+  rememberListScroll,
+  rememberListUrl,
+} from '../utils/matterListMemory'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { format, parseISO, differenceInDays } from 'date-fns'
 import {
   DndContext,
@@ -674,6 +679,7 @@ export function MatterPortfolioRow({ matter: m }) {
 
 export default function MatterPortfolioPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const matterColumns = useMatterListColumns(user)
   const [myMatters, setMyMatters] = useState([])
@@ -804,6 +810,34 @@ export default function MatterPortfolioPage() {
     loadMatters()
     return () => { myRequest.current += 1 }
   }, [])
+
+  // Remember the list view (its URL and scroll offset) so returning from a
+  // matter restores the same scope, filters, sort and row. The URL already
+  // carries scope/query/filters/sort; this records the return path and where
+  // the reader had scrolled to.
+  const listUrl = `${location.pathname}${location.search}`
+  useEffect(() => { rememberListUrl(listUrl) }, [listUrl])
+  useEffect(() => {
+    const root = document.querySelector('[data-app-scroll]')
+    if (!root) return undefined
+    let frame = 0
+    const onScroll = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => rememberListScroll(listUrl, root.scrollTop))
+    }
+    root.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      rememberListScroll(listUrl, root.scrollTop)
+      root.removeEventListener('scroll', onScroll)
+    }
+  }, [listUrl])
+  useEffect(() => {
+    if (loading) return
+    const root = document.querySelector('[data-app-scroll]')
+    const saved = readListScroll(listUrl)
+    if (root && saved != null) root.scrollTop = saved
+  }, [loading, listUrl])
 
   const handleToggleActive = async (assignmentId, matterId, active) => {
     setTogglingId(assignmentId)
