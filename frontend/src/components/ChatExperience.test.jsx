@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ChatHeader from './ChatHeader'
@@ -565,31 +565,218 @@ describe('Chat assistant experience', () => {
     expect(screen.getByText('What do you want to move forward?')).toBeInTheDocument()
   })
 
-  it('keeps the review-tag legend visible for populated and loading chats', () => {
-    const { rerender } = render(
-      <Messages
-        messages={[{ id: 'user-1', role: 'user', content: 'Question' }]}
-        isLoading={false}
-        isSending={false}
+  it('keeps the review-tag key one tap away without covering the transcript', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <ChatHeader
+          activeConvTitle="Lease research"
+          usePremium={false}
+          setUsePremium={vi.fn()}
+          includePublic
+          setIncludePublic={vi.fn()}
+          onOpenSidebar={vi.fn()}
+        />
+        <Messages
+          messages={[{ id: 'user-1', role: 'user', content: 'Question' }]}
+          isLoading={false}
+          isSending={false}
+        />
+      </>,
+    )
+
+    // Nothing pinned over the answers any more.
+    expect(screen.queryByText('Tag legend:')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Review tag key' }))
+    const key = screen.getByRole('dialog', { name: 'Review tags' })
+    expect(key).toHaveClass('bg-brand-surface')
+    expect(key.className).not.toMatch(/bg-[^\s]+\/\d+/)
+    expect(within(key).getByText('Source-backed')).toBeInTheDocument()
+    expect(within(key).getByText('Confirm before relying')).toBeInTheDocument()
+    expect(within(key).getByText('General reasoning')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Review tags' })).not.toBeInTheDocument()
+  })
+
+  it('explains an inline review tag where it appears', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'answer-tags',
+          role: 'assistant',
+          content: 'Notice is required. [verify]\n\nThe rule is old. [model knowledge]',
+        }}
       />,
     )
 
-    const legend = screen.getByLabelText('Review tag legend')
-    expect(legend).toHaveClass('sticky')
-    expect(legend).not.toHaveClass('hidden')
-    expect(screen.getByText('Tag legend:')).toBeInTheDocument()
-    expect(screen.getByText('(Source-backed)')).toBeInTheDocument()
-    expect(screen.getByText('(Confirm before relying)')).toBeInTheDocument()
-    expect(screen.getByText('(General reasoning)')).toBeInTheDocument()
+    expect(screen.getByText('verify')).toHaveAttribute('title', 'Confirm before relying')
+    expect(screen.getByText('model knowledge')).toHaveAttribute('title', expect.stringMatching(/not a retrieved source/))
+    expect(screen.getByText('verify')).toHaveClass('text-amber-900')
+  })
+
+  it('offers a jump back to the latest message once the reader scrolls up', async () => {
+    const user = userEvent.setup()
+    const messages = [
+      { id: 'user-1', role: 'user', content: 'Question' },
+      { id: 'answer-1', role: 'assistant', content: 'Answer' },
+    ]
+    render(<Messages messages={messages} isLoading={false} isSending />)
+    expect(screen.queryByRole('button', { name: /Jump to/ })).not.toBeInTheDocument()
+
+    const scroller = screen.getByText('Answer').closest('.overflow-y-auto')
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 2000 })
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 500 })
+    scroller.scrollTop = 200
+    fireEvent.scroll(scroller)
+
+    const jump = await screen.findByRole('button', { name: 'Jump to the answer' })
+    scroller.scrollTo = vi.fn()
+    await user.click(jump)
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'smooth' })
+    expect(screen.queryByRole('button', { name: /Jump to/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('Chat composer queue', () => {
+  function queuedItems() {
+    return [
+      { id: 'queued-1', content: 'Compare the notice periods', attachments: [] },
+      { id: 'queued-2', content: 'Draft the client email', attachments: [{ id: 'doc-1', filename: 'lease.pdf' }] },
+    ]
+  }
+
+  it('stays editable while the assistant responds and queues instead of sending', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+
+    function Harness() {
+      const [value, setValue] = useState('')
+      return (
+        <ChatInput
+          inputValue={value}
+          onInputChange={setValue}
+          onSend={onSend}
+          onUploadClick={vi.fn()}
+          onDropFiles={vi.fn()}
+          isSending={false}
+          isResponding
+          willQueue
+          queueHint="Sends when this response finishes"
+          disabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    const composer = screen.getByRole('textbox', { name: 'Message the assistant' })
+    expect(composer).toBeEnabled()
+    await user.type(composer, 'Next question')
+    expect(screen.getByRole('status')).toHaveTextContent('Responding…')
+
+    await user.keyboard('{Enter}')
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Queue message' })).toHaveAttribute('title', 'Sends when this response finishes')
+  })
+
+  it('lists queued messages with remove and edit, and edits only into an empty composer', async () => {
+    const user = userEvent.setup()
+    const onRemoveQueued = vi.fn()
+    const onEditQueued = vi.fn()
+    const { rerender } = render(
+      <ChatInput
+        inputValue=""
+        onInputChange={vi.fn()}
+        onSend={vi.fn()}
+        isSending={false}
+        willQueue
+        queuedMessages={queuedItems()}
+        onRemoveQueued={onRemoveQueued}
+        onEditQueued={onEditQueued}
+        onClearQueue={vi.fn()}
+      />,
+    )
+
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getByText('Compare the notice periods')).toBeInTheDocument()
+    expect(within(queue).getByTitle('lease.pdf')).toHaveTextContent('1 attachment')
+    expect(screen.queryByLabelText('Suggested prompts')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remove queued message 1' }))
+    expect(onRemoveQueued).toHaveBeenCalledWith('queued-1')
+    await user.click(screen.getByRole('button', { name: 'Edit queued message 2' }))
+    expect(onEditQueued).toHaveBeenCalledWith('queued-2')
 
     rerender(
-      <Messages
-        messages={[{ id: 'user-1', role: 'user', content: 'Question' }]}
-        isLoading
+      <ChatInput
+        inputValue="Something already typed"
+        onInputChange={vi.fn()}
+        onSend={vi.fn()}
         isSending={false}
+        willQueue
+        queuedMessages={queuedItems()}
+        onRemoveQueued={onRemoveQueued}
+        onEditQueued={onEditQueued}
       />,
     )
-    expect(screen.getByLabelText('Review tag legend')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit queued message 1' })).toBeDisabled()
+  })
+
+  it('says why a paused queue is held and lets the user resume it', async () => {
+    const user = userEvent.setup()
+    const onResumeQueue = vi.fn()
+    render(
+      <ChatInput
+        inputValue=""
+        onInputChange={vi.fn()}
+        onSend={vi.fn()}
+        isSending={false}
+        willQueue
+        queuedMessages={queuedItems()}
+        queuePaused="The response ahead of these messages failed, so they were held."
+        onResumeQueue={onResumeQueue}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(/failed, so they were held/)
+    await user.click(screen.getByRole('button', { name: /Resume queue/ }))
+    expect(onResumeQueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets Return start a new line on a touch keyboard', async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query === '(pointer: coarse)',
+      media: query,
+    }))
+
+    try {
+      function Harness() {
+        const [value, setValue] = useState('First line')
+        return (
+          <ChatInput
+            inputValue={value}
+            onInputChange={setValue}
+            onSend={onSend}
+            isSending={false}
+          />
+        )
+      }
+      render(<Harness />)
+      const composer = screen.getByRole('textbox', { name: 'Message the assistant' })
+      await user.click(composer)
+      await user.keyboard('{Enter}Second line')
+      expect(onSend).not.toHaveBeenCalled()
+      expect(composer).toHaveValue('First line\nSecond line')
+
+      await user.keyboard('{Control>}{Enter}{/Control}')
+      expect(onSend).toHaveBeenCalledTimes(1)
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
   })
 })
 

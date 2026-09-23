@@ -8,7 +8,9 @@ import {
   abortChatGeneration,
   beginChatGeneration,
   countStreamingChatGenerations,
+  detachChatGenerations,
   getChatGeneration,
+  listChatGenerations,
   patchChatGeneration,
   releaseChatGeneration,
   resetChatGenerations,
@@ -152,5 +154,43 @@ describe('chat generation registry', () => {
     expect(beginChatGeneration({ conversationId: null, clientTurnId: 'turn-1' })).toBeNull()
     expect(beginChatGeneration({ conversationId: 'conversation-a', clientTurnId: '' })).toBeNull()
     expect(countStreamingChatGenerations()).toBe(0)
+  })
+
+  it('lets the page let go of streaming turns without touching settled ones', () => {
+    start('conversation-a', 'turn-a')
+    start('conversation-b', 'turn-b')
+    settleChatGeneration('conversation-b', 'turn-b', { status: GENERATION_COMPLETE })
+    const listener = vi.fn()
+    subscribeToChatGenerations(listener)
+
+    expect(detachChatGenerations()).toBe(true)
+    expect(getChatGeneration('conversation-a').attached).toBe(false)
+    expect(getChatGeneration('conversation-b').attached).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    // Nothing left attached, so a second detach is a no-op and stays quiet.
+    expect(detachChatGenerations()).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('settles with the binding the registry tracked unless told otherwise', () => {
+    start('conversation-a', 'turn-a')
+    detachChatGenerations()
+    settleChatGeneration('conversation-a', 'turn-a', { status: GENERATION_COMPLETE })
+    expect(getChatGeneration('conversation-a').attached).toBe(false)
+
+    beginChatGeneration({
+      conversationId: 'conversation-b',
+      clientTurnId: 'turn-b',
+      attached: false,
+      userMessage: { id: 'temp-turn-b', role: 'user', content: 'Question' },
+      assistantMessage: { id: 'stream-turn-b', role: 'assistant', content: '' },
+    })
+    settleChatGeneration('conversation-b', 'turn-b', { status: GENERATION_COMPLETE, attached: true })
+    expect(getChatGeneration('conversation-b').attached).toBe(true)
+    expect(listChatGenerations().map((record) => record.conversationId).sort()).toEqual([
+      'conversation-a',
+      'conversation-b',
+    ])
   })
 })
