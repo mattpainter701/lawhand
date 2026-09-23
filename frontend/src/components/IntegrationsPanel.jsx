@@ -57,6 +57,14 @@ const CAP_BADGE = {
   unavailable: { text: 'Not on this tier', cls: 'bg-gray-100 text-gray-500' },
 }
 
+// The backend emits an explicit unknown/null account type before it can
+// confirm these account-dependent features. Missing legacy fields stay unchanged.
+const isCapabilityUnconfirmed = (info, key, capability) =>
+  ['directory_sync', 'teams'].includes(key) &&
+  capability?.status === 'unavailable' &&
+  Object.prototype.hasOwnProperty.call(info, 'account_type') &&
+  (info.account_type === 'unknown' || info.account_type === null)
+
 export const PRIMARY_CLOUD_LABELS = STORAGE_PROVIDER_LABELS
 
 // A credential in one of these states cannot be used, whatever its stored
@@ -718,7 +726,7 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
           {info.connected && (
             <p className="mt-1 text-xs text-brand-ink-2 font-sans">
               {info.user_count ?? 0} users synced
-              {info.last_sync_status === 'failed' ? ' · last sync failed' : info.last_sync_status === 'not_applicable' ? ' · directory sync unavailable for this account' : ` · last run ${relTime(info.last_sync_at)}`}
+              {info.last_sync_status === 'failed' ? ' · last sync failed' : info.last_sync_status === 'not_applicable' ? (isCapabilityUnconfirmed(info, 'directory_sync', directorySync) ? ' · directory access not confirmed' : ' · directory sync unavailable for this account') : ` · last run ${relTime(info.last_sync_at)}`}
             </p>
           )}
           {info.connected && (
@@ -826,9 +834,11 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
           <div className="space-y-1.5">
             {Object.entries(info.capabilities).map(([key, capability]) => {
               const badge = CAP_BADGE[capability.status] || CAP_BADGE.unavailable
-              const badgeText = key === 'directory_sync' && capability.status === 'unavailable'
-                ? 'Unavailable for this account'
-                : badge.text
+              const badgeText = isCapabilityUnconfirmed(info, key, capability)
+                ? 'Not confirmed'
+                : key === 'directory_sync' && capability.status === 'unavailable'
+                  ? 'Unavailable for this account'
+                  : badge.text
               return (
                 <div key={key} className="flex items-center justify-between gap-3" title={capability.reason}>
                   <span className="text-xs text-brand-ink-2 font-sans">{CAPABILITY_LABELS[key] || key}</span>

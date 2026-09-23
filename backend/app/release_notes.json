@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.09",
+      "version": "2026.09.22.09",
+      "title": "Clearer recovery for matter storage",
+      "published_at": "2026-09-22",
+      "summary": "Missing matter folders now have a direct setup path and clearer retry guidance. Admin storage status distinguishes a saved provider preference and available connection from matter folder access, while Directory Sync remains separate.",
+      "highlights": [
+        {
+          "title": "Find a missing matter folder",
+          "description": "A missing OneDrive or Google Drive matter folder means no file was stored. Use the matter's Document tools; check Administration, Integrations, then Cloud for connection issues."
+        },
+        {
+          "title": "Set up a folder, then retry",
+          "description": "Use the single Set up folders action and wait for its status before retrying the save. Sync folder remains for a folder that is already provisioned."
+        },
+        {
+          "title": "Separate provider status from folder access",
+          "description": "Preference saved confirms provider choice, not matter folder access. Connection status does not verify each folder; Directory Sync is separate and may depend on account tier."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.08",
       "version": "2026.09.22.08",
       "title": "Find and review firm and global templates",

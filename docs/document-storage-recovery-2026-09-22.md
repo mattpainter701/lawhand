@@ -59,7 +59,7 @@ storage-migration workflow under **Advanced** to rebind existing matters.
 Directory and user synchronization is a separate provider capability. Its
 availability may depend on the provider account tier and does not determine
 whether document storage can write to an already provisioned matter folder.
-Likewise, directory-sync success does not prove that a matter folder is ready.
+Likewise, directory-sync success does not prove that a matter folder is ready. An unknown account tier is shown as Not confirmed for directory and Teams access; this is not a finding that the account cannot support the capability.
 
 ## Incident evidence and privacy
 

@@ -1,3 +1,9 @@
+## 2026.09.22.09 — Matter storage recovery guidance
+
+- Missing OneDrive and Google Drive matter folder bindings return provider-specific setup guidance and identify that no file was stored. Cloud-bound writes continue to fail closed rather than falling back to another provider or local storage.
+- The matter Documents tools provide one explicit **Set up folders** action for the existing provisioning and sharing workflow; **Sync folder** remains available for already provisioned folders. A failed file write does not automatically provision a folder or change provider roots or grants.
+- Admin storage status distinguishes the saved primary-provider preference and provider connection availability from access to an individual matter folder. Directory Sync remains a separate capability whose availability can depend on account tier.
+
 ## 2026.09.22.08 — Firm and global template catalog
 
 - Matter template selection now searches firm and shared global forms, filters by source, and labels published, draft and paused firm-template readiness. Global entries include source and jurisdiction details and can be previewed from the read-only catalog.

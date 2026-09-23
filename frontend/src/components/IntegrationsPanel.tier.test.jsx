@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudRetryStatus, ProviderCard } from './IntegrationsPanel'
 
 vi.mock('../api', () => ({
@@ -24,6 +24,7 @@ const baseInfo = {
   connected: true,
   health: 'healthy',
   account_label: 'Personal Google (Gmail)',
+  account_type: 'personal',
   last_sync_status: 'not_applicable',
   last_sync_error: "Directory sync isn't available on personal Google accounts",
   last_sync_at: null,
@@ -48,6 +49,7 @@ const props = {
 }
 
 describe('ProviderCard tier status', () => {
+  afterEach(cleanup)
   it('shows a neutral not-applicable state for personal accounts', () => {
     render(<ProviderCard {...props} info={baseInfo} />)
     expect(screen.getByText('Personal Google (Gmail)')).toBeTruthy()
@@ -56,6 +58,36 @@ describe('ProviderCard tier status', () => {
     expect(screen.getByText(/Directory sync imports organization users. Its availability is separate from document storage/)).toBeTruthy()
     expect(screen.getByText('Cloud file storage').parentElement).toHaveTextContent('Available')
     expect(screen.queryByText(baseInfo.last_sync_error)).toBeNull()
+  })
+
+  it.each(['unknown', null])('keeps unknown Microsoft tier (%s) separate from available file storage', (accountType) => {
+    const unknownTierInfo = {
+      ...baseInfo,
+      account_label: 'Microsoft (tier unknown)',
+      account_type: accountType,
+      last_sync_error: null,
+      capabilities: {
+        directory_sync: {
+          available: false,
+          status: 'unavailable',
+          reason: 'Account tier not yet detected — reconnect to confirm directory access.',
+        },
+        cloud_storage: { available: true, status: 'ok', reason: 'Cloud file storage is available.' },
+        teams: {
+          available: false,
+          status: 'unavailable',
+          reason: 'Account tier not yet detected — reconnect to confirm Teams access.',
+        },
+      },
+    }
+
+    render(<ProviderCard {...props} name="Microsoft 365" provider="microsoft" info={unknownTierInfo} />)
+
+    expect(screen.getAllByText('Microsoft (tier unknown)')).toHaveLength(1)
+    expect(screen.getByText(/directory access not confirmed/)).toBeTruthy()
+    expect(screen.getAllByText('Directory / user sync').at(-1).parentElement).toHaveTextContent('Not confirmed')
+    expect(screen.getByText('Microsoft Teams').parentElement).toHaveTextContent('Not confirmed')
+    expect(screen.getAllByText('Cloud file storage').at(-1).parentElement).toHaveTextContent('Available')
   })
 
   it('shows genuine sync errors when status is failed', () => {
