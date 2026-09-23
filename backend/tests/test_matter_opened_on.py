@@ -50,9 +50,9 @@ async def test_backdated_open_date_is_kept_listed_and_evented(client, db_session
     detail = await client.get(f"/api/matters/{data['id']}")
     assert detail.json()["opened_on"] == "2025-03-01"
 
-    mine = await client.get("/api/matters/my")
+    mine = await client.get("/api/matters/my/page")
     assert mine.status_code == 200
-    assert {m["opened_on"] for m in mine.json()} == {"2025-03-01"}
+    assert {m["opened_on"] for m in mine.json()["items"]} == {"2025-03-01"}
 
 
 @pytest.mark.asyncio

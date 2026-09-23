@@ -35,7 +35,7 @@ Target contract per endpoint: explicit supported fields, authorization scope, de
 
 | Endpoint | Current | Required contract | Owning task |
 | --- | --- | --- | --- |
-| `GET /matters/my` | Hard `limit(100)`, no `total` | `page`, `page_size`, `total` = matching permitted records before pagination; stable order (`updated_at desc`, `id` tie-break); assignment scope | S3.01, S3.02 |
+| `GET /matters/my` | Hard `limit(100)`, no `total` — **retired** | Superseded by `GET /matters/my/page`: `page`, `page_size`, `total` = matching permitted records before pagination; assignment scope. No caller remained, so the capped route was removed (expand → migrate → contract). | S3.01, S3.02 |
 | `GET /matters` | Paginated with `total`; search fields expanded on main | Keep pagination; state searchable fields (name, number, client name, organization); stable order; tenant/matter scope | S3.03 |
 | `GET /tasks` | `limit`/`offset`, no title query | Add title query; page semantics; totals from the same predicate as the queue | S4.01, S4.02 |
 | `GET /tasks/overdue`, `/upcoming` | Unbounded | Bounded with paging; totals; documented scope | S4.02 |
