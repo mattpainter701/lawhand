@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getTemplateAIProfile, saveTemplateAIProfile } from '../api'
+import { isSessionEnded } from '../pages/platform/shared'
 
 export default function TemplateAIProfilePanel({ platformKey, providerKeys, onAuthError }) {
   const [profile, setProfile] = useState(null)
@@ -15,7 +16,7 @@ export default function TemplateAIProfilePanel({ platformKey, providerKeys, onAu
     }).catch((e) => {
       if (current) {
         setError('Could not load the document template AI profile.')
-        if (e?.response?.status === 403) onAuthError?.()
+        if (isSessionEnded(e)) onAuthError?.()
       }
     })
     return () => { current = false }
@@ -32,7 +33,7 @@ export default function TemplateAIProfilePanel({ platformKey, providerKeys, onAu
     } catch (e) {
       const detail = e?.response?.data?.detail
       setError(typeof detail === 'string' ? detail : detail?.message || 'Could not save the template AI profile. Check the key, rates, and gateway.')
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
     } finally { setBusy(false) }
   }
   return (
