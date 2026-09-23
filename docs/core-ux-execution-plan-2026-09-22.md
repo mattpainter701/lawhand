@@ -27,9 +27,10 @@ Merged work with evidence. Statuses: **Merged & accepted**, **Merged slice** (na
 | S3.04 Needs attention view | Merged slice | shared `needsAttention` predicate + interaction/predicate tests (PR #590, merge `26e4c5d1`), accepted as a bounded My Matters repair; the attention corpus is still bounded by the loaded page until S3.03 paging |
 | S3.05 Everyday column defaults | Merged slice | everyday default + Reset to everyday; `MatterPortfolioBoard.test.jsx` (PR #592, merge `f6ae081b`). The planned preset preview/apply interaction and laptop/wide-layout validation are not established |
 | S3.06 Unify scope and record entry | Merged & accepted | Decorative View removed and real matter links preserved (PR #593, merge `94051494`); the access-count claim now reports the server total with a loaded-scope note and a 2-of-250 regression (PR #598, merge `165b3b36`) |
+| S3.07 Restore list context | Merged slice | Portfolio remembers its view URL and scroll offset and a matter returns to it (`utils/matterListMemory.js`, PR #599, merge `f85cff66`); the `page` clause waits on the S3.03 load-more UI |
 | S1.02 / S1.04 / S1.05 / S1.11 | Blocked | Need named owners, baseline participants, product review, and the document owner's contract |
 
-Notes: S1.03's reusable synthetic fixture pack was not stood up as a standalone artifact; the paging tests create their own fixtures. S1.12/sprint-close evidence is distributed across the PRs above rather than collected in one place. S1.06/S1.07 and S3.01/S3.02/S3.05 stay unchecked below until their stated acceptance is demonstrated; merged code alone does not close them.
+Notes: S1.03's reusable synthetic fixture pack was not stood up as a standalone artifact; the paging tests create their own fixtures. S1.12/sprint-close evidence is distributed across the PRs above rather than collected in one place. S1.06/S1.07 and S3.01/S3.02/S3.05/S3.07 stay unchecked below until their stated acceptance is demonstrated; merged code alone does not close them.
 
 ## Sprint sequence and budget
 
