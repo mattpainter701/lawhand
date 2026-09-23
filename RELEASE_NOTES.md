@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.22.06 — Find matters that need attention
+
+Released September 22, 2026.
+
+Open the attention list from My Matters, clear personal filters together, and see when the loaded list covers only part of your assigned matters.
+
+- **Open the attention list in one click.** The attention heading opens the matching loaded matters, clearing conflicting personal filters while keeping your sort and other list choices.
+- **Understand the list you are viewing.** Partial lists show loaded and assigned counts. Attention labels describe their scope, and failed requests offer a retry instead of an empty list.
+- **Clear filters together.** Clear filter removes the personal keyword, status and attention filters in one action. Removing only the attention chip keeps your other filters.
+
 ## 2026.09.22.05 — Reliable packet saves and clearer form review
 
 Released September 22, 2026.
