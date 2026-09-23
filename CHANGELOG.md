@@ -1,3 +1,9 @@
+## 2026.09.22.08 — Firm and global template catalog
+
+- Matter template selection now searches firm and shared global forms, filters by source, and labels published, draft and paused firm-template readiness. Global entries include source and jurisdiction details and can be previewed from the read-only catalog.
+- Adding a global form loads its source PDF into the normal upload analysis and field-review flow. The source digest is checked against catalog metadata before analysis; uniquely matched source identities can carry advisory labels and matter bindings, while fresh analysis remains authoritative for field geometry and types.
+- Creating the form produces an inactive firm draft and carries the originating matter and document-folder context into Studio and its return path. The draft must be tested and published before it can be used on the matter; importing or previewing does not save a matter document or publish the form.
+
 ## 2026.09.22.07 — Automatic previews while preparing PDFs
 
 - Published single-document PDFs and Word-to-PDF output render automatically after draft restoration and matter prefill, then after a 650 ms typing pause. The shared matter dialog and Prepare route use the same scheduler, serialize requests and discard stale responses; failed inputs require an explicit retry or changed answers.

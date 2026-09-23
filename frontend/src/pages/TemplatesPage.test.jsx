@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import TemplatesPage from './TemplatesPage'
 import {
   analyzeTemplateUpload,
+  getSampleTemplate,
+  getSampleTemplateSource,
   previewWordUpload,
   proposeTemplateFieldsWithAi,
   createTemplate,
@@ -33,6 +35,7 @@ vi.mock('../api', () => ({
   getTemplates: vi.fn().mockResolvedValue({ items: [{ id: 'template-1', title: 'Engagement Letter', body: 'Dear {{client_name}}', category: 'engagement_letter', is_active: true }] }),
   getTemplateQueues: vi.fn().mockRejectedValue(new Error('queue fixture not configured')),
   getSampleTemplates: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+  getSampleTemplate: vi.fn(),
   getSampleTemplateSource: vi.fn(),
   renderSampleTemplateFile: vi.fn(),
   getTemplateFieldLibrary: vi.fn().mockResolvedValue({ fields: [] }),
@@ -216,6 +219,65 @@ describe('document template workflow', () => {
     expect(screen.getByRole('heading', { name: 'Published' })).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /Draft engagement/ }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Open in Studio' })).toHaveLength(3)
+  })
+
+  it('loads a global sample into ordinary review and creates only an explicit firm draft', async () => {
+    const sampleId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const templateId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    const matterId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const folderId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const preparationContext = { matterId, folderId, returnTo: `/matters/${matterId}?tab=documents` }
+    const blob = new Blob(['%PDF synthetic'], { type: 'application/pdf' })
+    blob.arrayBuffer = async () => new Uint8Array([1, 2, 3]).buffer
+    const digest = vi.spyOn(crypto.subtle, 'digest').mockResolvedValue(new Uint8Array(32).buffer)
+    getSampleTemplate.mockResolvedValueOnce({ id: sampleId, title: 'Shared intake source', category: 'intake', source_filename: 'intake/source.pdf', source_sha256: '00'.repeat(32), variable_schema: { fields: [{ name: 'catalog_name', pdf_field_name: 'client', label: 'Client legal name', binding: 'client.name' }] } })
+    getSampleTemplateSource.mockResolvedValueOnce(blob)
+    analyzeTemplateUpload.mockResolvedValueOnce({ title: 'Detected source', format: 'pdf', analysis_token: 'source-bound-token', body: '{{client_name}}', suggested_variable_schema: { fields: [{ name: 'client_name', pdf_field_name: 'client', label: 'Detected label', field_type: 'text', page: 1, rect: [10, 10, 100, 30] }] }, warnings: [] })
+    const created = { id: templateId, title: 'Shared intake source', format: 'pdf', is_active: false, source_filename: 'source.pdf', source_sha256: '00'.repeat(32), variable_schema: { fields: [] } }
+    createTemplateFromUpload.mockResolvedValueOnce(created)
+    getTemplate.mockResolvedValue(created)
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:shared-source')
+    try {
+      renderStudioRoute({ pathname: '/templates/new', search: `?sample=${sampleId}`, state: { preparationContext } })
+      expect(await screen.findByRole('dialog', { name: 'Add global template to your firm' })).toBeVisible()
+      await waitFor(() => expect(analyzeTemplateUpload).toHaveBeenCalledTimes(1))
+      const save = await screen.findByRole('button', { name: 'Save draft and open the editor' })
+      await waitFor(() => expect(save).toBeEnabled())
+      expect(createTemplateFromUpload).not.toHaveBeenCalled()
+      expect(publishTemplate).not.toHaveBeenCalled()
+      expect(screen.getByLabelText('Template title')).toHaveValue('Shared intake source')
+      await userEvent.click(save)
+      await waitFor(() => expect(createTemplateFromUpload).toHaveBeenCalledTimes(1))
+      const form = createTemplateFromUpload.mock.calls[0][0]
+      expect(form.get('file').name).toBe('source.pdf')
+      expect(form.get('analysis_token')).toBe('source-bound-token')
+      const schema = JSON.parse(form.get('variable_schema'))
+      expect(schema.fields[0]).toMatchObject({ name: 'client_name', label: 'Client legal name', binding: 'client.name', review_required: true })
+      expect(schema.pdf_source_review).toBeUndefined()
+      expect(await screen.findByRole('heading', { name: 'Shared intake source' })).toBeVisible()
+      expect(screen.getByRole('link', { name: 'Back to matter' })).toHaveAttribute('href', preparationContext.returnTo)
+      expect(screen.getByRole('button', { name: 'Use on this matter' })).toBeDisabled()
+      expect(publishTemplate).not.toHaveBeenCalled()
+    } finally { digest.mockRestore() }
+  })
+
+  it('keeps the selected matter and folder across Studio sections and into preparation', async () => {
+    const templateId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const matterId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const folderId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const preparationContext = { matterId, folderId, returnTo: `/matters/${matterId}?tab=documents` }
+    getTemplate.mockResolvedValue({ id: templateId, title: 'Published firm intake', format: 'markdown', is_active: true, current_version_no: 1, published_version_no: 1 })
+    renderStudioRoute({ pathname: `/templates/${templateId}/studio`, state: { preparationContext } })
+    await screen.findByRole('heading', { name: 'Published firm intake' })
+    await userEvent.click(screen.getByRole('link', { name: 'Test', exact: true }))
+    expect(screen.getByRole('link', { name: 'Back to matter' })).toHaveAttribute('href', preparationContext.returnTo)
+    await userEvent.click(screen.getByRole('button', { name: 'Use on this matter' }))
+    const target = screen.getByTestId('studio-location').textContent
+    const params = new URLSearchParams(target.split('?')[1])
+    expect(params.get('template')).toBe(templateId)
+    expect(params.get('matter')).toBe(matterId)
+    expect(params.get('folder')).toBe(folderId)
+    expect(params.get('return')).toBe(preparationContext.returnTo)
   })
 
   it('loads a canonical workspace route and truthfully falls back from focused Phase 2 state', async () => {
