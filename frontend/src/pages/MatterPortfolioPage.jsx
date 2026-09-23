@@ -693,6 +693,7 @@ export default function MatterPortfolioPage() {
   const [myLoadingMore, setMyLoadingMore] = useState(false)
   const [myMoreError, setMyMoreError] = useState(false)
   const myRequest = useRef(0)
+  const matterRequest = useRef(0)
   const [matters, setMatters] = useState([])
   const [matterTotal, setMatterTotal] = useState(null)
   const [matterPage, setMatterPage] = useState(1)
@@ -834,25 +835,35 @@ export default function MatterPortfolioPage() {
   }
 
   const loadMatters = () => {
+    const request = ++matterRequest.current
     setLoading(true)
+    setError(null)
     setMatterMoreError(false)
     setMatterPage(1)
     getMattersV2({ page: 1, page_size: ALL_MATTERS_PAGE_SIZE })
       .then(data => {
+        if (request !== matterRequest.current) return
         setMatters(data.items || [])
         setMatterTotal(Number.isInteger(data?.total) ? data.total : null)
       })
-      .catch(err => { setError('Failed to load matters.'); reportError(err) })
-      .finally(() => setLoading(false))
+      .catch(err => {
+        if (request !== matterRequest.current) return
+        setError('Failed to load matters.'); reportError(err)
+      })
+      .finally(() => {
+        if (request === matterRequest.current) setLoading(false)
+      })
   }
 
   const loadMoreMatters = () => {
     if (matterLoadingMore) return
+    const request = ++matterRequest.current
     const nextPage = matterPage + 1
     setMatterLoadingMore(true)
     setMatterMoreError(false)
     getMattersV2({ page: nextPage, page_size: ALL_MATTERS_PAGE_SIZE })
       .then(data => {
+        if (request !== matterRequest.current) return
         setMatters(previous => {
           const seen = new Set(previous.map(m => m.id))
           return [...previous, ...(data.items || []).filter(m => !seen.has(m.id))]
@@ -860,8 +871,13 @@ export default function MatterPortfolioPage() {
         setMatterTotal(Number.isInteger(data?.total) ? data.total : null)
         setMatterPage(nextPage)
       })
-      .catch(err => { setMatterMoreError(true); reportError(err) })
-      .finally(() => setMatterLoadingMore(false))
+      .catch(err => {
+        if (request !== matterRequest.current) return
+        setMatterMoreError(true); reportError(err)
+      })
+      .finally(() => {
+        if (request === matterRequest.current) setMatterLoadingMore(false)
+      })
   }
 
   useEffect(() => {
@@ -1320,9 +1336,14 @@ export default function MatterPortfolioPage() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, client, attorney, description..."
+              placeholder="Search matters"
+              aria-label="Search accessible matters"
+              aria-describedby="all-matters-search-help"
               className="w-full bg-brand-surface border border-brand-line rounded-lg pl-11 pr-4 py-2.5 text-sm font-sans text-brand-ink focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent placeholder-brand-muted transition-all"
             />
+            <p id="all-matters-search-help" className="mt-1 text-[12px] font-sans text-brand-muted">
+              Matches matter name, matter number, client name, or organization.
+            </p>
           </div>
         </div>
 
