@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -60,24 +61,26 @@ it('shows the determination, the print pages for each form, and the clock', asyn
 })
 
 it('saves the facts form as typed values and installs the pack on request', async () => {
+  const user = userEvent.setup()
   getProbate.mockResolvedValue(state)
   saveProbateFacts.mockResolvedValue(state)
   installProbateForms.mockResolvedValue({ templates: [] })
   renderTab()
   await screen.findByText(/Informal probate of will/)
-  fireEvent.change(screen.getByLabelText('County they lived in'), { target: { value: 'Cass' } })
-  fireEvent.change(screen.getByLabelText('Did they leave a will?'), { target: { value: 'no' } })
-  fireEvent.click(screen.getByRole('button', { name: /Save facts and determine track/ }))
+  await user.type(screen.getByLabelText('County they lived in'), 'Cass')
+  await user.selectOptions(screen.getByLabelText('Did they leave a will?'), 'no')
+  await user.click(screen.getByRole('button', { name: /Save facts and determine track/ }))
   await waitFor(() => expect(saveProbateFacts).toHaveBeenCalledWith('estate-1', expect.objectContaining({
     decedent_name: 'Ole Olson', domicile_county: 'Cass', will_exists: false, nd_property_counties: ['Cass'],
     heirs: [{ name: 'Ann Olson', age: '70', relationship: 'spouse', address: 'Fargo' }],
   })))
-  fireEvent.click(screen.getByRole('button', { name: /Install ND probate pack/ }))
+  await user.click(screen.getByRole('button', { name: /Install ND probate pack/ }))
   await waitFor(() => expect(installProbateForms).toHaveBeenCalled())
   expect(await screen.findByText(/installed as drafts/)).toBeInTheDocument()
 })
 
 it('pulls answers from the questionnaire, recomputes, saves anchors and builds deadlines', async () => {
+  const user = userEvent.setup()
   getProbate.mockResolvedValue(state)
   pullProbateFactsFromIntake.mockResolvedValue(state)
   recomputeProbate.mockResolvedValue(state)
@@ -85,14 +88,16 @@ it('pulls answers from the questionnaire, recomputes, saves anchors and builds d
   syncProbateDeadlines.mockResolvedValue({ created: ['notice_heirs'], updated: [], unchanged: [], waiting_on: {} })
   renderTab()
   await screen.findByText(/Informal probate of will/)
-  fireEvent.click(screen.getByRole('button', { name: /Pull from client questionnaire/ }))
+  await user.click(screen.getByRole('button', { name: /Pull from client questionnaire/ }))
   await waitFor(() => expect(pullProbateFactsFromIntake).toHaveBeenCalledWith('estate-1', { overwrite: false }))
-  fireEvent.click(screen.getByRole('button', { name: /Recompute/ }))
+  await user.click(screen.getByRole('button', { name: /Recompute/ }))
   await waitFor(() => expect(recomputeProbate).toHaveBeenCalledWith('estate-1'))
-  fireEvent.change(screen.getByLabelText('Appointment date'), { target: { value: '2025-03-31' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Save dates' }))
+  const appointment = screen.getByLabelText('Appointment date')
+  fireEvent.change(appointment, { target: { value: '2025-03-31' } })
+  await waitFor(() => expect(appointment).toHaveValue('2025-03-31'))
+  await user.click(screen.getByRole('button', { name: 'Save dates' }))
   await waitFor(() => expect(saveProbateAnchors).toHaveBeenCalledWith('estate-1', expect.objectContaining({ appointment_date: '2025-03-31', date_of_death: '2025-01-15' })))
-  fireEvent.click(screen.getByRole('button', { name: /Build deadlines/ }))
+  await user.click(screen.getByRole('button', { name: /Build deadlines/ }))
   await waitFor(() => expect(syncProbateDeadlines).toHaveBeenCalledWith('estate-1', { mirror_tasks: true }))
   expect(await screen.findByText(/1 deadline\(s\) created/)).toBeInTheDocument()
 })
