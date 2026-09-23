@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  clearMatterListMemory,
   readListScroll,
   readRememberedListUrl,
   rememberListScroll,
@@ -47,5 +48,19 @@ describe('matter list memory', () => {
     expect(readRememberedListUrl()).toBe('')
     expect(() => rememberListScroll('/matters', 10)).not.toThrow()
     expect(readListScroll('/matters')).toBeNull()
+  })
+
+  it('forgets the last view and every scroll offset on sign-out, and nothing else', () => {
+    rememberListUrl('/matters?q=acme')
+    rememberListScroll('/matters?q=acme', 300)
+    rememberListScroll('/matters', 120)
+    window.sessionStorage.setItem('unrelated', 'kept')
+
+    clearMatterListMemory()
+
+    expect(readRememberedListUrl()).toBe('')
+    expect(readListScroll('/matters?q=acme')).toBeNull()
+    expect(readListScroll('/matters')).toBeNull()
+    expect(window.sessionStorage.getItem('unrelated')).toBe('kept')
   })
 })
