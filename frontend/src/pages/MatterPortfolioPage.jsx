@@ -682,6 +682,7 @@ export default function MatterPortfolioPage() {
   const [myError, setMyError] = useState(false)
   const myRequest = useRef(0)
   const [matters, setMatters] = useState([])
+  const [matterTotal, setMatterTotal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -761,6 +762,11 @@ export default function MatterPortfolioPage() {
   }, { replace: true })
   const myPartial = myTotal === null || myTotal > myMatters.length
   const myUnavailable = myError || (myMatters.length === 0 && myTotal !== 0)
+  // The header is an access claim, so it reports the server total. Until S3.03
+  // paging lands only the first page is loaded, so the loaded scope is stated
+  // plainly rather than passed off as the whole access set.
+  const accessibleTotal = matterTotal ?? matters.length
+  const mattersPartial = matterTotal === null || matterTotal > matters.length
 
   const loadMyMatters = () => {
     const request = ++myRequest.current
@@ -785,7 +791,10 @@ export default function MatterPortfolioPage() {
   const loadMatters = () => {
     setLoading(true)
     getMattersV2({ page_size: 100 })
-      .then(data => setMatters(data.items || []))
+      .then(data => {
+        setMatters(data.items || [])
+        setMatterTotal(Number.isInteger(data?.total) ? data.total : null)
+      })
       .catch(err => { setError('Failed to load matters.'); reportError(err) })
       .finally(() => setLoading(false))
   }
@@ -863,13 +872,13 @@ export default function MatterPortfolioPage() {
   }, [matters])
 
   const stats = useMemo(() => ({
-    total: matters.length,
+    total: matterTotal ?? matters.length,
     open: matters.filter(m => m.status === 'open').length,
     active: matters.filter(m => m.status === 'active').length,
     pending: matters.filter(m => m.status === 'pending').length,
     closed: matters.filter(m => m.status === 'closed').length,
     critical: matters.filter(m => m.risk_level?.toLowerCase() === 'critical').length,
-  }), [matters])
+  }), [matters, matterTotal])
 
   const filtered = useMemo(() => matters.filter(m => {
     if (statusFilter !== 'all' && m.status?.toLowerCase() !== statusFilter) return false
@@ -1107,8 +1116,14 @@ export default function MatterPortfolioPage() {
         <div className="mb-6">
           <h2 className="font-serif font-bold text-2xl text-brand-ink mb-1">All accessible matters</h2>
           <p className="text-brand-ink-2 text-[14px] font-sans">
-            {matters.length} matter{matters.length !== 1 ? 's' : ''} you can access
+            {accessibleTotal} matter{accessibleTotal !== 1 ? 's' : ''} you can access
           </p>
+          {!loading && mattersPartial && (
+            <p role="status" className="mt-1 text-[13px] font-sans text-brand-muted">
+              Showing {matters.length}{matterTotal !== null ? ` of ${matterTotal}` : ''} loaded.
+              {' '}Search, filters, and the status cards below apply to these loaded matters.
+            </p>
+          )}
         </div>
 
         {error && (
