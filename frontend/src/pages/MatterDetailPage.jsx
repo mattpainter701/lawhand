@@ -22,6 +22,7 @@ import {
   getContacts, getAdminUsers, getMatterByNumber, reopenMatter,
 } from '../api'
 import { looksLikeMatterNumber, normalizeMatterNumber } from '../utils/matterNumber'
+import { readRememberedListUrl } from '../utils/matterListMemory'
 import MatterDocumentsTab from '../components/MatterDocumentsTab'
 import MatterViewGear, { MatterViewContext, useFieldHidden, useMatterView } from '../components/MatterViewGear'
 import WorkflowRunsPanel from '../components/workflows/WorkflowRunsPanel'
@@ -43,6 +44,14 @@ import { formatSignatureDate, formatSignerRole, signatureSendNotice, signerStatu
 function Icon({ d, size = 18, className = '' }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}><path d={d} /></svg>
 }
+// Where "Matter Portfolio" lands. When the reader came from a filtered,
+// sorted list, return to that exact view; otherwise fall back to the bare
+// portfolio. The value is App-written session state, and the reader only ever
+// returns to the list, so a crafted value cannot bounce them off-origin.
+function matterListTarget() {
+  return readRememberedListUrl() || '/matters'
+}
+
 const Icons = {
   back: 'M19 12H5M12 5l-7 7 7 7',
   arrowRight: 'M5 12h14M12 5l7 7-7 7',
@@ -359,7 +368,7 @@ function MatterNumberResolver({ matterNumber }) {
           </p>
           <button
             type="button"
-            onClick={() => navigate('/matters')}
+            onClick={() => navigate(matterListTarget())}
             className="px-4 py-2 bg-brand-ink text-white text-sm font-sans font-medium rounded-lg hover:bg-brand-ink-2"
           >
             Back to Matter Portfolio
@@ -805,7 +814,7 @@ function MatterWorkspace() {
         <div className="text-center bg-brand-surface p-10 rounded-2xl border border-brand-line shadow-sm max-w-md w-full mx-4">
           <Icon d={Icons.briefcase} size={32} className="mx-auto text-brand-rose mb-4" />
           <p className="text-brand-ink font-serif font-bold text-xl mb-4">{error || 'Matter not found.'}</p>
-          <button onClick={() => navigate('/matters')} className="bg-brand-ink text-white px-5 py-2.5 rounded-lg font-sans font-medium text-sm hover:bg-brand-ink-2 w-full">
+          <button onClick={() => navigate(matterListTarget())} className="bg-brand-ink text-white px-5 py-2.5 rounded-lg font-sans font-medium text-sm hover:bg-brand-ink-2 w-full">
             Back to Portfolio
           </button>
         </div>
@@ -870,7 +879,7 @@ function MatterWorkspace() {
       {/* Topbar */}
       <div className="bg-brand-surface border-b border-brand-line px-4 md:px-8 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
-          <button aria-label="Matter Portfolio" onClick={() => navigate('/matters')} className="min-h-11 min-w-11 flex items-center gap-2 text-brand-ink-2 hover:text-brand-ink text-sm font-sans font-medium transition-colors flex-shrink-0">
+          <button aria-label="Matter Portfolio" onClick={() => navigate(matterListTarget())} className="min-h-11 min-w-11 flex items-center gap-2 text-brand-ink-2 hover:text-brand-ink text-sm font-sans font-medium transition-colors flex-shrink-0">
             <Icon d={Icons.back} size={16} /> <span className="hidden sm:inline">Matter Portfolio</span>
           </button>
           <div className="h-4 w-px bg-brand-line flex-shrink-0" />
