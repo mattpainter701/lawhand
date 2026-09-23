@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.22.06",
+      "version": "2026.09.22.06",
+      "title": "Find matters that need attention",
+      "published_at": "2026-09-22",
+      "summary": "Open the attention list from My Matters, clear personal filters together, and see when the loaded list covers only part of your assigned matters.",
+      "highlights": [
+        {
+          "title": "Open the attention list in one click",
+          "description": "The attention heading opens the matching loaded matters, clearing conflicting personal filters while keeping your sort and other list choices."
+        },
+        {
+          "title": "Understand the list you are viewing",
+          "description": "Partial lists show loaded and assigned counts. Attention labels describe their scope, and failed requests offer a retry instead of an empty list."
+        },
+        {
+          "title": "Clear filters together",
+          "description": "Clear filter removes the personal keyword, status and attention filters in one action. Removing only the attention chip keeps your other filters."
+        }
+      ]
+    },
+    {
       "id": "2026.09.22.05",
       "version": "2026.09.22.05",
       "title": "Reliable packet saves and clearer form review",

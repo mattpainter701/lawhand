@@ -1,3 +1,10 @@
+## 2026.09.22.06 — Reliable matter attention entry and visible list scope
+
+- The My Matters attention entry changes view and personal filters in one URL update. Clear filter clears keyword/status/attention together; chip removal preserves other filters. Board selection clears the unsupported attention mode.
+- Attention counts and rows share the terminal-state exclusions. Opening the count clears conflicting personal filters but preserves sort and the separate All Matters query.
+- The assigned summary uses the server total. When only part of the assigned set is loaded, both the attention label and nearby scope text say so. Failed or inconsistent empty results offer retry, and superseded personal-list responses are ignored.
+- This is a bounded S3.04 presentation repair; complete backend paging/search, stable ordering and other consumers remain separate B1/B2 acceptance work. Document preview/generation and focus/access policies are unchanged.
+
 ## 2026.09.22.05 — Sample answer clarity and focused cloud search
 
 - Packet saving uses one durable session path. The primary Save action records results for resume and completion, drains current answers before queueing, reconciles ambiguous responses and skips recorded successes on retry. Fields stay locked while saving. Non-PDF worker-crash atomicity still requires a separate stress test; this change does not claim exactly-once cloud writes.

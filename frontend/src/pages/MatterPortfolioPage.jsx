@@ -211,6 +211,7 @@ export const MY_MATTER_STATUS_TABS = [
 
 // ── "Needs Action" classification ─────────────────────────────────────────────
 export function needsAction(m) {
+  if (['closed', 'settled', 'dismissed'].includes(m.status)) return false
   if (m.status === 'threatened') return true
   if (m.overdue_deadline_label && m.overdue_deadline_label.toLowerCase().includes('overdue')) return true
   if (m.overdue_deadline_label && m.overdue_deadline_label.toLowerCase().includes('due today')) return true
@@ -669,6 +670,9 @@ export default function MatterPortfolioPage() {
   const matterColumns = useMatterListColumns(user)
   const [myMatters, setMyMatters] = useState([])
   const [myLoading, setMyLoading] = useState(true)
+  const [myTotal, setMyTotal] = useState(null)
+  const [myError, setMyError] = useState(false)
+  const myRequest = useRef(0)
   const [matters, setMatters] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -697,6 +701,21 @@ export default function MatterPortfolioPage() {
   // decorative count: the header entry opens this filter.
   const attentionOnly = searchParams.get('matn') === '1'
   const setAttentionOnly = value => setParam('matn', value ? '1' : '', '')
+  // Router search-param callbacks do not queue like React state updates.
+  // Change every affected key in one navigation and leave other list state intact.
+  const openAttention = () => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    next.delete('view')
+    next.delete('mq')
+    next.delete('mstatus')
+    next.set('matn', '1')
+    return next
+  }, { replace: true })
+  const clearMyFilters = () => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    for (const key of ['mq', 'mstatus', 'matn']) next.delete(key)
+    return next
+  }, { replace: true })
   // Sort lives in the URL so a partner can send "my matters by next deadline"
   // to an associate as a link.
   const sortKeyParam = searchParams.get('msort')
@@ -724,14 +743,35 @@ export default function MatterPortfolioPage() {
   const [closeTarget, setCloseTarget] = useState(null)
   const [boardNotice, setBoardNotice] = useState(null)
   const viewMode = searchParams.get('view') === 'board' ? 'board' : 'list'
-  const setViewMode = value => setParam('view', value, 'list')
+  const setViewMode = value => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    if (value === 'board') {
+      next.set('view', 'board')
+      next.delete('matn')
+    } else next.delete('view')
+    return next
+  }, { replace: true })
+  const myPartial = myTotal === null || myTotal > myMatters.length
+  const myUnavailable = myError || (myMatters.length === 0 && myTotal !== 0)
 
   const loadMyMatters = () => {
+    const request = ++myRequest.current
     setMyLoading(true)
+    setMyError(false)
     getMyMattersPage({ page: 1, page_size: 200 })
-      .then(data => setMyMatters(data?.items || []))
-      .catch(() => {})
-      .finally(() => setMyLoading(false))
+      .then(data => {
+        if (request !== myRequest.current) return
+        if (!Array.isArray(data?.items)) throw new Error('Missing assigned-matter results')
+        setMyMatters(data.items)
+        setMyTotal(Number.isInteger(data?.total) ? data.total : null)
+      })
+      .catch(() => {
+        if (request !== myRequest.current) return
+        setMyError(true)
+      })
+      .finally(() => {
+        if (request === myRequest.current) setMyLoading(false)
+      })
   }
 
   const loadMatters = () => {
@@ -745,6 +785,7 @@ export default function MatterPortfolioPage() {
   useEffect(() => {
     loadMyMatters()
     loadMatters()
+    return () => { myRequest.current += 1 }
   }, [])
 
   const handleToggleActive = async (assignmentId, matterId, active) => {
@@ -877,24 +918,20 @@ export default function MatterPortfolioPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h2 className="font-serif font-bold text-2xl text-brand-ink">My Matters</h2>
-              {boardColumns.needsAction.length > 0 && (
+              {!myLoading && !myUnavailable && boardColumns.needsAction.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => { setViewMode('list'); setAttentionOnly(true) }}
-                  aria-pressed={attentionOnly}
+                  onClick={openAttention}
+                  aria-describedby="matter-attention-help"
+                  aria-pressed={attentionOnly && viewMode === 'list'}
                   className={`text-left text-[13px] font-sans mt-0.5 font-medium underline decoration-dotted underline-offset-2 hover:no-underline ${attentionOnly ? 'text-brand-ink' : 'text-brand-rose'}`}
                 >
-                  {boardColumns.needsAction.length} matter{boardColumns.needsAction.length !== 1 ? 's' : ''} need attention
-                  {boardColumns.upcoming.length > 0 && (
-                    <span className="text-brand-amber ml-2">
-                      · {boardColumns.upcoming.length} due tomorrow
-                    </span>
-                  )}
+                  {boardColumns.needsAction.length}{myPartial ? ' loaded' : ''} matter{boardColumns.needsAction.length !== 1 ? 's need' : ' needs'} attention
                 </button>
               )}
-              {boardColumns.needsAction.length === 0 && boardColumns.upcoming.length > 0 && (
+              {!myLoading && !myUnavailable && boardColumns.upcoming.length > 0 && (
                 <p className="text-[13px] text-brand-amber font-sans mt-0.5 font-medium">
-                  {boardColumns.upcoming.length} matter{boardColumns.upcoming.length !== 1 ? 's' : ''} due tomorrow
+                  {boardColumns.upcoming.length}{myPartial ? ' loaded' : ''} matter{boardColumns.upcoming.length !== 1 ? 's' : ''} due tomorrow
                 </p>
               )}
             </div>
@@ -906,9 +943,11 @@ export default function MatterPortfolioPage() {
                 <Icon d={Icons.clock} size={13} />
                 Deadline Calendar
               </button>
-              <span className="text-[13px] text-brand-muted font-sans">
-                {myMatters.length} assigned to you
-              </span>
+              {!myLoading && !myUnavailable && (
+                <span className="text-[13px] text-brand-muted font-sans">
+                  {myTotal === null ? `${myMatters.length} loaded` : myTotal} assigned to you
+                </span>
+              )}
               {/* View toggle */}
               <div className="flex rounded-xl border border-brand-line overflow-hidden text-[12px] font-semibold font-sans bg-brand-surface">
                 <button
@@ -929,6 +968,19 @@ export default function MatterPortfolioPage() {
             </div>
           </div>
 
+          {!myLoading && !myUnavailable && myMatters.length > 0 && (
+            <div className="mb-4 space-y-1 text-[13px] text-brand-muted">
+              {myPartial && (
+                <p role="status">
+                  Showing {myMatters.length}{myTotal !== null ? ` of ${myTotal}` : ' loaded'} assigned matters. Search and filters apply to these loaded matters.
+                </p>
+              )}
+              <p id="matter-attention-help">
+                Needs attention includes threatened matters, overdue or due-today deadlines, and open or active matters not updated for more than 14 days.
+              </p>
+            </div>
+          )}
+
           {boardNotice && (
             <AlertBanner
               type={boardNotice.type}
@@ -944,6 +996,15 @@ export default function MatterPortfolioPage() {
             <div className="bg-brand-surface border border-brand-line rounded-xl">
               <Spinner />
             </div>
+          ) : myUnavailable ? (
+            <EmptyState
+              visual={<Icon d={Icons.alert} size={22} />}
+              title="Could not load your matters"
+              actionLabel="Try again"
+              onAction={loadMyMatters}
+            >
+              Your assigned matters could not be checked. Try again to see the current list.
+            </EmptyState>
           ) : myMatters.length === 0 ? (
             <EmptyState
               visual={<Icon d={Icons.briefcase} size={22} />}
@@ -985,6 +1046,7 @@ export default function MatterPortfolioPage() {
                   <button
                     type="button"
                     onClick={() => setAttentionOnly(false)}
+                    aria-label="Remove Needs attention filter"
                     className="flex items-center gap-1.5 rounded-lg border border-brand-rose/40 bg-brand-rose/10 px-3 py-2 text-[12px] font-semibold text-brand-rose hover:bg-brand-rose/20"
                   >
                     Needs attention
@@ -1015,7 +1077,7 @@ export default function MatterPortfolioPage() {
                   visual={<Icon d={Icons.briefcase} size={22} />}
                   title="No matters match this filter"
                   actionLabel="Clear filter"
-                  onAction={() => { setMySearch(''); setMyStatusFilter('all'); setAttentionOnly(false) }}
+                  onAction={clearMyFilters}
                 >
                   Try a different status or keyword.
                 </EmptyState>
