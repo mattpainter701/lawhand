@@ -284,6 +284,21 @@ export function pumpChatQueue() {
   if (changed) notify()
 }
 
+/**
+ * Signing out does not reload the page. Without this, the next person to sign in
+ * on the tab would find the last one's unsent draft in the composer and their
+ * queued follow-ups still sending. Drop both; subscribers stay armed.
+ */
+export function clearChatQueueForSignOut() {
+  queues.clear()
+  drafts.clear()
+  knownTranscriptIds.clear()
+  viewedConversationId = null
+  if (unloadGuardInstalled) window.removeEventListener('beforeunload', warnBeforeDroppingQueue)
+  unloadGuardInstalled = false
+  notify()
+}
+
 /** Test helper: forget every queue, draft, and subscription. */
 export function resetChatQueue() {
   queues.clear()

@@ -27,6 +27,7 @@ import {
   MAX_PARALLEL_CHAT_RESPONSES,
   abortChatGeneration,
   beginChatGeneration,
+  clearChatGenerationsForSignOut,
   getChatGeneration,
   releaseChatGeneration,
   resetChatGenerations,
@@ -36,6 +37,7 @@ import {
   QUEUE_PAUSED_AFTER_FAILURE,
   chatSendMustQueue,
   clearChatQueue,
+  clearChatQueueForSignOut,
   countQueuedChatMessages,
   enqueueChatMessage,
   getChatQueue,
@@ -233,5 +235,41 @@ describe('chat follow-up queue', () => {
     const released = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(released)
     expect(released.defaultPrevented).toBe(false)
+  })
+
+  it('hands nothing to the next person who signs in on the same tab', () => {
+    const controller = new AbortController()
+    beginChatGeneration({
+      conversationId: 'conversation-a',
+      clientTurnId: 'live-a',
+      controller,
+      userMessage: { id: 'temp-live-a', role: 'user', content: 'Question' },
+      assistantMessage: { id: 'stream-live-a', role: 'assistant', content: '' },
+    })
+    enqueueChatMessage('conversation-a', { content: 'Privileged follow-up' })
+    saveChatDraft(null, 'Unsent new-chat draft')
+    saveChatDraft('conversation-a', 'Unsent thread draft')
+    const listener = vi.fn()
+    subscribeToChatQueue(listener)
+
+    clearChatQueueForSignOut()
+    clearChatGenerationsForSignOut()
+
+    expect(controller.signal.aborted).toBe(true)
+    expect(getChatGeneration('conversation-a')).toBeNull()
+    expect(countQueuedChatMessages()).toBe(0)
+    expect(readChatDraft(null)).toBe('')
+    expect(readChatDraft('conversation-a')).toBe('')
+    expect(runner.turns).toHaveLength(0)
+    expect(listener).toHaveBeenCalled()
+    const unload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unload)
+    expect(unload.defaultPrevented).toBe(false)
+
+    // Subscribers stay armed: the next session's queue still drains.
+    stream('conversation-b')
+    enqueueChatMessage('conversation-b', { content: 'Next user' })
+    finish('conversation-b')
+    expect(runner.turns.map((turn) => turn.content)).toEqual(['Next user'])
   })
 })

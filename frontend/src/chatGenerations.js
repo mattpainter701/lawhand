@@ -209,6 +209,18 @@ export function abortChatGeneration(conversationId) {
   return true
 }
 
+/**
+ * Signing out does not reload the page, so the next person to sign in on this tab
+ * would otherwise inherit these records and the streams still writing into them.
+ * Cancel every one and forget it; subscribers stay armed for the next session.
+ */
+export function clearChatGenerationsForSignOut() {
+  if (!generations.size) return
+  for (const record of generations.values()) record.controller?.abort()
+  generations.clear()
+  notify()
+}
+
 /** Test helper: drop every record without aborting, leaving no listeners armed. */
 export function resetChatGenerations() {
   generations.clear()
