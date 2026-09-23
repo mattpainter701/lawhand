@@ -10,6 +10,7 @@ import { getErrorMessage, getTemplateVariables } from './prepareHelpers'
 const templateIsDocx = (template) => String(template?.format || '').toLowerCase() === 'docx' && Boolean(template?.source_sha256)
 export const templateHasSigningFields = (template) => (template?.variable_schema?.fields || [])
   .some((field) => field?.included !== false && isSigningField(field))
+export const AUTO_PREVIEW_DELAY_MS = 650
 
 export default function usePrepareFill({ template, initialMatterId, folderId, onSaved, beforeSave, autoFillEnabled = true }) {
   const [variables, setVariables] = useState({})
@@ -25,6 +26,8 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const [filePreviewUrl, setFilePreviewUrl] = useState('')
   const [previewId, setPreviewId] = useState('')
   const [previewPurpose, setPreviewPurpose] = useState('')
+  const [previewError, setPreviewError] = useState('')
+  const [previewRevision, setPreviewRevision] = useState(0)
   // A Word template that carries signature fields is generated as PDF unless
   // the user says otherwise: only a PDF can be sent for signature, and the
   // Send step that follows the save would otherwise be a dead end.
@@ -54,6 +57,9 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const formRevisionRef = useRef(0)
   const smartFillRef = useRef(null)
   const smartFillAutoKeyRef = useRef('')
+  const previewInFlightRef = useRef(false)
+  const previewRenderRef = useRef(null)
+  const previewAttemptKeyRef = useRef('')
   // False once the host unmounts, so a save that finishes after the user has
   // navigated away cannot set state or run the caller's post-save callback.
   const mountedRef = useRef(true)
@@ -70,6 +76,8 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const isFileTemplate = isPdfTemplate || isDocxTemplate
   const isPdfOutput = isPdfTemplate || (isDocxTemplate && convertDocxToPdf)
   const canSaveToMatter = Boolean(template?.is_active)
+  const autoPreviewEnabled = canSaveToMatter && isPdfOutput
+  const previewInputKey = JSON.stringify([template?.id, template?.published_version_no, matterId.trim(), convertDocxToPdf, variables, previewRevision])
   const fillableNames = useMemo(
     () => names.filter((name) => !isSigningField(fieldDefinitions[name]) && !fieldDefinitions[name]?.value_from),
     [names, fieldDefinitions],
@@ -157,6 +165,8 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setFilePreviewUrl('')
     setPreviewId('')
     setPreviewPurpose('')
+    setPreviewError('')
+    setPreviewRevision(value => value + 1)
     // Re-derive the Word-to-PDF default for the template now in the host; a
     // swapped template must not keep the previous one's output choice.
     setConvertDocxToPdf(hasSigningFields && isDocxTemplate)
@@ -178,23 +188,33 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     }
   }, [])
 
-  const invalidatePreview = () => {
+  const invalidatePreview = ({ keepOutput = false } = {}) => {
     previewRequestGenerationRef.current += 1
     smartFillRequestGenerationRef.current += 1
     formRevisionRef.current += 1
-    setRendered(null)
-    setFilePreview(null)
-    setFilePreviewUrl('')
+    if (!keepOutput) {
+      setRendered(null)
+      setFilePreview(null)
+      setFilePreviewUrl('')
+    }
     setPreviewId('')
     setPreviewPurpose('')
-    setRendering(false)
+    setPreviewError('')
+    setPreviewRevision(value => value + 1)
+    setSaved(false)
+    setMatterDocId(null)
+    setSavedDownloadUrl('')
+    setStorageBackend('')
+    setStorageWarning('')
     setOutputFilename('')
     setOutputFormat('')
   }
 
   const setVariable = (name, value) => {
     setSaved(false)
-    invalidatePreview()
+    // Keep the last PDF visible while the latest answers are rendered, but
+    // discard its save evidence immediately. Switching matters still clears it.
+    invalidatePreview({ keepOutput: autoPreviewEnabled })
     setFieldSources(prev => { const next = { ...prev }; delete next[name]; return next })
     // A value the preparer typed is a value they looked at.
     setVerifiedNames(prev => {
@@ -281,7 +301,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         for (const name of Object.keys(next)) if (fillValue(applied.values[name]) !== fillValue(variables[name])) delete next[name]
         return next
       })
-      invalidatePreview()
+      invalidatePreview({ keepOutput: autoPreviewEnabled })
       setSaved(false)
       setSmartFillState('ready')
       setSmartFillMessage('Available values refreshed. Your entries were kept.')
@@ -328,6 +348,9 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   }, [matterId, template?.id, fillableNames.length, hasFirmFields, saving, autoFillEnabled])
 
   const handleRender = async (requestedPdfPurpose = null) => {
+    // Serialize expensive renders. If answers change in flight, the scheduler
+    // renders only the latest answers after this request has settled.
+    if (previewInFlightRef.current || saving || completionPending) return
     const previewPurpose = requestedPdfPurpose || (canSaveToMatter ? 'generation' : 'draft')
     if (isPdfOutput && canSaveToMatter && !matterId.trim()) {
       setError('Choose the destination matter before previewing the exact PDF values for save.')
@@ -341,8 +364,11 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     previewRequestGenerationRef.current = requestGeneration
     const requestVariables = { ...variables }
     const requestMatterId = isPdfOutput && canSaveToMatter ? matterId.trim() : null
+    previewInFlightRef.current = true
+    if (previewPurpose === 'generation') previewAttemptKeyRef.current = previewInputKey
     setRendering(true)
     setRenderPurpose(previewPurpose)
+    setPreviewError('')
     setError(null)
     try {
       const payload = {
@@ -384,14 +410,24 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
       setSaved(false)
     } catch (err) {
       if (previewRequestGenerationRef.current === requestGeneration) {
-        setError(getErrorMessage(err, 'Render failed.'))
+        const message = getErrorMessage(err, 'The preview could not be updated. Try again.')
+        setPreviewError(message)
+        setError(message)
       }
     } finally {
-      if (previewRequestGenerationRef.current === requestGeneration) {
-        setRendering(false)
-      }
+      previewInFlightRef.current = false
+      if (mountedRef.current) setRendering(false)
     }
   }
+
+  useEffect(() => { previewRenderRef.current = handleRender })
+  useEffect(() => {
+    if (!autoPreviewEnabled || !autoFillEnabled || !matterId.trim() || smartFillState === 'loading'
+      || rendering || saving || saved || completionPending || previewId
+      || previewAttemptKeyRef.current === previewInputKey) return undefined
+    const timer = setTimeout(() => previewRenderRef.current?.('generation'), AUTO_PREVIEW_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [autoPreviewEnabled, autoFillEnabled, matterId, smartFillState, rendering, saving, saved, completionPending, previewId, previewInputKey])
 
   const handleSave = async () => {
     if (!matterId.trim()) return
@@ -460,7 +496,20 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         setError('The server rendered the text but did not return a saved matter document.')
       }
     } catch (err) {
-      if (mountedRef.current) setError(getErrorMessage(err, 'Save failed.'))
+      if (mountedRef.current) {
+        const message = getErrorMessage(err, 'Save failed.')
+        setError(message)
+        // Preview evidence expires on the server. Since generation is now
+        // automatic, expose a retry when the server rejects this evidence;
+        // neither changing an answer nor retrying the save should be required
+        // just to obtain a fresh preview. Do not repeat the save automatically.
+        if (isPdfOutput && formRevisionRef.current === saveRevision
+          && err?.response?.status === 409 && /preview/i.test(String(message))) {
+          setPreviewId('')
+          setPreviewPurpose('')
+          setPreviewError(message)
+        }
+      }
     } finally {
       if (mountedRef.current) setSaving(false)
     }
@@ -468,6 +517,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
 
 
   return {
+    autoPreviewEnabled, previewError,
     variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, completionPending, setCompletionPending, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, verifiedNames, setVerifiedNames, toggleVerified, verifyAndAdvance, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
   }
 }

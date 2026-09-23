@@ -8,9 +8,22 @@ defects. A code/test pass does not establish that a tenant's cloud grant works.
 
 ## Product flow
 
-The everyday flow is **choose a matter → review missing answers → preview →
-save or download**. Template setup belongs to authoring; ordinary preparers
+The everyday flow is **choose a matter → finish missing answers while reviewing
+the document → save or download**. Template setup belongs to authoring; ordinary preparers
 should reuse the information the firm already entered.
+
+Published single-document PDFs (including Word templates with PDF output)
+preview automatically in the matter dialog and Prepare page. The first preview
+waits for restored answers and matter prefill; later previews start after a
+650 ms pause in editing. Only one render runs at a time, and responses for old
+answers are discarded. While updating, the last PDF is explicitly marked out
+of date and cannot be saved or downloaded. Page and zoom choices survive
+refreshes. A failed preview offers **Retry preview** without repeatedly retrying
+on its own. Server-rejected or expired preview evidence also exposes this retry
+without changing answers or repeating the save automatically. **Save to matter** still requires all required answers and preview
+evidence for the exact current values and matter. Previewing never marks an
+answer verified, publishes a template, saves a document or sends it for signing.
+Draft publication tests and non-PDF previews remain explicit actions.
 
 Sample-library **Preview** and packet **Open preview** display PDFs inside
 LawHand with page navigation and zoom. Sample loading and fetch errors stay

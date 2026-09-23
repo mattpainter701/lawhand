@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Download, Eye, Send, Wand2 } from 'lucide-react'
+import { Check, Download, Eye, Save, Wand2 } from 'lucide-react'
 import MatterPicker from './MatterPicker'
 import StorageReadinessNotice from './StorageReadinessNotice'
 import TemplateFactReview from '../templates/TemplateFactReview'
@@ -30,6 +30,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     filePreviewUrl,
     previewId,
     previewPurpose,
+    autoPreviewEnabled,
+    previewError,
     convertDocxToPdf,
     hasSigningFields,
     setConvertDocxToPdf,
@@ -90,6 +92,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     if (currentlyVerified) toggleVerified(name)
   }
   const saving = savingState || completionPending
+  const livePreviewPending = autoPreviewEnabled && Boolean(matterId.trim()) && !previewId
   // The UUID fallback is committed on blur or Enter, not on every keystroke:
   // each character would otherwise change the matter and reset the form (and
   // fire a Smart Fill request) mid-paste.
@@ -162,14 +165,14 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
           </div>
         )}
 
-        {(matterId.trim() || hasFirmFields) && <div className="rounded border border-brand-line bg-brand-bg p-3 text-xs">
-          <p className="font-semibold">Correct the source once</p>
+        {(matterId.trim() || hasFirmFields) && <details className="rounded border border-brand-line bg-brand-bg p-3 text-xs">
+          <summary className="cursor-pointer font-semibold">Correct the source once</summary>
           <div className="mt-2 flex flex-wrap gap-3">
             {matterId.trim() && <a href={`/matters/${encodeURIComponent(matterId.trim())}`} target="_blank" rel="noreferrer" className="underline">Open matter details (new tab)</a>}
             {hasFirmFields && <a href="/admin?tab=firm" target="_blank" rel="noreferrer" className="underline">Open firm settings (new tab)</a>}
           </div>
           <p className="mt-2 text-brand-muted">Keep this document open. After saving changes to the source, return and refresh values. Your entries stay intact; changed suggestions are yours to accept. Firm changes require an administrator.</p>
-        </div>}
+        </details>}
 
         <TemplateFactReview matterId={matterId.trim()} fields={Object.values(fieldDefinitions)} onAccepted={() => { setFieldSources({}); invalidatePreview() }} />
         {smartFillMessage && (
@@ -370,7 +373,7 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                 {rendering && renderPurpose === 'activation' ? 'Testing this draft…' : 'Test this draft'}
               </button>
             </>
-          ) : (
+          ) : !autoPreviewEnabled ? (
             <button
               onClick={() => handleRender()}
               disabled={rendering || saving}
@@ -379,14 +382,18 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
               <Eye size={16} />
               {rendering ? 'Rendering...' : 'Preview'}
             </button>
-          )}
+          ) : previewError ? (
+            <button type="button" onClick={() => handleRender()} disabled={rendering || saving} className="rounded border border-brand-line px-4 py-2 text-sm disabled:opacity-50">Retry preview</button>
+          ) : null}
           <button
             onClick={handleSave}
-            disabled={saving || smartFillState === 'loading' || saved || !matterId.trim() || !canSaveToMatter || (isPdfOutput && !previewId) || (isDocxTemplate && !filePreview)}
+            disabled={saving || rendering || smartFillState === 'loading' || saved || !matterId.trim() || !canSaveToMatter || requiredUnresolvedNames.length > 0 || (isPdfOutput && !previewId) || (isDocxTemplate && !filePreview)}
             title={!canSaveToMatter
               ? 'Activate this verified template before saving to a matter'
+              : requiredUnresolvedNames.length > 0
+                ? 'Complete the required fields before saving'
               : (isPdfOutput && !previewId)
-                ? 'Preview the exact current PDF values before saving'
+                ? 'Wait for the preview to update before saving'
                 : (isDocxTemplate && !filePreview)
                   ? 'Download and review the current Word preview before saving'
                 : undefined}
@@ -398,17 +405,20 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
               </>
             ) : (
               <>
-                <Send size={16} />
-                {saving ? 'Saving...' : 'Render & Save to Matter'}
+                <Save size={16} />
+                {saving ? 'Saving...' : 'Save to matter'}
               </>
             )}
           </button>
         </div>
+        {autoPreviewEnabled && <p role="status" className="text-xs text-brand-muted">
+          {!matterId.trim() ? 'Choose a matter to fill and preview this document.' : previewError ? 'Preview could not update. Retry before saving.' : smartFillState === 'loading' ? 'Filling from your matter…' : livePreviewPending ? 'Updating preview… You can keep editing.' : 'Preview updates as you type. Review every page before saving.'}
+        </p>}
 
         {!canSaveToMatter && <TemplateTestSummary template={template} error={error} rendering={rendering} outputReady={Boolean(filePreview || rendered)} missing={requiredUnresolvedNames} diagnostic={renderPurpose !== 'activation'} />}
 
         </div><section aria-label="Document preview" className={`min-w-0 rounded-xl border border-brand-line bg-brand-bg p-4 ${layout === 'modal' ? 'lg:max-h-[78vh] lg:overflow-auto' : ''}`}>
-        {!filePreview && !rendered && <><div className="mb-3"><h3 className="text-sm font-semibold text-brand-ink">Document reference</h3><p className="mt-1 text-xs text-brand-muted">Click a highlighted field to complete it. Choose Preview to check the generated document with your current values.</p></div><TemplateFillSource template={template} fields={Object.values(fieldDefinitions).filter(field => field.included !== false)} values={variables} onSelectField={name => { pendingFocus.current = name; setFieldFilter('all'); requestAnimationFrame(() => document.getElementById(`template-variable-${name}`)?.focus()) }} /></>}
+        {!filePreview && !rendered && <><div className="mb-3"><h3 className="text-sm font-semibold text-brand-ink">Document reference</h3><p className="mt-1 text-xs text-brand-muted">{autoPreviewEnabled ? 'Click a highlighted field to complete it. Your PDF preview updates automatically.' : 'Click a highlighted field to complete it. Choose Preview to check the generated document with your current values.'}</p></div><TemplateFillSource autoPreview={autoPreviewEnabled} template={template} fields={Object.values(fieldDefinitions).filter(field => field.included !== false)} values={variables} onSelectField={name => { pendingFocus.current = name; setFieldFilter('all'); requestAnimationFrame(() => document.getElementById(`template-variable-${name}`)?.focus()) }} /></>}
         {rendered && (
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -432,20 +442,21 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
                 <h3 className="text-sm font-medium text-brand-ink">{isPdfOutput ? 'PDF Preview' : 'Generated Word Preview'}</h3>
                 <p className="text-xs text-brand-muted">{filePreview.filename}</p>
               </div>
-              <button type="button" onClick={() => triggerBlobDownload(filePreview.blob, filePreview.filename)} className="inline-flex items-center gap-1.5 rounded border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-surface-2">
+              <button type="button" disabled={livePreviewPending} onClick={() => triggerBlobDownload(filePreview.blob, filePreview.filename)} className="inline-flex items-center gap-1.5 rounded border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-surface-2 disabled:opacity-50">
                 <Download size={14} /> Download preview
               </button>
             </div>
             {isPdfOutput ? (
               <>
-                <GeneratedPdfPreview key={filePreviewUrl} source={filePreview.blob} title={template.title} />
-                <p className="mt-2 text-xs font-medium text-brand-green" role="status">
+                {livePreviewPending && <p role="status" className="mb-2 rounded border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-xs">{previewError ? 'This preview is out of date. Retry to see your latest answers.' : 'Updating preview. The document below shows your previous answers.'}</p>}
+                <GeneratedPdfPreview key={autoPreviewEnabled ? `${template.id}:${matterId}` : filePreviewUrl} source={filePreview.blob} title={template.title} />
+                {!livePreviewPending && <p className="mt-2 text-xs font-medium text-brand-green" role="status">
                   {previewPurpose === 'generation'
-                    ? 'These exact values and this matter are previewed. Inspect every page, then save without changing the fields.'
+                    ? 'Preview is up to date. Review every page, then save to your matter.'
                     : previewPurpose === 'activation'
                       ? 'Representative activation preview recorded. Inspect every page, then activate this unchanged template.'
                       : 'Draft preview only. To record a publication test, choose Test this draft after entering representative values. Review every generated page before publishing.'}
-                </p>
+                </p>}
               </>
             ) : (
               <div className="rounded border border-brand-green/30 bg-brand-green/10 px-4 py-3 text-sm text-brand-ink">
