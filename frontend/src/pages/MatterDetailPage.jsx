@@ -929,10 +929,31 @@ function MatterWorkspace() {
               </div>
             )}
             <h1 className="sr-only md:not-sr-only md:font-serif md:text-4xl md:break-words md:font-bold md:text-brand-ink md:tracking-tight md:mb-3 md:leading-tight">{matter.matter_name}</h1>
-            {matter.description && (
-              <p className="text-brand-ink-2 font-sans text-[15px] mb-4 leading-relaxed max-w-2xl">{matter.description}</p>
+            {/* Identity and responsibility answer "whose matter, who owns it"
+                before description, budget or setup detail (S3.08). */}
+            {(matter.client_name || matter.attorney_of_record_name || matter.partner_attorney_name) && (
+              <dl data-testid="matter-identity" className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] font-sans text-brand-ink-2">
+                {matter.client_name && (
+                  <div className="flex items-center gap-1.5">
+                    <dt className="text-brand-muted">Client</dt>
+                    <dd className="font-semibold text-brand-ink">{matter.client_name}</dd>
+                  </div>
+                )}
+                {matter.attorney_of_record_name && (
+                  <div className="flex items-center gap-1.5">
+                    <dt className="text-brand-muted">Responsible</dt>
+                    <dd className="font-semibold text-brand-ink">{matter.attorney_of_record_name}</dd>
+                  </div>
+                )}
+                {matter.partner_attorney_name && (
+                  <div className="flex items-center gap-1.5">
+                    <dt className="text-brand-muted">Partner</dt>
+                    <dd className="font-semibold text-brand-ink">{matter.partner_attorney_name}</dd>
+                  </div>
+                )}
+              </dl>
             )}
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
               <StatusBadge status={matter.status} />
               <RiskBadge level={matter.risk_level} />
               {matter.practice_area && (
@@ -942,6 +963,9 @@ function MatterWorkspace() {
                 <span className="text-[12px] font-sans text-brand-muted">#{matter.case_number}</span>
               )}
             </div>
+            {matter.description && (
+              <p className="text-brand-ink-2 font-sans text-[15px] mb-4 leading-relaxed max-w-2xl">{matter.description}</p>
+            )}
             {hasCloudStorageLinks(matter.cloud_folder) && (
               <div className="flex flex-wrap items-center gap-2 mt-4">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-brand-muted font-sans">Cloud Folder</span>
