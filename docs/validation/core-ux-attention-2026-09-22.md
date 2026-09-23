@@ -12,7 +12,9 @@ This visible narrowing follows S3.04's permitted fallback. It does not complete 
 
 ## Validation
 
+The concurrent count-predicate fix and its interaction test are preserved in this repair.
+
 - Six regressions fail against the original PR: terminal-state attention, board-to-list navigation, combined clear, board switching, partial counts and failed-request feedback.
 - Real page tests use MemoryRouter and synthetic API results; they check returned rows and URL state, retained sort/All Matters filters, chip removal, reload, partial scope and retry.
-- Related matter-table/row interaction tests, ESLint and the production frontend build are required before push. Final-head CI and Merge Gate remain required before merge.
+- All 34 focused attention/table/row tests, the three database-free release tests, focused ESLint/Ruff, the release-catalog check and the production frontend build pass locally. Final-head CI and Merge Gate remain required before merge.
 - No production data, provider calls or database fixtures are needed for this presentation repair. Fixture persistence and backend completeness remain with their owners.

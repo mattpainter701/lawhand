@@ -58,8 +58,8 @@ describe('Needs attention view (S3.04)', () => {
     expect(needsAttention(overdue)).toBe(true)
     expect(needsAttention(closedOverdue)).toBe(false)
 
-    const attentionButton = await screen.findByRole('button', { name: /need attention/ })
-    expect(attentionButton).toHaveTextContent('1 matter need attention')
+    const attentionButton = await screen.findByRole('button', { name: '1 matter needs attention' })
+    expect(attentionButton).toHaveTextContent('1 matter needs attention')
 
     // Before filtering, all assigned matters are listed.
     expect(await screen.findByText('Normal matter')).toBeInTheDocument()
@@ -72,7 +72,7 @@ describe('Needs attention view (S3.04)', () => {
     expect(screen.queryByText('Closed overdue matter')).not.toBeInTheDocument()
 
     // Clearing the attention filter restores the full list.
-    await user.click(screen.getByRole('button', { name: 'Needs attention' }))
+    await user.click(screen.getByRole('button', { name: 'Remove Needs attention filter' }))
     expect(await screen.findByText('Normal matter')).toBeInTheDocument()
   })
 })
