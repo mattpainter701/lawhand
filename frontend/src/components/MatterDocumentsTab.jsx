@@ -91,15 +91,23 @@ export function isAssistantRevisionDocument(document) {
   return String(document?.document_category || '').toLowerCase() === 'assistant_revision'
 }
 
-function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
+export function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
   const [status, setStatus] = useState(null)
+  const [statusError, setStatusError] = useState('')
+  const [statusAttempt, setStatusAttempt] = useState(0)
   const [provisioning, setProvisioning] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
-    getMatterCloudFolder(matterId).then(setStatus).catch(() => {})
-  }, [matterId])
+    let cancelled = false
+    setStatus(null)
+    setStatusError('')
+    getMatterCloudFolder(matterId)
+      .then(result => { if (!cancelled) setStatus(result) })
+      .catch(() => { if (!cancelled) setStatusError('Document folder status could not be loaded. Try again.') })
+    return () => { cancelled = true }
+  }, [matterId, statusAttempt])
 
   const handleProvision = useCallback(async () => {
     setProvisioning(true)
@@ -110,7 +118,7 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
       onFolderChange?.(result.providers || {})
       setToast({ type: 'success', msg: 'Cloud folder set up successfully.' })
     } catch (err) {
-      setToast({ type: 'error', msg: apiErrorMessage(err, 'Provisioning failed.') })
+      setToast({ type: 'error', msg: apiErrorMessage(err, 'Folder setup failed.') })
     } finally {
       setProvisioning(false)
     }
@@ -138,7 +146,13 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
     }
   }, [matterId, onFolderChange, onSynced])
 
-  if (!status) return null
+  if (statusError) return (
+    <div className="rounded-xl border border-brand-line bg-brand-bg p-4 text-sm">
+      <p role="alert">{statusError}</p>
+      <button type="button" className="mt-2 rounded border border-brand-line px-3 py-1.5" onClick={() => setStatusAttempt(value => value + 1)}>Retry folder status</button>
+    </div>
+  )
+  if (!status) return <p role="status" className="text-sm text-brand-muted">Loading document folder status…</p>
 
   const providers = status.providers || {}
   const od = providers.onedrive
@@ -162,7 +176,7 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
 
       {isFailed && (
         <p className="text-[12px] font-sans text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
-          Provisioning failed: {provMessage || 'Unknown error'}. You can retry below.
+          Folder setup failed: {provMessage || 'Unknown error'}. You can retry below.
         </p>
       )}
 
@@ -190,7 +204,7 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
           )}
           <button
             onClick={handleSync}
-            disabled={syncing}
+            disabled={syncing || provisioning}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink text-[12px] font-sans font-medium rounded-lg hover:bg-brand-bg-soft disabled:opacity-50 transition-colors"
           >
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
@@ -200,31 +214,28 @@ function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
       ) : (
         <div className="flex items-center gap-3">
           <span className="text-[13px] font-sans text-brand-muted">
-            {isFailed ? 'Cloud folder provisioning failed' : 'Cloud folder not provisioned'}
+            {isFailed ? 'Document folder setup failed' : 'Document folders are not set up'}
           </span>
           {isFailed && (
             <span className="text-[11px] font-sans text-brand-muted">
-              Check your cloud connection in Settings → File Shares, or use "Provision + Sync" to retry.
+              Check the connection in Administration → Integrations → Cloud, then choose Set up folders to retry.
             </span>
           )}
-          <button
-            onClick={handleProvision}
-            disabled={provisioning}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-accent text-white text-[12px] font-sans font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
-            {provisioning ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
-            {provisioning ? 'Setting up…' : isFailed ? 'Retry Setup' : 'Set Up Cloud Folder'}
-          </button>
-          <button
-            onClick={handleSync}
-            disabled={syncing || provisioning}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-brand-line text-brand-ink text-[12px] font-sans font-medium rounded-lg hover:bg-brand-bg-soft disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing…' : 'Provision + Sync'}
-          </button>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleProvision}
+          disabled={provisioning || syncing}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-accent text-white text-[12px] font-sans font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+        >
+          {provisioning ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
+          {provisioning ? 'Setting up…' : 'Set up folders'}
+        </button>
+        <span className="text-[11px] font-sans text-brand-muted">Existing folders are reused. Retry your document save after setup completes.</span>
+      </div>
 
       {toast && (
         <p className={`text-[12px] font-sans ${toast.type === 'error' ? 'text-brand-rose' : 'text-green-600'}`}>

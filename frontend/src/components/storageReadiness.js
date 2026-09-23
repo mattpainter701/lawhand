@@ -90,5 +90,5 @@ export function deriveStorageReadiness({ primaryCloud = null, microsoft, google,
     }
   }
 
-  return { provider, credential, label, ready: true, status: 'ready', reason: `${label} is ready for matter documents.` }
+  return { provider, credential, label, ready: true, status: 'ready', reason: `${label} connection is available. Access to each matter folder is checked when saving a document.` }
 }

@@ -1,3 +1,9 @@
+## 2026.09.23.02 — Matter storage recovery guidance
+
+- Missing OneDrive and Google Drive matter folder bindings return provider-specific setup guidance and identify that no file was stored. Cloud-bound writes continue to fail closed rather than falling back to another provider or local storage.
+- The matter Documents tools provide one explicit **Set up folders** action for the existing provisioning and sharing workflow; **Sync folder** remains available for already provisioned folders. A failed file write does not automatically provision a folder or change provider roots or grants.
+- Admin storage status distinguishes the saved primary-provider preference and provider connection availability from access to an individual matter folder. Directory Sync remains a separate capability whose availability can depend on account tier.
+
 ## 2026.09.23.01 — Parallel assistant chats, follow-up queue and readable review tags
 
 - Chat no longer blocks every send while any conversation is streaming. The server already holds one generation lease per conversation; the client now caps a tab at `MAX_PARALLEL_CHAT_RESPONSES` (3) concurrent turns so one user cannot exhaust the per-worker generation pool (`DATABASE_GENERATION_POOL_SIZE`). Matter linking is blocked only by the conversation's own in-flight or queued work.

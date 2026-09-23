@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.23.02 — Clearer recovery for matter storage
+
+Released September 23, 2026.
+
+Missing matter folders now have a direct setup path and clearer retry guidance. Admin storage status distinguishes a saved provider preference and available connection from matter folder access, while Directory Sync remains separate.
+
+- **Find a missing matter folder.** A missing OneDrive or Google Drive matter folder means no file was stored. Use the matter's Document tools; check Administration, Integrations, then Cloud for connection issues.
+- **Set up a folder, then retry.** Use the single Set up folders action and wait for its status before retrying the save. Sync folder remains for a folder that is already provisioned.
+- **Separate provider status from folder access.** Preference saved confirms provider choice, not matter folder access. Connection status does not verify each folder; Directory Sync is separate and may depend on account tier.
+
 ## 2026.09.23.01 — Run several assistant chats and queue follow-ups
 
 Released September 23, 2026.
