@@ -113,7 +113,7 @@ describe('IntegrationsHub', () => {
     const cloud = screen.getByTestId('integration-card-cloud')
     await userEvent.click(within(cloud).getByText('Permissions & setup'))
     expect(screen.getByText('Directory profiles for user provisioning')).toBeVisible()
-    expect(within(cloud).getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integrations')
+    expect(within(cloud).getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integrations#connect-microsoft-365-or-google-workspace')
     expect(screen.getByRole('link', { name: /Full data visibility guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integration-data-visibility')
 
     await userEvent.click(within(cloud).getByText('Open'))
@@ -186,7 +186,7 @@ describe('IntegrationsHub', () => {
     renderHub({ section: 'data-import' })
     expect(await screen.findByText('Tabs3 configuration')).toBeInTheDocument()
     screen.getAllByRole('link', { name: 'Storage, imports & readiness guide' })
-      .forEach((link) => expect(link).toHaveAttribute('href', '/admin?tab=guide&chapter=storage-imports-and-readiness'))
+      .forEach((link) => expect(link).toHaveAttribute('href', '/admin?tab=guide&chapter=storage-imports-and-readiness#import-from-tabs3'))
   })
 
   it('does not offer Admin Guide links to roles that cannot open the Admin Guide', async () => {

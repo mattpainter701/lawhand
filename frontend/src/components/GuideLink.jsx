@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useInRouterContext } from 'react-router-dom'
 import { BookOpen } from 'lucide-react'
 import { guideHref } from '../guideTopics'
 
@@ -25,7 +25,8 @@ const VARIANTS = {
 
 // A link from a feature panel to the guide section that explains it. Callers
 // decide visibility for administrator chapters (see canOpenAdminGuide), since
-// those open inside Administration.
+// those open inside Administration. Panels are also rendered on their own (in
+// tests and embeds) without a router, where a plain anchor does the same job.
 export default function GuideLink({
   audience = 'user',
   chapter,
@@ -35,14 +36,16 @@ export default function GuideLink({
   className = '',
   ...props
 }) {
-  return (
-    <Link
-      to={guideHref(audience, chapter, anchor)}
-      className={`${VARIANTS[variant] || VARIANTS.inline} ${className}`}
-      {...props}
-    >
+  const inRouter = useInRouterContext()
+  const href = guideHref(audience, chapter, anchor)
+  const classes = `${VARIANTS[variant] || VARIANTS.inline} ${className}`
+  const content = (
+    <>
       <BookOpen size={13} aria-hidden="true" className="shrink-0" />
       <span>{children}</span>
-    </Link>
+    </>
   )
+  return inRouter
+    ? <Link to={href} className={classes} {...props}>{content}</Link>
+    : <a href={href} className={classes} {...props}>{content}</a>
 }

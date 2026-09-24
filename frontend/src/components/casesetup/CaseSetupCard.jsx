@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Clock, FileCheck, Send } from 'lucide-react'
 import { getAdminUsers, getContacts, getMatterDocuments, getMatterPaperwork, matterPaperworkAction, recordMatterEngagement } from '../../api'
 import PaperworkDrawer from './PaperworkDrawer'
+import GuideLink from '../GuideLink'
 import EngagementFields from './EngagementFields'
 import { emptyEngagement, engagementFormData, engagementProblem, engagementSummary } from './engagement'
 import {
@@ -237,6 +238,11 @@ export default function CaseSetupCard({ matterId, matter, onPacketChange, onEnga
                       ? 'Send any remaining forms or requested records from here; the fee agreement is already handled.'
                       : 'Send the fee agreement, intake form, questionnaire, and any other forms in one message, then track each signature here. Already engaged? Record it instead and send nothing.'}
               </p>
+              {!closed && (
+                <GuideLink chapter="intake-and-call-reception" anchor="send-the-client-paperwork" className="mt-1.5">
+                  How client paperwork works
+                </GuideLink>
+              )}
             </div>
             {!closed && (
               <div className="flex flex-wrap items-center gap-3">

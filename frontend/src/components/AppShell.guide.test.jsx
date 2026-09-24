@@ -50,7 +50,7 @@ describe('AppShell guide link', () => {
   it('opens the chapter that documents the current screen', () => {
     renderAt('/tasks/42', staff)
     const link = screen.getByRole('link', { name: 'Open the guide for Tasks' })
-    expect(link).toHaveAttribute('href', '/guide/tasks-calendar-communications')
+    expect(link).toHaveAttribute('href', '/guide/tasks-calendar-communications#tasks')
   })
 
   it('lets a page narrow the link to the panel in view', () => {

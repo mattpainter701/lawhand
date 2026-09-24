@@ -25,7 +25,7 @@ import { looksLikeMatterNumber, normalizeMatterNumber } from '../utils/matterNum
 import { readRememberedListUrl } from '../utils/matterListMemory'
 import MatterDocumentsTab from '../components/MatterDocumentsTab'
 import MatterViewGear, { MatterViewContext, useFieldHidden, useMatterView } from '../components/MatterViewGear'
-import { usePageGuideTopic } from '../components/GuideLink'
+import GuideLink, { usePageGuideTopic } from '../components/GuideLink'
 import { MATTER_SECTION_GUIDES } from '../guideTopics'
 import WorkflowRunsPanel from '../components/workflows/WorkflowRunsPanel'
 import MatterCorrespondenceTab from '../components/MatterCorrespondenceTab'
@@ -2798,6 +2798,9 @@ export function SignatureRequestsPanel({ matterId, refreshKey = 0 }) {
             <p className="text-[13px] text-brand-muted font-sans mt-0.5">
               Clients fill and sign inside the document in their portal, or upload a signed copy for your review.
             </p>
+            <GuideLink chapter="document-automation-and-esignature" anchor="send-a-document-for-signature" className="mt-1.5">
+              How to send for signature
+            </GuideLink>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-xl border border-brand-line bg-white px-3 py-2"><p className="text-lg font-bold text-brand-ink">{counts.sent || 0}</p><p className="text-[10px] uppercase text-brand-muted">Awaiting</p></div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
+import GuideLink from './GuideLink'
 
 const root = '/firm-email-intake'
 const button = 'rounded-lg border border-brand-line px-3 py-2 text-sm font-semibold disabled:opacity-50'
@@ -133,7 +134,11 @@ export default function FirmEmailIntake({ admin = false }) {
   if (!admin && !data?.alias && !data?.pending_count && !error) return null
   return <section aria-label="Email tasks" className="mb-6 rounded-xl border border-brand-line bg-brand-surface p-4 md:p-5 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 className="font-semibold">{admin ? 'Firm email intake' : 'Email tasks'}</h3>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h3 className="font-semibold">{admin ? 'Firm email intake' : 'Email tasks'}</h3>
+        {/* Administrators reach their chapter from the Integrations section header. */}
+        {!admin && <GuideLink chapter="email-intake">How email tasks work</GuideLink>}
+      </div>
       <button className={button} onClick={() => { load(); loadQueue() }}>Needs review ({data?.pending_count || 0})</button>
     </div>
     {error && <div role="alert" className="text-sm text-red-700">{error} <button className={button} onClick={() => { setError(''); load() }}>Retry</button></div>}
