@@ -75,7 +75,10 @@ from app.services.tenant_access import (
     tenant_allows_premium_ai,
 )
 from app.services.tenant_state import require_active_tenant
-from app.services.connected_mail import GOOGLE_MAIL_SEND_SCOPE, MICROSOFT_MAIL_SEND_SCOPE
+from app.services.connected_mail import (
+    GOOGLE_MAIL_SEND_SCOPE,
+    MICROSOFT_MAIL_SEND_SCOPE,
+)
 from app.services.user_invitations import (
     InvitationRefusal,
     claim_invitation,
@@ -2797,7 +2800,9 @@ async def get_calendar_providers(
                 feature
                 for feature, scope in PERSONAL_CONNECTION_SCOPES[provider].items()
                 if scope not in granted_scopes
-            ] if row else [],
+            ]
+            if row
+            else [],
             "expires_at": row.token_expires_at.isoformat()
             if row and row.token_expires_at
             else None,
