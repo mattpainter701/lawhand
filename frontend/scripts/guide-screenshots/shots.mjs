@@ -355,4 +355,67 @@ export const SHOTS = [
       { target: (page) => page.getByTestId('integration-card-email-intake').locator('summary'), label: '4', placement: 'bottom-left' },
     ],
   },
+  {
+    name: 'admin-support',
+    path: '/admin?tab=support',
+    user: 'admin',
+    viewport: { width: 1600, height: 1400 },
+    waitFor: 'File a support request',
+    setup: async (page) => {
+      await page.getByLabel('Subject').fill('Portal invitations not arriving for one client')
+    },
+    clip: (page) => regionAround(page, [
+      (p) => p.getByText('File a support request', { exact: true }).first(),
+      (p) => p.getByText('Your firm’s requests', { exact: true }).locator('xpath=ancestor::section[1]').or(p.getByText('Your firm’s requests', { exact: true })).first(),
+      (p) => p.getByText('Invoice PDFs missing the firm logo since Tuesday'),
+      (p) => p.getByText('How do we route intake calls to a second office?'),
+    ], { pad: 28 }),
+    annotate: [
+      { target: (page) => page.getByLabel('Severity'), label: '1' },
+      { target: (page) => page.getByLabel('Subject'), label: '2' },
+      { target: byRole('button', 'File request'), label: '3' },
+      { target: (page) => page.getByText('Your firm’s requests', { exact: true }), label: '4' },
+    ],
+  },
+  {
+    name: 'admin-email-intake',
+    path: '/admin?tab=integrations&integration=email-intake',
+    user: 'admin',
+    viewport: { width: 1600, height: 1600 },
+    waitFor: 'Authorized staff senders',
+    settle: 600,
+    setup: async (page) => {
+      await page.getByText('Authorized staff senders', { exact: true }).click()
+    },
+    clip: (page) => regionAround(page, [
+      (p) => p.locator('#integrations-heading'),
+      (p) => p.getByRole('button', { name: /Needs review/ }).first(),
+      (p) => p.getByText('Authorized staff senders', { exact: true }).locator('xpath=ancestor::details[1]'),
+    ], { pad: 24 }),
+    annotate: [
+      { target: (page) => page.locator('section[aria-labelledby="integrations-heading"]').getByRole('link', { name: /guide/i }).filter({ visible: true }).first(), label: '1' },
+      { target: (page) => page.getByRole('button', { name: /Needs review/ }).first(), label: '2' },
+      { target: byRole('button', 'Save time zone'), label: '3' },
+      { target: byRole('button', 'Replace address'), label: '4' },
+      { target: (page) => page.getByText('Authorized staff senders', { exact: true }), label: '5' },
+    ],
+  },
+  {
+    name: 'onboarding-storage',
+    path: '/onboarding',
+    user: 'admin',
+    viewport: { width: 1440, height: 1100 },
+    waitFor: 'Where Should Documents Live?',
+    clip: (page) => regionAround(page, [
+      (p) => p.getByText('Welcome', { exact: true }).first().locator('xpath=..'),
+      (p) => p.getByText('Complete', { exact: true }).first(),
+      (p) => p.getByRole('button', { name: 'Continue' }),
+    ], { pad: 28 }),
+    annotate: [
+      { target: (page) => page.getByRole('radiogroup', { name: 'Document storage provider' }), label: '1' },
+      { target: (page) => page.getByTestId('root-ownership'), label: '2' },
+      { target: (page) => page.getByTestId('storage-root'), label: '3' },
+      { target: byRole('button', 'Continue'), label: '4' },
+    ],
+  },
 ]

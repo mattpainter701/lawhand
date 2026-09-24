@@ -517,6 +517,28 @@ export const TENANT = {
   created_at: isoAt(-730, '09:00'), is_active: true,
 }
 
+// ── Support ─────────────────────────────────────────────────────────────────
+// Mirrors the published support policy (backend/app/services/operating_contract.py).
+export const SUPPORT_POLICY = {
+  version: '2026-06',
+  coverage: {
+    standard_hours: 'Monday-Friday, 08:00-17:00 America/Chicago',
+    after_hours: 'S1 reports use the emergency channel identified in the customer order form; other requests enter the next covered period.',
+  },
+  objective_boundary: 'Acknowledgement and escalation targets are operating objectives, not an SLA, warranty, or service-credit promise unless incorporated into signed customer terms.',
+  severities: [
+    { severity: 'S1', definition: 'Confirmed or credibly suspected confidentiality breach, destructive data-integrity event, or production-wide unavailability with no safe workaround.', acknowledgement_objective_minutes: 60, initial_owner: 'incident commander' },
+    { severity: 'S2', definition: 'Material production degradation or blocked critical workflow affecting multiple authorized users with no reasonable workaround.', acknowledgement_objective_minutes: 240, initial_owner: 'support lead' },
+    { severity: 'S3', definition: 'Non-critical defect with a workaround, isolated integration problem, or question requiring investigation.', acknowledgement_objective_minutes: 480, initial_owner: 'support' },
+    { severity: 'S4', definition: 'How-to request, cosmetic issue, or non-urgent enhancement feedback.', acknowledgement_objective_minutes: 960, initial_owner: 'support' },
+  ],
+}
+
+const SUPPORT_REQUESTS = [
+  { id: 'sr-2', subject: 'Invoice PDFs missing the firm logo since Tuesday', severity: 'S3', status: 'acknowledged', created_at: isoAt(-1, '10:12'), acknowledgement_due_at: isoAt(-1, '18:12') },
+  { id: 'sr-1', subject: 'How do we route intake calls to a second office?', severity: 'S4', status: 'resolved', created_at: isoAt(-12, '14:05'), acknowledgement_due_at: isoAt(-11, '14:05') },
+]
+
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -576,6 +598,16 @@ const BASE_ROUTES = [
     google: { connected: false },
   })],
   ['GET', '/api/integrations/qbo/status', () => ({ connected: false, configured: true })],
+  ['GET', '/api/public/support-policy', () => SUPPORT_POLICY],
+  ['GET', '/api/compliance/operating/support', () => ({ items: SUPPORT_REQUESTS })],
+  ['GET', '/api/admin/onboarding/status', () => ({
+    onboarding_step: 2, onboarding_completed: false, setup_reentry_active: false, agreements_configured: true,
+    integrations: { google: { connected: true, account_type: 'workspace' }, microsoft: { connected: true } },
+    primary_cloud_provider: 'google_drive',
+    cloud_root: { google_drive: { id: 'root-g-1', folder_name: 'lawhand-records', url: 'https://drive.google.com/drive/folders/root-g-1' } },
+    root_ownership: { status: 'durable', at_risk_providers: [] },
+    synced_users: 6,
+  })],
   ['GET', '/api/admin/users', () => ({ users: ADMIN_USERS })],
   ['GET', '/api/admin/usage/by-user', () => ({ users: USAGE_BY_USER })],
   ['GET', '/api/admin/mcp', () => ({ workspace: { status_available: true, deployment_enabled: true, tenant_enabled: true } })],

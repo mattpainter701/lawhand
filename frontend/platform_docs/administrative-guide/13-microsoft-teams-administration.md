@@ -1,89 +1,108 @@
 ---
 slug: microsoft-teams-administration
 title: Microsoft Teams administration
-description: Link matters to the correct Teams channels, verify membership and permissions, and maintain mappings through change.
+description: Link matters to Teams channels, route firm-wide notifications, and capture Teams Phone calls into intake.
 order: 130
-read_time: 7 min
-icon: users
+read_time: 13 min
+icon: network
 ---
 
 # Microsoft Teams administration
 
-[Integrations → Teams](/admin?tab=integrations&integration=teams) manages matter-to-channel links and shows existing mappings. The Teams configuration surface may also be opened inside Microsoft Teams after administrator consent.
+[Integrations > Teams](/admin?tab=integrations&integration=teams) connects LawHand to Microsoft Teams. It has three tabs: **Channels** (link a matter to a channel), **Notifications** (firm-wide routing), and **Voice** (Teams Phone call capture).
 
-## Prerequisites
+## Before you start
 
-Complete Microsoft authorization under [Integrations](/admin?tab=integrations) with the approved organization account and required scopes. Confirm that the team, channel, matter, and intended users already exist.
+1. Connect Microsoft 365 under [Integrations > Cloud](/admin?tab=integrations&integration=cloud) with an approved organization account. See [Integrations](/admin?tab=guide&chapter=integrations).
+2. If the Teams card says **Reconnect to enable Teams**, re-authorize Microsoft and accept the Teams permissions. The section shows **Teams connected** when it is ready.
+3. Make sure the team, the channel, the matter, and the people involved already exist.
 
-Teams is an explicit addition to the Microsoft grant. Its requested permissions can read basic team and channel information, send channel messages, read and write chats, and send Teams activity notifications. Channel creation is added only when the organization opts into the matter-channel creation workflow. Review the full Microsoft disclosure in [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
+Teams is an explicit addition to the Microsoft grant. Its permissions can read basic team and channel information, send channel messages, read and write chats, and send activity notifications. Channel creation is added only when the firm opts into creating matter channels. See [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
 
-## Current data flow
+Microsoft's permissions and LawHand's matter access are separate: a channel member may not have access to the matter in LawHand, and a matter member may not be in the channel. Test both before sending real matter content.
 
-LawHand resolves the configured team and channel, posts approved workflow messages or cards, and records binding and delivery state needed to avoid duplicate or misdirected delivery. When matter-channel creation is enabled, LawHand can create the requested channel and store its provider identifiers.
+## Link a matter to a channel
 
-Microsoft's permission boundary and LawHand's matter authorization are independent. A Teams member may lack LawHand matter access, and a LawHand matter member may lack Teams membership. Test both systems before sending real matter content.
+1. Open the **Channels** tab.
+2. Choose the matter under **Select matter…**.
+3. Choose the team under **Select team…**, then the channel under **Select channel…**. To make a new one, enter a **New channel name** (or leave it to name the channel after the matter) and select **Create channel**.
+4. Select **Link matter to channel**. "Matter linked. Its notifications now post to that channel."
+5. Select **Send a test card** and check it arrives in the right channel.
 
-## Link a channel
+Watch for similarly named teams, archived channels, and private or shared channels, and save one link for the intended collaboration space. Then test with:
 
-Select the matter and exact team/channel combination. Check for similarly named teams, archived channels, private or shared channel behavior, and membership. Save one authoritative mapping for the intended collaboration space.
-
-Test with:
-
-1. an authorized matter user who is a channel member;
-2. an authorized matter user who is not a channel member;
+1. a matter member who is in the channel;
+2. a matter member who is not in the channel;
 3. a channel member without matter access; and
-4. an administrator reviewing the mapping.
+4. an administrator reviewing the link.
 
-The desired result depends on product policy, but no test identity should gain unintended matter content.
+No test person should see matter content they should not.
 
-## Maintain links
+### Maintain links
 
-Review mappings after a matter closes, a team is renamed or archived, channel membership changes, or the responsible group changes. Remove stale mappings through the supported control and verify the Teams experience no longer presents the matter.
+Review links when a matter closes, a team is renamed or archived, channel membership changes, or the responsible group changes. **Unlink**, then **Confirm unlink**, removes a stale link; "Matter unlinked. It no longer posts to that channel."
 
-Do not solve a membership problem by linking the matter to a broader channel. Treat an incorrect channel mapping as a potential disclosure: stop use, correct or remove the link, determine what was visible, and follow the incident process when necessary.
+Never fix a membership problem by linking the matter to a broader channel. Treat a wrong link as a possible disclosure: stop using it, unlink or correct it, work out what was visible, and follow your incident process when necessary.
 
-## User notice and verification
+## Route firm-wide notifications
 
-Tell affected users what classes of matter updates may be sent to Teams, whether messages are authoritative records or notifications, and where the official client file remains. Do not include more matter detail in a card or notification than the channel audience needs.
+The **Notifications** tab points each notification LawHand raises at one team and channel.
 
-After authorization or a mapping change, verify the grant owner, displayed scopes, team/channel identifiers, membership, a non-sensitive test delivery, deduplication behavior, and the removal path. Revoking Microsoft access stops future delivery but does not remove messages already posted to Teams or records already retained in LawHand.
+1. For each event you want in Teams, choose the team and then the channel.
+2. Select **Save routing**. Every enabled event needs a team and channel.
 
-## Notification routing
+A matter linked to its own channel always posts there instead, so a matter link overrides the firm-wide route for that matter. Only events LawHand actually raises can be routed.
 
-Beyond per-matter channel links, [Integrations → Teams](/admin?tab=integrations&integration=teams) carries firm-wide routing: each notification event LawHand can raise may be pointed at one team and channel. A matter linked to its own channel always posts there instead, so a matter-specific link overrides the firm-wide default for that matter.
+Tell people which kinds of updates go to Teams, that Teams messages are notifications rather than the record, and that the official file stays in LawHand. Keep cards to the detail the channel audience needs.
 
-Only events LawHand actually raises can be routed. A route saved against an unrecognized event is rejected rather than stored, because a stored route that can never fire is indistinguishable to an administrator from a broken integration.
+After any change, check the grant owner, the permissions shown, the team and channel, membership, a non-sensitive test delivery, that duplicates are not posted, and how to remove the link. Revoking Microsoft access stops future delivery but does not remove messages already posted.
 
-## Teams voice (Teams Phone) call capture
+## Capture Teams Phone calls
 
-Firms whose telephony runs on Teams Phone can have inbound calls captured into the intake dashboard alongside Zoom Phone calls. The two providers share one feed, one set of follow-up tasks, and one export. Outbound and internal Teams calls are not captured.
+Firms whose phones run on Teams Phone can capture inbound calls into [Call Intake](/intake/dashboard) alongside Zoom Phone calls, in one feed with one set of follow-up tasks and one export. Outbound and internal Teams calls are not captured.
 
-### How it differs from Teams chat
+Call records are metadata: numbers, participants, timing, and outcome. They are not recordings or transcripts.
 
-Teams chat features use the delegated Microsoft grant an administrator authorized under [Integrations](/admin?tab=integrations). Microsoft exposes call records only through an **application** permission, `CallRecords.Read.All`, which has no delegated equivalent. Voice capture therefore runs on a separate application-only credential and requires its own administrator consent. Enabling voice does not widen the chat grant, and disabling it does not affect chat.
+### Why voice needs its own consent
 
-Call records cover call metadata — the numbers, the participants, the timing, the outcome. They are not recordings or transcripts.
+Teams chat uses the delegated Microsoft grant. Microsoft exposes call records only through the application permission `CallRecords.Read.All`, which has no delegated equivalent, so voice capture runs on a separate application-only credential with its own administrator consent. Turning voice on does not widen the chat grant, and turning it off does not affect chat.
 
-### Setup
+### Set up voice capture
 
-Setup is three ordered steps on the Voice tab:
+On the **Voice** tab, under **Setup**:
 
-1. **Name the Microsoft Entra directory.** Supply the directory (tenant) ID from Entra admin center → Overview. The shared `common` endpoint cannot issue an application-only token, so it is rejected rather than saved.
-2. **Grant the application permission.** A Microsoft 365 global administrator consents once, through the link the panel builds for your directory. `CallRecords.Read.All` is the only permission voice capture uses.
-3. **Enable capture and start live notifications.** Microsoft validates LawHand's notification URL before it begins sending. The panel shows that URL for firms that need it recorded in a change ticket.
+1. **Name the Microsoft Entra directory.** Enter the directory (tenant) ID from the Entra admin center's **Overview**, and select **Save directory**. The shared `common` endpoint cannot issue application-only tokens, so it is rejected.
+2. **Grant the permission.** A Microsoft 365 global administrator consents once, through the link the panel builds for your directory. `CallRecords.Read.All` is the only permission voice capture uses.
+3. **Turn it on.** Select **Enable voice capture**, then **Start live notifications**. Microsoft validates LawHand's notification address before it starts sending; the panel shows the address if you need it for a change ticket.
 
-Firms that prefer to own the application registration can register a single-tenant Entra app holding only `CallRecords.Read.All` and supply its credentials; otherwise the LawHand application is used.
+Firms that prefer to own the app registration can register a single-tenant Entra app holding only `CallRecords.Read.All` and enter its credentials; otherwise LawHand's own app is used.
 
-### Two feeds, deliberately
+### Verify it works
 
-Captured calls arrive two ways. Change notifications from Microsoft deliver a call within moments of it ending. A separate hourly pass over the Teams PSTN usage report re-reads the same window and fills anything the notification path dropped. Microsoft publishes that usage report with a lag, which is exactly why it is the backstop and not the primary feed.
+Under **Verify**, **Test connection** proves the credential and permission by reading the last 24 hours of usage, without changing anything. **Import last 7 days** reruns the catch-up pass over the past week.
 
-Microsoft gives the two feeds unrelated identifiers, so LawHand matches a call across them on the caller's number and its start time before recording anything. A call both feeds see is stored once, with the later feed filling in facts the first one lacked. If live notifications lapse, capture keeps working through the hourly pass — slower, but uninterrupted. The Voice tab distinguishes these two states rather than reporting both as "on".
+The section's status shows **Voice capture live** when notifications are flowing, **Voice capture on (hourly)** when only the hourly catch-up is running, or **Voice capture off**.
 
-### Verification and maintenance
+### How calls arrive
 
-Use the connection test to prove the credential and permission before waiting on a real call; it reads the last 24 hours of usage without changing anything. The manual import re-runs the reconciliation pass over the last seven days.
+Calls arrive two ways. Live notifications from Microsoft deliver a call moments after it ends. An hourly pass over the Teams PSTN usage report fills in anything the live path missed; Microsoft publishes that report with a delay, which is why it is the backstop. LawHand matches a call across both on the caller's number and start time, so it is stored once. If live notifications lapse, capture continues hourly.
 
-Microsoft expires a call-record subscription after roughly three days. LawHand renews it well before that on its own schedule; a renewal that fails is reported on the Voice tab, and capture continues through the hourly pass in the meantime. Re-pointing the integration at a different Entra directory invalidates the existing subscription, so LawHand clears it rather than renewing a subscription in a directory the firm no longer uses.
+Microsoft expires the call-record subscription after about three days. LawHand renews it well before then; a failed renewal is shown on the **Voice** tab (**Last background run failed**) while hourly capture continues. Pointing the integration at a different directory clears the old subscription.
 
-Disabling voice capture removes the subscription at Microsoft, not just LawHand's willingness to store what arrives. Calls already captured remain in the intake dashboard and follow that data's normal retention.
+**Stop live notifications** and **Disable voice capture** remove the subscription at Microsoft. Calls already captured stay in Call Intake under their normal retention.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| **Reconnect to enable Teams** | The Microsoft grant lacks the Teams permissions | Re-authorize Microsoft and accept the Teams permissions. |
+| "Microsoft Graph could not list your teams." | The Teams permission was revoked or expired | Reconnect Teams and try again. |
+| A test card does not arrive | The channel was archived or the link is stale | Check the channel in Teams, then relink. |
+| **Voice capture on (hourly)** instead of live | Live notifications stopped or failed to renew | Select **Start live notifications** again; capture continues hourly meanwhile. |
+| **Test connection** fails | The directory ID is wrong or consent was not granted | Check the directory ID and have a global administrator consent. |
+
+## Related chapters
+
+- [Integrations](/admin?tab=guide&chapter=integrations)
+- [Zoom Phone administration](/admin?tab=guide&chapter=zoom-phone-administration)
+- [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility)

@@ -1,179 +1,133 @@
 ---
 slug: mcp-server-operations
 title: MCP server operations
-description: Administer tenant MCP controls, review the platform tool catalog, configure clients, monitor usage, and revoke access decisively.
+description: Let approved people connect outside assistants to their own workspace, issue and govern Research MCP keys, and respond when something looks wrong.
 order: 120
-read_time: 8 min
+read_time: 16 min
 icon: network
 ---
 
 # MCP server operations
 
-[Integrations → MCP](/admin?tab=integrations&integration=mcp) is the primary administrative home for the tenant's MCP connections. It is the source of truth for tenant-wide enablement, new-user defaults, per-user access, tool visibility, client setup, usage, and revocation. Do not direct administrators to a separate Connected assistants page under Settings.
+MCP (Model Context Protocol) lets an outside AI assistant, such as Claude, ChatGPT, or Codex, use LawHand tools. [Integrations > MCP servers](/admin?tab=integrations&integration=mcp) is the home for both kinds of MCP access, under **Advanced** for administrators who hold `manage_integrations`:
 
-## Platform MCP (Workspace) — primary
+| | **LawHand Platform MCP** (Workspace) | **LawHand Research MCP** |
+| --- | --- | --- |
+| What it reaches | The person's own workspace: clients, intakes, matters, tasks, documents, templates | Public legal authority only, never workspace matters |
+| How it signs in | OAuth 2.1, as the person, after their consent | A product key (`lhrk_…`) or OAuth, per key |
+| Who controls it | Firm switch, new-user default, and per-person access | Keys you issue, with budgets and allowed tools |
+| What it can do | Read, and propose work for human review | Search and read authority |
 
-The first section is Platform MCP, also called Workspace MCP. It exposes bounded
-workspace capabilities to an explicitly authorized user's external client. The
-tenant administrator controls three independent gates:
+The two are independent: turning off Workspace MCP does not revoke Research keys, and a Research key never grants workspace access.
 
-1. **Enable Platform MCP for this tenant** — the tenant-wide master switch.
-2. **Enable for new users** — the default applied when a user is subsequently
-   invited, created through tenant OAuth, or directory-synced; it does not
-   silently change existing users.
-3. **Per-user access** — the administrator's explicit permission for each
-   existing user. The user must still be active, licensed, and complete OAuth
-   consent in the external client.
+## Workspace MCP: set up access
 
-Under **Admin -> Users**, the **MCP access** column shows the user's effective
-state rather than presenting firm permission as if it were a connection. Use
-**Manage** to review active OAuth clients, last-used and expiry information,
-and revoke an individual connection. A Privacy Mode warning identifies a user
-action requirement; it is not an administrator-controlled switch. Endpoint,
-tool-catalog, and client-setup instructions remain on this MCP Servers page.
+Three independent gates decide whether a person can connect an assistant. All three must be open, and the person must be active, licensed, and complete the consent step in their assistant.
 
-Disabling the tenant master switch or a user's access revokes active Workspace
-MCP grants. Re-enabling either control does not restore a grant; the user must
-reconnect and review consent. Privacy Mode remains user-controlled under
-Profile. It can block authorization, and administrators may see that it is
-blocking access, but administrators do not toggle it for the user. These
-Workspace controls do not revoke Research MCP grants; Research is a separate,
-public-authority-only product.
+1. **Turn it on for the firm.** Under **Tenant controls**, turn on **Enable Platform MCP for this tenant**. This is the master switch; turning it off revokes every active Workspace MCP connection.
+2. **Choose the default for new people.** **Enable Platform MCP for new users** applies to people invited, created through sign-in, or synchronized from your directory later. It never changes existing people.
+3. **Allow each existing person.** On [Users](/admin?tab=users), turn on the toggle in the **MCP access** column for each person whose work needs it. See [Control connected assistants](/admin?tab=guide&chapter=users-roles-and-licensing#control-connected-assistants).
 
-### Platform tool calls and safety boundary
+**Manage existing users** takes you to the Users list. There, **Manage** on a person shows their connected assistants, when each was last used and expires, and lets you revoke one.
 
-The current Platform MCP catalog is intentionally review-first:
+Turning off the firm switch or a person's access revokes their active connections. Turning it back on does not restore them; the person must reconnect and consent again.
 
-- **Reads:** `search_clients`, `get_client`, `search_intakes`, `get_intake`,
-  `search_matters`, `find_matter`, `get_matter_context`, `search_tasks`,
-  `search_firm_memory`, `get_task`, `list_matter_tasks`, `list_matter_recipients`,
-  `list_matter_documents`, `get_matter_document_text`,
-  `list_document_templates`, and `get_document_template_text`.
-- **Proposals:** `propose_task`, `propose_client_email`, and
-  `propose_matter_document`; `propose_document_from_template` renders an active
-  DOCX or Markdown firm template into the same review workflow.
-- **Pushed documents:** `propose_matter_document_file` accepts a DOCX the
-  connected assistant authored itself, uploaded as base64. LawHand extracts the
-  reviewer's preview from those exact bytes, refuses macros, encryption, and
-  embedded objects, and routes the file through the same staff-then-attorney
-  review as any other prepared document.
-- **Pushed matter artifacts:** `propose_matter_file` attaches the evidence and
-  correspondence that arrives alongside work product — PNG or JPEG screenshots
-  and scanned exhibits, PDFs, `.eml` and `.msg` saved emails, CSV, TXT, ICS, and
-  media files. LawHand verifies the uploaded bytes against the filename's
-  extension, so an executable renamed `.png`, an archive, or a legacy
-  macro-bearing Office file is refused rather than stored. The file is attached
-  to the matter as **not client-portal-visible** and awaiting a person's triage;
-  a firm user decides its category and whether it is ever released.
-- **Pushed templates:** `propose_document_template` saves a firm template the
-  assistant authored as an **inactive draft** that cannot render client work
-  until a user with template permissions activates it in Template Studio.
-  Fillable PDFs are the preferred form: LawHand discovers the field map from the
-  PDF's own AcroForm widgets, so the template arrives ready for review. Word
-  templates are analysed the same way, anchoring each variable to the exact
-  source text it replaces, and Markdown templates carry a `{{variable}}` body
-  inline. A flat or scanned PDF has no discoverable fields and is refused —
-  placing fields on a page image is human work that belongs in the template
-  intake review canvas. The tool never edits a template the firm is already
-  using: a proposed replacement for a live template is saved as a separate draft
-  that records what it supersedes.
+**Privacy Mode** (the person's **Protect private details** setting) always blocks outside access to their workspace. You can see that it is blocking, but only the person can turn it off, from their profile.
 
-There are no MCP calls for approval, template activation, filing, sending,
-delivery, or execution.
-Proposals create auditable LawHand Review work; a human reviewer must complete
-the required workflow before deterministic platform workers can act. Document
-and template text is untrusted evidence and must not be treated as an
-instruction. Prepared documents return the Review task plus authenticated
-LawHand open and download links. They always require staff/paralegal review and
-then attorney review; the external assistant cannot approve or deliver them.
+## Workspace MCP: help someone connect
 
-### Platform endpoint and client setup
-
-Use the canonical Streamable HTTP endpoint:
+The **Connection and setup** section shows the endpoint and instructions for each assistant. The endpoint is:
 
 ```text
 https://mcp.getlawhand.com/api/mcp/workspace
 ```
 
-Codex CLI:
+- **Codex CLI:**
 
-```powershell
-codex mcp add lawhandWorkspace --url https://mcp.getlawhand.com/api/mcp/workspace
-codex mcp login lawhandWorkspace
-codex mcp list
-```
+  ```powershell
+  codex mcp add lawhandWorkspace --url https://mcp.getlawhand.com/api/mcp/workspace
+  codex mcp login lawhandWorkspace
+  codex mcp list
+  ```
 
-Claude Code:
+- **Claude Code:**
 
-```bash
-claude mcp add --transport http --scope user lawhand https://mcp.getlawhand.com/api/mcp/workspace
-```
+  ```bash
+  claude mcp add --transport http --scope user lawhand https://mcp.getlawhand.com/api/mcp/workspace
+  ```
 
-Claude Desktop uses **Settings -> Connectors -> Add custom connector** with the
-same URL. In each client, authenticate with OAuth and verify the displayed
-tool list. Never paste a Research `lhrk_` key into Platform MCP configuration.
-If an older connection still displays only `find_matter`, remove that
-connection and authenticate again to review the current scope set. LawHand does
-not silently enlarge an existing OAuth grant.
+- **Claude Desktop:** **Settings** > **Connectors** > **Add custom connector**, with the same URL.
+- **ChatGPT workspace apps:** a ChatGPT workspace administrator first allows custom MCP apps under **Workspace Settings** > **Permissions & Roles** > **Connected Data**. The person then turns on Developer mode under **Settings** > **Apps** > **Advanced Settings**, chooses **Apps** > **Create**, enters the endpoint, chooses OAuth, and scans the tools.
 
-For ChatGPT workspace apps, an administrator first permits custom MCP apps in
-**Workspace Settings -> Permissions & Roles -> Connected Data**. The authorized
-user enables Developer mode under **Settings -> Apps -> Advanced Settings**, then
-uses **Apps -> Create**, supplies the canonical endpoint, chooses OAuth, and
-scans the published tools. LawHand advertises optional `offline_access` and
-rotating refresh tokens so compatible hosted clients can stay connected without
-granting another workspace capability.
+In every client, the person signs in with OAuth and checks the tool list shown. LawHand offers optional offline access with rotating refresh tokens so hosted clients stay connected without any extra capability.
 
-This chapter covers the keyed product surface only. Workspace MCP — an individual connecting an assistant to their own workspace by consent — is governed per user in [Users](/admin?tab=users) and has no shared key to issue, rotate, or revoke here.
+> [!WARNING]
+> Never put a Research key or any static bearer token in a Workspace MCP configuration. If an older connection shows only `find_matter`, remove it and connect again: LawHand never silently enlarges an existing grant.
 
-## Define the use case first
+## What Workspace tools can do
 
-Identify the owner, client application, environment, required tools, expected volume, data classification, and approval model before creating access. Separate development, testing, and production identities.
+The catalog is review-first:
 
-## Create and handle keys
+- **Reads:** `search_clients`, `get_client`, `search_intakes`, `get_intake`, `search_matters`, `find_matter`, `get_matter_context`, `search_tasks`, `search_firm_memory`, `get_task`, `list_matter_tasks`, `list_matter_recipients`, `list_matter_documents`, `get_matter_document_text`, `list_document_templates`, and `get_document_template_text`.
+- **Proposals:** `propose_task`, `propose_client_email`, and `propose_matter_document`; `propose_document_from_template` fills an active Word or Markdown firm template into the same review.
+- **Documents the assistant wrote:** `propose_matter_document_file` accepts a Word file. LawHand builds the reviewer's preview from those exact bytes, refuses macros, encryption, and embedded objects, and sends it through staff and then attorney review.
+- **Evidence and correspondence:** `propose_matter_file` attaches screenshots and scanned exhibits (PNG, JPEG), PDFs, saved emails (`.eml`, `.msg`), CSV, TXT, ICS, and media files. LawHand checks the bytes match the file extension, so a renamed executable, an archive, or a macro-bearing Office file is refused. The file is attached as not portal-visible, waiting for a person to triage it.
+- **Templates:** `propose_document_template` saves an **inactive draft** template that cannot be used until someone with template permissions publishes it in Template Studio. Fillable PDFs work best; flat or scanned PDFs are refused. A proposed replacement for a template in use is saved as a separate draft.
 
-Choose the narrowest tool allowlist and appropriate usage boundary. Display a new secret only to its intended custodian through the approved secret-management process. Never put it in source control, screenshots, tickets, chat, or this guide.
+There are no tools to approve, publish a template, file, send, deliver, or execute anything. Proposals become Review work that a person must complete. Document and template text is treated as untrusted evidence, never as instructions.
 
-Record non-secret metadata: owner, purpose, environment, creation date, approved tools, budget, and rotation expectation.
+## Research MCP: issue a key
 
-## Monitor activity
-
-Review calls, returned-result patterns, errors, denied tools, usage changes, and source health. Investigate repeated failures before raising limits. An allowlisted tool remains subject to tenant permissions and any product approval gates.
-
-Legal-source health indicates whether a configured source is available; it does not establish that a returned authority is current, controlling, or correctly applied.
-
-## Rotate and revoke
-
-Rotate when custody, environment, scope, or risk changes. Revoke immediately for suspected exposure, departed owners, abandoned applications, or unauthorized tools. Confirm the old credential can no longer call the service and monitor for attempted reuse.
-
-If MCP output or activity suggests tenant leakage or an unauthorized external action, stop the client, revoke the key, preserve request identifiers, and invoke the incident process.
-
-## Research MCP — customer-managed legal research
-
-Research MCP is listed after Platform MCP because it is a separate,
-public-authority-only product. The official endpoint is:
+Research MCP is a separate, public-authority-only product at:
 
 ```text
 https://research.getlawhand.com/api/mcp
 ```
 
-Hosted clients use the LawHand OAuth consent flow. For API clients, tenant
-administrators issue `lhrk_...` tokens and use
-`Authorization: Bearer lhrk_...`; the older `X-MCP-API-Key` header remains
-supported. Research credentials never authorize workspace matter access.
+Hosted clients use the LawHand OAuth consent flow. For API clients, you issue product keys.
 
-The Research panel lists every historical key and its masked identifier,
-assigned staff member, purpose, creator, expiration, last use, allowed tools,
-current-month successful and failed calls, charges, and remaining budget. New
-keys can use preset durations or an exact expiration date. Administrators can
-change custody, scope, expiry, monthly dollar budget, call cap, and burst limit,
-or revoke the key immediately. Revocation is permanent; issue a replacement
-instead of attempting to reactivate the old secret.
+Before creating a key, write down its owner, the client application, the environment, the tools it needs, the expected volume, and who approves it. Use separate keys for development, testing, and production.
 
-The current rate is **$0.45 per successful tool call**. Failed calls remain
-visible but are not billed. The gateway stops a key before the next call would
-exceed either its dollar budget or monthly call cap. The raw secret is displayed
-only once, so deliver it to staff through the approved secret manager. Assignment
-in the panel records custody and deactivating that profile stops the key, but it
-does not turn a bearer key into user-bound authentication; use OAuth when
-individual identity binding is required.
+1. Under **Keys and usage**, select **Create key**.
+2. In **Create Research product key**, enter a **Name** and **Purpose**, and choose the **Assigned staff member** who holds it.
+3. Choose a **Duration / expiration date**.
+4. Under **Allowed tools**, keep only the tools the use case needs. New keys allow every published tool unless you remove some.
+5. Set a **Monthly budget (USD)**, a **Monthly call limit**, and a **Burst limit per minute**. The key stops at whichever limit comes first.
+6. Select **Create key**. The secret is shown **once**: deliver it through your approved secret manager, never by email, chat, ticket, screenshot, or source control.
+
+API clients send it as `Authorization: Bearer lhrk_…` (the older `X-MCP-API-Key` header still works). Each successful tool call costs $0.45; failed calls are shown but not billed.
+
+## Research MCP: monitor, change, and revoke
+
+The key list shows each key's masked identifier, assigned staff, purpose, creator, expiry, last use, allowed tools, this month's successful and failed calls, charges, and remaining budget.
+
+- Open a key (**Manage Research product key**) to change who holds it, its tools, expiry, budget, call limit, or burst limit, then select **Save controls**. Changes apply immediately; extending an expired key restores it.
+- **Revoke** a key immediately for suspected exposure, a departed owner, an abandoned application, or unauthorized tools. Revocation is permanent: issue a replacement rather than trying to reactivate it. Confirm the old key no longer works, and watch for attempted reuse.
+- Deactivating the assigned person stops their keys, but a key is still a bearer credential: use OAuth when you need calls tied to an individual.
+
+Investigate repeated failures before raising limits. A source's health shows whether it is available; it does not mean a returned authority is current, controlling, or correctly applied.
+
+## If something looks wrong
+
+If MCP output or activity suggests data from another firm, or an unauthorized external action:
+
+1. stop the client;
+2. turn off the person's MCP access or revoke the key;
+3. keep the request IDs and times; and
+4. follow your incident process and contact [LawHand support](/admin?tab=support).
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| A person's status says **Disabled by firm** | **Enable Platform MCP for this tenant** is off | Turn it on under **Tenant controls**. |
+| A new hire cannot connect | **Enable Platform MCP for new users** was off when they joined | Turn on their access in the **MCP access** column. |
+| **Paused by Privacy Mode** | The person turned on **Protect private details** | Only they can turn it off, from their profile. |
+| A client lists only `find_matter` | The connection predates the current tools | Remove it and connect again. |
+| A Research key stopped working | It expired, hit its budget or call limit, or was revoked | Check the key's usage and expiry; extend or replace it. |
+
+## Related chapters
+
+- [Users, roles & licensing](/admin?tab=guide&chapter=users-roles-and-licensing)
+- [AI, search & MCP](/admin?tab=guide&chapter=ai-search-and-mcp)
+- [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility)
