@@ -15,7 +15,7 @@ icon: users
 
 Complete Microsoft authorization under [Integrations](/admin?tab=integrations) with the approved organization account and required scopes. Confirm that the team, channel, matter, and intended users already exist.
 
-Teams is an explicit addition to the Microsoft grant. Its requested permissions can read basic team and channel information, send channel messages, read and write chats, and send Teams activity notifications. Channel creation is added only when the organization opts into the matter-channel creation workflow. Review the full Microsoft disclosure in [Integration permissions and data visibility](/guide/integration-data-visibility).
+Teams is an explicit addition to the Microsoft grant. Its requested permissions can read basic team and channel information, send channel messages, read and write chats, and send Teams activity notifications. Channel creation is added only when the organization opts into the matter-channel creation workflow. Review the full Microsoft disclosure in [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
 
 ## Current data flow
 

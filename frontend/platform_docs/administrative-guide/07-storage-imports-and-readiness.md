@@ -15,7 +15,7 @@ The [Integrations](/admin?tab=integrations) tab combines provider authorization 
 
 ## Where these controls live
 
-Storage settings sit under **Document storage** on [Integrations → Cloud](/admin?tab=integrations&integration=cloud), collapsed beneath the provider cards. Operator tooling — [Storage migration](/admin?tab=integrations&integration=storage-migration), [Data import](/admin?tab=integrations&integration=data-import) (Tabs3) and [Provider app readiness](/admin?tab=integrations&integration=readiness) — lives under **Advanced** on the Integrations overview and is only rendered for administrators holding the `manage_integrations` capability. New firms choose the provider and create the root during setup; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup).
+Storage settings sit under **Document storage** on [Integrations → Cloud](/admin?tab=integrations&integration=cloud), collapsed beneath the provider cards. Operator tooling — [Storage migration](/admin?tab=integrations&integration=storage-migration), [Data import](/admin?tab=integrations&integration=data-import) (Tabs3) and [Provider app readiness](/admin?tab=integrations&integration=readiness) — lives under **Advanced** on the Integrations overview and is only rendered for administrators holding the `manage_integrations` capability. New firms choose the provider and create the root during setup; see [Onboarding & storage setup](/admin?tab=guide&chapter=onboarding-and-storage-setup).
 
 ## Cloud document storage
 
@@ -47,7 +47,7 @@ On a Google Workspace connection LawHand also creates an organisation-owned Shar
 
 LawHand currently uses Gmail read access for headers, labels, snippets, search, and selected full-message capture. It uses Drive access for file metadata, search, configured synchronization, document download/indexing, and supported folder/file writes. Calendar access creates and maintains LawHand-linked events.
 
-For a complete field and retention matrix, see [Integration permissions and data visibility](/guide/integration-data-visibility).
+For a complete field and retention matrix, see [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
 
 ## SharePoint storage binding
 

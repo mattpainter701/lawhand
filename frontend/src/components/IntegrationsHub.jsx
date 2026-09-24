@@ -426,7 +426,7 @@ function Overview({ sections, operatorSections, summary, onSelect, showGuide }) 
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div className="max-w-2xl">
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">Tenant connections</p>
-            <h2 className="font-serif text-2xl font-bold tracking-tight md:text-3xl">Every external connection, in one place.</h2>
+            <h2 className="font-serif text-2xl font-bold tracking-tight text-white md:text-3xl">Every external connection, in one place.</h2>
             <p className="mt-3 text-sm leading-6 text-white/70">Each card shows whether the connection is working. Open one to connect it, review its permissions, or fix what needs attention.</p>
           </div>
           {showGuide && (

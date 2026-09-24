@@ -84,7 +84,7 @@ Re-entry with a target provider starts a storage migration instead of a plain re
 
 | Need | Where |
 | --- | --- |
-| Is the connection healthy? | Administration → Integrations → Cloud, provider cards (see [Integrations](/guide/integrations)). |
+| Is the connection healthy? | Administration → Integrations → Cloud, provider cards (see [Integrations](/admin?tab=guide&chapter=integrations)). |
 | Which provider holds documents? | Administration → Integrations → Cloud → Document storage. |
 | Create folders for matters made before storage existed | Document storage → **Create missing matter folders**. Safe to repeat. |
 | Move matters to another provider | Administration → Integrations → Advanced → Storage migration. |

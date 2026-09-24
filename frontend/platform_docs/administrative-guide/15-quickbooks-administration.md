@@ -15,7 +15,7 @@ icon: chart
 
 Intuit grants the broad `com.intuit.quickbooks.accounting` permission for the selected company, plus identity scopes used during connection. That provider grant is not technically limited to invoices. LawHand's current implementation uses it to read active service items, matching customers, and existing synchronized invoice state, and to write configured customers, time activity, invoices, and payments.
 
-The dominant transfer direction is LawHand to QuickBooks. Supporting reads are still necessary for mapping, matching, and safe updates. See [Integration permissions and data visibility](/guide/integration-data-visibility) for the field-level disclosure.
+The dominant transfer direction is LawHand to QuickBooks. Supporting reads are still necessary for mapping, matching, and safe updates. See [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility) for the field-level disclosure.
 
 ## Connect the company
 

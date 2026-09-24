@@ -128,7 +128,7 @@ Disconnecting removes or disables future provider access once revocation takes e
 
 ## Related administrative guides
 
-- [Storage, imports, and readiness](/guide/storage-imports-and-readiness)
-- [Microsoft Teams administration](/guide/microsoft-teams-administration)
-- [Zoom Phone administration](/guide/zoom-phone-administration)
-- [QuickBooks administration](/guide/quickbooks-administration)
+- [Storage, imports, and readiness](/admin?tab=guide&chapter=storage-imports-and-readiness)
+- [Microsoft Teams administration](/admin?tab=guide&chapter=microsoft-teams-administration)
+- [Zoom Phone administration](/admin?tab=guide&chapter=zoom-phone-administration)
+- [QuickBooks administration](/admin?tab=guide&chapter=quickbooks-administration)

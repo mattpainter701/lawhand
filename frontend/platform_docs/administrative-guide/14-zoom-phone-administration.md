@@ -17,7 +17,7 @@ Zoom Phone and Zoom Meetings are separate grants. Phone reads completed call his
 
 The current Phone workflow can receive provider call ID, caller and recipient names and numbers, direction, result/status, duration, timestamp, and the provider's call record. If Zoom supplies them for the connected account and call, LawHand may also receive summary text, transcript text, a recording URL, and a transcript URL.
 
-LawHand normalizes this into a tenant communication record that can be matched to a contact and linked to a matter. The ingestion path can retain transcript text and provider URLs; it does not itself initiate or record the phone call. See [Integration permissions and data visibility](/guide/integration-data-visibility) for the complete cross-provider disclosure.
+LawHand normalizes this into a tenant communication record that can be matched to a contact and linked to a matter. The ingestion path can retain transcript text and provider URLs; it does not itself initiate or record the phone call. See [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility) for the complete cross-provider disclosure.
 
 ## Confirm the account and app
 

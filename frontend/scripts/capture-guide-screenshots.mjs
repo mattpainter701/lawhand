@@ -57,8 +57,8 @@ async function annotate(page, marks = []) {
   const boxes = []
   for (const mark of marks) {
     const locator = typeof mark.target === 'function' ? mark.target(page) : page.locator(mark.target)
-    const box = await locator.first().boundingBox()
-    if (!box) throw new Error(`Annotation target not visible: ${mark.target}`)
+    const box = await locator.first().boundingBox({ timeout: 8_000 }).catch(() => null)
+    if (!box) throw new Error(`Annotation target not found or not visible: ${mark.target}`)
     boxes.push({ ...box, label: mark.label || '', pad: mark.pad ?? 4, placement: mark.placement || 'top-left' })
   }
   await page.evaluate((items) => {

@@ -6,8 +6,8 @@ export async function regionAround(page, targets, { pad = 16, maxHeight } = {}) 
   const boxes = []
   for (const target of targets) {
     const locator = typeof target === 'function' ? target(page) : page.locator(target)
-    const box = await locator.first().boundingBox()
-    if (!box) throw new Error(`Crop target not visible: ${target}`)
+    const box = await locator.first().boundingBox({ timeout: 8_000 }).catch(() => null)
+    if (!box) throw new Error(`Crop target not found or not visible: ${target}`)
     boxes.push(box)
   }
   const viewport = page.viewportSize()

@@ -476,6 +476,47 @@ export const TEMPLATE_QUEUES = {
   published: queue(TEMPLATES.filter((item) => item.is_active)),
 }
 
+// ── Administration ──────────────────────────────────────────────────────────
+export const ROLES = [
+  { id: 'r-admin', name: 'Admin', description: 'Manages people, settings, and integrations.', is_system: true, capabilities: ['manage_users', 'manage_roles', 'admin_settings', 'manage_integrations'], user_count: 1 },
+  { id: 'r-attorney', name: 'Attorney', description: 'Works matters and approves legal work.', is_system: true, capabilities: ['manage_matters', 'approve_legal_work', 'use_premium_ai'], user_count: 2 },
+  { id: 'r-paralegal', name: 'Paralegal', description: 'Prepares documents and manages tasks.', is_system: true, capabilities: ['manage_matters', 'manage_documents'], user_count: 1 },
+  { id: 'r-reception', name: 'Reception', description: 'Captures calls and new inquiries.', is_system: false, capabilities: ['manage_intake'], user_count: 1 },
+  { id: 'r-finance', name: 'Finance', description: 'Billing, invoices, and trust accounting.', is_system: true, capabilities: ['view_billing', 'manage_billing'], user_count: 1 },
+]
+
+function adminUser(base, fields) {
+  return {
+    ...base, is_active: true, invitation_status: null, license_active: true, privacy_mode: false,
+    workspace_mcp_enabled: true, workspace_mcp_active_grant_count: 0, default_billing_rate: null,
+    created_at: isoAt(-400, '09:00'), ...fields,
+  }
+}
+
+export const ADMIN_USERS = [
+  adminUser(PEOPLE.avery, { role_ids: ['r-admin'], default_billing_rate: 450, created_at: isoAt(-720, '09:00') }),
+  adminUser(PEOPLE.marcus, { role_ids: ['r-attorney'], default_billing_rate: 425, created_at: isoAt(-690, '09:00'), workspace_mcp_active_grant_count: 1 }),
+  adminUser(PEOPLE.priya, { role_ids: ['r-attorney'], default_billing_rate: 325, created_at: isoAt(-380, '09:00'), workspace_mcp_active_grant_count: 1 }),
+  adminUser(PEOPLE.jordan, { role_ids: ['r-paralegal'], default_billing_rate: 175, created_at: isoAt(-300, '09:00') }),
+  adminUser(PEOPLE.sofia, { role_ids: ['r-reception'], created_at: isoAt(-120, '09:00'), workspace_mcp_enabled: false }),
+  adminUser(PEOPLE.dana, { role_ids: ['r-finance'], created_at: isoAt(-90, '09:00') }),
+  adminUser({ id: 'u-0007', full_name: 'Noah Kim', email: `noah.kim@${FIRM.domain}`, role: 'user' }, {
+    is_active: false, invitation_status: 'pending', invitation_expires_at: isoAt(5, '09:00'), created_at: isoAt(-2, '15:10'), role_ids: ['r-paralegal'],
+  }),
+]
+
+const USAGE_BY_USER = [
+  { user_id: PEOPLE.avery.id, total_cost_usd: 18.42, total_tokens_in: 612000, total_tokens_out: 148000 },
+  { user_id: PEOPLE.marcus.id, total_cost_usd: 9.77, total_tokens_in: 301000, total_tokens_out: 88000 },
+  { user_id: PEOPLE.priya.id, total_cost_usd: 31.05, total_tokens_in: 1043000, total_tokens_out: 262000 },
+  { user_id: PEOPLE.jordan.id, total_cost_usd: 6.2, total_tokens_in: 190000, total_tokens_out: 51000 },
+]
+
+export const TENANT = {
+  id: FIRM.id, name: FIRM.name, domain: FIRM.domain, billing_tier: 'standard', max_users: 25, max_documents: 50000,
+  created_at: isoAt(-730, '09:00'), is_active: true,
+}
+
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -523,6 +564,23 @@ const BASE_ROUTES = [
   ['GET', '/api/billing/time-entries', () => ({ items: TIME_ENTRIES, total: TIME_ENTRIES.length, total_hours: 12.9, total_amount: 4102.5 })],
   ['GET', '/api/billing/time-entries/timer', () => ({ id: 'te-timer', matter_id: 'm-0006', timer_started_at: isoAt(0, '09:18'), description: '' })],
   ['GET', '/api/billing/invoices', () => ({ items: INVOICES, total: INVOICES.length })],
+  ['GET', '/api/firm/branding', () => ({
+    tenant_name: FIRM.name, tenant_domain: FIRM.domain, firm_name: FIRM.name, firm_name_override: '',
+    firm_logo_url: '', firm_address: '400 Lakeside Avenue, Suite 1200, Madison, WI 53703',
+    firm_phone: '(608) 555-0142', firm_email: `office@${FIRM.domain}`, firm_website: `https://www.${FIRM.domain}`,
+    firm_pdf_footer: 'Confidential — attorney–client privileged communication',
+  })],
+  ['GET', '/api/admin/permissions', () => ({
+    overall_health: 'healthy',
+    microsoft: { connected: true, capabilities: { teams: { status: 'ok' } } },
+    google: { connected: false },
+  })],
+  ['GET', '/api/integrations/qbo/status', () => ({ connected: false, configured: true })],
+  ['GET', '/api/admin/users', () => ({ users: ADMIN_USERS })],
+  ['GET', '/api/admin/usage/by-user', () => ({ users: USAGE_BY_USER })],
+  ['GET', '/api/admin/mcp', () => ({ workspace: { status_available: true, deployment_enabled: true, tenant_enabled: true } })],
+  ['GET', '/api/admin/roles', () => ROLES],
+  ['GET', '/api/admin/tenant', () => TENANT],
   ['GET', '/api/templates/queues', () => TEMPLATE_QUEUES],
   ['GET', '/api/templates/library', () => ({ items: SAMPLE_FORMS, total: SAMPLE_FORMS.length })],
   ['GET', '/api/templates', () => ({

@@ -299,4 +299,60 @@ export const SHOTS = [
       { target: byRole('tab', 'Generate / Smart Fill'), label: '4' },
     ],
   },
+
+  // ── Administrative guide ────────────────────────────────────────────────
+  {
+    name: 'admin-users',
+    path: '/admin?tab=users',
+    user: 'admin',
+    viewport: { width: 1720, height: 1400 },
+    waitFor: 'Priya Raman',
+    clip: (page) => regionAround(page, [
+      (p) => p.getByRole('heading', { name: 'Administration', level: 1 }).nth(1),
+      (p) => p.locator('table').first(),
+    ], { pad: 24 }),
+    annotate: [
+      { target: byRole('button', 'Invite user'), label: '1' },
+      { target: (page) => page.getByTitle('Assign roles').first(), label: '2' },
+      { target: (page) => page.getByRole('button', { name: /Manage MCP access for/ }).first(), label: '3' },
+      { target: byRole('button', 'Resend invite'), label: '4' },
+    ],
+  },
+  {
+    name: 'admin-firm-profile',
+    path: '/admin?tab=firm',
+    user: 'admin',
+    viewport: { width: 1600, height: 1200 },
+    waitFor: 'Clients will see',
+    // Just the Identity card: the names and the preview of what clients see.
+    clip: (page) => regionAround(page, [
+      (p) => p.getByRole('heading', { name: 'Identity' }),
+      (p) => p.getByText('Clients will see', { exact: true }).locator('..'),
+      (p) => p.getByLabel('Display name'),
+    ], { pad: 28 }),
+    annotate: [
+      { target: (page) => page.getByLabel('Account name'), label: '1' },
+      { target: (page) => page.getByLabel('Display name'), label: '2' },
+      { target: (page) => page.getByText('Clients will see', { exact: true }).locator('..'), label: '3' },
+    ],
+  },
+  {
+    name: 'admin-integrations',
+    path: '/admin?tab=integrations',
+    user: 'admin',
+    viewport: { width: 1600, height: 1500 },
+    waitFor: 'Cloud accounts & storage',
+    settle: 800,
+    clip: (page) => regionAround(page, [
+      (p) => p.locator('#integrations-heading'),
+      (p) => p.getByTestId('integration-card-file-shares'),
+      (p) => p.getByTestId('integration-card-cloud'),
+    ], { pad: 24 }),
+    annotate: [
+      { target: (page) => page.getByRole('button', { name: 'Advanced', exact: true }).first(), label: '1' },
+      { target: (page) => page.getByTestId('integration-card-cloud').getByTestId('section-status'), label: '2' },
+      { target: (page) => page.getByTestId('integration-card-email-intake').getByText('Open', { exact: true }), label: '3', placement: 'bottom-left' },
+      { target: (page) => page.getByTestId('integration-card-email-intake').locator('summary'), label: '4', placement: 'bottom-left' },
+    ],
+  },
 ]
