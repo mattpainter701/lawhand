@@ -7,6 +7,26 @@ Every route here requires the `platform:debug` scope. See
 to obtain a credential that carries it. Every call is written to
 `operator_audit_logs` and is readable back via `GET /api/platform/audit`.
 
+## In the operator console
+
+Each step below also has a place in the console at `/platform`, once the
+bootstrap credential you sign in with carries `platform:debug`:
+
+| Step | Console |
+|---|---|
+| 1–2. An error id or request id | **Support → Look up a customer issue** (a UUID is tried as both) |
+| 3. "Something is wrong with this tenant" | **Firms →** the firm **→ Health** |
+| 4. Only an email address | **Support → Look up**, or paste the address into the **Firms** search |
+| 5. Record what you found | **Mark resolved** with notes on the error card (Logs, Health or Look up) |
+| 6. Review what operators did | **Audit** tab, or the firm's **History** section |
+| 7. Retire an unused trial | The firm's **Access & billing → Revoke trial and release its login** |
+
+Customer-filed support requests (Admin → Support in the firm's workspace) are
+worked from **Support → Customer support queue**; each new request also emails
+`MARKETING_LEAD_EMAIL`. The console's address bar keeps the tab, firm and
+filters, so a link to a firm or view can be shared and survives the 15-minute
+session expiring.
+
 Set up a session first:
 
 ```bash

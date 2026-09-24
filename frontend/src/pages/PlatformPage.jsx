@@ -1,349 +1,33 @@
-import TenantPanelSettings from '../components/TenantPanelSettings'
 import TemplateAIProfilePanel from '../components/TemplateAIProfilePanel'
-import React, { useState, useEffect, useCallback } from 'react'
-import { createPlatformSession, getPlatformTenants, provisionPlatformTenant, approvePlatformTenantTrial, getPlatformUsage, getPlatformHealth, getPlatformIntegrationReadiness, getPlatformMcpOverview, getPlatformWorkspaceMcpDiagnostics, getPlatformTenant, updatePlatformTenant, getPlatformPlans, getPlatformLLMConfig, getPlatformLogs, getPlatformLogsSummary, getPlatformTenantLogs, getPlatformTenantLogsSummary, getPlatformAccessLogs, getPlatformAccessLogsSummary, getLLMProviderPresets, getLLMProviderKeys, addLLMProviderKey, deleteLLMProviderKey, syncEnvKeys, fetchProviderModels, getLLMModelCatalog, refreshLLMModelCatalog, getLLMRoutes, recommendLLMRoutes, saveLLMRoutes, getLLMGatewayStatus, reloadLLMRoutes, testLLMRoute, getLLMRoutingProfiles, createLLMRoutingProfile, updateLLMRoutingProfile, getBackgroundAssistantUsage, updateBackgroundAssistantQuota, getPlatformSmsProvider, updatePlatformSmsProvider, deletePlatformSmsProvider, sendPlatformSmsTest } from '../api'
-import { Activity, AlertTriangle, Database, Server, Shield, Users, Zap, Search, ChevronDown, ChevronRight, BarChart3, FileText, Globe, Key, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Cpu, ArrowDown, ArrowUp, Save, Settings2, PhoneCall, Video } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { createPlatformSession, getPlatformTenants, getPlatformUsage, getPlatformHealth, getPlatformIntegrationReadiness, getPlatformMcpOverview, getPlatformWorkspaceMcpDiagnostics, getPlatformLLMConfig, getPlatformLogsSummary, getPlatformSupportQueue, getLLMProviderPresets, getLLMProviderKeys, addLLMProviderKey, deleteLLMProviderKey, syncEnvKeys, fetchProviderModels, getLLMModelCatalog, refreshLLMModelCatalog, getLLMRoutes, recommendLLMRoutes, saveLLMRoutes, getLLMGatewayStatus, reloadLLMRoutes, testLLMRoute, getLLMRoutingProfiles, createLLMRoutingProfile, updateLLMRoutingProfile, getBackgroundAssistantUsage, updateBackgroundAssistantQuota, getPlatformSmsProvider, updatePlatformSmsProvider, deletePlatformSmsProvider, sendPlatformSmsTest } from '../api'
+import { Activity, AlertTriangle, Database, Server, Shield, Users, Zap, ChevronDown, BarChart3, FileText, Globe, Key, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Cpu, ArrowDown, ArrowUp, Save, Settings2, PhoneCall, Video, LifeBuoy, Presentation, History, ScrollText } from 'lucide-react'
 import { useConfirm } from '../components/dialog/ConfirmProvider'
 import { getPlatformDemoWorkspaces, terminatePlatformDemoWorkspace } from '../api'
-import PlatformComplianceCard from '../components/PlatformComplianceCard'
 import PlatformAgreementsPanel from '../components/PlatformAgreementsPanel'
+import { InfrastructureStatus } from './PlatformInfrastructurePage'
+import LogsTab from './platform/LogsTab'
+import OperatorAuditLog from './platform/OperatorAuditLog'
+import SupportDeskTab from './platform/SupportDeskTab'
+import TenantsTab, { TENANT_VIEWS } from './platform/TenantsTab'
+import {
+  DEBUG_SCOPE,
+  StatCard,
+  TierBadge,
+  apiErrorMessage,
+  formatDateTime,
+  formatRelative,
+  isSessionEnded,
+  sessionHasScope,
+  useLatest,
+} from './platform/shared'
 
-const apiErrorMessage = (error, fallback) => {
-  const detail = error?.response?.data?.detail
-  if (typeof detail === 'string') return detail
-  if (typeof detail?.message === 'string') return detail.message
-  return error?.message || fallback
-}
+// These moved to ./platform; re-exported so existing imports keep working.
+export { PendingTrialApproval, ProvisionTrialTenantForm, TrialAccessControls } from './platform/TenantControls'
+export { PlatformTenantRow } from './platform/TenantsTab'
 
-function StatCard({ label, value, sub, icon: Icon }) {
-  return (
-    <div className="bg-brand-surface border border-brand-line rounded-xl p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-brand-muted font-sans uppercase tracking-wider">{label}</p>
-        {Icon && <Icon size={16} className="text-brand-muted" />}
-      </div>
-      <p className="text-2xl font-bold text-brand-ink font-serif">{value ?? '—'}</p>
-      {sub && <p className="text-xs text-brand-muted mt-1 font-sans">{sub}</p>}
-    </div>
-  )
-}
-
-function TierBadge({ tier }) {
-  const colors = {
-    flat: 'bg-brand-accent/10 text-brand-accent border-brand-accent/20',
-    payg: 'bg-brand-amber/10 text-brand-amber border-brand-amber/20',
-    demo: 'bg-brand-ink/10 text-brand-ink border-brand-ink/20',
-  }
-  const labels = { flat: 'Flat-seat', payg: 'PAYG', demo: 'Demo' }
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colors[tier] || colors.payg}`}>
-      {labels[tier] || tier}
-    </span>
-  )
-}
-
-function TenantTypeBadge({ type }) {
-  const isDemo = type === 'demo'
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${isDemo ? 'bg-brand-ink/10 text-brand-ink border-brand-ink/20' : 'bg-brand-accent/10 text-brand-accent border-brand-accent/20'}`}>
-      {isDemo ? 'Demo' : 'Platform'}
-    </span>
-  )
-}
-
-const tenantType = (tenant) => tenant.tenant_type || (tenant.billing_tier === 'demo' ? 'demo' : 'platform')
-
-function TenantExpiry({ tenant }) {
-  if (!tenant.expires_at) {
-    return <span className="text-brand-muted">No expiration</span>
-  }
-  const expiresAt = new Date(tenant.expires_at)
-  const expired = expiresAt.getTime() <= Date.now()
-  return (
-    <time dateTime={tenant.expires_at} className={expired ? 'text-brand-rose' : 'text-brand-ink-2'}>
-      {expired ? 'Expired ' : ''}{expiresAt.toLocaleString()}
-    </time>
-  )
-}
-
-const trialDateInputValue = (value) => {
-  if (!value) return ''
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10)
-}
-
-const extensionInstant = (currentValue, days) => {
-  const current = currentValue ? new Date(currentValue) : null
-  const base = current && current.getTime() > Date.now() ? current : new Date()
-  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
-}
-
-const extensionMonthInstant = (currentValue, months) => {
-  const current = currentValue ? new Date(currentValue) : null
-  const base = current && current.getTime() > Date.now() ? current : new Date()
-  const extended = new Date(base)
-  extended.setUTCMonth(extended.getUTCMonth() + months)
-  return extended.toISOString()
-}
-
-export function TrialAccessControls({ tenant, onPatch }) {
-  const [endDate, setEndDate] = useState(() => trialDateInputValue(tenant.expires_at))
-  const [extendDays, setExtendDays] = useState(14)
-  const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState('')
-  const [localError, setLocalError] = useState('')
-
-  useEffect(() => {
-    setEndDate(trialDateInputValue(tenant.expires_at))
-  }, [tenant.expires_at])
-
-  const patch = async (payload, successMessage) => {
-    setSaving(true)
-    setNotice('')
-    setLocalError('')
-    try {
-      const result = await onPatch(payload)
-      let message = successMessage
-      if (result?.trial_email_status === 'sent') {
-        message += ' The firm administrators were emailed.'
-      } else if (result?.trial_email_status) {
-        message += ` Access changed, but email delivery was ${result.trial_email_status}.`
-      }
-      setNotice(message)
-    } catch (error) {
-      setLocalError(error?.response?.data?.detail || 'Could not update trial access.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const saveExactDate = (event) => {
-    event.preventDefault()
-    if (!endDate) return
-    patch(
-      { trial_ends_at: new Date(`${endDate}T23:59:59.000Z`).toISOString() },
-      `Trial access now ends ${endDate}.`,
-    )
-  }
-
-  return (
-    <div className="mt-4 pt-4 border-t border-brand-line">
-      <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider font-sans">Trial & Premium AI</h4>
-      <p className="mt-1 text-xs leading-5 text-brand-muted">
-        Trial access and sponsored Premium AI are separate. Premium is off for new trials unless you explicitly enable it here.
-      </p>
-
-      <form onSubmit={saveExactDate} className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="block">
-          <span className="block text-xs font-medium text-brand-muted">Trial end date (UTC)</span>
-          <input
-            aria-label="Trial end date"
-            type="date"
-            value={endDate}
-            onChange={(event) => setEndDate(event.target.value)}
-            className="mt-1 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink"
-          />
-        </label>
-        <button type="submit" disabled={saving || !endDate} className="rounded-lg border border-brand-accent/30 px-3 py-2 text-xs font-medium text-brand-accent disabled:opacity-50">
-          Set date
-        </button>
-        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: extensionInstant(tenant.expires_at, 30) }, 'Trial extended by 30 days.')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
-          Extend 30 days
-        </button>
-        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: extensionMonthInstant(tenant.expires_at, 6) }, 'Trial extended by 6 months.')} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
-          Extend 6 months
-        </button>
-        <label className="block">
-          <span className="block text-xs font-medium text-brand-muted">Extend by (days)</span>
-          <input
-            aria-label="Extend by days"
-            type="number"
-            min="1"
-            max="365"
-            value={extendDays}
-            onChange={(event) => setExtendDays(event.target.value)}
-            className="mt-1 w-24 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink"
-          />
-        </label>
-        <button type="button" disabled={saving || !extendDays} onClick={() => patch({ trial_ends_at: extensionInstant(tenant.expires_at, Number(extendDays)) }, `Trial extended by ${extendDays} days.`)} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2 disabled:opacity-50">
-          Extend by days
-        </button>
-      </form>
-
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: new Date(Date.now() - 1000).toISOString() }, 'Trial access revoked immediately.')} className="rounded-lg border border-brand-rose/30 px-3 py-2 text-xs font-medium text-brand-rose disabled:opacity-50">
-          Revoke trial now
-        </button>
-        <button type="button" disabled={saving} onClick={() => patch({ trial_ends_at: null }, 'Trial cleared; the firm now has active access without an expiration.')} className="rounded-lg border border-brand-accent/30 px-3 py-2 text-xs font-medium text-brand-accent disabled:opacity-50">
-          Convert to active
-        </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => patch(
-            { premium_ai_trial_enabled: !tenant.premium_ai_trial_enabled },
-            tenant.premium_ai_trial_enabled ? 'Sponsored Premium AI disabled.' : 'Sponsored Premium AI enabled for licensed users.',
-          )}
-          className={`rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50 ${tenant.premium_ai_trial_enabled ? 'border-brand-rose/30 text-brand-rose' : 'border-brand-amber/30 text-brand-amber'}`}
-        >
-          {tenant.premium_ai_trial_enabled ? 'Disable Premium AI' : 'Enable Premium AI'}
-        </button>
-      </div>
-      {notice && <p role="status" className="mt-3 text-xs text-brand-accent">{notice}</p>}
-      {localError && <p role="alert" className="mt-3 text-xs text-brand-rose">{localError}</p>}
-    </div>
-  )
-}
-
-export function ProvisionTrialTenantForm({ onProvision }) {
-  const [form, setForm] = useState({
-    firm_name: '',
-    admin_email: '',
-    admin_name: '',
-    trial_days: 30,
-    plan: 'full-trial',
-    premium_ai_trial_enabled: false,
-  })
-  const [saving, setSaving] = useState(false)
-  const [result, setResult] = useState(null)
-  const [localError, setLocalError] = useState('')
-
-  const setField = (field) => (event) => {
-    const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  const submit = async (event) => {
-    event.preventDefault()
-    setSaving(true)
-    setResult(null)
-    setLocalError('')
-    try {
-      const created = await onProvision({
-        ...form,
-        trial_days: Number(form.trial_days),
-        admin_name: form.admin_name.trim() || null,
-      })
-      setResult(created)
-      setForm((current) => ({ ...current, firm_name: '', admin_email: '', admin_name: '' }))
-    } catch (error) {
-      setLocalError(error?.response?.data?.detail || 'Could not provision the customer.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <section className="mb-6 rounded-xl border border-brand-line bg-brand-surface p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-serif font-bold text-brand-ink">Register a customer</h2>
-          <p className="mt-1 max-w-3xl text-sm text-brand-muted">
-            Creates a private trial and emails the founding administrator a secure account-setup link. Public self-registration remains off.
-          </p>
-        </div>
-        <span className="rounded-full bg-brand-accent/10 px-3 py-1 text-xs font-medium text-brand-accent">Operator-only</span>
-      </div>
-      <form onSubmit={submit} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <label className="block">
-          <span className="text-xs font-medium text-brand-muted">Firm name</span>
-          <input required value={form.firm_name} onChange={setField('firm_name')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-brand-muted">Attorney email</span>
-          <input required type="email" value={form.admin_email} onChange={setField('admin_email')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-brand-muted">Attorney name</span>
-          <input value={form.admin_name} onChange={setField('admin_name')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-brand-muted">Trial days</span>
-          <input required type="number" min="1" max="365" value={form.trial_days} onChange={setField('trial_days')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-brand-muted">Workspace access</span>
-          <select value={form.plan} onChange={setField('plan')} className="mt-1 w-full rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm">
-            <option value="full-trial">Full workspace trial</option>
-            <option value="intake-only">Intake + tasks trial</option>
-            <option value="full-platform">Full platform trial</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-2 self-end rounded-lg border border-brand-line px-3 py-2 text-sm text-brand-ink-2">
-          <input type="checkbox" checked={form.premium_ai_trial_enabled} onChange={setField('premium_ai_trial_enabled')} />
-          Sponsor Premium AI
-        </label>
-        <div className="md:col-span-3 flex flex-wrap items-center gap-3">
-          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-brand-ink px-4 py-2 text-sm font-medium text-brand-surface disabled:opacity-50">
-            <Plus size={15} /> {saving ? 'Registering…' : 'Create trial and send invite'}
-          </button>
-          <button type="button" onClick={() => setForm((current) => ({ ...current, trial_days: 180 }))} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2">
-            Use 6 months
-          </button>
-        </div>
-      </form>
-      {result && (
-        <div role="status" className="mt-4 rounded-lg border border-brand-accent/20 bg-brand-accent/5 px-4 py-3 text-sm text-brand-ink-2">
-          Customer created. Email status: <strong>{result.email_status}</strong>.{' '}
-          <a href={result.invitation_url} className="font-medium text-brand-accent underline">Open backup invitation link</a>
-        </div>
-      )}
-      {localError && <p role="alert" className="mt-3 text-sm text-brand-rose">{localError}</p>}
-    </section>
-  )
-}
-
-export function PendingTrialApproval({ tenant, onApprove }) {
-  const [trialDays, setTrialDays] = useState(30)
-  const [premium, setPremium] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState('')
-  const [localError, setLocalError] = useState('')
-
-  const approve = async () => {
-    setSaving(true)
-    setNotice('')
-    setLocalError('')
-    try {
-      const result = await onApprove({
-        trial_days: Number(trialDays),
-        premium_ai_trial_enabled: premium,
-      })
-      setNotice(`Trial approved. Customer email status: ${result.email_status}.`)
-    } catch (error) {
-      setLocalError(error?.response?.data?.detail || 'Could not approve the registration.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="mt-4 rounded-lg border border-brand-amber/30 bg-brand-amber/5 p-4">
-      <h4 className="text-sm font-bold text-brand-ink">Pending registration</h4>
-      <p className="mt-1 text-xs leading-5 text-brand-muted">
-        This firm has no workspace access, trial clock, or AI spend until approval.
-      </p>
-      <div className="mt-3 flex flex-wrap items-end gap-3">
-        <label>
-          <span className="block text-xs font-medium text-brand-muted">Trial days</span>
-          <input aria-label="Approval trial days" type="number" min="1" max="365" value={trialDays} onChange={(event) => setTrialDays(event.target.value)} className="mt-1 w-28 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm" />
-        </label>
-        <button type="button" onClick={() => setTrialDays(180)} className="rounded-lg border border-brand-line px-3 py-2 text-xs font-medium text-brand-ink-2">Use 6 months</button>
-        <label className="flex items-center gap-2 rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-xs text-brand-ink-2">
-          <input type="checkbox" checked={premium} onChange={(event) => setPremium(event.target.checked)} />
-          Sponsor Premium AI
-        </label>
-        <button type="button" disabled={saving} onClick={approve} className="rounded-lg bg-brand-ink px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
-          {saving ? 'Approving…' : `Approve ${tenant.name}`}
-        </button>
-      </div>
-      {notice && <p role="status" className="mt-3 text-xs text-brand-accent">{notice}</p>}
-      {localError && <p role="alert" className="mt-3 text-xs text-brand-rose">{localError}</p>}
-    </div>
-  )
-}
-
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, notice }) {
   const [key, setKey] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -354,9 +38,14 @@ function LoginScreen({ onLogin }) {
     setError(null)
     try {
       const session = await createPlatformSession(key)
-      onLogin(session.access_token)
-    } catch {
-      setError('Invalid platform key')
+      setKey('')
+      onLogin(session)
+    } catch (loginError) {
+      // Say why: an expired bootstrap credential or disabled platform access
+      // needs a different fix than a mistyped secret.
+      setError(loginError?.response
+        ? apiErrorMessage(loginError, 'Invalid platform key')
+        : 'Could not reach the server. Check the connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -374,13 +63,16 @@ function LoginScreen({ onLogin }) {
             <p className="text-xs text-brand-muted font-sans">Platform administration</p>
           </div>
         </div>
-        {error && <p className="text-sm text-brand-rose bg-brand-rose/10 px-3 py-2 rounded-lg mb-4 font-sans">{error}</p>}
+        {notice && <p role="status" className="text-sm text-brand-ink-2 bg-brand-amber/10 px-3 py-2 rounded-lg mb-4 font-sans">{notice}</p>}
+        {error && <p role="alert" className="text-sm text-brand-rose bg-brand-rose/10 px-3 py-2 rounded-lg mb-4 font-sans">{error}</p>}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Platform bootstrap secret" autoComplete="current-password" className="w-full border border-brand-line rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-accent bg-brand-surface" required />
+          <label htmlFor="platform-console-key" className="sr-only">Platform bootstrap secret</label>
+          <input id="platform-console-key" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Platform bootstrap secret" autoComplete="current-password" className="w-full border border-brand-line rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-accent bg-brand-surface" required />
           <button type="submit" disabled={loading} className="w-full bg-brand-ink text-white py-2.5 rounded-lg text-sm font-medium font-sans hover:bg-brand-ink-2 disabled:opacity-60 transition-colors">
             {loading ? 'Authenticating…' : 'Access Console'}
           </button>
         </form>
+        <p className="mt-4 text-xs text-brand-muted">Sessions last about 15 minutes and are held only in this tab. Your place in the console is kept in the address bar.</p>
       </div>
     </div>
   )
@@ -397,7 +89,7 @@ function PlatformIntegrationsTab({ platformKey, onAuthError }) {
     try {
       setReadiness(await getPlatformIntegrationReadiness(platformKey))
     } catch (e) {
-      if (e?.response?.status === 403) {
+      if (isSessionEnded(e)) {
         onAuthError?.()
       } else {
         setError(e?.response?.data?.detail || 'Failed to load integration readiness.')
@@ -520,7 +212,7 @@ export function ResearchMcpReleaseControls({ platformKey, onAuthError }) {
     try {
       setData(await getPlatformMcpOverview(platformKey))
     } catch (e) {
-      if (e?.response?.status === 403) {
+      if (isSessionEnded(e)) {
         onAuthError?.()
       } else {
         setError(e?.response?.data?.detail || 'Failed to load MCP usage.')
@@ -744,7 +436,7 @@ function WorkspaceMcpDiagnostics({ platformKey, onAuthError }) {
       const next = await getPlatformWorkspaceMcpDiagnostics(platformKey, email.trim(), auditBefore)
       setData(next)
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       else setError(apiErrorMessage(e, 'Failed to load Workspace MCP diagnostics.'))
     }
   }, [platformKey, onAuthError])
@@ -967,514 +659,6 @@ function RoutingOverviewPanel({ config, onOpenRouting }) {
         <AliasPill label="Premium route" alias={premiumAlias} sub="Resolved when premium routing is requested." />
         <AliasPill label="Background Automations" alias={backgroundAlias} sub="Platform-global, bounded, single-shot assistant work. Never tenant BYOK." />
       </div>
-    </div>
-  )
-}
-
-function TenantAliasOverride({ tenant, tenantDetail, platformKey, defaultAliases, onUpdate, onError, saving, setSaving }) {
-  const config = tenantDetail?.llm_config || {}
-  const assistantConfig = tenantDetail?.assistant_config || {}
-  const [profiles, setProfiles] = useState([])
-  const [value, setValue] = useState(config.routing_profile_id || '')
-  const [backgroundEnabled, setBackgroundEnabled] = useState(Boolean(assistantConfig.background_assistant_enabled))
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    setValue(config.routing_profile_id || '')
-    setSaved(false)
-  }, [config.routing_profile_id])
-
-  useEffect(() => {
-    setBackgroundEnabled(Boolean(assistantConfig.background_assistant_enabled))
-    setSaved(false)
-  }, [assistantConfig.background_assistant_enabled])
-
-  useEffect(() => {
-    getLLMRoutingProfiles(platformKey).then((data) => setProfiles(data.profiles || [])).catch(() => setProfiles([]))
-  }, [platformKey])
-
-  const selected = profiles.find((profile) => profile.id === value)
-    || (!value ? profiles.find((profile) => profile.is_default) : null)
-    || config.routing_profile
-  const changed = value !== (config.routing_profile_id || '')
-    || backgroundEnabled !== Boolean(assistantConfig.background_assistant_enabled)
-
-  const handleSave = async () => {
-    setSaving(true)
-    setSaved(false)
-    try {
-      const payload = {
-        llm_routing_profile_id: value || null,
-        background_assistant_enabled: backgroundEnabled,
-      }
-      await updatePlatformTenant(platformKey, tenant.id, payload)
-      onUpdate(tenant.id, {
-        llm_config: { ...config, routing_profile_id: value || null, routing_profile: selected || null },
-        assistant_config: { ...assistantConfig, background_assistant_enabled: backgroundEnabled },
-      })
-      setSaved(true)
-    } catch (e) {
-      onError?.(e?.response?.data?.detail || 'Failed to save tenant AI alias override.')
-    }
-    finally { setSaving(false) }
-  }
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <label htmlFor={`tenant-${tenant.id}-routing-profile`} className="block text-xs text-brand-muted font-sans mb-1">AI routing profile</label>
-        <select id={`tenant-${tenant.id}-routing-profile`} value={value} onChange={(e) => { setValue(e.target.value); setSaved(false) }} className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm font-sans bg-brand-surface">
-          <option value="">Inherit default profile</option>
-          {profiles.filter((profile) => profile.assignable).map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.is_default ? ' (default)' : ''}</option>)}
-        </select>
-      </div>
-      {selected && <div className="rounded-lg border border-brand-line bg-brand-bg px-4 py-3 text-xs font-sans"><p className="font-medium text-brand-ink">{selected.name}{!value ? ' · inherited default' : ' · tenant assignment'}</p><p className="mt-1 text-brand-muted">Standard matter context: {selected.standard_allow_matter_context ? 'Allowed' : 'Blocked'} · Premium matter context: {selected.premium_allow_matter_context ? 'Allowed' : 'Blocked'} · {selected.is_active ? 'Active' : 'Inactive'}</p></div>}
-      <label className="flex gap-3 rounded-lg border border-brand-line bg-brand-bg px-4 py-3 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={backgroundEnabled}
-          onChange={(event) => { setBackgroundEnabled(event.target.checked); setSaved(false) }}
-          className="mt-0.5 h-4 w-4 accent-brand-ink"
-        />
-        <span>
-          <span className="block text-sm font-medium text-brand-ink font-sans">Enable Background Automations for this firm</span>
-          <span className="block mt-1 text-xs text-brand-muted font-sans">Tenant kill switch. Global feature and confidential-data gates must also be enabled before any model call can run.</span>
-        </span>
-      </label>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving || !changed}
-          className={`px-4 py-2 rounded-lg text-xs font-medium font-sans border transition-colors ${
-            saved
-              ? 'bg-brand-accent/10 border-brand-accent/20 text-brand-accent'
-              : 'bg-brand-ink text-white border-brand-ink hover:bg-brand-ink-2 disabled:opacity-40'
-          }`}
-        >
-          {saved ? 'Saved' : saving ? 'Saving...' : 'Save AI Controls'}
-        </button>
-        <p className="text-xs text-brand-muted font-sans">Unassigned tenants inherit the default profile.</p>
-      </div>
-    </div>
-  )
-}
-
-function TenantPlanOverride({ tenant, tenantDetail, platformKey, onUpdate, onError }) {
-  const currentPlan = tenantDetail?.module_config?.plan || ''
-  const [plans, setPlans] = useState([])
-  const [value, setValue] = useState(currentPlan)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => { setValue(currentPlan); setSaved(false) }, [currentPlan])
-
-  useEffect(() => {
-    let cancelled = false
-    getPlatformPlans(platformKey)
-      .then((data) => { if (!cancelled) setPlans(data.plans || []) })
-      .catch(() => { if (!cancelled) setPlans([]) })
-    return () => { cancelled = true }
-  }, [platformKey])
-
-  const save = async () => {
-    setSaving(true)
-    setSaved(false)
-    try {
-      await updatePlatformTenant(platformKey, tenant.id, { plan: value || null })
-      onUpdate(tenant.id, { module_config: { ...(tenantDetail?.module_config || {}), plan: value || null } })
-      setSaved(true)
-    } catch (e) {
-      onError?.(e?.response?.data?.detail || 'Failed to save tenant plan.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="flex items-end gap-3">
-      <div className="flex-1">
-        <label htmlFor="platformpage-plan" className="block text-xs text-brand-muted font-sans mb-1">Plan</label>
-        <select id="platformpage-plan"
-          value={value}
-          onChange={(e) => { setValue(e.target.value); setSaved(false) }}
-          className="w-full border border-brand-line rounded-lg px-3 py-2 text-sm font-sans bg-brand-surface focus:outline-none focus:ring-2 focus:ring-brand-accent"
-        >
-          <option value="">(default / full platform)</option>
-          {plans.map((p) => (
-            <option key={p.id} value={p.id}>{p.label} ({p.id})</option>
-          ))}
-        </select>
-      </div>
-      <button
-        onClick={save}
-        disabled={saving || value === currentPlan}
-        className={`px-4 py-2 rounded-lg text-xs font-medium font-sans border transition-colors ${
-          saved
-            ? 'bg-brand-accent/10 border-brand-accent/20 text-brand-accent'
-            : 'bg-brand-ink text-white border-brand-ink hover:bg-brand-ink-2 disabled:opacity-40'
-        }`}
-      >
-        {saved ? 'Saved' : saving ? 'Saving...' : 'Set Plan'}
-      </button>
-    </div>
-  )
-}
-
-function LogsTab({ platformKey, tenants }) {
-  const [subtab, setSubtab] = useState('system')
-  const [systemErrors, setSystemErrors] = useState(null)
-  const [systemSummary, setSystemSummary] = useState(null)
-  const [logPage, setLogPage] = useState(1)
-  const [logLimit, setLogLimit] = useState(50)
-  const [logTotal, setLogTotal] = useState(0)
-  const [logDays, setLogDays] = useState(7)
-  const [logSeverity, setLogSeverity] = useState('')
-  const [logType] = useState('')
-  const [logTenant, setLogTenant] = useState('')
-  const [logUnresolved, setLogUnresolved] = useState(false)
-  const [logLoading, setLogLoading] = useState(false)
-
-  // Tenant-specific logs
-  const [selTenant, setSelTenant] = useState('')
-  const [tenantErrors, setTenantErrors] = useState(null)
-  const [tenantSummary, setTenantSummary] = useState(null)
-  const [tlogPage, setTlogPage] = useState(1)
-  const [tlogTotal, setTlogTotal] = useState(0)
-  const [tlogLoading, setTlogLoading] = useState(false)
-
-  // API traffic
-  const [accessLogs, setAccessLogs] = useState(null)
-  const [accessSummary, setAccessSummary] = useState(null)
-  const [alogPage, setAlogPage] = useState(1)
-  const [alogTotal, setAlogTotal] = useState(0)
-  const [alogHours, setAlogHours] = useState(24)
-  const [alogLoading, setAlogLoading] = useState(false)
-  const [alogTenant, setAlogTenant] = useState('')
-  const [alogEndpoint, setAlogEndpoint] = useState('')
-
-  const loadSystemErrors = useCallback(async (pg) => {
-    setLogLoading(true)
-    try {
-      const p = pg || logPage
-      const params = { page: p, limit: logLimit, days: logDays }
-      if (logSeverity) params.severity = logSeverity
-      if (logType) params.error_type = logType
-      if (logTenant) params.tenant_id = logTenant
-      if (logUnresolved) params.unresolved_only = true
-      const [errors, summary] = await Promise.all([
-        getPlatformLogs(platformKey, params),
-        getPlatformLogsSummary(platformKey, { days: logDays }),
-      ])
-      setSystemErrors(errors.errors)
-      setLogTotal(errors.total)
-      setLogLimit(errors.limit)
-      setLogPage(errors.page)
-      setSystemSummary(summary)
-    } catch { /* silent */ }
-    finally { setLogLoading(false) }
-  }, [platformKey, logPage, logLimit, logDays, logSeverity, logType, logTenant, logUnresolved])
-
-  useEffect(() => { loadSystemErrors(1) }, [loadSystemErrors])
-
-  const loadTenantLogs = useCallback(async (pg) => {
-    if (!selTenant) return
-    setTlogLoading(true)
-    try {
-      const p = pg || tlogPage
-      const params = { page: p, limit: 50, days: logDays }
-      if (logSeverity) params.severity = logSeverity
-      const [errors, summary] = await Promise.all([
-        getPlatformTenantLogs(platformKey, selTenant, params),
-        getPlatformTenantLogsSummary(platformKey, selTenant, { days: logDays }),
-      ])
-      setTenantErrors(errors.errors)
-      setTlogTotal(errors.total)
-      setTlogPage(errors.page)
-      setTenantSummary(summary)
-    } catch { /* silent */ }
-    finally { setTlogLoading(false) }
-  }, [platformKey, selTenant, tlogPage, logDays, logSeverity])
-
-  useEffect(() => { if (selTenant) loadTenantLogs(1) }, [loadTenantLogs])
-
-  const loadAccessLogs = useCallback(async (pg) => {
-    setAlogLoading(true)
-    try {
-      const p = pg || alogPage
-      const params = { page: p, limit: 50, hours: alogHours }
-      if (alogTenant) params.tenant_id = alogTenant
-      if (alogEndpoint) params.endpoint = alogEndpoint
-      const [logs, summary] = await Promise.all([
-        getPlatformAccessLogs(platformKey, params),
-        getPlatformAccessLogsSummary(platformKey, { hours: alogHours }),
-      ])
-      setAccessLogs(logs.entries)
-      setAlogTotal(logs.total)
-      setAlogPage(logs.page)
-      setAccessSummary(summary)
-    } catch { /* silent */ }
-    finally { setAlogLoading(false) }
-  }, [platformKey, alogPage, alogHours, alogTenant, alogEndpoint])
-
-  useEffect(() => { loadAccessLogs(1) }, [loadAccessLogs])
-
-  const severityColor = (s) => {
-    if (s === 'critical') return 'text-brand-rose bg-brand-rose/10 border-brand-rose/20'
-    if (s === 'error') return 'text-red-400 bg-red-400/10 border-red-400/20'
-    if (s === 'warning') return 'text-brand-amber bg-brand-amber/10 border-brand-amber/20'
-    return 'text-brand-muted bg-brand-muted/10 border-brand-muted/20'
-  }
-
-  const statusColor = (code) => {
-    if (code >= 500) return 'text-brand-rose'
-    if (code >= 400) return 'text-brand-amber'
-    if (code >= 200) return 'text-brand-accent'
-    return 'text-brand-muted'
-  }
-
-  return (
-    <div>
-      {/* Sub-tabs */}
-      <div className="flex gap-1 mb-6 border-b border-brand-line pb-0">
-        {[
-          { id: 'system', label: 'System Errors', icon: AlertTriangle },
-          { id: 'tenant', label: 'Tenant Logs', icon: FileText },
-          { id: 'traffic', label: 'API Traffic', icon: Globe },
-        ].map((st) => (
-          <button key={st.id} onClick={() => setSubtab(st.id)} className={`flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-medium border-b-2 transition-colors -mb-px ${subtab === st.id ? 'border-brand-ink text-brand-ink' : 'border-transparent text-brand-muted hover:text-brand-ink-2'}`}>
-            <st.icon size={14} />
-            {st.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Filters (shared) ── */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <select value={logDays} onChange={(e) => setLogDays(Number(e.target.value))} className="border border-brand-line rounded-lg px-3 py-1.5 text-xs font-sans bg-brand-surface">
-          <option value={1}>24h</option>
-          <option value={3}>3d</option>
-          <option value={7}>7d</option>
-          <option value={30}>30d</option>
-        </select>
-        {subtab !== 'traffic' && (
-          <>
-            <select value={logSeverity} onChange={(e) => setLogSeverity(e.target.value)} className="border border-brand-line rounded-lg px-3 py-1.5 text-xs font-sans bg-brand-surface">
-              <option value="">All severities</option>
-              <option value="critical">Critical</option>
-              <option value="error">Error</option>
-              <option value="warning">Warning</option>
-              <option value="info">Info</option>
-            </select>
-            {(subtab === 'system') && (
-              <>
-                <select value={logTenant} onChange={(e) => setLogTenant(e.target.value)} className="border border-brand-line rounded-lg px-3 py-1.5 text-xs font-sans bg-brand-surface max-w-[200px]">
-                  <option value="">All tenants</option>
-                  {tenants.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
-                </select>
-                <label className="flex items-center gap-1.5 text-xs text-brand-muted font-sans cursor-pointer">
-                  <input type="checkbox" checked={logUnresolved} onChange={(e) => setLogUnresolved(e.target.checked)} className="rounded" />
-                  Unresolved only
-                </label>
-              </>
-            )}
-          </>
-        )}
-        {subtab === 'traffic' && (
-          <>
-            <select value={alogTenant} onChange={(e) => setAlogTenant(e.target.value)} className="border border-brand-line rounded-lg px-3 py-1.5 text-xs font-sans bg-brand-surface max-w-[200px]">
-              <option value="">All tenants</option>
-              {tenants.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
-            </select>
-            <input type="text" value={alogEndpoint} onChange={(e) => setAlogEndpoint(e.target.value)} placeholder="Filter endpoint…" className="border border-brand-line rounded-lg px-3 py-1.5 text-xs font-sans bg-brand-surface w-48" />
-            <select value={alogHours} onChange={(e) => setAlogHours(Number(e.target.value))} className="border border-brand-line rounded-lg px-3 py-1.5 text-xs font-sans bg-brand-surface">
-              <option value={1}>1h</option>
-              <option value={6}>6h</option>
-              <option value={24}>24h</option>
-              <option value={72}>3d</option>
-              <option value={168}>7d</option>
-            </select>
-          </>
-        )}
-      </div>
-
-      {/* ── System Errors ── */}
-      {subtab === 'system' && (
-        <div>
-          {systemSummary && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <StatCard label="Total Errors" value={systemSummary.total_errors} icon={AlertTriangle} />
-              <StatCard label="Unresolved" value={systemSummary.unresolved} sub={systemSummary.total_errors > 0 ? `${((systemSummary.unresolved / systemSummary.total_errors) * 100).toFixed(0)}%` : null} icon={AlertTriangle} />
-              <StatCard label="Critical" value={systemSummary.by_severity?.critical || 0} icon={AlertTriangle} />
-              <StatCard label="Error" value={systemSummary.by_severity?.error || 0} icon={AlertTriangle} />
-            </div>
-          )}
-
-          <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-brand-bg-soft border-b border-brand-line">
-                  <tr className="text-xs text-brand-muted uppercase tracking-wider font-sans">
-                    <th className="text-left px-4 py-2">Tenant</th>
-                    <th className="text-left px-4 py-2">Type</th>
-                    <th className="text-left px-4 py-2">Severity</th>
-                    <th className="text-left px-4 py-2">Message</th>
-                    <th className="text-left px-4 py-2">Endpoint</th>
-                    <th className="text-right px-4 py-2">Status</th>
-                    <th className="text-right px-4 py-2">When</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-line">
-                  {systemErrors?.map((e) => (
-                    <tr key={e.id} className="hover:bg-brand-bg transition-colors">
-                      <td className="px-4 py-2.5 text-xs text-brand-ink font-sans max-w-[120px] truncate" title={e.tenant_name}>{e.tenant_name}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted font-mono">{e.error_type}</td>
-                      <td className="px-4 py-2.5"><span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${severityColor(e.severity)}`}>{e.severity}</span></td>
-                      <td className="px-4 py-2.5 text-xs text-brand-ink-2 font-sans max-w-[300px] truncate" title={e.message}>{e.message}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted font-mono max-w-[150px] truncate">{e.endpoint || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted text-right font-sans">{e.status_code || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted text-right font-sans whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {(!systemErrors || systemErrors.length === 0) && (
-                    <tr><td colSpan={7} className="px-5 py-8 text-sm text-brand-muted text-center font-sans">{logLoading ? 'Loading…' : 'No errors found'}</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {logTotal > logLimit && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-brand-line">
-                <button onClick={() => setLogPage((p) => Math.max(1, p - 1))} disabled={logPage === 1} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">← Prev</button>
-                <span className="text-xs text-brand-muted font-sans">Page {logPage} of {Math.ceil(logTotal / logLimit)}</span>
-                <button onClick={() => setLogPage((p) => p + 1)} disabled={logPage * logLimit >= logTotal} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">Next →</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Tenant Logs ── */}
-      {subtab === 'tenant' && (
-        <div>
-          <div className="flex items-center gap-3 mb-6">
-            <select value={selTenant} onChange={(e) => { setSelTenant(e.target.value); setTlogPage(1) }} className="border border-brand-line rounded-lg px-3 py-1.5 text-sm font-sans bg-brand-surface">
-              <option value="">Select a tenant…</option>
-              {tenants.map((t) => (<option key={t.id} value={t.id}>{t.name} ({t.domain})</option>))}
-            </select>
-          </div>
-
-          {selTenant && tenantSummary && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <StatCard label="Total Errors" value={tenantSummary.total_errors} icon={AlertTriangle} />
-              <StatCard label="Unresolved" value={tenantSummary.unresolved} icon={AlertTriangle} />
-              <StatCard label="Critical" value={tenantSummary.by_severity?.critical || 0} icon={AlertTriangle} />
-              <StatCard label="Error" value={tenantSummary.by_severity?.error || 0} icon={AlertTriangle} />
-            </div>
-          )}
-
-          {selTenant && (
-            <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-brand-bg-soft border-b border-brand-line">
-                    <tr className="text-xs text-brand-muted uppercase tracking-wider font-sans">
-                      <th className="text-left px-4 py-2">Type</th>
-                      <th className="text-left px-4 py-2">Severity</th>
-                      <th className="text-left px-4 py-2">Message</th>
-                      <th className="text-left px-4 py-2">User</th>
-                      <th className="text-left px-4 py-2">Endpoint</th>
-                      <th className="text-right px-4 py-2">Status</th>
-                      <th className="text-right px-4 py-2">When</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-brand-line">
-                    {tenantErrors?.map((e) => (
-                      <tr key={e.id} className="hover:bg-brand-bg transition-colors">
-                        <td className="px-4 py-2.5 text-xs text-brand-muted font-mono">{e.error_type}</td>
-                        <td className="px-4 py-2.5"><span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${severityColor(e.severity)}`}>{e.severity}</span></td>
-                        <td className="px-4 py-2.5 text-xs text-brand-ink-2 font-sans max-w-[300px] truncate" title={e.message}>{e.message}</td>
-                        <td className="px-4 py-2.5 text-xs text-brand-muted font-mono">{e.user_id || 'system'}</td>
-                        <td className="px-4 py-2.5 text-xs text-brand-muted font-mono max-w-[150px] truncate">{e.endpoint || '—'}</td>
-                        <td className="px-4 py-2.5 text-xs text-brand-muted text-right font-sans">{e.status_code || '—'}</td>
-                        <td className="px-4 py-2.5 text-xs text-brand-muted text-right font-sans whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                    {(!tenantErrors || tenantErrors.length === 0) && (
-                      <tr><td colSpan={7} className="px-5 py-8 text-sm text-brand-muted text-center font-sans">{tlogLoading ? 'Loading…' : 'No errors found'}</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {tlogTotal > 50 && (
-                <div className="flex items-center justify-between px-5 py-3 border-t border-brand-line">
-                  <button onClick={() => setTlogPage((p) => Math.max(1, p - 1))} disabled={tlogPage === 1} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">← Prev</button>
-                  <span className="text-xs text-brand-muted font-sans">Page {tlogPage} of {Math.ceil(tlogTotal / 50)}</span>
-                  <button onClick={() => setTlogPage((p) => p + 1)} disabled={tlogPage * 50 >= tlogTotal} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">Next →</button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!selTenant && (
-            <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm p-8 text-center">
-              <FileText size={32} className="text-brand-muted mx-auto mb-3" />
-              <p className="text-sm text-brand-muted font-sans">Select a tenant above to view their error logs and diagnostics</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── API Traffic ── */}
-      {subtab === 'traffic' && (
-        <div>
-          {accessSummary && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <StatCard label="Requests" value={accessSummary.total_requests?.toLocaleString()} sub={`${alogHours}h window`} icon={Globe} />
-              <StatCard label="2xx" value={accessSummary.by_status?.['200'] || 0} icon={Activity} />
-              <StatCard label="4xx" value={accessSummary.by_status?.['400'] + accessSummary.by_status?.['401'] + accessSummary.by_status?.['403'] + accessSummary.by_status?.['404'] + accessSummary.by_status?.['422'] + accessSummary.by_status?.['429'] || 0} icon={AlertTriangle} />
-              <StatCard label="Avg Latency" value={accessSummary.avg_latency_ms ? `${accessSummary.avg_latency_ms}ms` : '—'} icon={Zap} />
-            </div>
-          )}
-
-          <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-brand-bg-soft border-b border-brand-line">
-                  <tr className="text-xs text-brand-muted uppercase tracking-wider font-sans">
-                    <th className="text-left px-4 py-2">Tenant</th>
-                    <th className="text-left px-4 py-2">Method</th>
-                    <th className="text-left px-4 py-2">Endpoint</th>
-                    <th className="text-right px-4 py-2">Status</th>
-                    <th className="text-right px-4 py-2">Latency</th>
-                    <th className="text-right px-4 py-2">When</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-line">
-                  {accessLogs?.map((e) => (
-                    <tr key={e.id} className="hover:bg-brand-bg transition-colors">
-                      <td className="px-4 py-2.5 text-xs text-brand-ink font-sans max-w-[120px] truncate" title={e.tenant_name}>{e.tenant_name}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted font-mono">{e.method}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-ink-2 font-mono max-w-[250px] truncate" title={e.endpoint}>{e.endpoint}</td>
-                      <td className={`px-4 py-2.5 text-xs text-right font-mono ${statusColor(e.status_code)}`}>{e.status_code}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted text-right font-sans">{e.latency_ms != null ? `${e.latency_ms}ms` : '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-brand-muted text-right font-sans whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {(!accessLogs || accessLogs.length === 0) && (
-                    <tr><td colSpan={6} className="px-5 py-8 text-sm text-brand-muted text-center font-sans">{alogLoading ? 'Loading…' : 'No traffic recorded'}</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {alogTotal > 50 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-brand-line">
-                <button onClick={() => setAlogPage((p) => Math.max(1, p - 1))} disabled={alogPage === 1} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">← Prev</button>
-                <span className="text-xs text-brand-muted font-sans">Page {alogPage} of {Math.ceil(alogTotal / 50)}</span>
-                <button onClick={() => setAlogPage((p) => p + 1)} disabled={alogPage * 50 >= alogTotal} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">Next →</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -3021,7 +2205,7 @@ export function AIRoutingTab({ platformKey, onAuthError }) {
       setBackgroundUsage(usageData)
       setBackgroundQuota(quotaFromLimits(usageData?.limits))
     } catch (e) {
-      if (e?.response?.status === 403) {
+      if (isSessionEnded(e)) {
         setLoadError('Platform access was denied. Sign in again with the current platform key.')
         onAuthError?.()
       } else {
@@ -3080,7 +2264,7 @@ export function AIRoutingTab({ platformKey, onAuthError }) {
       const data = await getLLMGatewayStatus(platformKey)
       setGatewayStatus(data)
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       setSaveResult({ ok: false, error: e?.response?.data?.detail || 'LiteLLM status check failed' })
     } finally { setCheckingGateway(false) }
   }
@@ -3097,7 +2281,7 @@ export function AIRoutingTab({ platformKey, onAuthError }) {
         message: reloadSummary(data),
       })
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       setSaveResult({ ok: false, error: apiErrorMessage(e, 'LiteLLM reload failed') })
     } finally { setReloadingRoutes(false) }
   }
@@ -3445,7 +2629,7 @@ export function DemoWorkspacesTab({ platformKey, onAuthError }) {
     try {
       setData(await getPlatformDemoWorkspaces(platformKey))
     } catch (loadError) {
-      if (loadError?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(loadError)) onAuthError?.()
       setError(apiErrorMessage(loadError, 'Failed to load demo workspaces'))
     } finally {
       setLoading(false)
@@ -3476,7 +2660,7 @@ export function DemoWorkspacesTab({ platformKey, onAuthError }) {
       )
       await load()
     } catch (terminateError) {
-      if (terminateError?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(terminateError)) onAuthError?.()
       setError(apiErrorMessage(terminateError, 'Failed to terminate demo workspace'))
     } finally {
       setTerminating(null)
@@ -3569,46 +2753,6 @@ export function DemoWorkspacesTab({ platformKey, onAuthError }) {
   )
 }
 
-export function PlatformTenantRow({ tenant: t, expanded, onToggle }) {
-  const toggle = () => onToggle?.(t.id)
-  const pending = t.signup_status === 'pending'
-
-  return (
-    <tr
-      className="transition-colors hover:bg-brand-bg"
-    >
-      <td className="px-5 py-3">{expanded ? <ChevronDown size={14} className="text-brand-ink" /> : <ChevronRight size={14} className="text-brand-muted" />}</td>
-      <td className="px-5 py-3">
-        <p className="text-sm font-medium text-brand-ink font-sans">{t.name}</p>
-        <p className="text-xs text-brand-muted">{t.domain}</p>
-      </td>
-      <td className="px-5 py-3"><TierBadge tier={t.billing_tier} /></td>
-      <td className="px-5 py-3"><TenantTypeBadge type={tenantType(t)} /></td>
-      <td className="px-5 py-3 text-center text-sm text-brand-ink-2 font-sans">{t.user_count}</td>
-      <td className="px-5 py-3 text-center text-sm text-brand-ink-2 font-sans">{t.requests_30d?.toLocaleString()}</td>
-      <td className="px-5 py-3 text-right text-sm text-brand-ink-2 font-mono">${t.cost_usd_30d?.toFixed(2)}</td>
-      <td className="px-5 py-3 text-xs text-brand-muted"><TenantExpiry tenant={t} /></td>
-      <td className="px-5 py-3 text-center">
-        <span className={`inline-flex items-center gap-1.5 text-xs font-medium font-sans ${pending ? 'text-brand-amber' : t.is_active ? 'text-brand-accent' : 'text-brand-rose'}`}>
-          <span className={`w-2 h-2 rounded-full ${pending ? 'bg-brand-amber' : t.is_active ? 'bg-brand-accent' : 'bg-brand-rose'}`} />
-          {pending ? 'Pending approval' : t.is_active ? 'Active' : 'Inactive'}
-        </span>
-      </td>
-      <td className="px-5 py-3 text-center">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={`tenant-details-${t.id}`}
-          onClick={toggle}
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-sm text-xs text-brand-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent font-sans"
-        >
-          {expanded ? 'Close' : 'Details'}
-        </button>
-      </td>
-    </tr>
-  )
-}
-
 export function PlatformSmsTab({ platformKey, onAuthError }) {
   const [config, setConfig] = useState(null)
   const [form, setForm] = useState({
@@ -3639,7 +2783,7 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
         status_callback_url: data?.status_callback_url || '',
       }))
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       setError(apiErrorMessage(e, 'Failed to load SMS settings.'))
     }
   }, [platformKey, onAuthError])
@@ -3678,7 +2822,7 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
       }))
       setNotice('Shared SMS sender saved.')
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       setError(apiErrorMessage(e, 'Failed to save SMS sender.'))
     } finally {
       setSaving(false)
@@ -3694,7 +2838,7 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
       setForm({ account_sid: '', auth_token: '', messaging_service_sid: '', from_number: '', status_callback_url: '', is_active: true })
       setNotice('Shared SMS sender removed.')
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       setError(apiErrorMessage(e, 'Failed to remove SMS sender.'))
     }
   }
@@ -3711,7 +2855,7 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
       })
       setNotice(`Test message accepted${result?.sid ? ` (${result.sid})` : ''}.`)
     } catch (e) {
-      if (e?.response?.status === 403) onAuthError?.()
+      if (isSessionEnded(e)) onAuthError?.()
       setError(apiErrorMessage(e, 'Failed to send test message.'))
     } finally {
       setTesting(false)
@@ -3810,553 +2954,532 @@ export function PlatformSmsTab({ platformKey, onAuthError }) {
 }
 
 
-export default function PlatformPage() {
-  const [platformKey, setPlatformKey] = useState(null)
-  const [tab, setTab] = useState('dashboard')
-  const [tenants, setTenants] = useState([])
-  const [usage, setUsage] = useState(null)
-  const [health, setHealth] = useState(null)
-  const [llmConfig, setLlmConfig] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [search, setSearch] = useState('')
-  const [tenantTypeFilter, setTenantTypeFilter] = useState('all')
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [expandedTenant, setExpandedTenant] = useState(null)
-  const [tenantDetail, setTenantDetail] = useState(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
-  const [limit, setLimit] = useState(50)
-  const [savingProvider, setSavingProvider] = useState(false)
+const TAB_GROUPS = [
+  {
+    label: 'Customers',
+    tabs: [
+      { id: 'dashboard', label: 'Overview', icon: BarChart3 },
+      { id: 'tenants', label: 'Firms', icon: Users },
+      { id: 'support', label: 'Support', icon: LifeBuoy },
+      { id: 'demos', label: 'Demos', icon: Presentation },
+    ],
+  },
+  {
+    label: 'Operations',
+    tabs: [
+      { id: 'logs', label: 'Logs', icon: FileText },
+      { id: 'audit', label: 'Audit', icon: History },
+      { id: 'health', label: 'System', icon: Database },
+    ],
+  },
+  {
+    label: 'Configuration',
+    tabs: [
+      { id: 'ai-routing', label: 'AI Routing', icon: Cpu },
+      { id: 'mcp', label: 'MCP', icon: Key },
+      { id: 'integrations', label: 'Integrations', icon: Zap },
+      { id: 'sms', label: 'SMS', icon: PhoneCall },
+      { id: 'agreements', label: 'Agreements', icon: ScrollText },
+    ],
+  },
+]
+const TAB_IDS = new Set(TAB_GROUPS.flatMap((group) => group.tabs.map((item) => item.id)))
+const TENANT_VIEW_IDS = new Set(TENANT_VIEWS.map((item) => item.value).concat('all'))
+// Warn before the short-lived operator token runs out rather than after.
+const SESSION_WARNING_MS = 3 * 60 * 1000
 
-  const handleLogin = (key) => {
-    setPlatformKey(key)
+/** The operator id from the session token, for display only. */
+export const operatorFromToken = (token) => {
+  try {
+    const payload = String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(payload)).sub || null
+  } catch {
+    return null
   }
+}
 
-  const loadData = useCallback(async () => {
-    if (!platformKey) return
-    setLoading(true)
-    setError(null)
-    try {
-      const promises = [getPlatformTenants(platformKey, page), getPlatformUsage(platformKey), getPlatformLLMConfig(platformKey)]
-      if (tab === 'health') promises.push(getPlatformHealth(platformKey))
-      const results = await Promise.all(promises)
-      setTenants(results[0].tenants)
-      setTotal(results[0].total)
-      setLimit(results[0].limit || 50)
-      setUsage(results[1])
-      setLlmConfig(results[2].config)
-      if (results[3]) setHealth(results[3])
-    } catch (e) {
-      setError(e?.response?.data?.detail || 'Failed to load')
-      if (e?.response?.status === 403) { setPlatformKey(null) }
-    } finally { setLoading(false) }
-  }, [platformKey, page, tab])
-
-  useEffect(() => { loadData() }, [loadData])
-
-  const handleUpdate = (id, changes) => {
-    setTenants((prev) => prev.map((t) => (t.id === id ? { ...t, ...changes } : t)))
-    if (expandedTenant === id && changes.llm_config) {
-      const cfg = changes.llm_config
-      setTenantDetail((prev) => prev ? ({
-        ...prev,
-        llm_config: {
-          ...(prev.llm_config || {}),
-          standard_provider: cfg.standard_llm_provider ?? cfg.standard_provider ?? null,
-          standard_model: cfg.standard_llm_model ?? cfg.standard_model ?? null,
-          premium_provider: cfg.premium_llm_provider ?? cfg.premium_provider ?? null,
-          premium_model: cfg.premium_llm_model ?? cfg.premium_model ?? null,
-          provider: cfg.standard_llm_provider ?? cfg.standard_provider ?? null,
-          model: cfg.standard_llm_model ?? cfg.standard_model ?? null,
-        },
-      }) : prev)
-    }
-    if (expandedTenant === id && changes.module_config) {
-      setTenantDetail((prev) => prev ? ({
-        ...prev,
-        module_config: {
-          ...(prev.module_config || {}),
-          ...changes.module_config,
-        },
-      }) : prev)
-    }
+function AttentionCard({ label, value, sub, tone = 'neutral', onClick }) {
+  const tones = {
+    rose: 'border-brand-rose/40 bg-brand-rose/5',
+    amber: 'border-brand-amber/40 bg-brand-amber/5',
+    neutral: 'border-brand-line bg-brand-surface',
   }
-
-  const handleTenantPatch = async (tenant, payload) => {
-    setError(null)
-    try {
-      const result = await updatePlatformTenant(platformKey, tenant.id, payload)
-      const refreshed = await getPlatformTenant(platformKey, tenant.id)
-      const refreshedTenant = { ...refreshed, ...(refreshed.tenant || {}) }
-      setTenants((previous) => previous.map((item) => (
-        item.id === tenant.id ? { ...item, ...(refreshed.tenant || {}) } : item
-      )))
-      setTenantDetail(refreshedTenant)
-      return result
-    } catch (e) {
-      setError(e?.response?.data?.detail || 'Failed to update tenant.')
-      throw e
-    }
-  }
-
-  const toggleTenant = async (id) => {
-    if (expandedTenant === id) { setExpandedTenant(null); setTenantDetail(null); return }
-    setExpandedTenant(id)
-    setLoadingDetail(true)
-    try {
-      const data = await getPlatformTenant(platformKey, id)
-      setTenantDetail({ ...data, ...(data.tenant || {}) })
-    } catch { setTenantDetail(null) }
-    finally { setLoadingDetail(false) }
-  }
-
-  const handleProvisionTenant = async (payload) => {
-    setError(null)
-    const created = await provisionPlatformTenant(platformKey, payload)
-    await loadData()
-    return created
-  }
-
-  const handleApproveTenant = async (tenant, payload) => {
-    setError(null)
-    const approved = await approvePlatformTenantTrial(platformKey, tenant.id, payload)
-    const refreshed = await getPlatformTenant(platformKey, tenant.id)
-    const refreshedTenant = { ...refreshed, ...(refreshed.tenant || {}) }
-    setTenants((previous) => previous.map((item) => (
-      item.id === tenant.id ? { ...item, ...(refreshed.tenant || {}) } : item
-    )))
-    setTenantDetail(refreshedTenant)
-    return approved
-  }
-
-  const filtered = tenants.filter((t) =>
-    (tenantTypeFilter === 'all' || tenantType(t) === tenantTypeFilter) &&
-    (!search || t.name.toLowerCase().includes(search.toLowerCase()) || t.domain.toLowerCase().includes(search.toLowerCase()))
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border p-4 text-left shadow-sm transition-colors hover:border-brand-ink/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent ${tones[tone] || tones.neutral}`}
+    >
+      <span className="block text-xs font-medium text-brand-muted">{label}</span>
+      <span className="mt-1 block font-serif text-2xl font-bold text-brand-ink">{value ?? '—'}</span>
+      {sub && <span className="mt-1 block text-xs text-brand-muted">{sub}</span>}
+    </button>
   )
+}
 
-  if (!platformKey) return <LoginScreen onLogin={handleLogin} />
+function FirmList({ title, firms, empty, onOpenTenant, detail }) {
+  return (
+    <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-brand-line">
+        <h2 className="font-serif font-bold text-brand-ink">{title}</h2>
+      </div>
+      <ul className="divide-y divide-brand-line">
+        {firms.map((firm) => (
+          <li key={firm.id}>
+            <button type="button" onClick={() => onOpenTenant(firm.id)} className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left hover:bg-brand-bg transition-colors">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-brand-ink font-sans">{firm.name}</span>
+                <span className="block truncate text-xs text-brand-muted">{firm.domain}</span>
+              </span>
+              <span className="shrink-0 text-right">{detail(firm)}</span>
+            </button>
+          </li>
+        ))}
+        {firms.length === 0 && <li className="px-5 py-8 text-sm text-brand-muted text-center font-sans">{empty}</li>}
+      </ul>
+    </div>
+  )
+}
 
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'tenants', label: 'Tenants', icon: Users },
-    { id: 'demos', label: 'Demos', icon: Users },
-    { id: 'integrations', label: 'Integrations', icon: Zap },
-    { id: 'agreements', label: 'Agreements', icon: FileText },
-    { id: 'mcp', label: 'MCP', icon: Key },
-    { id: 'sms', label: 'SMS', icon: PhoneCall },
-    { id: 'ai-routing', label: 'AI Routing', icon: Cpu },
-    { id: 'logs', label: 'Logs', icon: FileText },
-    { id: 'health', label: 'System', icon: Database },
-  ]
+/**
+ * The first screen answers "what needs me today?" before it shows totals:
+ * approvals, the support queue, access about to lapse and unresolved errors.
+ */
+function OverviewTab({ platformKey, llmConfig, onOpenView, onOpenTab, onOpenTenant, onSessionEnded, onSupportCounts }) {
+  const [state, setState] = useState({ loading: true })
+  const callbacks = useLatest({ onSessionEnded, onSupportCounts })
+
+  const load = useCallback(async () => {
+    setState((current) => ({ ...current, loading: true }))
+    const results = await Promise.allSettled([
+      getPlatformUsage(platformKey),
+      getPlatformTenants(platformKey, 1, { status: 'platform', limit: 8 }),
+      getPlatformSupportQueue(platformKey, { status: 'active', limit: 1 }),
+      getPlatformLogsSummary(platformKey, { days: 1 }),
+    ])
+    if (results.some((result) => result.status === 'rejected' && isSessionEnded(result.reason))) {
+      callbacks.current.onSessionEnded?.()
+      return
+    }
+    const [usage, tenants, support, errors] = results.map((result) => (result.status === 'fulfilled' ? result.value : null))
+    if (support) callbacks.current.onSupportCounts?.(support.counts)
+    setState({
+      loading: false,
+      usage,
+      tenants,
+      support,
+      errors,
+      failed: results.filter((result) => result.status === 'rejected').length,
+    })
+  }, [platformKey, callbacks])
+
+  useEffect(() => { load() }, [load])
+
+  const counts = state.tenants?.counts || {}
+  // Every client 4xx is logged as a warning, so only unresolved errors and
+  // criticals are counted as needing attention.
+  const openErrors = state.errors?.unresolved_by_severity
+  const unresolvedErrors = state.errors
+    ? (openErrors ? (openErrors.critical || 0) + (openErrors.error || 0) : state.errors.unresolved)
+    : null
+  const supportCounts = state.support?.counts
+  const needsWork = supportCounts
+    ? (supportCounts.open || 0) + (supportCounts.acknowledged || 0) + (supportCounts.mitigated || 0)
+    : null
+  const usage = state.usage
+
+  return (
+    <div className="space-y-8">
+      <section aria-labelledby="needs-attention">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="needs-attention" className="font-serif text-xl font-bold text-brand-ink">Needs attention</h2>
+          <button type="button" onClick={load} disabled={state.loading} className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-ink disabled:opacity-50">
+            <RefreshCw size={13} className={state.loading ? 'animate-spin' : ''} aria-hidden="true" /> Refresh
+          </button>
+        </div>
+        {state.failed > 0 && <p role="status" className="mb-3 text-xs text-brand-muted">Some figures could not be loaded; they show as —.</p>}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <AttentionCard
+            label="Registrations awaiting approval"
+            value={counts.pending}
+            sub="No access or trial clock until approved"
+            tone={counts.pending ? 'amber' : 'neutral'}
+            onClick={() => onOpenView('pending')}
+          />
+          <AttentionCard
+            label="Support requests needing work"
+            value={needsWork}
+            sub={supportCounts?.overdue ? `${supportCounts.overdue} past the acknowledgement objective` : 'None overdue'}
+            tone={supportCounts?.overdue ? 'rose' : needsWork ? 'amber' : 'neutral'}
+            onClick={() => onOpenTab('support')}
+          />
+          <AttentionCard
+            label="Access ending within 14 days"
+            value={counts.expiring}
+            sub="Trials and contract end dates"
+            tone={counts.expiring ? 'amber' : 'neutral'}
+            onClick={() => onOpenView('expiring')}
+          />
+          <AttentionCard
+            label="Expired but still switched on"
+            value={counts.expired}
+            sub="Extend, convert or revoke"
+            tone={counts.expired ? 'amber' : 'neutral'}
+            onClick={() => onOpenView('expired')}
+          />
+          <AttentionCard
+            label="Unresolved errors (24h)"
+            value={unresolvedErrors}
+            sub={openErrors ? `${openErrors.critical || 0} critical · warnings not counted` : null}
+            tone={openErrors?.critical ? 'rose' : unresolvedErrors ? 'amber' : 'neutral'}
+            onClick={() => onOpenTab('logs')}
+          />
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <StatCard label="Firms" value={counts.platform} sub={counts.platform != null ? `${counts.active} with access · ${counts.trial} on trial` : null} icon={Users} />
+        <StatCard label="Users" value={usage?.total_users} sub="all tenants, including demos" icon={Users} />
+        <StatCard label="Requests (30d)" value={usage?.requests_30d?.toLocaleString()} icon={Activity} />
+        <StatCard label="Model cost (30d)" value={usage ? `$${(usage.cost_usd_30d ?? 0).toFixed(2)}` : null} sub="metered AI usage, all tenants" icon={Zap} />
+      </div>
+
+      <RoutingOverviewPanel config={llmConfig} onOpenRouting={() => onOpenTab('ai-routing')} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <FirmList
+          title="Busiest firms (30d)"
+          firms={usage?.top_tenants || []}
+          empty="No model usage in the last 30 days."
+          onOpenTenant={onOpenTenant}
+          detail={(firm) => (
+            <>
+              <span className="block text-sm font-semibold text-brand-ink-2 font-sans">{firm.requests_30d?.toLocaleString()} req</span>
+              <span className="block text-xs text-brand-muted">${firm.cost_usd_30d?.toFixed(2)}</span>
+            </>
+          )}
+        />
+        <FirmList
+          title="Newest firms"
+          firms={state.tenants?.tenants || []}
+          empty="No firms yet."
+          onOpenTenant={onOpenTenant}
+          detail={(firm) => (
+            <>
+              <span className="flex items-center justify-end gap-1.5">
+                <TierBadge tier={firm.billing_tier} />
+                {firm.signup_status === 'pending' && <span className="text-xs text-brand-amber">Pending</span>}
+              </span>
+              <span className="block text-xs text-brand-muted">{new Date(firm.created_at).toLocaleDateString()}</span>
+            </>
+          )}
+        />
+      </div>
+    </div>
+  )
+}
+
+function SystemTab({ platformKey, session, onSessionEnded }) {
+  const [health, setHealth] = useState(null)
+  const [error, setError] = useState('')
+  const callbacks = useLatest({ onSessionEnded })
+
+  useEffect(() => {
+    let active = true
+    getPlatformHealth(platformKey)
+      .then((data) => { if (active) setHealth(data) })
+      .catch((loadError) => {
+        if (!active) return
+        if (isSessionEnded(loadError)) callbacks.current.onSessionEnded?.()
+        else setError(apiErrorMessage(loadError, 'Could not load database health.'))
+      })
+    return () => { active = false }
+  }, [platformKey, callbacks])
+
+  return (
+    <div className="space-y-8">
+      <section className="rounded-xl border border-brand-line bg-brand-surface p-5 shadow-sm">
+        <h2 className="font-serif font-bold text-brand-ink flex items-center gap-2"><Shield size={18} /> This session</h2>
+        <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div><dt className="text-xs text-brand-muted">Operator</dt><dd className="text-brand-ink">{session.operator || 'Unknown'}</dd></div>
+          <div><dt className="text-xs text-brand-muted">Ends</dt><dd className="text-brand-ink">{session.expiresAt ? formatDateTime(session.expiresAt) : 'Unknown'}</dd></div>
+          <div><dt className="text-xs text-brand-muted">Scopes</dt><dd className="font-mono text-xs text-brand-ink">{session.scopes?.join(', ') || 'Unknown'}</dd></div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="infrastructure-status">
+        <h2 id="infrastructure-status" className="font-serif text-xl font-bold text-brand-ink">Sites, DR and alerts</h2>
+        <InfrastructureStatus token={platformKey} onSessionEnded={onSessionEnded} />
+      </section>
+
+      {error && <p role="alert" className="rounded-lg border border-brand-rose/20 bg-brand-rose/10 px-4 py-3 text-sm text-brand-rose">{error}</p>}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-brand-line">
+            <h2 className="font-serif font-bold text-brand-ink flex items-center gap-2"><Database size={18} /> Database Tables</h2>
+          </div>
+          <div className="overflow-x-auto max-h-[480px]">
+            <table className="w-full">
+              <thead className="bg-brand-bg-soft border-b border-brand-line">
+                <tr className="text-xs text-brand-muted uppercase tracking-wider font-sans">
+                  <th scope="col" className="text-left px-5 py-2">Table</th>
+                  <th scope="col" className="text-right px-5 py-2">Rows</th>
+                  <th scope="col" className="text-right px-5 py-2">Size</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-line">
+                {(health?.tables || []).map((table) => (
+                  <tr key={table.table} className="hover:bg-brand-bg transition-colors">
+                    <td className="px-5 py-2.5 text-sm text-brand-ink font-mono">{table.table}</td>
+                    <td className="px-5 py-2.5 text-sm text-brand-ink-2 text-right font-sans">{table.rows?.toLocaleString()}</td>
+                    <td className="px-5 py-2.5 text-sm text-brand-muted text-right font-sans">{table.size}</td>
+                  </tr>
+                ))}
+                {!health?.tables?.length && <tr><td colSpan={3} className="px-5 py-8 text-sm text-brand-muted text-center font-sans">{health ? 'No data' : 'Loading…'}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm">
+          <div className="px-5 py-4 border-b border-brand-line">
+            <h2 className="font-serif font-bold text-brand-ink flex items-center gap-2"><Server size={18} /> Service configuration</h2>
+          </div>
+          <div className="p-5 space-y-4">
+            {(health?.services || []).map((service) => (
+              <div key={service.name} className="flex items-center justify-between">
+                <span className="text-sm font-sans text-brand-ink">{service.name}</span>
+                <span className={`inline-flex items-center gap-1.5 text-xs font-medium font-sans ${service.online ? 'text-brand-accent' : 'text-brand-rose'}`}>
+                  <span className={`w-2 h-2 rounded-full ${service.online ? 'bg-brand-accent' : 'bg-brand-rose'}`} />
+                  {service.online ? 'Online' : 'Offline'}
+                </span>
+              </div>
+            ))}
+            {!health && !error && <p className="text-sm text-brand-muted">Loading…</p>}
+            {health?.checked_at && <p className="text-xs text-brand-muted font-sans">Last check: {formatDateTime(health.checked_at)}</p>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function PlatformPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [session, setSession] = useState(null)
+  const [sessionNotice, setSessionNotice] = useState('')
+  const [llmConfig, setLlmConfig] = useState(null)
+  const [supportCounts, setSupportCounts] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
+  const platformKey = session?.token || null
+
+  const requestedTab = searchParams.get('tab')
+  const tab = TAB_IDS.has(requestedTab) ? requestedTab : 'dashboard'
+  const requestedView = searchParams.get('view')
+  const tenantView = TENANT_VIEW_IDS.has(requestedView) ? requestedView : 'platform'
+  const tenantQuery = searchParams.get('q') || ''
+  const tenantPage = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
+  const openTenantId = searchParams.get('tenant') || ''
+  const logTenantId = searchParams.get('logTenant') || ''
+
+  // Where the operator is lives in the URL, so a refresh, an expired session
+  // or a pasted link comes back to the same tab, view and firm.
+  const navigate = useCallback((changes, { replace = false } = {}) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === '' || value == null || (key === 'page' && Number(value) === 1)) next.delete(key)
+        else next.set(key, String(value))
+      }
+      return next
+    }, { replace })
+  }, [setSearchParams])
+
+  const signOut = useCallback((notice = '') => {
+    setSession(null)
+    setSessionNotice(notice)
+    setLlmConfig(null)
+    setSupportCounts(null)
+  }, [])
+
+  const handleSessionEnded = useCallback(() => {
+    signOut('Your operator session expired or was revoked. Sign in again to continue where you left off.')
+  }, [signOut])
+
+  const handleLogin = (created) => {
+    setSessionNotice('')
+    setSession({
+      token: created.access_token,
+      scopes: Array.isArray(created.scopes) ? created.scopes : null,
+      expiresAt: created.expires_at || null,
+      operator: operatorFromToken(created.access_token),
+    })
+  }
+
+  const openTenant = useCallback((tenantId) => {
+    // The tenant search matches an exact id, so the firm is the only row
+    // whatever view or page was showing before.
+    navigate({ tab: 'tenants', view: 'all', q: tenantId, tenant: tenantId, page: 1 })
+  }, [navigate])
+  const openTenantView = useCallback((view) => navigate({ tab: 'tenants', view, q: '', tenant: '', page: 1 }), [navigate])
+  const openTab = useCallback((id) => navigate({ tab: id }), [navigate])
+  const openLogs = useCallback((tenantId) => navigate({ tab: 'logs', logTenant: tenantId }), [navigate])
+  const changeLogTenant = useCallback((tenantId) => navigate({ logTenant: tenantId }, { replace: true }), [navigate])
+
+  useEffect(() => {
+    if (!session?.expiresAt) return undefined
+    const timer = setInterval(() => setNow(Date.now()), 15000)
+    return () => clearInterval(timer)
+  }, [session?.expiresAt])
+
+  const expiresAtMs = session?.expiresAt ? new Date(session.expiresAt).getTime() : null
+  useEffect(() => {
+    if (expiresAtMs && now >= expiresAtMs) {
+      signOut('Your operator session reached its time limit. Sign in again to continue where you left off.')
+    }
+  }, [expiresAtMs, now, signOut])
+
+  useEffect(() => {
+    if (!platformKey) return undefined
+    let active = true
+    getPlatformLLMConfig(platformKey)
+      .then((data) => { if (active) setLlmConfig(data?.config || null) })
+      .catch(() => { /* routing overview falls back to the default aliases */ })
+    return () => { active = false }
+  }, [platformKey])
+
+  if (!session) return <LoginScreen onLogin={handleLogin} notice={sessionNotice} />
+
+  const expiringSoon = expiresAtMs && expiresAtMs - now < SESSION_WARNING_MS
+  const needsWork = supportCounts
+    ? (supportCounts.open || 0) + (supportCounts.acknowledged || 0) + (supportCounts.mitigated || 0)
+    : 0
 
   return (
     <div className="min-h-screen bg-brand-bg">
-      {/* Top bar */}
-      <div className="bg-brand-surface border-b border-brand-line px-6 py-3 flex items-center justify-between sticky top-0 z-30">
+      <header className="bg-brand-surface border-b border-brand-line px-6 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-brand-ink flex items-center justify-center">
             <Shield size={14} className="text-brand-surface" />
           </div>
           <span className="font-serif font-bold text-brand-ink">Operator Console</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-brand-muted font-mono">{platformKey.slice(0, 8)}…</span>
-          <button onClick={() => { setPlatformKey(null); setTenants([]); setUsage(null); setHealth(null); setLlmConfig(null) }} className="text-xs text-brand-muted hover:text-brand-rose font-sans transition-colors">Sign out</button>
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          {session.operator && <span className="text-brand-muted">Signed in as <span className="font-medium text-brand-ink">{session.operator}</span></span>}
+          {expiresAtMs && (
+            <span role={expiringSoon ? 'status' : undefined} className={expiringSoon ? 'font-semibold text-brand-amber' : 'text-brand-muted'}>
+              Session ends {new Date(expiresAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({formatRelative(expiresAtMs, now)})
+            </span>
+          )}
+          <button type="button" onClick={() => signOut()} className="text-brand-muted hover:text-brand-rose font-sans transition-colors">Sign out</button>
         </div>
-      </div>
+      </header>
 
-      {/* Tab nav */}
-      <div className="bg-brand-surface border-b border-brand-line">
-        <div className="max-w-7xl mx-auto px-6 flex gap-1">
-          {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans font-medium border-b-2 transition-colors ${tab === t.id ? 'border-brand-ink text-brand-ink' : 'border-transparent text-brand-muted hover:text-brand-ink-2'}`}>
-              <t.icon size={16} />
-              {t.label}
-            </button>
+      <nav aria-label="Operator console" className="bg-brand-surface border-b border-brand-line">
+        <div className="max-w-7xl mx-auto px-6 flex items-stretch gap-4 overflow-x-auto">
+          {TAB_GROUPS.map((group, index) => (
+            <div key={group.label} role="group" aria-label={group.label} className={`flex shrink-0 items-stretch gap-1 ${index ? 'border-l border-brand-line pl-4' : ''}`}>
+              {/* The labels only fit beside all twelve tabs on very wide screens; the dividers carry the grouping elsewhere. */}
+              <span aria-hidden="true" className="hidden 2xl:inline self-center pr-1 text-[10px] font-bold uppercase tracking-widest text-brand-muted whitespace-nowrap">{group.label}</span>
+              {group.tabs.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={tab === item.id ? 'page' : undefined}
+                  onClick={() => openTab(item.id)}
+                  className={`flex shrink-0 items-center gap-2 whitespace-nowrap px-2.5 py-3 text-sm font-sans font-medium border-b-2 transition-colors ${tab === item.id ? 'border-brand-ink text-brand-ink' : 'border-transparent text-brand-muted hover:text-brand-ink-2'}`}
+                >
+                  <item.icon size={16} aria-hidden="true" />
+                  {item.label}
+                  {item.id === 'support' && needsWork > 0 && (
+                    <>
+                      <span aria-hidden="true" className={`rounded-full px-1.5 text-[11px] font-bold text-white ${supportCounts?.overdue ? 'bg-brand-rose' : 'bg-brand-amber'}`}>
+                        {needsWork}
+                      </span>
+                      <span className="sr-only">, {needsWork} needing work{supportCounts?.overdue ? `, ${supportCounts.overdue} overdue` : ''}</span>
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
-      </div>
+      </nav>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {error && (
-          <div className="mb-6 bg-brand-rose/10 border border-brand-rose/20 rounded-lg px-4 py-3 text-sm text-brand-rose font-sans">{error}</div>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {tab === 'dashboard' && (
+          <OverviewTab
+            platformKey={platformKey}
+            llmConfig={llmConfig}
+            onOpenView={openTenantView}
+            onOpenTab={openTab}
+            onOpenTenant={openTenant}
+            onSessionEnded={handleSessionEnded}
+            onSupportCounts={setSupportCounts}
+          />
         )}
 
-        {/* ── Dashboard Tab ── */}
-        {tab === 'dashboard' && usage && (
-          <div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-              <StatCard label="Tenants" value={usage.total_tenants} sub={`${usage.active_tenants} active`} icon={Users} />
-              <StatCard label="Total Users" value={usage.total_users} icon={Users} />
-              <StatCard label="Requests (30d)" value={usage.requests_30d?.toLocaleString()} icon={Activity} />
-              <StatCard label="Revenue (30d)" value={`$${(usage.cost_usd_30d ?? 0).toFixed(2)}`} sub="billed model cost" icon={Zap} />
-            </div>
-
-            <RoutingOverviewPanel config={llmConfig} onOpenRouting={() => setTab('ai-routing')} />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Top tenants by usage */}
-              <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-brand-line">
-                  <h2 className="font-serif font-bold text-brand-ink">Top Tenants (30d)</h2>
-                </div>
-                <div className="divide-y divide-brand-line">
-                  {[...tenants].sort((a, b) => (b.requests_30d || 0) - (a.requests_30d || 0)).slice(0, 10).map((t) => (
-                    <div key={t.id} className="px-5 py-3 flex items-center justify-between hover:bg-brand-bg transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-brand-ink font-sans">{t.name}</p>
-                        <p className="text-xs text-brand-muted">{t.domain}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-brand-ink-2 font-sans">{t.requests_30d?.toLocaleString()} req</p>
-                        <p className="text-xs text-brand-muted">${t.cost_usd_30d?.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {tenants.length === 0 && <p className="px-5 py-8 text-sm text-brand-muted text-center font-sans">No tenants yet</p>}
-                </div>
-              </div>
-
-              {/* Recent tenants */}
-              <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-brand-line">
-                  <h2 className="font-serif font-bold text-brand-ink">Recent Tenants</h2>
-                </div>
-                <div className="divide-y divide-brand-line">
-                  {[...tenants].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10).map((t) => (
-                    <div key={t.id} className="px-5 py-3 flex items-center justify-between hover:bg-brand-bg transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-brand-ink font-sans">{t.name}</p>
-                        <div className="flex items-center gap-2">
-                          <TierBadge tier={t.billing_tier} />
-                          <span className={`w-2 h-2 rounded-full ${t.is_active ? 'bg-brand-accent' : 'bg-brand-rose'}`} />
-                          <span className="text-xs text-brand-muted">{t.is_active ? 'Active' : 'Inactive'}</span>
-                        </div>
-                      </div>
-                      <p className="text-xs text-brand-muted">{new Date(t.created_at).toLocaleDateString()}</p>
-                    </div>
-                  ))}
-                  {tenants.length === 0 && <p className="px-5 py-8 text-sm text-brand-muted text-center font-sans">No tenants yet</p>}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Tenants Tab ── */}
         {tab === 'tenants' && (
-          <div>
-            <ProvisionTrialTenantForm onProvision={handleProvisionTenant} />
-            {/* Search + actions */}
-            <div className="flex items-center gap-4 mb-6">
-              <div className="relative flex-1 max-w-sm">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
-                <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or domain…" className="w-full pl-9 pr-4 py-2 border border-brand-line rounded-lg text-sm font-sans focus:outline-none focus:ring-2 focus:ring-brand-accent bg-brand-surface" />
-              </div>
-              <label className="sr-only" htmlFor="tenant-type-filter">Tenant type</label>
-              <select id="tenant-type-filter" value={tenantTypeFilter} onChange={(e) => setTenantTypeFilter(e.target.value)} className="rounded-lg border border-brand-line bg-brand-surface px-3 py-2 text-sm font-sans text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent">
-                <option value="all">All tenant types</option>
-                <option value="platform">Platform tenants</option>
-                <option value="demo">Demo tenants</option>
-              </select>
-              <button onClick={loadData} disabled={loading} className="text-xs text-brand-muted hover:text-brand-ink font-sans transition-colors">
-                {loading ? 'Loading…' : 'Refresh'}
-              </button>
+          <TenantsTab
+            platformKey={platformKey}
+            session={session}
+            llmConfig={llmConfig}
+            view={tenantView}
+            query={tenantQuery}
+            page={tenantPage}
+            expandedId={openTenantId}
+            onNavigate={navigate}
+            onOpenTenant={openTenant}
+            onOpenLogs={openLogs}
+            onAuthError={handleSessionEnded}
+          />
+        )}
+
+        {tab === 'support' && (
+          <SupportDeskTab
+            platformKey={platformKey}
+            session={session}
+            onOpenTenant={openTenant}
+            onAuthError={handleSessionEnded}
+            onCountsChange={setSupportCounts}
+          />
+        )}
+
+        {tab === 'demos' && <DemoWorkspacesTab platformKey={platformKey} onAuthError={handleSessionEnded} />}
+
+        {tab === 'logs' && (
+          <LogsTab
+            platformKey={platformKey}
+            session={session}
+            tenantId={logTenantId}
+            onTenantChange={changeLogTenant}
+            onOpenTenant={openTenant}
+            onAuthError={handleSessionEnded}
+          />
+        )}
+
+        {tab === 'audit' && (
+          <section aria-labelledby="operator-audit" className="space-y-4">
+            <div>
+              <h1 id="operator-audit" className="font-serif text-2xl font-bold text-brand-ink">Operator audit trail</h1>
+              <p className="mt-1 text-sm text-brand-muted">Deliberate operator actions across every firm. A firm’s own history is under its History section.</p>
             </div>
-
-            {/* Tenant list */}
-            {loading && tenants.length === 0 ? (
-              <div className="flex justify-center py-16">
-                <div className="w-8 h-8 border-2 border-brand-accent border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-brand-bg-soft border-b border-brand-line">
-                      <tr className="text-xs text-brand-muted uppercase tracking-wider font-sans">
-                        <th className="text-left px-5 py-3"></th>
-                        <th className="text-left px-5 py-3">Tenant</th>
-                        <th className="text-left px-5 py-3">Tier</th>
-                        <th className="text-left px-5 py-3">Type</th>
-                        <th className="text-center px-5 py-3">Users</th>
-                        <th className="text-center px-5 py-3">Requests (30d)</th>
-                        <th className="text-right px-5 py-3">Cost (30d)</th>
-                        <th className="text-left px-5 py-3">Access expiration</th>
-                        <th className="text-center px-5 py-3">Status</th>
-                        <th className="text-center px-5 py-3">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-brand-line">
-                      {filtered.map((t) => (
-                        <React.Fragment key={t.id}>
-                          <PlatformTenantRow
-                            tenant={t}
-                            expanded={expandedTenant === t.id}
-                            onToggle={toggleTenant}
-                          />
-                          {/* Expanded detail row */}
-                          {expandedTenant === t.id && (
-                            <tr key={`detail-${t.id}`} id={`tenant-details-${t.id}`}>
-                              <td colSpan={10} className="px-5 py-4 bg-brand-bg-soft">
-                                {loadingDetail ? (
-                                  <div className="flex justify-center py-4"><div className="w-6 h-6 border-2 border-brand-accent border-t-transparent rounded-full animate-spin" /></div>
-                                ) : tenantDetail ? (
-                                  <>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div>
-                                      <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">Tenant Info</h4>
-                                      <dl className="space-y-2 text-sm">
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Company</dt><dd className="text-brand-ink font-sans">{tenantDetail.company_name || '—'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Domain</dt><dd className="text-brand-ink font-sans">{tenantDetail.domain}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Tenant ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.id}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Type</dt><dd><TenantTypeBadge type={tenantType(tenantDetail)} /></dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Access expiration</dt><dd className="text-brand-ink font-sans"><TenantExpiry tenant={tenantDetail} /></dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial started</dt><dd className="text-brand-ink font-sans">{tenantDetail.trial_started_at ? new Date(tenantDetail.trial_started_at).toLocaleString() : '—'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Signup email</dt><dd className="text-brand-ink font-sans">{tenantDetail.signup_email || '—'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Trial</dt><dd className="text-brand-ink font-sans">{tenantDetail.on_trial ? 'Yes' : 'No'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Premium during trial</dt><dd className={tenantDetail.premium_ai_trial_enabled ? 'text-brand-amber font-sans' : 'text-brand-muted font-sans'}>{tenantDetail.premium_ai_trial_enabled ? 'Sponsored' : 'Off'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Stripe ID</dt><dd className="text-brand-ink font-mono text-xs">{tenantDetail.stripe_customer_id ? '✓' : '—'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Seats</dt><dd className="text-brand-ink font-sans">{tenantDetail.flat_seat_count || '—'}</dd></div>
-                                        <div className="flex justify-between"><dt className="text-brand-muted font-sans">Created</dt><dd className="text-brand-ink font-sans">{new Date(tenantDetail.created_at).toLocaleDateString()}</dd></div>
-                                      </dl>
-                                    </div>
-                                    <div>
-                                      <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">Users</h4>
-                                      {tenantDetail.users?.length > 0 ? (
-                                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                                          {tenantDetail.users.map((u) => (
-                                            <div key={u.id} className="flex items-center justify-between text-sm py-1">
-                                              <div>
-                                                <p className="text-brand-ink font-sans font-medium">{u.full_name || `User ${u.id.slice(0, 8)}`}</p>
-                                                <p className="text-xs text-brand-muted">{u.email}</p>
-                                              </div>
-                                              <div className="text-right">
-                                                <span className={`text-xs px-1.5 py-0.5 rounded font-sans ${u.role === 'admin' ? 'bg-brand-ink/10 text-brand-ink' : 'bg-brand-muted/10 text-brand-muted'}`}>{u.role}</span>
-                                                <p className={`mt-1 text-[11px] ${u.premium_ai_enabled ? 'text-brand-amber' : 'text-brand-muted'}`}>{u.premium_ai_enabled ? 'Premium on' : 'Standard AI'}</p>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : <p className="text-sm text-brand-muted font-sans">No users listed</p>}
-                                    </div>
-                                    <div>
-                                      <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">Actions</h4>
-                                      {tenantDetail.signup_status === 'pending' ? (
-                                        <p className="rounded-lg border border-brand-amber/30 bg-brand-amber/5 px-3 py-2 text-xs leading-5 text-brand-ink-2">
-                                          Use the approval panel below. It activates the founder and starts the trial together.
-                                        </p>
-                                      ) : tenantType(t) === 'demo' ? (
-                                        <p className="rounded-lg border border-brand-line bg-brand-bg px-3 py-2 text-xs leading-5 text-brand-muted">
-                                          Use the Demos tab to terminate this disposable workspace. Generic tenant controls are disabled so an ongoing demo cannot be interrupted accidentally.
-                                        </p>
-                                      ) : (
-                                        <div className="space-y-3">
-                                          <button onClick={() => handleTenantPatch(t, { is_active: !t.is_active })} className={`w-full px-3 py-2 rounded-lg text-xs font-medium font-sans border transition-colors ${t.is_active ? 'border-brand-rose/30 text-brand-rose hover:bg-brand-rose/5' : 'border-brand-accent/30 text-brand-accent hover:bg-brand-accent/5'}`}>
-                                            {t.is_active ? 'Deactivate Tenant' : 'Activate Tenant'}
-                                          </button>
-                                          <div className="flex gap-2">
-                                            <button onClick={() => handleTenantPatch(t, { billing_tier: 'flat' })} className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium font-sans border transition-colors ${t.billing_tier === 'flat' ? 'bg-brand-accent/10 border-brand-accent/20 text-brand-accent' : 'border-brand-line text-brand-muted hover:border-brand-ink'}`}>
-                                              Flat-seat
-                                            </button>
-                                            <button onClick={() => handleTenantPatch(t, { billing_tier: 'payg' })} className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium font-sans border transition-colors ${t.billing_tier === 'payg' ? 'bg-brand-amber/10 border-brand-amber/20 text-brand-amber' : 'border-brand-line text-brand-muted hover:border-brand-ink'}`}>
-                                              PAYG
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {tenantDetail.signup_status === 'pending' ? (
-                                    <PendingTrialApproval
-                                      tenant={tenantDetail}
-                                      onApprove={(payload) => handleApproveTenant(t, payload)}
-                                    />
-                                  ) : tenantType(t) !== 'demo' && (
-                                    <TrialAccessControls
-                                      tenant={tenantDetail}
-                                      onPatch={(payload) => handleTenantPatch(t, payload)}
-                                    />
-                                  )}
-                                  {/* LLM Provider override — full-width row */}
-                                  <div className="mt-4 pt-4 border-t border-brand-line">
-                                    <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">AI Alias Override</h4>
-                                    <TenantAliasOverride
-                                      tenant={t}
-                                      tenantDetail={tenantDetail}
-                                      platformKey={platformKey}
-                                      defaultAliases={{
-                                        standard: llmConfig?.standard_model || 'lawhand-standard',
-                                        premium: llmConfig?.premium_model || 'lawhand-premium',
-                                      }}
-                                      onUpdate={handleUpdate}
-                                      onError={(message) => setError(message)}
-                                      saving={savingProvider}
-                                      setSaving={setSavingProvider}
-                                    />
-                                  </div>
-                                  <TenantPanelSettings key={t.id} tenantId={t.id} hiddenPanels={tenantDetail.hidden_matter_panels} platformKey={platformKey} onSaved={hidden => setTenantDetail(previous => ({ ...previous, hidden_matter_panels: hidden }))} />
-                                  {/* Plan / module bundle override */}
-                                  <div className="mt-4 pt-4 border-t border-brand-line">
-                                    <h4 className="text-xs font-bold text-brand-ink uppercase tracking-wider mb-3 font-sans">Plan</h4>
-                                    <TenantPlanOverride
-                                      tenant={t}
-                                      tenantDetail={tenantDetail}
-                                      platformKey={platformKey}
-                                      onUpdate={handleUpdate}
-                                      onError={(message) => setError(message)}
-                                    />
-                                  </div>
-                                  <div className="mt-4 pt-4 border-t border-brand-line">
-                                    <PlatformComplianceCard platformKey={platformKey} tenantId={t.id} />
-                                  </div>
-                                  </>
-                                ) : (
-                                  <p className="text-sm text-brand-rose font-sans">Failed to load tenant detail</p>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {/* Pagination */}
-                {total > limit && (
-                  <div className="flex items-center justify-between px-5 py-3 border-t border-brand-line">
-                    <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">← Prev</button>
-                    <span className="text-xs text-brand-muted font-sans">Page {page} of {Math.ceil(total / limit)} ({total} total)</span>
-                    <button onClick={() => setPage((p) => p + 1)} disabled={page * limit >= total} className="text-sm text-brand-muted hover:text-brand-ink disabled:opacity-40 font-sans">Next →</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+            <OperatorAuditLog platformKey={platformKey} canDebug={sessionHasScope(session, DEBUG_SCOPE)} onAuthError={handleSessionEnded} />
+          </section>
         )}
 
-        {/* ── Demos Tab ── */}
-        {tab === 'demos' && (
-          <DemoWorkspacesTab
-            platformKey={platformKey}
-            onAuthError={() => setPlatformKey(null)}
-          />
-        )}
+        {tab === 'health' && <SystemTab platformKey={platformKey} session={session} onSessionEnded={handleSessionEnded} />}
 
+        {tab === 'ai-routing' && <AIRoutingTab platformKey={platformKey} onAuthError={handleSessionEnded} />}
 
-        {/* ── Integrations Tab ── */}
-        {tab === 'integrations' && (
-          <PlatformIntegrationsTab
-            platformKey={platformKey}
-            onAuthError={() => {
-              setPlatformKey(null)
-            }}
-          />
-        )}
+        {tab === 'mcp' && <PlatformMcpTab platformKey={platformKey} onAuthError={handleSessionEnded} />}
+
+        {tab === 'integrations' && <PlatformIntegrationsTab platformKey={platformKey} onAuthError={handleSessionEnded} />}
+
+        {tab === 'sms' && <PlatformSmsTab platformKey={platformKey} onAuthError={handleSessionEnded} />}
 
         {tab === 'agreements' && <PlatformAgreementsPanel platformKey={platformKey} />}
-
-        {/* ── Logs Tab ── */}
-        {tab === 'mcp' && (
-          <PlatformMcpTab
-            platformKey={platformKey}
-            onAuthError={() => {
-              setPlatformKey(null)
-            }}
-          />
-        )}
-
-        {tab === 'logs' && <LogsTab platformKey={platformKey} tenants={tenants} />}
-
-        {/* ── SMS Tab ── */}
-        {tab === 'sms' && (
-          <PlatformSmsTab
-            platformKey={platformKey}
-            onAuthError={() => {
-              setPlatformKey(null)
-            }}
-          />
-        )}
-
-        {/* ── AI Routing Tab ── */}
-        {tab === 'ai-routing' && (
-          <AIRoutingTab
-            platformKey={platformKey}
-            onAuthError={() => {
-              setPlatformKey(null)
-            }}
-          />
-        )}
-
-        {/* ── Health Tab ── */}
-        {tab === 'health' && (
-          <div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <StatCard label="Tenants" value={usage?.total_tenants} sub={`${usage?.active_tenants} active`} icon={Users} />
-              <StatCard label="Users" value={usage?.total_users} icon={Users} />
-              <StatCard label="Requests (30d)" value={usage?.requests_30d?.toLocaleString()} icon={Activity} />
-              <StatCard label="Platform Key" value="Configured" sub={platformKey?.slice(0, 8) + '…'} icon={Shield} />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* DB tables */}
-              <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-brand-line">
-                  <h2 className="font-serif font-bold text-brand-ink flex items-center gap-2"><Database size={18} /> Database Tables</h2>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-brand-bg-soft border-b border-brand-line">
-                      <tr className="text-xs text-brand-muted uppercase tracking-wider font-sans">
-                        <th className="text-left px-5 py-2">Table</th>
-                        <th className="text-right px-5 py-2">Rows</th>
-                        <th className="text-right px-5 py-2">Size</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-brand-line">
-                      {health?.tables?.map((t) => (
-                        <tr key={t.table} className="hover:bg-brand-bg transition-colors">
-                          <td className="px-5 py-2.5 text-sm text-brand-ink font-mono">{t.table}</td>
-                          <td className="px-5 py-2.5 text-sm text-brand-ink-2 text-right font-sans">{t.rows?.toLocaleString()}</td>
-                          <td className="px-5 py-2.5 text-sm text-brand-muted text-right font-sans">{t.size}</td>
-                        </tr>
-                      )) || <tr><td colSpan={3} className="px-5 py-8 text-sm text-brand-muted text-center font-sans">No data</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Service status */}
-              <div className="bg-brand-surface border border-brand-line rounded-xl shadow-sm">
-                <div className="px-5 py-4 border-b border-brand-line">
-                  <h2 className="font-serif font-bold text-brand-ink flex items-center gap-2"><Server size={18} /> Service Status</h2>
-                </div>
-                <div className="p-5 space-y-4">
-                  {(health?.services || [
-                    { name: 'PostgreSQL', online: health?.tables?.length > 0 },
-                    { name: 'Redis', online: true },
-                    { name: 'API Server', online: true },
-                  ]).map((s) => (
-                    <div key={s.name} className="flex items-center justify-between">
-                      <span className="text-sm font-sans text-brand-ink">{s.name}</span>
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium font-sans ${s.online ? 'text-brand-accent' : 'text-brand-rose'}`}>
-                        <span className={`w-2 h-2 rounded-full ${s.online ? 'bg-brand-accent' : 'bg-brand-rose'}`} />
-                        {s.online ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Last check time */}
-            {health?.checked_at && (
-              <p className="mt-4 text-xs text-brand-muted font-sans text-right">Last check: {new Date(health.checked_at).toLocaleString()}</p>
-            )}
-          </div>
-        )}
-      </div>
+      </main>
     </div>
   )
 }

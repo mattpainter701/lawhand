@@ -57,6 +57,15 @@ must not contain credentials or unnecessary client content. Follow the stored
 policy version and due time; escalate missed objectives according to the
 published policy.
 
+Requests filed from a tenant's Admin → Support arrive in the operator console
+under **Support → Customer support queue** (API:
+`GET /api/platform/operating-trust/support`, `platform:read`), ordered
+unresolved first, then by severity and acknowledgement due time, with overdue
+requests flagged. Each new request also emails `MARKETING_LEAD_EMAIL`; that
+alert is best effort and never blocks the customer's request. Acknowledge,
+mitigate and resolve from the queue — the resolution summary is shown to the
+firm's administrators.
+
 For shared-service impact, create a sanitized public incident with confirmed
 affected services and an `investigating` update. Append material changes as
 `identified`, `monitoring`, or `resolved`. Never publish customer names, record

@@ -322,6 +322,55 @@ def test_platform_bootstrap_requires_identity_scope_expiry_and_distinct_signing_
     validate_platform_bootstrap_settings(settings)
 
 
+def test_platform_bootstrap_can_grant_the_documented_debug_scope():
+    """The runbooks tell operators to grant platform:debug at bootstrap.
+
+    The config allow-list once omitted it, so the documented entry stopped the
+    app from starting and no console session could ever reach the
+    troubleshooting routes.
+    """
+
+    import hashlib
+    import json
+
+    entry = {
+        "operator_id": "oncall@example.com",
+        "key_hash": hashlib.sha256(b"oncall-bootstrap").hexdigest(),
+        "scopes": ["platform:read", "platform:debug"],
+        "expires_at": "2030-01-01T00:00:00Z",
+    }
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql://test",
+        SECRET_KEY="x" * 48,
+        TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode(),
+        PLATFORM_BOOTSTRAP_CREDENTIALS_JSON=json.dumps([entry]),
+        PLATFORM_TOKEN_SIGNING_KEY="s" * 48,
+    )
+    validate_platform_bootstrap_settings(settings)
+
+    entry["scopes"] = ["platform:read", "platform:superuser"]
+    settings.PLATFORM_BOOTSTRAP_CREDENTIALS_JSON = json.dumps([entry])
+    with pytest.raises(ValueError, match="invalid scopes"):
+        validate_platform_bootstrap_settings(settings)
+
+
+def test_every_platform_scope_list_agrees():
+    import importlib.util
+    from pathlib import Path
+
+    from app import config
+    from app.services.platform_auth import PLATFORM_SCOPES
+
+    script_path = Path(__file__).parents[1] / "scripts" / "hash_platform_bootstrap.py"
+    spec = importlib.util.spec_from_file_location("hash_platform_bootstrap", script_path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    assert config._PLATFORM_SCOPES == PLATFORM_SCOPES
+    assert script.ALLOWED_SCOPES == PLATFORM_SCOPES
+
+
 def test_qbo_production_settings_require_exact_backend_callback():
     settings = _demo_settings(
         BACKEND_URL="https://getlawhand.com",
