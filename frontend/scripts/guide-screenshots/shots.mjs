@@ -218,4 +218,46 @@ export const SHOTS = [
       { target: byRole('button', 'Generate invoice'), label: '1' },
     ],
   },
+
+  // ── User guide: assistant ───────────────────────────────────────────────
+  {
+    name: 'assistant-answer',
+    path: '/chat?conv=conv-1',
+    user: 'attorney',
+    viewport: { width: 1440, height: 1580 },
+    waitFor: 'Open issues',
+    clip: (page) => regionAround(page, [
+      byRole('button', 'New conversation'),
+      byRole('button', 'Conversation options'),
+      byRole('button', 'Attach a document'),
+      (p) => p.getByText('Verify cited authority', { exact: false }),
+    ], { pad: 16 }),
+    annotate: [
+      { target: (page) => page.getByRole('button', { name: /Change/ }).first(), label: '1', placement: 'bottom-left' },
+      { target: (page) => page.getByRole('button', { name: 'Response settings' }).first(), label: '2' },
+      { target: (page) => page.getByText('Cited Sources', { exact: true }).filter({ visible: true }).first(), label: '3' },
+      { target: byRole('button', 'Attach a document'), label: '4' },
+    ],
+  },
+
+  // ── User guide: contacts and conflicts ─────────────────────────────────
+  {
+    name: 'conflict-search',
+    path: '/conflicts',
+    user: 'attorney',
+    viewport: { width: 1440, height: 1300 },
+    waitFor: 'Northgate Properties — new matter intake',
+    clip: (page) => regionAround(page, [
+      // The shell's title bar is the first level-1 heading; the page's own is second.
+      (p) => p.getByRole('heading', { name: 'Conflict Search', level: 1 }).nth(1),
+      (p) => p.getByText(/^Risk review$/i),
+      byRole('button', 'Report', { exact: true }),
+      byRole('button', 'Close and lock record'),
+    ], { pad: 24 }),
+    annotate: [
+      { target: byRole('button', 'Run and save search'), label: '1' },
+      { target: (page) => page.getByText('ask an administrator or conflicts reviewer', { exact: false }), label: '2', placement: 'bottom-left' },
+      { target: byRole('button', 'Close and lock record'), label: '3' },
+    ],
+  },
 ]

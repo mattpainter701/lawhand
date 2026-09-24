@@ -35,6 +35,11 @@
     @apply bg-brand-surface rounded-xl shadow-sm border border-brand-line p-5;
   }
 
+  /* Standard form field, for pages that do not build their own field class. */
+  .input {
+    @apply min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent;
+  }
+
   .sidebar-item {
     @apply flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors duration-150 font-sans font-medium text-brand-ink-2 hover:bg-brand-bg-soft hover:text-brand-ink;
   }

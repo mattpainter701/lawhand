@@ -359,6 +359,72 @@ export const INVOICES = [
   { id: 'inv-4', invoice_number: 'INV-2026-0118', matter_name: 'Estate of Eleanor Voss', matter_id: 'm-0002', status: 'paid', issue_date: isoDay(-60), due_date: isoDay(-30), total: 2275, balance_due: 0, qbo_sync_status: 'synced', qbo_invoice_id: '1160' },
 ]
 
+// ── Assistant ───────────────────────────────────────────────────────────────
+export const CONVERSATIONS = [
+  { id: 'conv-1', title: 'Keller — issues before the settlement conference', matter_id: 'm-0006', use_premium_llm: false, include_public: true, created_at: isoAt(0, '09:02'), updated_at: isoAt(0, '09:06') },
+  { id: 'conv-2', title: 'Voss estate — inventory deadline', matter_id: 'm-0002', use_premium_llm: false, include_public: true, created_at: isoAt(-1, '15:40'), updated_at: isoAt(-1, '15:52') },
+  { id: 'conv-3', title: 'Draft follow-up to Lena Ortiz', matter_id: 'm-0003', use_premium_llm: false, include_public: false, created_at: isoAt(-3, '11:15'), updated_at: isoAt(-3, '11:21') },
+]
+
+const CHAT_SOURCES = [
+  {
+    source_id: 's1', source_type: 'tenant_document', source_label: 'Matter document', cited: true,
+    case_name: 'Settlement agreement — second draft (opposing counsel).docx', citation: 'Section 7 (Indemnity)', locator: 'p. 4',
+    court: 'Keller v. Northgate Properties', excerpt: 'Plaintiff shall indemnify and hold harmless the Released Parties from any claim arising out of the Premises, including claims by lienholders.',
+  },
+  {
+    source_id: 's2', source_type: 'matter_context', source_label: 'Matter record', cited: true,
+    case_name: 'Key dates and deadlines', citation: 'Settlement conference', locator: 'Key dates',
+    court: 'Keller v. Northgate Properties', excerpt: 'Settlement conference set for the 30th at 9:30 a.m.; position statements due five days before.',
+  },
+  {
+    source_id: 's3', source_type: 'tenant_document', source_label: 'Matter document', cited: true,
+    case_name: 'Medical expense summary.xlsx', citation: 'Summary tab', locator: 'rows 2–19',
+    court: 'Keller v. Northgate Properties', excerpt: 'Billed medical expenses to date total $48,312; two providers have asserted liens.',
+  },
+]
+
+export const CHAT_MESSAGES = [
+  {
+    id: 'msg-1', role: 'user', created_at: isoAt(0, '09:04'),
+    content: 'Summarize the open issues in the second settlement draft before the conference, and list what we still need from the client.',
+  },
+  {
+    id: 'msg-2', role: 'assistant', created_at: isoAt(0, '09:05'), sources: CHAT_SOURCES,
+    content: [
+      'Here is a working summary of the second draft. Verify each point against the sources before relying on it.',
+      '',
+      '**Open issues**',
+      '',
+      '1. **Indemnity is broader than we discussed.** Section 7 has Ms. Keller indemnifying the released parties for any claim "arising out of the Premises", including lienholder claims [source: s1].',
+      '2. **Medical liens are not addressed.** Two providers have asserted liens against billed expenses of $48,312, but the draft does not say how they are resolved [source: s3].',
+      '3. **Timing.** Position statements are due five days before the settlement conference [source: s2].',
+      '',
+      '**Still needed from the client**',
+      '',
+      '- Current lien payoff figures from both providers.',
+      '- Confirmation of any other insurance or benefit plans with reimbursement rights.',
+    ].join('\n'),
+  },
+]
+
+// ── Conflict search ─────────────────────────────────────────────────────────
+export const CONFLICT_CHECKS = [
+  {
+    id: 'cc-1', label: 'Northgate Properties — new matter intake', status: 'open', decision: 'needs_review',
+    created_at: isoAt(0, '08:47'), match_count: 2, restricted_matter_count: 1, notes: '',
+    matches: [
+      { contact_id: 'c-0006', display_name: 'Northgate Properties LLC', match_field: 'organization_name', match_value: 'Northgate Properties', matter_names: ['Keller v. Northgate Properties'], restricted_matter_count: 0 },
+      { contact_id: 'c-0031', display_name: 'Dana Whitfield', match_field: 'email', match_value: 'dwhitfield@northgate.example', matter_names: [], restricted_matter_count: 1 },
+    ],
+  },
+  {
+    id: 'cc-2', label: 'Abernathy trust — beneficiaries', status: 'closed', decision: 'no_conflict_found',
+    created_at: isoAt(-9, '14:20'), match_count: 0, restricted_matter_count: 0, matches: [],
+    notes: 'Searched the grantor, trustee, and both beneficiaries, including maiden names. No relationships found.',
+  },
+]
+
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -406,6 +472,14 @@ const BASE_ROUTES = [
   ['GET', '/api/billing/time-entries', () => ({ items: TIME_ENTRIES, total: TIME_ENTRIES.length, total_hours: 12.9, total_amount: 4102.5 })],
   ['GET', '/api/billing/time-entries/timer', () => ({ id: 'te-timer', matter_id: 'm-0006', timer_started_at: isoAt(0, '09:18'), description: '' })],
   ['GET', '/api/billing/invoices', () => ({ items: INVOICES, total: INVOICES.length })],
+  ['GET', '/api/conflict-checks', () => ({ items: CONFLICT_CHECKS, total: CONFLICT_CHECKS.length })],
+  ['GET', '/api/conversations', () => CONVERSATIONS],
+  ['GET', '/api/documents', () => []],
+  ['GET', '/api/mcp/source-health', () => ({ available: false, sources: [] })],
+  ['GET', '/api/conversations/:id', ({ params }) => {
+    const conversation = CONVERSATIONS.find((item) => item.id === params.id)
+    return conversation ? { conversation, messages: params.id === 'conv-1' ? CHAT_MESSAGES : [] } : { __status: 404, body: { detail: 'Not found' } }
+  }],
   ['GET', '/api/billing/ready-to-bill', () => ({
     items: [
       { matter_id: 'm-0006', matter_name: 'Keller v. Northgate Properties', count: 4, oldest: isoDay(-12), amount: '1007.50', closed: false },

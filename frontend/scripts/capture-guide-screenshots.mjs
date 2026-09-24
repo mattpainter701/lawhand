@@ -59,7 +59,7 @@ async function annotate(page, marks = []) {
     const locator = typeof mark.target === 'function' ? mark.target(page) : page.locator(mark.target)
     const box = await locator.first().boundingBox()
     if (!box) throw new Error(`Annotation target not visible: ${mark.target}`)
-    boxes.push({ ...box, label: mark.label || '', pad: mark.pad ?? 4 })
+    boxes.push({ ...box, label: mark.label || '', pad: mark.pad ?? 4, placement: mark.placement || 'top-left' })
   }
   await page.evaluate((items) => {
     for (const item of items) {
@@ -77,7 +77,11 @@ async function annotate(page, marks = []) {
       badge.setAttribute('data-guide-annotation', '')
       badge.textContent = item.label
       Object.assign(badge.style, {
-        position: 'fixed', left: `${Math.max(2, item.x - item.pad - 13)}px`, top: `${Math.max(2, item.y - item.pad - 13)}px`,
+        // Badges sit on the ring's top-left corner unless that would cover text
+        // the reader needs, in which case a shot can move them below the ring.
+        position: 'fixed',
+        left: `${Math.max(2, item.x - item.pad - 13)}px`,
+        top: `${Math.max(2, item.placement === 'bottom-left' ? item.y + item.height + item.pad - 13 : item.y - item.pad - 13)}px`,
         width: '26px', height: '26px', borderRadius: '999px', background: '#3157D5', color: '#fff',
         font: '700 13px/26px Manrope, Inter, sans-serif', textAlign: 'center', boxShadow: '0 2px 6px rgba(22, 24, 23, 0.35)',
         pointerEvents: 'none', zIndex: 2147483647,
