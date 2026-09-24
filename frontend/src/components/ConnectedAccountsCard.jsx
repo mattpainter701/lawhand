@@ -29,7 +29,17 @@ const REASON_TEXT = {
   refresh_failed: 'Your sign-in has expired or was revoked. Reconnect to restore it.',
 }
 
+const FEATURE_LABELS = {
+  mail_read: 'reading mail',
+  mail_send: 'sending mail',
+  calendar: 'calendar updates',
+  files: 'file access',
+}
+
 function statusFor(state) {
+  if (state?.connected && state?.missing_features?.length) {
+    return { tone: 'bg-amber-100 text-amber-800', label: 'Limited access' }
+  }
   if (state?.connected) return { tone: 'bg-green-100 text-green-700', label: 'Connected' }
   if (state?.needs_reconnect) return { tone: 'bg-amber-100 text-amber-800', label: 'Needs reconnecting' }
   return { tone: 'bg-gray-100 text-gray-600', label: 'Not connected' }
@@ -84,6 +94,11 @@ export default function ConnectedAccountsCard() {
                   <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${status.tone}`}>{status.label}</span>
                   {!state?.connected && state?.needs_reconnect && REASON_TEXT[state.reason] && (
                     <p className="mt-2 text-xs text-amber-800 font-sans">{REASON_TEXT[state.reason]}</p>
+                  )}
+                  {state?.connected && state?.missing_features?.length > 0 && (
+                    <p className="mt-2 text-xs text-amber-800 font-sans">
+                      Permissions missing for {state.missing_features.map((feature) => FEATURE_LABELS[feature] || feature).join(', ')}. Reconnect and approve every permission to use these features.
+                    </p>
                   )}
                 </div>
                 <button

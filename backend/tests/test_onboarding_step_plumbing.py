@@ -405,3 +405,65 @@ def test_per_user_oauth_errors_return_to_calendar():
 def test_oauth_redirect_defaults_remain_admin_or_onboarding():
     response = integrations._error_redirect("microsoft", "token_exchange_failed")
     assert "/onboarding?error=token_exchange_failed&provider=microsoft" in response.headers["location"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["microsoft", "google"])
+async def test_admin_oauth_failure_returns_to_integration_card(monkeypatch, provider):
+    async def consume_state(_request, _state):
+        return True, {
+            "provider": provider,
+            "intent": "admin",
+            "return_to": "integrations",
+        }
+
+    monkeypatch.setattr(integrations, "_consume_state", consume_state)
+    callback = getattr(integrations, f"{provider}_callback")
+
+    response = await callback(
+        state="valid-state",
+        request=SimpleNamespace(),
+        db=_SeqDb(),
+        error="access_denied",
+    )
+
+    assert response.headers["location"].endswith(
+        "/admin?tab=integrations&integration=cloud"
+        f"&error=access_denied&provider={provider}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["microsoft", "google"])
+async def test_admin_connect_saves_integration_return_destination(monkeypatch, provider):
+    saved = []
+
+    async def current_user(_request, _db):
+        return SimpleNamespace(id=TENANT_ID, tenant_id=TENANT_ID, role="admin")
+
+    async def no_op(*_args):
+        return None
+
+    async def not_blocked(*_args):
+        return False
+
+    async def save_state(_request, _state, meta):
+        saved.append(meta)
+
+    monkeypatch.setattr(integrations, "get_current_user", current_user)
+    monkeypatch.setattr(integrations, "set_tenant_context", no_op)
+    monkeypatch.setattr(integrations, "onboarding_cloud_connection_blocked", not_blocked)
+    monkeypatch.setattr(integrations, "_save_state", save_state)
+    monkeypatch.setattr(integrations, "is_oauth_client_configured", lambda *_args: True)
+
+    connect = getattr(integrations, f"{provider}_connect")
+    kwargs = {"teams": 1} if provider == "microsoft" else {"account_mode": "workspace"}
+    await connect(
+        request=SimpleNamespace(),
+        intent="admin",
+        return_to="integrations",
+        db=_SeqDb(),
+        **kwargs,
+    )
+
+    assert saved[0]["return_to"] == "integrations"

@@ -75,6 +75,7 @@ from app.services.tenant_access import (
     tenant_allows_premium_ai,
 )
 from app.services.tenant_state import require_active_tenant
+from app.services.connected_mail import GOOGLE_MAIL_SEND_SCOPE, MICROSOFT_MAIL_SEND_SCOPE
 from app.services.user_invitations import (
     InvitationRefusal,
     claim_invitation,
@@ -91,6 +92,21 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 CALENDAR_REQUIRED_SCOPES = {
     "microsoft": {"Calendars.ReadWrite"},
     "google": {"https://www.googleapis.com/auth/calendar"},
+}
+
+PERSONAL_CONNECTION_SCOPES = {
+    "microsoft": {
+        "mail_read": "Mail.Read",
+        "mail_send": MICROSOFT_MAIL_SEND_SCOPE,
+        "calendar": "Calendars.ReadWrite",
+        "files": "Files.ReadWrite.All",
+    },
+    "google": {
+        "mail_read": "https://www.googleapis.com/auth/gmail.readonly",
+        "mail_send": GOOGLE_MAIL_SEND_SCOPE,
+        "calendar": "https://www.googleapis.com/auth/calendar",
+        "files": "https://www.googleapis.com/auth/drive",
+    },
 }
 
 # OAuth state TTL in seconds
@@ -2774,6 +2790,14 @@ async def get_calendar_providers(
             "needs_reconnect": bool(row) and not connected,
             "reason": reason,
             "missing_scopes": missing_scopes,
+            # Calendar's connected flag must keep its existing meaning. The
+            # Profile card also describes mail and files, so report those
+            # permission gaps separately from calendar availability.
+            "missing_features": [
+                feature
+                for feature, scope in PERSONAL_CONNECTION_SCOPES[provider].items()
+                if scope not in granted_scopes
+            ] if row else [],
             "expires_at": row.token_expires_at.isoformat()
             if row and row.token_expires_at
             else None,

@@ -68,6 +68,25 @@ describe('ConnectedAccountsCard', () => {
     expect(within(screen.getByTestId('connected-account-google')).getByText('Connected')).toBeInTheDocument()
   })
 
+  it('does not call a calendar-only grant fully connected', async () => {
+    getCalendarProviders.mockResolvedValue({
+      tenant_providers: ['microsoft'],
+      provider_status: {
+        microsoft: {
+          connected: true,
+          needs_reconnect: false,
+          missing_features: ['mail_read', 'mail_send', 'files'],
+        },
+        google: notConnected,
+      },
+    })
+    render(<ConnectedAccountsCard />)
+    const microsoft = await screen.findByTestId('connected-account-microsoft')
+    expect(within(microsoft).getByText('Limited access')).toBeInTheDocument()
+    expect(within(microsoft).getByText(/Permissions missing for reading mail, sending mail, file access/)).toBeInTheDocument()
+    expect(within(microsoft).queryByText('Connected')).toBeNull()
+  })
+
   it('tells people when the firm has not connected a suite yet', async () => {
     getCalendarProviders.mockResolvedValue({
       providers: [],

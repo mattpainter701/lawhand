@@ -8,6 +8,7 @@ import secrets
 import time as _time
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from urllib.parse import urlencode
 
 import httpx
@@ -426,6 +427,7 @@ async def microsoft_connect(
     request: Request,
     intent: str = Query("admin", description="admin=tenant-wide, user=per-user"),
     teams: int = Query(0, description="1=include Microsoft Teams scopes"),
+    return_to: Literal["onboarding", "integrations"] = Query("onboarding"),
     db: AsyncSession = Depends(get_db),
 ):
     if not is_oauth_client_configured(
@@ -473,6 +475,7 @@ async def microsoft_connect(
             "tenant_id": str(user.tenant_id),
             "role": user.role,
             "teams": teams_flag,
+            "return_to": return_to,
             "pkce_verifier": code_verifier,
         },
     )
@@ -512,8 +515,13 @@ async def microsoft_callback(
     intent = meta.get("intent") if isinstance(meta, dict) else None
     if intent not in {"admin", "user"}:
         return _error_redirect("microsoft", "invalid_state")
+    return_to = meta.get("return_to")
+
+    def failure(code: str) -> RedirectResponse:
+        return _error_redirect("microsoft", code, intent=intent, return_to=return_to)
+
     if error or not code:
-        return _error_redirect("microsoft", _oauth_error_code(error), intent=intent)
+        return failure(_oauth_error_code(error))
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/microsoft/callback"
     ms_tenant = settings.MICROSOFT_TENANT_ID
@@ -542,7 +550,7 @@ async def microsoft_callback(
             data=token_payload,
         )
         if token_resp.status_code != 200:
-            return _error_redirect("microsoft", "token_exchange_failed", intent=intent)
+            return failure("token_exchange_failed")
 
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
@@ -558,7 +566,7 @@ async def microsoft_callback(
             scope_str = ("offline_access " + scope_str).strip()
 
         if not access_token:
-            return _error_redirect("microsoft", "no_access_token", intent=intent)
+            return failure("no_access_token")
 
         if intent == "admin":
             _user_id, tenant_id = _require_state_user(meta, "admin")
@@ -660,6 +668,7 @@ async def google_connect(
     account_mode: str = Query(
         "workspace", description="workspace or personal for admin onboarding"
     ),
+    return_to: Literal["onboarding", "integrations"] = Query("onboarding"),
     db: AsyncSession = Depends(get_db),
 ):
     if not is_oauth_client_configured(
@@ -701,6 +710,7 @@ async def google_connect(
             "role": user.role,
             "pkce_verifier": code_verifier,
             "account_mode": account_mode,
+            "return_to": return_to,
         },
     )
 
@@ -738,13 +748,18 @@ async def google_callback(
     intent = meta.get("intent") if isinstance(meta, dict) else None
     if intent not in {"admin", "user"}:
         return _error_redirect("google", "invalid_state")
+    return_to = meta.get("return_to")
+
+    def failure(code: str) -> RedirectResponse:
+        return _error_redirect("google", code, intent=intent, return_to=return_to)
+
     if error or not code:
-        return _error_redirect("google", _oauth_error_code(error), intent=intent)
+        return failure(_oauth_error_code(error))
 
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/google/callback"
     account_mode = meta.get("account_mode", "workspace") if meta else "workspace"
     if intent == "admin" and account_mode not in {"workspace", "personal"}:
-        return _error_redirect("google", "invalid_state")
+        return failure("invalid_state")
     expected_scopes = _google_scopes_for_mode(intent, account_mode)
     code_verifier = meta.get("pkce_verifier") if meta else None
 
@@ -764,7 +779,7 @@ async def google_callback(
             data=token_payload,
         )
         if token_resp.status_code != 200:
-            return _error_redirect("google", "token_exchange_failed", intent=intent)
+            return failure("token_exchange_failed")
 
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
@@ -773,7 +788,7 @@ async def google_callback(
         scope_str = token_data.get("scope", "")
 
         if not access_token:
-            return _error_redirect("google", "no_access_token", intent=intent)
+            return failure("no_access_token")
 
         if intent == "admin":
             # Account mode is security-sensitive. Verify the signed Google
@@ -782,9 +797,7 @@ async def google_callback(
             # per-user flow deliberately has no OpenID scope and may omit it.
             id_token = token_data.get("id_token")
             if not id_token:
-                return _error_redirect(
-                    "google", "identity_verification_failed", intent=intent
-                )
+                return failure("identity_verification_failed")
             try:
                 verified_claims = await verify_google_id_token(
                     id_token,
@@ -792,12 +805,10 @@ async def google_callback(
                     access_token=access_token,
                 )
             except HTTPException:
-                return _error_redirect(
-                    "google", "identity_verification_failed", intent=intent
-                )
+                return failure("identity_verification_failed")
             account_type, account_domain = account_detect.detect_google(verified_claims)
             if not _google_account_mode_matches(account_mode, account_type):
-                return _error_redirect("google", "account_mode_mismatch", intent=intent)
+                return failure("account_mode_mismatch")
             _user_id, tenant_id = _require_state_user(meta, "admin")
             admin_user_id = _user_id
             await set_tenant_context(db, tenant_id)
@@ -1788,7 +1799,11 @@ def _oauth_error_code(error: str | None) -> str:
 
 
 def _error_redirect(
-    provider: str, code: str, *, intent: str = "admin"
+    provider: str,
+    code: str,
+    *,
+    intent: str = "admin",
+    return_to: str | None = None,
 ) -> RedirectResponse:
     """Return OAuth failures to the relevant app workflow with an error hint."""
     base = settings.FRONTEND_URL.rstrip("/")
@@ -1801,6 +1816,12 @@ def _error_redirect(
     if intent == "user":
         return RedirectResponse(
             f"{base}/calendar?error={code}&provider={provider}", status_code=302
+        )
+    if provider in {"microsoft", "google"} and return_to == "integrations":
+        return RedirectResponse(
+            f"{base}/admin?tab=integrations&integration=cloud"
+            f"&error={code}&provider={provider}",
+            status_code=302,
         )
     return RedirectResponse(
         f"{base}/onboarding?error={code}&provider={provider}", status_code=302

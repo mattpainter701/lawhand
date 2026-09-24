@@ -125,7 +125,7 @@ export default function TeamsPanel() {
 
   const ms = status?.microsoft
   const reconnectTeams = () => {
-    window.location.href = `${API_BASE_URL}/integrations/microsoft/connect?intent=admin&teams=1`
+    window.location.href = `${API_BASE_URL}/integrations/microsoft/connect?intent=admin&teams=1&return_to=integrations`
   }
 
   if (!ms?.connected) {

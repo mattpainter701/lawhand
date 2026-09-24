@@ -256,13 +256,13 @@ export default function IntegrationsPanel() {
   const handleReauthorize = (provider, { accountMode } = {}) => {
     const intent = 'admin'
     if (provider === 'microsoft') {
-      window.location.href = `${API_BASE_URL}/integrations/microsoft/connect?intent=${intent}`
+      window.location.href = `${API_BASE_URL}/integrations/microsoft/connect?intent=${intent}&return_to=integrations`
       return
     }
     // The connect endpoint defaults to Workspace and rejects a personal Gmail
     // consent made in that mode, so a personal tenant must say so on re-authorize.
     const mode = accountMode || (data.google?.account_type === 'personal' ? 'personal' : null)
-    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=${intent}${mode ? `&account_mode=${mode}` : ''}`
+    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=${intent}&return_to=integrations${mode ? `&account_mode=${mode}` : ''}`
   }
 
   const handleDisconnect = async (provider) => {

@@ -292,10 +292,10 @@ describe('IntegrationsPanel actions', () => {
       await screen.findByText('Integrations: Healthy')
 
       await user.click(screen.getByRole('button', { name: 'Re-authorize' }))
-      expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin')
+      expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations')
 
       await user.click(screen.getByRole('button', { name: 'Connect' }))
-      expect(window.location.href).toBe('https://api.test/api/integrations/microsoft/connect?intent=admin')
+      expect(window.location.href).toBe('https://api.test/api/integrations/microsoft/connect?intent=admin&return_to=integrations')
     } finally {
       window.location = realLocation
     }
@@ -414,7 +414,7 @@ describe('IntegrationsPanel account modes and disconnect', () => {
     renderPanel()
     expect(await screen.findByText('Google (personal Gmail)')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Re-authorize' }))
-    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&account_mode=personal')
+    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations&account_mode=personal')
   })
 
   it('offers a personal Gmail connect for a solo practice that has not connected Google yet', async () => {
@@ -425,7 +425,7 @@ describe('IntegrationsPanel account modes and disconnect', () => {
     const user = userEvent.setup()
     renderPanel()
     await user.click(await screen.findByRole('button', { name: /Solo practice on personal Gmail/ }))
-    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&account_mode=personal')
+    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations&account_mode=personal')
   })
 
   it('disconnects only after the administrator confirms the firm-wide consequences', async () => {

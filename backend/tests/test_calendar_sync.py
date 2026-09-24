@@ -266,6 +266,42 @@ async def test_calendar_providers_reports_missing_calendar_scopes(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "calendar_scope"),
+    [
+        ("microsoft", "Calendars.ReadWrite"),
+        ("google", "https://www.googleapis.com/auth/calendar"),
+    ],
+)
+async def test_calendar_providers_reports_partial_personal_consent(
+    client, db_session, test_tenant, test_user, monkeypatch, provider, calendar_scope
+):
+    async def fresh_token(*_args):
+        return "valid-token"
+
+    monkeypatch.setattr("app.services.token_vault.get_fresh_user_token", fresh_token)
+    db_session.add(
+        UserOAuthToken(
+            id=uuid.uuid4(),
+            tenant_id=test_tenant.id,
+            user_id=test_user.id,
+            provider=provider,
+            encrypted_access_token="placeholder",
+            token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            scopes=calendar_scope,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get("/api/auth/calendar-providers")
+
+    assert response.status_code == 200
+    status = response.json()["provider_status"][provider]
+    assert status["connected"] is True  # Calendar keeps its existing contract.
+    assert status["missing_features"] == ["mail_read", "mail_send", "files"]
+
+
+@pytest.mark.asyncio
 async def test_scheduled_event_create_lists_in_calendar(client):
     start = datetime.now(timezone.utc) + timedelta(days=3)
     end = start + timedelta(minutes=45)
