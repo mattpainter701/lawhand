@@ -114,9 +114,14 @@ The address suffixes are `street`, `city`, `state`, `zip`, and `country`, as in 
 
 1. Open a published template and select **Use on a matter**, or start from the matter or from [Prepare](/templates/prepare).
 2. Choose the matter. LawHand fills the fields it can find from the matter.
-3. Review each value, fill in anything missing, and mark values as verified.
-4. Inspect the exact preview.
-5. Save. The document is saved to the matter's documents, in the folder named in the link when there is one.
+3. Review each value, fill in anything missing, and mark values as verified. The page opens on the **Document** view:
+   - For a PDF form, type into each box on the page.
+   - For a Word or text template, select a highlighted placeholder.
+
+   The bar under the document shows the selected field at full size, with its source, **Confirm**, **Verify**, and **Next**, **Previous**, and **Next required**. Press Enter in a field to verify it and move to the next one to check. Box colours show what needs you: amber for a required answer that is missing, violet for a suggestion to check, and green for a verified value.
+4. Prefer a list? Choose **Questions** at the top for the field list beside the document. LawHand remembers your choice on this browser.
+5. Choose **Preview** to inspect the exact generated document. For a PDF, the preview updates as you type.
+6. Save. The document is saved to the matter's documents, in the folder named in the link when there is one.
 
 After saving, the same page can create an e-signature request for the new document. See [Send a document for signature](#send-a-document-for-signature).
 

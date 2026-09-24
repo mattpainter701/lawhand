@@ -1,6 +1,6 @@
 # Document fill UX: document-first filling, parity, and "fill where they work"
 
-Status: phase 1 shipped (sample Fill dialog). Phases 2–6 are proposals.
+Status: phases 1 and 2 shipped (sample Fill dialog; Prepare and Generate). Phases 3–6 are proposals. Section 8 lays out the Microsoft 365 / Google Workspace options.
 Date: 2026-09-24
 
 ## 1. Why
@@ -18,7 +18,7 @@ small, one-page-at-a-time PDF preview. Feedback:
   already pay for Microsoft 365 or Google Workspace. Can we fill inside the
   firm's own office suite?
 
-## 2. Phase 1 (this change): document-first sample Fill
+## 2. Phase 1 (shipped): document-first sample Fill
 
 `frontend/src/components/templates/FillOnDocument.jsx` is a reusable
 fill-on-the-page component. `SampleFillDialog.jsx` now uses it.
@@ -42,7 +42,7 @@ check.
 | Surface | Where | Layout today | Types on the page? |
 | --- | --- | --- | --- |
 | Sample Fill | `templates/SampleFillDialog.jsx` | **Document / Questions / Final** (phase 1) | **Yes** |
-| Generate dialog (`RenderModal`) and Prepare route | `prepare/PrepareDocumentBody.jsx`, `pages/TemplatePreparePage.jsx` | 380px field panel plus `TemplateFillSource` reference, then live server preview | No: clicking a highlighted box only focuses the side-panel input (`PrepareDocumentBody.jsx:421`) |
+| Generate dialog (`RenderModal`) and Prepare route | `prepare/PrepareDocumentBody.jsx`, `pages/TemplatePreparePage.jsx` | **Document / Questions / Preview** (phase 2) | **Yes** for PDF templates; Word and text templates use the page reference with the guided bar |
 | Packets (sets) | `prepare/PrepareSetBody.jsx` | Interview on the left, member list on the right, per-member preview dialog | No |
 | Client portal signing | `ClientSignatureDocument.jsx` (`FieldOverlay` :76, `SigningPage` :195) | Stacked pages with inputs on the page | **Yes** (its own copy) |
 | E-sign placement | `templates/GeneratedSigningPlacementReview.jsx` | Boxes on pages (placement only, not values) | n/a |
@@ -85,25 +85,37 @@ available as a list.
 
 ## 5. Proposed phases
 
-### Phase 2: Prepare and Generate get the same switch (M)
+### Phase 2 (shipped): Prepare and Generate get the same switch
 
-This is the main matter flow, and the parity gap people will notice first.
+`PrepareDocumentBody` now opens on **Document**, with **Questions** and
+**Preview** at the top. The Document/Questions choice is remembered per browser
+(`fillViewPreference.js`) and shared with the sample dialog.
 
-- In `PrepareDocumentBody`, replace the fixed 380px panel with the same
-  **Document / Questions / Preview** switch. Questions keeps today's per-field
-  verify checkbox, provenance line and "matter now suggests" prompt unchanged.
-- **PDF templates:** Document uses `FillOnDocument` over the source. The guided
-  bar gains the verify checkbox and provenance line (a `renderInput` slot that
-  already exists), so review can happen on the page. Live server preview stays
-  as the Preview tab.
-- **Word templates:** keep the LibreOffice page render
-  (`/templates/{id}/preview-render`) with `WordPlaceholderLayer`. Clicking a
-  placeholder drives the guided bar instead of the side panel. Values cannot
-  be typed into a rasterised page, so the debounced live re-render
-  (`usePrepareFill.js:425-430`) shows them in place.
-- Lift `FieldInput` into a shared `fill/FieldInput.jsx` covering every type
-  Prepare uses (date, currency, number, textarea), and remove the two inline
-  copies.
+- **PDF templates:** the page is typed on directly (`FillOnDocument`). Box
+  colours follow review state: required and missing, suggested and needing a
+  check, verified, or open. Signature and signing-date boxes show "Signed
+  later" / "Dated at signing"; computed fields show "Uses …". The guided bar
+  renders the same per-field editor as the list, so Confirm, Verify, source
+  lines and "Matter now suggests" all work on the page.
+- **Word and text templates:** the existing page reference
+  (`TemplateFillSource`: the LibreOffice page render with placeholder boxes,
+  or the text with inline tokens) sits above the guided bar. Clicking a
+  placeholder selects that field in the bar.
+- **Keyboard review is unchanged:** Enter verifies and advances, and "Next
+  field needing attention" works. In Document view both move the bar and
+  scroll the page.
+- **Preview:** choosing Preview or Test in Document view opens the Preview
+  tab. The live PDF preview keeps updating in the background, and the tab
+  shows "updating…" while it does.
+- **Questions** is the previous layout, unchanged: the field list beside the
+  document reference or preview.
+- If the source PDF cannot be loaded, the Document view falls back to the page
+  reference with the bar and says why.
+
+Still to do from the original plan: lift `FieldInput` into a shared
+`fill/FieldInput.jsx` and remove the inline copies (`PrepareDocumentBody`'s
+editor is now one function, `renderFieldEditor`, so only `PrepareSetBody`
+still has its own copy).
 
 ### Phase 3: packets (S–M)
 
@@ -117,6 +129,8 @@ Converge `ClientSignatureDocument`'s `FieldOverlay`/`SigningPage` onto
 firm and client see identical behaviour and there is one set of tests.
 
 ### Phase 5: open the result in the firm's office suite (M)
+
+Section 8, Option A, now covers this for both suites.
 
 This is what "fill where they work" means for a finished document. It builds
 on what already exists for AI drafts: the cloud working copy in
@@ -136,6 +150,8 @@ on what already exists for AI drafts: the cloud working copy in
   takes conversion load off the API worker (D83).
 
 ### Phase 6: fill inside Word (the thick integration) (L)
+
+Section 8, Options B–D, compares this with the Google equivalent.
 
 - Word templates carry LawHand fields as **tagged content controls**. This is
   already planned in `office-document-assistant-plan.md:265` and `:296`, and in
@@ -167,20 +183,133 @@ Options for editing in the browser inside LawHand:
 | ONLYOFFICE Docs | Similar embedded editor | A commercial licence is needed to embed it in a proprietary product (`template-studio-document-workflow.md:135`). |
 | **The firm's own Word or Google Docs** (phases 5–6) | Editing where lawyers already work, with their fonts, styles and tracked changes | No new server to run. Needs the D08/D34/D09 fixes and, for phase 6, the add-in content-control work. |
 
-**Recommendation.** Don't embed a second office suite yet. Firms already pay for
-and trust Word or Docs, and an embedded LibreOffice editor would be a third
-editing experience with its own fidelity gaps. Use LibreOffice for what it is
-good at (rendering and conversion), and spend the effort on phase 5, which is
-small and largely built, and then phase 6. Revisit Collabora only if a
-customer segment has no Microsoft 365 or Google Workspace, or if on-premise,
-no-cloud deployments need in-browser editing.
+**Decision (2026-09-24).** Every customer must have Microsoft 365 or Google
+Workspace, so LawHand will not host its own office editor. LibreOffice stays
+for rendering and conversion, and editing happens in the firm's suite (section
+8).
 
-## 7. Decisions needed
+## 7. Decisions
 
-1. Phase 2 next? It gives Prepare/Generate the same Document/Questions switch
-   and is the biggest parity gain.
-2. Which suite comes first for phases 5 and 6: Microsoft 365 or Google
-   Workspace? The existing add-in and review lean toward Microsoft 365.
-3. Is an embedded editor (Collabora) needed for any customer without a cloud
-   office suite? Engine selection is still waiting on the paid-versus-free
-   decision.
+1. ~~Phase 2 next?~~ Yes. Shipped.
+2. Which suite first for "fill where they work"? The options are in section 8.
+3. ~~Embedded editor?~~ No. Every customer has Microsoft 365 or Google
+   Workspace.
+
+## 8. Options: filling and editing in the firm's own suite
+
+Every customer runs one of the two suites. The goal is therefore "fill and
+edit where they work" for **both**. The open question is how to sequence it
+and how deep to go in each suite. Constraints that apply to every option:
+
+- **PDF forms stay in LawHand.** Word and Docs do not fill AcroForms well, and
+  phases 1–2 already give on-page filling there.
+- **LawHand stays the engine and the record.** Templates, matter data, Smart
+  Fill, review state and the saved document stay in LawHand. The suite is
+  where people type and co-author. This matches the position in the M365 and
+  Google review.
+- **Fix the known blockers first:** D08 (editing a matter document in Word
+  breaks LawHand's access), D34 (a LawHand save orphans Word Online edits) and
+  D09 (Word drafts saved as plain text). Every option below depends on
+  documents surviving a round trip.
+
+### Option A: Open and sync back, both suites (S–M), recommended first
+
+Generate the DOCX in LawHand as today, save it to the matter's cloud folder,
+and offer **Open in Word** or **Open in Google Docs** beside Download.
+
+- **Microsoft:** Word for the web (`webUrl?action=edit`) or the desktop app
+  (`ms-word:ofe|u|…`).
+- **Google:** Docs opens a `.docx` in Office-compatibility editing and keeps it
+  a DOCX, so the file is not converted and formatting survives. The review
+  doc warns against converting to a native Google Doc.
+- **Edits come back** through the snapshot path that AI drafts already use
+  (**Refresh edits from cloud**, `cloud_docx_snapshot.py`). Each snapshot is a
+  new revision and resets review. Change notifications (Graph subscriptions,
+  Drive Workspace Events) can replace the manual refresh later.
+- **Reach:** 100% of customers, with one code path parameterised by provider.
+- **What it doesn't do:** fill fields inside the editor. It is "fill in
+  LawHand, finish in Word or Docs."
+
+### Option B: Microsoft-first deep integration, filling inside Word (L)
+
+The Word add-in task pane becomes the guided bar. It shows the same field
+order, required and missing state, matter suggestions and provenance, served
+by the Smart Fill endpoints. LawHand fields become **tagged content controls**
+in the template. **Next** selects the control, and an answer is written into
+it after the approval step the add-in already requires.
+
+- **For:** Word is the lingua franca of legal drafting, and our templates are
+  DOCX already. An add-in already exists with Nested App Authentication, and
+  content controls are planned (`office-document-assistant-plan.md:265`,
+  `:296`). Clio for Word and Microsoft's Legal Agent have set this
+  expectation. The same controls also give Word-side authoring (Clio parity
+  W2).
+- **Against:**
+  - The add-in's cookie session fails in Word for the web and new Outlook
+    (D20).
+  - Word for the web supports NAA only for files opened from OneDrive or
+    SharePoint.
+  - WordApi version floors apply (1.4–1.8 baseline, because LTSC/Office 2024
+    lacks 1.9).
+  - Tenant admins must deploy the add-in (Integrated Apps).
+- **Reach:** Microsoft 365 firms only.
+
+### Option C: Google-first deep integration (M–L)
+
+Merge with `files.copy` plus `documents.batchUpdate`: `replaceAllText`, or
+**named ranges** as the field anchors (`replaceNamedRangeContent`). Open the
+result in Docs, and add a **Docs sidebar** (a Workspace add-on) that shows the
+guided bar and writes into named ranges.
+
+- **For:**
+  - The API merge is simpler than Office.js.
+  - Co-editing is native.
+  - The `drive.file` scope and the Picker avoid a restricted scope.
+- **Against:**
+  - This path needs native Google Docs templates. Converting DOCX to a Google
+    Doc and back loses formatting, so firms would keep a second template
+    format or author in Docs.
+  - Workspace add-ons built outside Apps Script use card-based UI, not a free
+    HTML page, so the sidebar would be simpler than the LawHand bar.
+  - Publishing to the Marketplace needs Google review.
+- **Reach:** Google Workspace firms only. In legal, most of them still exchange
+  DOCX with other parties.
+
+### Option D: One panel, two hosts (L, after A)
+
+Define a suite-neutral **field anchor contract**: a LawHand field key mapped to
+a Word content-control tag or a Google Docs named range. Build the guided panel
+once as a LawHand web page, embedded as the Word task pane and the Docs sidebar
+(or, where the host needs cards, a thin card front-end over the same API).
+Each host adapter only knows how to find, select and write an anchor.
+
+- **For:** one fill UX everywhere: LawHand, the Word pane and the Docs sidebar
+  all share the guided bar, review state and Smart Fill. No second
+  interpretation of fields.
+- **Against:** it is the largest total effort. Most of it is Option B's work
+  plus a smaller Google adapter.
+
+### Comparison
+
+| | A. Open & sync back | B. Word fill (Microsoft first) | C. Docs fill (Google first) | D. One panel, two hosts |
+| --- | --- | --- | --- | --- |
+| Customers served | All | Microsoft 365 | Google Workspace | All |
+| Effort | S–M | L | M–L | L (after A) |
+| Fields filled inside the editor | No | Yes | Yes | Yes |
+| Keeps DOCX formatting | Yes | Yes | Only with native Docs templates | Yes (Word); native Docs templates for Google |
+| Builds on existing code | Cloud working copy, snapshot, matter folders | Office add-in, NAA | Drive integration | A + B |
+| Main risks | D08/D34 round trip | D20, add-in deployment, API floors | Template format split, Marketplace review | Scope |
+
+### Recommendation
+
+1. **Ship Option A for both suites first.** It is the fastest way to "open in
+   the customer's cloud office" for everyone. It forces the round-trip fixes
+   (D08, D34, D09) that every later option needs, and it measures how often
+   people actually edit after generating.
+2. **Then build Option D with the Microsoft adapter first, unless tenant data
+   says otherwise.** Before committing, count connected providers per tenant.
+   The integrations already record which suite each firm connected. If Google
+   firms are the majority of active tenants, build the Google adapter first:
+   the panel and anchor contract are the same either way.
+3. **Treat Option C as the Google adapter of D,** not as a separate product.
+   Offer native-Docs templates only to firms that want to author in Docs.

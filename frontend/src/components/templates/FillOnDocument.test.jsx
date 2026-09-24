@@ -59,7 +59,7 @@ describe('FillOnDocument', () => {
     expect(within(page2).getByRole('checkbox', { name: 'Consent' })).toHaveAttribute('aria-checked', 'false')
     expect(within(page2).getByLabelText('Role').tagName).toBe('SELECT')
     expect(within(page2).getByLabelText('Notes').tagName).toBe('TEXTAREA')
-    expect(within(page2).getByRole('note', { name: 'Client signature: signed later' })).toBeInTheDocument()
+    expect(within(page2).getByRole('note', { name: 'Client signature: Signed later' })).toBeInTheDocument()
     expect(screen.getByText(/1 field has no box on the page/)).toBeInTheDocument()
   })
 

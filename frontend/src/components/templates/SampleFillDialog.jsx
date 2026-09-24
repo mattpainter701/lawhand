@@ -5,6 +5,7 @@ import MatterPicker from '../prepare/MatterPicker'
 import FillOnDocument, { hasFillValue as hasValue, isFieldRequired as isRequired } from './FillOnDocument'
 import GeneratedPdfPreview from './GeneratedPdfPreview'
 import { placementsFor } from './pdfFieldGeometry'
+import { readFillViewPreference, writeFillViewPreference } from './fillViewPreference'
 
 // Fill a shared sample form with ad-hoc values and download the flattened PDF.
 // The sample library is read-only shared content: filling never saves a copy to
@@ -121,8 +122,8 @@ export default function SampleFillDialog({ sample, onClose }) {
   const [fieldFilter, setFieldFilter] = useState('all')
   // The original document is the default: people recognise a form by its
   // pages, not by a list of its field names. Questions stays one click away.
-  const [view, setView] = useState('document')
-  const [editView, setEditView] = useState('document')
+  const [view, setView] = useState(readFillViewPreference)
+  const [editView, setEditView] = useState(readFillViewPreference)
   const [suggestedNames, setSuggestedNames] = useState(() => new Set())
   // Matter search stays folded away until asked for, so the document gets the
   // screen. Once a matter is chosen the picker collapses to a one-line summary.
@@ -154,7 +155,10 @@ export default function SampleFillDialog({ sample, onClose }) {
   const documentAvailable = hasPlacedFields && !sourceUnavailable
   const showView = (next) => {
     setView(next)
-    if (next !== 'final') setEditView(next)
+    if (next !== 'final') {
+      setEditView(next)
+      writeFillViewPreference(next)
+    }
   }
   // A final PDF is only meaningful for the answers it was rendered from; once
   // it is cleared the Final tab goes away and editing resumes where it was.

@@ -53,7 +53,7 @@ const pickMatter = () => {
   fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
 }
 
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); localStorage.clear() })
 beforeEach(() => { getSampleTemplateSource.mockResolvedValue(new Blob(['source'], { type: 'application/pdf' })) })
 
 describe('SampleFillDialog Smart Fill', () => {
@@ -242,6 +242,14 @@ describe('SampleFillDialog document view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Doc: type client' }))
     expect(screen.queryByRole('tab', { name: 'Final PDF' })).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Document' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('remembers the chosen view for the next fill', () => {
+    const { unmount } = render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
+    unmount()
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    expect(screen.getByRole('tab', { name: 'Questions' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('keeps matter search folded away until asked for', () => {

@@ -5,15 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.24.03 — Fill sample forms on the document itself
+## 2026.09.24.03 — Fill forms on the document itself
 
 Released September 24, 2026.
 
-Filling a sample form now opens on the original document, with each answer box ready to type in. A guided bar keeps the current answer readable on any screen, and a Questions view lists the same answers.
+Filling a sample form or preparing a template on a matter now opens on the original document, with each answer box ready to type in. A guided bar keeps the current answer readable on any screen, and Questions lists the same answers.
 
-- **The document comes first.** Fill opens on every page of the original form. Type in each box where the answer will print. Empty required boxes are amber; matter answers are tinted blue until you change them.
-- **Guided answers on any screen.** The bar under the document shows the current answer at full size, with Next, Previous and Next required, so small screens and tiny form boxes no longer get in the way.
-- **Switch between Document and Questions.** Choose Questions at the top for the list view, grouped by page with Missing, Optional and Filled filters. Answers carry over both ways. Final PDF shows the file you will download.
+- **The document comes first.** Fill and Prepare open on the original document. Type in each PDF form box where the answer will print, or select a highlighted placeholder in a Word template.
+- **Review on the page.** Box colours show what needs you: missing, a suggestion to check, or verified. The bar keeps Confirm, Verify and each value's source; Enter still verifies and moves on.
+- **Guided answers on any screen.** The bar shows the current answer at full size with Next, Previous and Next required, so small screens and tiny form boxes no longer get in the way.
+- **Switch between Document, Questions and Preview.** Questions is the field list beside the document; LawHand remembers your choice on this browser. Preview shows the exact file you will download or save.
 
 ## 2026.09.24.02 — Clearer Microsoft 365 and Google connections
 

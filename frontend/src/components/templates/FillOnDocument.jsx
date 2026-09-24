@@ -7,6 +7,10 @@ import { overlayToCanvasRect, placementsFor } from './pdfFieldGeometry'
 // is drawn, and each form field becomes an input sitting on its own box. A
 // guided bar underneath always shows the active question at a readable size,
 // so a small screen or a tiny form box never decides whether you can type.
+//
+// Shared by the sample Fill dialog and the matter Prepare/Generate flow. Hosts
+// supply the bar's editor (`renderInput`) and, optionally, their own field
+// status so review state (needs review, verified) shows on the page too.
 
 const TRUE_VALUES = ['true', 'on', 'yes', '1']
 export const isChecked = (value) => TRUE_VALUES.includes(String(value || '').toLowerCase())
@@ -18,7 +22,7 @@ export const isFieldRequired = (field) => field.required === true || (field.requ
 export const fieldLabel = (field) => field.label || String(field.name || '').replace(/_/g, ' ')
 
 const optionParts = (option) => (typeof option === 'object'
-  ? { value: option.value, label: option.label || option.value }
+  ? { value: option.value ?? option.name ?? option.label ?? '', label: option.label ?? option.name ?? option.value ?? '' }
   : { value: option, label: option })
 
 /** Reading order: page, then top to bottom, then left to right. Unplaced fields follow. */
@@ -47,21 +51,31 @@ export function orderFieldsForDocument(fields) {
   return keyed.map((item) => item.field)
 }
 
-function overlayTone(field, value, { active, suggested }) {
-  if (active) return 'border-brand-accent bg-white ring-2 ring-brand-accent/50'
-  const filled = hasFillValue(value, field)
-  if (!filled && isFieldRequired(field)) return 'border-brand-amber bg-amber-100/70 hover:bg-amber-100'
-  if (filled && suggested) return 'border-brand-accent/40 bg-blue-50/80 hover:bg-blue-50'
-  if (filled) return 'border-brand-line-2/70 bg-white/70 hover:bg-white'
-  return 'border-brand-accent/30 bg-blue-100/40 hover:bg-blue-100/70'
+// One colour language for every fill surface. The legend shows only the
+// states a host uses.
+export const FILL_TONES = {
+  missing: { box: 'border-brand-amber bg-amber-100/70 hover:bg-amber-100', swatch: 'border-brand-amber bg-amber-100', label: 'Required, unanswered' },
+  review: { box: 'border-violet-400 bg-violet-50/90 hover:bg-violet-50', swatch: 'border-violet-400 bg-violet-50', label: 'Suggested, check it' },
+  suggested: { box: 'border-brand-accent/40 bg-blue-50/80 hover:bg-blue-50', swatch: 'border-brand-accent/40 bg-blue-50', label: 'Filled from the matter' },
+  verified: { box: 'border-brand-green/60 bg-green-50/80 hover:bg-green-50', swatch: 'border-brand-green/60 bg-green-50', label: 'Verified' },
+  filled: { box: 'border-brand-line-2/70 bg-white/70 hover:bg-white', swatch: 'border-brand-line-2 bg-white', label: 'Answered' },
+  open: { box: 'border-brand-accent/30 bg-blue-100/40 hover:bg-blue-100/70', swatch: 'border-brand-accent/30 bg-blue-100/60', label: 'Open field' },
 }
+const DEFAULT_LEGEND = ['missing', 'suggested', 'open']
 
-function FieldOverlay({ field, placementIndex, rect, zoom, value, active, suggested, onChange, onFocus }) {
+const defaultStatus = (field, value, suggestedNames) => {
+  const filled = hasFillValue(value, field)
+  if (!filled) return isFieldRequired(field) ? 'missing' : 'open'
+  return suggestedNames.has(field.name) ? 'suggested' : 'filled'
+}
+const defaultMarker = (field) => (field.field_type === 'signature' ? 'Signed later' : null)
+
+function FieldOverlay({ field, placementIndex, rect, zoom, value, active, status, marker, checkbox, disabled, onChange, onFocus }) {
   const label = fieldLabel(field)
   const type = field.field_type || 'text'
   const fontSize = Math.max(7, Math.min(rect.height * 0.68, 13 * zoom))
   const style = { left: rect.x, top: rect.y, width: rect.width, height: rect.height, fontSize }
-  const tone = overlayTone(field, value, { active, suggested })
+  const tone = active ? 'border-brand-accent bg-white ring-2 ring-brand-accent/50' : (FILL_TONES[status] || FILL_TONES.open).box
   const common = {
     'data-fill-field': field.name,
     'data-fill-placement': placementIndex,
@@ -69,12 +83,12 @@ function FieldOverlay({ field, placementIndex, rect, zoom, value, active, sugges
     onFocus: () => onFocus(field.name),
     style,
   }
-  const base = `absolute rounded-[2px] border text-brand-ink outline-none transition-colors ${tone}`
+  const base = `absolute rounded-[2px] border text-brand-ink outline-none transition-colors disabled:cursor-not-allowed ${tone}`
 
-  if (type === 'signature') {
+  if (marker) {
     return (
-      <div {...common} tabIndex={0} role="note" aria-label={`${label}: signed later`} className={`${base} flex items-center justify-center border-dashed italic text-brand-muted`}>
-        Signed later
+      <div {...common} tabIndex={0} role="note" aria-label={`${label}: ${marker}`} className={`${base} flex items-center justify-center overflow-hidden border-dashed italic text-brand-muted`}>
+        {marker}
       </div>
     )
   }
@@ -87,7 +101,8 @@ function FieldOverlay({ field, placementIndex, rect, zoom, value, active, sugges
         role="checkbox"
         aria-checked={checked}
         aria-label={label}
-        onClick={() => { onFocus(field.name); onChange(checked ? '' : 'Yes') }}
+        disabled={disabled}
+        onClick={() => { onFocus(field.name); onChange(checked ? checkbox.off : checkbox.on) }}
         className={`${base} flex items-center justify-center p-0 font-bold leading-none`}
       >
         {checked ? '✓' : ''}
@@ -96,22 +111,22 @@ function FieldOverlay({ field, placementIndex, rect, zoom, value, active, sugges
   }
   if ((type === 'choice' || type === 'radio') && Array.isArray(field.options) && field.options.length) {
     return (
-      <select {...common} aria-label={label} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} px-0.5 py-0`}>
+      <select {...common} aria-label={label} disabled={disabled} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} px-0.5 py-0`}>
         <option value="">—</option>
         {field.options.map((option) => {
           const { value: optionValue, label: optionLabel } = optionParts(option)
-          return <option key={optionValue} value={optionValue}>{optionLabel}</option>
+          return <option key={String(optionValue)} value={optionValue}>{optionLabel}</option>
         })}
       </select>
     )
   }
-  if (field.multiline) {
-    return <textarea {...common} aria-label={label} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} resize-none px-1 py-0.5 leading-tight`} />
+  if (field.multiline || type === 'multiline') {
+    return <textarea {...common} aria-label={label} disabled={disabled} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} resize-none px-1 py-0.5 leading-tight`} />
   }
-  return <input {...common} type="text" aria-label={label} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} px-1 py-0`} />
+  return <input {...common} type="text" aria-label={label} disabled={disabled} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} px-1 py-0`} />
 }
 
-function DocumentPage({ document, page, zoom, fields, values, suggestedNames, activeName, onChange, onFocus, onError }) {
+function DocumentPage({ document, page, zoom, placements, values, activeName, statusOf, markerFor, checkbox, disabled, onChange, onFocus, onError }) {
   const [wrapper, setWrapper] = useState(null)
   const [visible, setVisible] = useState(page.page === 1)
   const [viewport, setViewport] = useState(null)
@@ -143,7 +158,7 @@ function DocumentPage({ document, page, zoom, fields, values, suggestedNames, ac
       {visible
         ? <PdfPageCanvas document={document} pageNumber={page.page} zoom={zoom} onViewport={onViewport} onError={onError} />
         : <span className="absolute inset-0 flex items-center justify-center text-xs text-brand-muted">Page {page.page}</span>}
-      {fields.map(({ field, placementIndex, overlay }) => (
+      {placements.map(({ field, placementIndex, overlay }) => (
         <FieldOverlay
           key={`${field.name}:${placementIndex}`}
           field={field}
@@ -152,7 +167,10 @@ function DocumentPage({ document, page, zoom, fields, values, suggestedNames, ac
           zoom={zoom}
           value={values[field.name]}
           active={activeName === field.name}
-          suggested={suggestedNames.has(field.name)}
+          status={statusOf(field)}
+          marker={markerFor(field)}
+          checkbox={checkbox}
+          disabled={disabled}
           onChange={(value) => onChange(field.name, value)}
           onFocus={onFocus}
         />
@@ -161,11 +179,15 @@ function DocumentPage({ document, page, zoom, fields, values, suggestedNames, ac
   )
 }
 
-/** The large, always-readable editor for the active field. */
-function GuidedFieldBar({ field, position, total, value, onChange, onPrevious, onNext, onNextRequired, requiredMissing, placed, renderInput }) {
+/**
+ * The large, always-readable editor for the active field, with guided
+ * navigation. Exported so document views without field geometry (Word and
+ * text templates) can pair it with their own page reference.
+ */
+export function GuidedFieldBar({ field, position, total, onPrevious, onNext, onNextRequired, requiredMissing, placed = true, children }) {
   if (!field) return null
   return (
-    <div className="shrink-0 border-t border-brand-line bg-brand-surface px-3 py-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]" aria-label="Current field">
+    <div className="shrink-0 border-t border-brand-line bg-brand-surface px-3 py-2 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]" role="region" aria-label="Current field">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-muted">
         <span className="font-semibold text-brand-ink">Field {position} of {total}</span>
         {isFieldRequired(field) && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900">Required</span>}
@@ -173,7 +195,7 @@ function GuidedFieldBar({ field, position, total, value, onChange, onPrevious, o
         {field.page && <span>Page {field.page}</span>}
       </div>
       <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1">{renderInput(field, value, onChange)}</div>
+        <div className="max-h-[40vh] min-w-0 flex-1 overflow-y-auto">{children}</div>
         <div className="flex shrink-0 items-center gap-1.5">
           <button type="button" onClick={onPrevious} aria-label="Previous field" className="rounded-lg border border-brand-line p-2 text-brand-ink hover:bg-brand-bg"><ChevronLeft size={16} aria-hidden="true" /></button>
           <button type="button" onClick={onNext} aria-label="Next field" className="rounded-lg border border-brand-line p-2 text-brand-ink hover:bg-brand-bg"><ChevronRight size={16} aria-hidden="true" /></button>
@@ -186,18 +208,65 @@ function GuidedFieldBar({ field, position, total, value, onChange, onPrevious, o
   )
 }
 
+/**
+ * Guided navigation state over an ordered field list. Controlled when the host
+ * passes `activeName`/`onActiveChange`, so its own "next field" actions and
+ * the page stay on the same field.
+ */
+export function useGuidedFields(ordered, { values, activeName, onActiveChange, isMissing }) {
+  const [innerActive, setInnerActive] = useState(() => ordered[0]?.name || '')
+  const controlled = activeName !== undefined && activeName !== null && activeName !== ''
+  const active = controlled ? activeName : innerActive
+  const setActive = useCallback((name) => {
+    if (onActiveChange) onActiveChange(name)
+    if (!controlled || !onActiveChange) setInnerActive(name)
+  }, [controlled, onActiveChange])
+  const missing = ordered.filter((field) => (isMissing ? isMissing(field) : isFieldRequired(field) && !hasFillValue(values[field.name], field)))
+  const foundIndex = ordered.findIndex((field) => field.name === active)
+  const index = Math.max(0, foundIndex)
+  const step = (delta) => {
+    if (!ordered.length) return
+    setActive(ordered[(index + delta + ordered.length) % ordered.length].name)
+  }
+  const nextRequired = () => {
+    if (!missing.length) return
+    const after = missing.find((field) => ordered.indexOf(field) > index)
+    setActive((after || missing[0]).name)
+  }
+  return { active: ordered[index]?.name || '', activeField: ordered[index], index, missing, setActive, step, nextRequired }
+}
+
 const ZOOM_OPTIONS = [['fit', 'Fit width'], ['0.75', '75%'], ['1', '100%'], ['1.25', '125%'], ['1.5', '150%'], ['2', '200%']]
 
-export default function FillOnDocument({ source, fields, values, suggestedNames = new Set(), onChange, renderInput, onUnavailable }) {
+export default function FillOnDocument({
+  source,
+  fields,
+  values,
+  suggestedNames = new Set(),
+  onChange,
+  renderInput,
+  onUnavailable,
+  activeName,
+  onActiveChange,
+  statusFor,
+  isMissing,
+  markerFor = defaultMarker,
+  legend = DEFAULT_LEGEND,
+  checkboxValues = { on: 'Yes', off: '' },
+  disabled = false,
+}) {
   const { document, pages, error } = useTemplatePdfDocument(source)
   const [container, setContainer] = useState(null)
   const [width, setWidth] = useState(720)
   const [zoomMode, setZoomMode] = useState('fit')
   const [renderError, setRenderError] = useState('')
   const ordered = useMemo(() => orderFieldsForDocument(fields), [fields])
-  const [activeName, setActiveName] = useState(() => ordered[0]?.name || '')
+  const guided = useGuidedFields(ordered, { values, activeName, onActiveChange, isMissing })
+  const lastActive = useRef(guided.active)
+  const focusedFromPage = useRef('')
   const pendingScroll = useRef('')
-  const onError = useCallback(() => setRenderError('A page could not be drawn. Switch to Questions to keep answering, or preview the final PDF.'), [])
+  const onError = useCallback(() => setRenderError('A page could not be drawn. Switch to Questions to keep answering, or check the preview.'), [])
+  const statusOf = (field) => (statusFor ? statusFor(field, values[field.name]) : defaultStatus(field, values[field.name], suggestedNames))
 
   useEffect(() => {
     if (!container || typeof ResizeObserver === 'undefined') return undefined
@@ -225,10 +294,6 @@ export default function FillOnDocument({ source, fields, values, suggestedNames 
   const placedNames = useMemo(() => new Set(fields.filter((field) => placementsFor(field).length).map((field) => field.name)), [fields])
   const unplacedCount = fields.length - placedNames.size
 
-  const requiredMissing = ordered.filter((field) => isFieldRequired(field) && !hasFillValue(values[field.name], field))
-  const activeIndex = Math.max(0, ordered.findIndex((field) => field.name === activeName))
-  const activeField = ordered[activeIndex]
-
   const scrollToField = useCallback((name) => {
     const escaped = globalThis.CSS?.escape ? globalThis.CSS.escape(name) : String(name).replace(/["\\]/g, '\\$&')
     const target = container?.querySelector(`[data-fill-field="${escaped}"]`)
@@ -236,34 +301,37 @@ export default function FillOnDocument({ source, fields, values, suggestedNames 
     return Boolean(target)
   }, [container])
 
+  // Bring the page to a field chosen from the bar or by the host. A field the
+  // user just clicked on the page is already in view, and the opening field
+  // stays put so the document starts at its top.
+  useEffect(() => {
+    const name = guided.active
+    if (!name || name === lastActive.current) return
+    lastActive.current = name
+    if (focusedFromPage.current === name) { focusedFromPage.current = ''; return }
+    pendingScroll.current = name
+    if (scrollToField(name)) pendingScroll.current = ''
+  }, [guided.active, scrollToField])
+
   useEffect(() => {
     if (!pendingScroll.current || !pages.length) return
     if (scrollToField(pendingScroll.current)) pendingScroll.current = ''
   }, [pages, zoom, scrollToField])
 
-  const goTo = (name) => {
-    setActiveName(name)
-    pendingScroll.current = name
-    if (scrollToField(name)) pendingScroll.current = ''
-  }
-  const step = (delta) => {
-    if (!ordered.length) return
-    goTo(ordered[(activeIndex + delta + ordered.length) % ordered.length].name)
-  }
-  const nextRequired = () => {
-    if (!requiredMissing.length) return
-    const after = requiredMissing.find((field) => ordered.indexOf(field) > activeIndex)
-    goTo((after || requiredMissing[0]).name)
+  const focusFromPage = (name) => {
+    focusedFromPage.current = name
+    guided.setActive(name)
   }
 
   const loading = !error && (!document || !pages.length)
+  const activeField = guided.activeField
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-brand-line bg-brand-bg-soft">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-brand-line bg-brand-bg-soft" data-testid="fill-on-document-surface">
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-brand-line bg-brand-surface-2 px-3 py-1.5 text-xs text-brand-muted">
-        <span className="hidden items-center gap-1.5 sm:inline-flex"><span className="h-3 w-4 rounded-sm border border-brand-amber bg-amber-100" aria-hidden="true" />Required, unanswered</span>
-        <span className="hidden items-center gap-1.5 sm:inline-flex"><span className="h-3 w-4 rounded-sm border border-brand-accent/40 bg-blue-50" aria-hidden="true" />Filled from the matter</span>
-        <span className="hidden items-center gap-1.5 sm:inline-flex"><span className="h-3 w-4 rounded-sm border border-brand-accent/30 bg-blue-100/60" aria-hidden="true" />Open field</span>
+        {legend.map((key) => (
+          <span key={key} className="hidden items-center gap-1.5 sm:inline-flex"><span className={`h-3 w-4 rounded-sm border ${FILL_TONES[key].swatch}`} aria-hidden="true" />{FILL_TONES[key].label}</span>
+        ))}
         {unplacedCount > 0 && <span>{unplacedCount} {unplacedCount === 1 ? 'field has' : 'fields have'} no box on the page; reach {unplacedCount === 1 ? 'it' : 'them'} with Next or in Questions.</span>}
         <label className="ml-auto flex items-center gap-2 text-brand-ink">Zoom
           <select aria-label="Document zoom" value={zoomMode} onChange={(event) => setZoomMode(event.target.value)} className="rounded border border-brand-line bg-brand-surface px-1.5 py-1">
@@ -273,7 +341,7 @@ export default function FillOnDocument({ source, fields, values, suggestedNames 
       </div>
       <div ref={setContainer} className="min-h-0 flex-1 overflow-auto p-4" aria-busy={loading}>
         {error ? (
-          <p role="alert" className="mx-auto max-w-lg rounded border border-brand-line bg-brand-surface p-4 text-sm text-brand-ink">The original document could not be opened here. Switch to Questions to keep answering; the final PDF preview still works.</p>
+          <p role="alert" className="mx-auto max-w-lg rounded border border-brand-line bg-brand-surface p-4 text-sm text-brand-ink">The original document could not be opened here. Switch to Questions to keep answering; the preview still works.</p>
         ) : loading ? (
           <p role="status" className="p-6 text-center text-sm text-brand-muted">Opening the original document…</p>
         ) : (
@@ -285,12 +353,15 @@ export default function FillOnDocument({ source, fields, values, suggestedNames 
                 document={document}
                 page={page}
                 zoom={zoom}
-                fields={byPage.get(page.page) || []}
+                placements={byPage.get(page.page) || []}
                 values={values}
-                suggestedNames={suggestedNames}
-                activeName={activeName}
+                activeName={guided.active}
+                statusOf={statusOf}
+                markerFor={markerFor}
+                checkbox={checkboxValues}
+                disabled={disabled}
                 onChange={onChange}
-                onFocus={setActiveName}
+                onFocus={focusFromPage}
                 onError={onError}
               />
             ))}
@@ -299,17 +370,16 @@ export default function FillOnDocument({ source, fields, values, suggestedNames 
       </div>
       <GuidedFieldBar
         field={activeField}
-        position={activeIndex + 1}
+        position={guided.index + 1}
         total={ordered.length}
-        value={activeField ? values[activeField.name] : undefined}
-        onChange={(value) => activeField && onChange(activeField.name, value)}
-        onPrevious={() => step(-1)}
-        onNext={() => step(1)}
-        onNextRequired={nextRequired}
-        requiredMissing={requiredMissing.length}
+        onPrevious={() => guided.step(-1)}
+        onNext={() => guided.step(1)}
+        onNextRequired={guided.nextRequired}
+        requiredMissing={guided.missing.length}
         placed={activeField ? placedNames.has(activeField.name) : true}
-        renderInput={renderInput}
-      />
+      >
+        {activeField && renderInput(activeField, values[activeField.name], (value) => onChange(activeField.name, value))}
+      </GuidedFieldBar>
     </div>
   )
 }
