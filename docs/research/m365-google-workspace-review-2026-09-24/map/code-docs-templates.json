@@ -1,0 +1,500 @@
+{
+ "area": "Document production, templates and doc prep (template -> fill -> review -> PDF -> e-sign -> matter storage) and where the client's Word/SharePoint/OneDrive or Google Docs/Drive could do the work",
+ "summary": "Firm templates are uploaded only from the user's local disk (DOCX, PDF or scan) or copied from LawHand's platform sample library. They can also arrive as drafts from Workspace MCP, which is behind a flag. The original files are kept on the LawHand host disk (UPLOAD_DIR/{tenant}/templates/{id}) with a SHA-256 check. Nothing is sourced from SharePoint or Drive template libraries.\n\nThe Prepare route works like this:\n- Smart Fill pulls values from matter data.\n- DOCX templates are filled with the original layout kept (fill_docx_template), and PDF templates are filled as AcroForms.\n- DOCX->PDF runs through LawHand's own headless LibreOffice in the API container. It is not Gotenberg, Graph or Drive.\n- The live preview re-renders about 650 ms after typing stops.\n- On save, the output is rendered again, checked against the previewed bytes, and written by MatterFileStore to the tenant cloud. On Microsoft in Auto mode that is the connecting admin's own OneDrive (/me/drive). It can also be a SharePoint library or a Google Shared Drive. Tenants with no cloud binding fall back to local disk.\n\nSigning uses LawHand's own portal e-sign, which accepts PDFs only. The signed PDF and its certificate are filed back to the matter's 'signed' folder in the tenant cloud.\n\nThe only workflow that lets edits made in Word or Docs come back into LawHand is for AI/MCP-generated drafts:\n- The DOCX is created and read back from the tenant cloud.\n- 'Open cloud working copy' goes to a fresh webUrl/webViewLink.\n- 'Refresh edits from cloud' takes the exact changed bytes as a new immutable revision and restarts review.\n\nOrdinary matter documents (uploads and template output) show an 'Open in OneDrive/Google Drive' link, but any edit made there breaks LawHand's size/hash check. Downloads and e-sign then return 409 and there is no way to reconcile.\n\nWhat does not exist today:\n- Graph ?format=pdf conversion, Word/Drive embedded preview, or an 'Open in Word desktop' link.\n- Google Docs conversion or the Docs API.\n- A convert-to-PDF action for matter DOCX files.\n- Any Copilot or Gemini hand-off.\n\nThe Word add-in is flagged off and can only replace selected text.",
+ "capabilities": [
+  {
+   "name": "DOCX->PDF via bounded headless LibreOffice (private profile, output sanitized with pypdf)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/docx_to_pdf.py:49-112",
+   "notes": "Config DOCX_PDF_CONVERSION_ENABLED=True, /usr/bin/libreoffice (backend/app/config.py:242-246). No Gotenberg/Graph/Drive conversion anywhere."
+  },
+  {
+   "name": "Template source print preview (LibreOffice PDF, one conversion at a time per worker)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/template_source_preview.py:35-37",
+   "notes": "When the single conversion slot is busy, the next caller fails at once with 'Document preview is busy'."
+  },
+  {
+   "name": "Layout-preserving DOCX template fill (anchors, regions, repeating party collections)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/document_templates.py:4687-4698",
+   "notes": "The in-app render passes collections and stored regions."
+  },
+  {
+   "name": "Firm template originals stored on LawHand host disk, integrity-checked by SHA-256",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/document_templates.py:760-821",
+   "notes": "Not in the tenant cloud. No SharePoint/Drive template library sourcing. Upload is local-file only (frontend/src/pages/TemplatesPage.jsx:838-851)."
+  },
+  {
+   "name": "Generated documents saved to tenant cloud (OneDrive /me/drive, SharePoint drive, Google Shared Drive) or local fallback",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/document_templates.py:4847-4859",
+   "notes": "Routing is in backend/app/services/matter_file_store.py:565-738. In Auto mode, Microsoft binds to OneDrive (matter_file_store.py:199-204)."
+  },
+  {
+   "name": "Verified tenant-cloud working copy for AI/MCP drafts (write, read back, hash-bound review task)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_artifact_materialization.py:369-451"
+  },
+  {
+   "name": "Open cloud copy via fresh provider URL (Graph webUrl / Drive webViewLink, host allow-listed)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/matter_documents.py:719-747",
+   "notes": "Used by the AI-draft UI (ActionProposalCard.jsx:584-586, 614). The matter documents list instead uses the stored cloud_url (MatterDocumentsTab.jsx:1139-1147)."
+  },
+  {
+   "name": "Adopt Word/Word Online/Google edits as a new immutable revision ('Refresh edits from cloud')",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/routers/tasks.py:1906-2178",
+   "notes": "Only for task-bound AI/MCP drafts (matter_document_draft). There is no equivalent for uploaded or template-generated matter documents."
+  },
+  {
+   "name": "Firm-template draft via MCP (propose_document_from_template -> tenant cloud DOCX -> review task)",
+   "provider": "both",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/automation_capabilities.py:564-582",
+   "notes": "audiences=workspace_mcp, and WORKSPACE_MCP_ENABLED=False by default (backend/app/config.py:423)."
+  },
+  {
+   "name": "External agent pushes DOCX work product or a template draft (propose_matter_document_file / template push)",
+   "provider": "neither",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/document_template_push.py:1-13"
+  },
+  {
+   "name": "Portal e-signature (internal provider only, PDF only); executed PDF plus certificate filed to matter 'signed' folder",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/esign/service.py:434-456",
+   "notes": "Non-internal providers are rejected (backend/app/routers/esignature.py:512-514). Executed-copy render opens the source as a PDF (esign/render.py:181-191)."
+  },
+  {
+   "name": "Prepare -> Send for signature step after saving a PDF",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/prepare/SendStep.jsx:22-27"
+  },
+  {
+   "name": "Word add-in (task pane) - replace_selection only",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "office-addin/src/hosts/wordAdapter.ts:17-27",
+   "notes": "OFFICE_ASSISTANT_ENABLED=False (backend/app/config.py:112). No template, content-control or fill-from-matter actions. XML manifest only."
+  },
+  {
+   "name": "Dedicated Studio render worker",
+   "provider": "neither",
+   "status": "flagged_off",
+   "file_ref": "backend/app/config.py:212-213"
+  },
+  {
+   "name": "Premium template-AI field proposals (platform-owned model, not client Copilot/Gemini)",
+   "provider": "neither",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/template_ai_profile.py:24"
+  },
+  {
+   "name": "Native Google Docs conversion/edit/export",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "docs/workspace_mcp_adapter.md:476-481",
+   "notes": "Docs state a DOCX stored in Drive stays DOCX and native Google Docs needs an explicit policy (docs/lawhand_legal_automation_north_star.md:105-108)."
+  },
+  {
+   "name": "Cloud-to-local RAG sync of OneDrive/SharePoint/Drive files",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/services/document_sync.py:281-305",
+   "notes": "Native Google Docs are filtered out and alt=media cannot export them. OneDrive is listed from the root only, first page only."
+  }
+ ],
+ "defects": [
+  {
+   "title": "Formatted template/agent DOCX drafts are editable as plain text; saving flattens firm formatting and can truncate content",
+   "severity": "high",
+   "file_ref": "backend/app/services/chat_tools/handlers.py:1835-1850",
+   "detail": "propose_document_from_template and propose_matter_document_file build MatterDocumentDraftAction without document_edit_mode. It therefore defaults to 'lawhand_text' (backend/app/schemas/chat_action.py:439); only the cloud-sync path sets 'office_snapshot' (backend/app/routers/tasks.py:2109). A text save (tasks.py:1806-1835) creates a revision from the extracted preview text and re-renders it with render_revision_docx (cloud_artifact_materialization.py:260-270, 435-440): python-docx default styles plus a heading. This contradicts the documented intent that such snapshots stay read-only 'so a save cannot flatten the original formatting' (docs/workspace_mcp_adapter.md:489-491). The preview is capped at 50k chars, so a truncated preview saved this way drops the rest of the document. Behind WORKSPACE_MCP_ENABLED and workflow runs.",
+   "user_impact": "A reviewer fixes a typo in the LawHand workspace. The engagement letter loses its letterhead, tables, headers and footers, and long agreements lose every clause past about 50k characters. Approval then binds to the damaged DOCX."
+  },
+  {
+   "title": "Editing a normal matter document in Word Online/Drive breaks LawHand access with no reconcile path",
+   "severity": "high",
+   "file_ref": "backend/app/routers/matter_documents.py:750-806",
+   "detail": "Download reads cloud bytes with expected_size=doc.file_size, and read_matter_file_bytes enforces the stored size (matter_file_store.py:233-242, 1543-1551). Any edit made through the 'Open in OneDrive/Google Drive' link (MatterDocumentsTab.jsx:1139-1147, 1278-1287) raises an integrity error. The document is marked storage_state='conflict' and every later download returns 409. E-sign creation reads with the same size check (backend/app/routers/esignature.py:449-456). Folder sync never updates MatterDocument size or hash. Only task-bound AI drafts have an adopt endpoint (tasks.py:1906). The upload toast even says 'Edits happen in the firm's cloud copy' (MatterDocumentsTab.jsx:440-444).",
+   "user_impact": "An attorney edits a generated DOCX in Word for the web, as the UI suggests. LawHand can no longer download it, send it for signature or feed it to AI. The document is stuck with a vague 409 and nothing in the UI resolves it."
+  },
+  {
+   "title": "MCP/workflow template render ignores Studio conditional and repeating regions",
+   "severity": "high",
+   "file_ref": "backend/app/services/document_template_workspace.py:274-284",
+   "detail": "render_workspace_template calls fill_docx_template without collections= or regions=. The in-app render passes collections=_repeat_collections(parties) and regions=stored_regions(schema) (backend/app/routers/document_templates.py:4687-4698). Regions authored in Studio are stored as paragraph ranges that exist only in the field map (backend/app/services/template_regions.py:1-12), so they are never applied on this path.",
+   "user_impact": "A draft produced by an external assistant or a workflow includes every 'if/unless' clause regardless of the matter facts and does not expand per-party sections. The same template gives different legal text depending on where it was rendered."
+  },
+  {
+   "title": "LawHand text save silently orphans Word Online edits on an AI draft",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_artifact_materialization.py:661-676",
+   "detail": "When superseding, materialize() only marks the previous document 'superseded'. It never reads the previous cloud object's current hash or eTag. The workspace shows 'Open cloud working copy' next to the editable textarea and 'Save as new cloud revision' (DocumentDraftWorkspace.jsx:172-175), and TaskBoard assumes storage is 'verified' on the client side (TaskBoard.jsx:1064).",
+   "user_impact": "A reviewer edits in Word for the web and then tweaks text in LawHand. The Word edits stay in a superseded -r1.docx and are missing from the reviewed and approved revision, with no warning."
+  },
+  {
+   "title": "Microsoft Auto mode writes matter files to the connecting admin's personal OneDrive",
+   "severity": "medium",
+   "file_ref": "backend/app/services/matter_file_store.py:866-870",
+   "detail": "Auto mode binds Microsoft tenants to 'onedrive' (matter_file_store.py:199-204). The upload uses the tenant-level token (line 832) against /me/drive/items/{parent}. No sharing or permission grants to other firm users were found on the OneDrive path.",
+   "user_impact": "'Open cloud copy' or Word co-authoring fails with access denied for every staff member except the admin who connected Microsoft 365. The firm's documents also depend on one person's mailbox licence."
+  },
+  {
+   "title": "AI drafts require an explicit primary_cloud_provider while uploads and templates auto-bind",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_artifact_materialization.py:276-295",
+   "detail": "_configured_provider raises CloudNotConfiguredError when the setting is blank. MatterFileStore._resolve_provider_policy falls back to the active Microsoft or Google connection (matter_file_store.py:159-204).",
+   "user_impact": "A firm in Auto mode can save template documents to OneDrive, but chat or MCP drafting fails with 'Choose and connect a primary tenant cloud provider'."
+  },
+  {
+   "title": "SharePoint-bound matters look unprovisioned and cloud docs are labelled 'Local'",
+   "severity": "medium",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:160-165",
+   "detail": "The folder header treats a matter as provisioned only if providers.onedrive or providers.google_drive exists; SharePoint is stored under 'sharepoint'. storageLabel() has no 'sharepoint' case and returns 'Local' (MatterDocumentsTab.jsx:68-73), so rows show 'Open in Local'.",
+   "user_impact": "SharePoint firms see 'Document folders are not set up' and a 'Set up folders' prompt on every matter, and cloud documents are misreported as local, which undermines trust in where files live."
+  },
+  {
+   "title": "Native Google Docs are invisible to LawHand",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:49-55",
+   "detail": "Matter-folder sync (cloud_sync.py:335-340) and firm-knowledge sync (document_sync.py:22-28, 281-305) filter to PDF/DOCX/DOC/RTF/TXT MIME types. application/vnd.google-apps.document is excluded, and the download uses alt=media (document_sync.py:370), which cannot fetch Docs; there is no files.export.",
+   "user_impact": "Google Workspace firms that draft in Google Docs never see those documents in the matter, in search or in AI context."
+  },
+  {
+   "title": "PDF-for-signature fidelity: container lacks metric-compatible Office fonts",
+   "severity": "medium",
+   "file_ref": "backend/Dockerfile:27-36",
+   "detail": "Only fonts-liberation and fonts-nanum are installed. There is no Carlito/Caladea (Calibri/Cambria metrics) and nothing for Aptos. The team's own validation says it does 'not certify production LibreOffice conversion' (docs/template-studio-word-source-review.md:62).",
+   "user_impact": "The signed PDF's line and page breaks differ from the Word original. Signature captions can move pages, and attorneys see a different document from the one they authored."
+  },
+  {
+   "title": "Live DOCX->PDF preview spawns an unbounded number of LibreOffice processes in the API worker",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/document_templates.py:3510-3523",
+   "detail": "The render-file preview calls docx_to_pdf_bytes directly for each request, with no semaphore or queue; only the source-preview cache is single-flight (template_source_preview.py:35-37). Auto-preview re-fires 650 ms after typing stops (frontend/src/components/prepare/usePrepareFill.js:13, 79, 425-428). Each conversion is a fresh soffice start with up to 60 s timeout (docx_to_pdf.py:92-116).",
+   "user_impact": "Several paralegals filling Word templates at once can exhaust API CPU and memory, slowing or failing unrelated requests and producing preview timeouts."
+  },
+  {
+   "title": "Filled sample documents used as template sources are kept on LawHand's host disk, not tenant cloud",
+   "severity": "low",
+   "file_ref": "backend/app/routers/document_templates.py:760-790",
+   "detail": "Intake invites 'the document your team already reuses... Filled or handwritten entries help locate reusable details' (TemplatesPage.jsx:843). These originals are persisted under UPLOAD_DIR, while matter files are routed to 'the customer's own cloud storage, not ours' (matter_file_store.py:1-8).",
+   "user_impact": "Client PII in a filled sample stays on LawHand infrastructure, outside the firm's M365/Workspace retention and eDiscovery controls."
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Use Graph DriveItem ?format=pdf for Word-to-PDF on Microsoft tenants",
+   "detail": "GET /drives/{d}/items/{i}/content?format=pdf on the DOCX working copy already in OneDrive/SharePoint renders with Word's engine (Calibri/Aptos, numbering, fields). Uses: (a) 'PDF for signature' at save (store the DOCX, convert, store the PDF), (b) a 'Convert to PDF' action on any matter DOCX, (c) keep LibreOffice as the fallback for Google or local tenants. Files.ReadWrite.All is already granted (routers/integrations.py:243). This removes the soffice load in the API and the font drift.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/docx_to_pdf.py:49; backend/app/routers/document_templates.py:4706-4720; backend/Dockerfile:27-36"
+  },
+  {
+   "title": "'Convert to PDF and send for signature' on any matter DOCX",
+   "detail": "E-sign is PDF-only (esign/render.py:181-191), and Word-edited or approved AI drafts have no path to signature except a manual export and re-upload. Add a derived-PDF action: Graph ?format=pdf; for Google, Drive files.copy(mimeType=google-apps.document) then files.export(application/pdf), or LibreOffice. Link the PDF to its DOCX source.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/prepare/PrepareDocumentBody.jsx:344-350; backend/app/routers/esignature.py:438-446"
+  },
+  {
+   "title": "Generalize 'adopt cloud edits' to all matter DOCX, with change detection and version history",
+   "detail": "Extend the tasks.py:1906 adopt flow to MatterDocument: 'Edit in Word/Docs', then detect drift via stored eTag/cTag (Graph delta or change-notification subscriptions; Drive changes.watch), then show an 'Edited in Word by X - adopt as new version?' banner that creates a superseding row with the new sha and size instead of a 409 conflict. Surface Graph /versions and Drive revisions in the document's history.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/routers/matter_documents.py:750-806; backend/app/routers/tasks.py:1906-2178"
+  },
+  {
+   "title": "Close the formatting and edit-loss gaps in the AI/MCP draft round-trip",
+   "detail": "Set document_edit_mode='office_snapshot' whenever source_docx_bytes is supplied (handlers.py:1835). Before a LawHand text save, read the current cloud object's eTag or hash and refuse with 'Word edits detected - refresh first' if it drifted (cloud_artifact_materialization.py:661). Pass collections and regions in render_workspace_template.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/document_template_workspace.py:274-284; backend/app/routers/tasks.py:1806-1835"
+  },
+  {
+   "title": "Embedded Word for the web / Drive preview inside LawHand",
+   "detail": "POST /drives/{d}/items/{i}/preview (Graph) returns an embeddable read-only Office viewer URL; Drive supports /file/d/{id}/preview. Use it in PrepareDocumentBody (which today says 'Download and open this generated DOCX'), MatterDocumentPreview (PDF-only today) and DocumentDraftWorkspace so reviewers see true Word pagination without downloading. Needs a frame-src CSP update.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-465; frontend/src/components/documents/MatterDocumentPreview.jsx:8-23"
+  },
+  {
+   "title": "Sync the firm template library from a SharePoint library or Drive folder",
+   "detail": "Admin binds a 'Firm Templates' SharePoint library or Drive folder. Graph /delta or Drive changes.list imports .docx/.dotx through the existing analyze_template_upload pipeline as draft versions that supersede the live one (the same semantics as document_template_push.py). Keep provider item id and eTag, flag 'source changed in SharePoint - re-verify', and never auto-activate. Add the OneDrive File Picker v8 and Google Picker for one-off imports. Template originals then live in the firm's tenant.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/pages/TemplatesPage.jsx:838-851; backend/app/routers/document_templates.py:760-790; backend/app/services/document_template_push.py:1-13"
+  },
+  {
+   "title": "Expose LawHand as a Microsoft 365 Copilot agent (Copilot Studio/declarative agent calling the Workspace MCP)",
+   "detail": "Attorneys already in Word or Teams Copilot ask 'draft the engagement letter for Smith from our template'. The agent calls find_matter, get_matter_context and propose_document_from_template. The DOCX lands in the matter's SharePoint folder with a LawHand review task, and Copilot in Word can polish it before 'Refresh edits'. This reuses the existing flagged-off MCP capability set and the firm's Copilot licence. Requires Entra-registered OAuth and a hardened MCP.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/automation_capabilities.py:564-599; backend/app/config.py:423"
+  },
+  {
+   "title": "'Refine in Word with Copilot' / 'Open in Google Docs with Gemini' hand-off",
+   "detail": "Rename the generic 'Open cloud working copy' to provider-specific actions: Word for the web (webUrl), Word desktop (ms-word:ofe|u|{url}), and Google Docs Office-editing. Add guidance chips ('Tighten with Copilot', 'Summarize changes') and a prominent 'Bring edits back' button. The client's Copilot or Gemini licence does the prose work, and LawHand keeps the review and approval evidence.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/chat/DocumentDraftWorkspace.jsx:168-175"
+  },
+  {
+   "title": "Word add-in: author and fill templates with content controls",
+   "detail": "Add actions: 'Insert LawHand field' (a content control tagged with the binding), 'Fill from matter' (populate controls from Smart Fill), 'Publish as template draft' (document_template_push) and 'Save to matter / adopt edits'. Moving to the unified JSON manifest makes the add-in eligible for Copilot agent plus add-in integration (Microsoft preview), so Copilot in Word can call LawHand actions on the open document.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "office-addin/src/hosts/wordAdapter.ts:17-27; office-addin/manifests/word-excel.xml:20-27"
+  },
+  {
+   "title": "Google-native template path (Docs API replaceAllText) and Gemini-editable working copies",
+   "detail": "For Workspace firms: Drive files.copy of a template Google Doc into the matter folder, then documents.batchUpdate replaceAllText for {{fields}} (named ranges for conditional sections), then files.export to PDF or DOCX for evidence. Optionally convert a DOCX working copy into a Google Doc so Gemini 'Help me write' works natively, and export back to DOCX on adoption. The drive scope already granted covers the Docs API. Needs the native-Docs fidelity policy the docs call for.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "docs/workspace_mcp_adapter.md:476-481; backend/app/routers/integrations.py:251"
+  },
+  {
+   "title": "Default Microsoft storage to a SharePoint document library, not /me/drive",
+   "detail": "Co-authoring, Copilot grounding and Graph conversion all work best on an org-owned library that every staff member can reach. Make SharePoint the Auto-mode default for Microsoft, or grant matter-folder permissions via Graph /invite on the OneDrive path.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/matter_file_store.py:199-204, 866-870"
+  },
+  {
+   "title": "Keep both an editable DOCX and the signing PDF",
+   "detail": "When 'PDF for signature' is chosen, also store the filled DOCX in the tenant cloud as the working copy, with the PDF as a derived rendition. Amendments after signature then have an editable source.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/routers/document_templates.py:4706-4720; frontend/src/components/prepare/PrepareDocumentBody.jsx:328-352"
+  },
+  {
+   "title": "Harden local LibreOffice conversion",
+   "detail": "Add fonts-crosextra-carlito and fonts-crosextra-caladea (plus a firm-font upload path). Put a process-wide conversion semaphore or durable job queue in front of docx_to_pdf_bytes for render-file and render, with rate limits per user.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "neither",
+   "refs": "backend/Dockerfile:27-36; backend/app/routers/document_templates.py:3510-3523"
+  },
+  {
+   "title": "SharePoint content types for firm templates",
+   "detail": "Publish active LawHand templates as .dotx document templates on a matter-library content type, with LawHand metadata columns such as MatterId, so 'New > Engagement letter' in SharePoint or Teams starts from firm-approved templates that LawHand can read back. SharePoint Premium content assembly is an option but needs an extra licence.",
+   "effort": "L",
+   "value": "low",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_init.py:80"
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Prepare document - after Save to matter",
+   "file_ref": "frontend/src/components/prepare/PrepareDocumentBody.jsx:471-477",
+   "issue": "Only 'Download saved document' is offered, even when the file went to OneDrive, SharePoint or Drive. There is no 'Open in Word/Google Docs', and the backend label is shown raw ('google drive', 'onedrive').",
+   "severity": "medium",
+   "suggestion": "Add 'Open in Word for the web' / 'Open in Google Drive' linking to /api/matters/{m}/documents/{matter_document_id}/open, and map backend values to proper labels.",
+   "quick_win": true
+  },
+  {
+   "screen": "Prepare document - Word output preview",
+   "file_ref": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-465",
+   "issue": "For editable Word output the user is told to download and open the DOCX to check pagination, so there is no in-app view. The Save tooltip says 'Download and review the current Word preview' even though no download is required (lines 390-398).",
+   "severity": "medium",
+   "suggestion": "Show a PDF rendition (LibreOffice or Graph ?format=pdf) or an embedded Office/Drive preview, and fix the tooltip text.",
+   "quick_win": false
+  },
+  {
+   "screen": "Matter documents - folder header",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:160-165",
+   "issue": "SharePoint-provisioned matters show 'Document folders are not set up' and there is no 'Open in SharePoint' link.",
+   "severity": "high",
+   "suggestion": "Include providers.sharepoint in isProvisioned and render an 'Open in SharePoint' link.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter documents - list rows",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:68-73",
+   "issue": "storageLabel() has no sharepoint case, so SharePoint files read 'Local' and 'Open in Local'. The row links use the stored cloud_url instead of the fresh /open redirect.",
+   "severity": "medium",
+   "suggestion": "Add a SharePoint label and route 'Open' through /documents/{id}/open. Offer Download next to Open for cloud files.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter documents - upload toast",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:440-444",
+   "issue": "'Edits happen in the firm's cloud copy' invites exactly the edits that later make LawHand downloads and e-sign fail with 409.",
+   "severity": "medium",
+   "suggestion": "Until an adopt-edits flow exists for all documents, warn that cloud edits must be brought back into LawHand, or hide the invitation.",
+   "quick_win": true
+  },
+  {
+   "screen": "Document draft workspace (chat and task)",
+   "file_ref": "frontend/src/components/chat/DocumentDraftWorkspace.jsx:168-175",
+   "issue": "In office-snapshot mode the copy says 'use Refresh edits from cloud', but that button is not in the workspace (only on the card or panel behind the modal). The 'Open cloud working copy' label is generic, and in text mode a LawHand save sits next to the cloud link with no warning that Word edits will be superseded.",
+   "severity": "medium",
+   "suggestion": "Add a Refresh button inside the workspace and provider-specific 'Open in Word / Word desktop / Google Docs' buttons, and warn before a text save if the cloud copy was opened.",
+   "quick_win": true
+  },
+  {
+   "screen": "Document draft workspace - Draft basis",
+   "file_ref": "frontend/src/components/chat/DocumentDraftWorkspace.jsx:148-151",
+   "issue": "The panel always shows 'No template attached / When firm templates are available...' because MatterDocumentDraftAction has no template_name, even for drafts rendered from a firm template (TaskBoard.jsx:1301 reads a field that does not exist).",
+   "severity": "low",
+   "suggestion": "Carry template_id and title on the action (already in request_payload) and show the template name and version.",
+   "quick_win": false
+  },
+  {
+   "screen": "Task drawer - pending document panel",
+   "file_ref": "frontend/src/components/tasks/TaskBoard.jsx:895-913",
+   "issue": "The panel offers 'Refresh edits from cloud' but no 'Open cloud copy', so users must open the workspace first to find the Word link. Storage state is derived on the client and always shows 'verified' until approval fails (line 1064).",
+   "severity": "low",
+   "suggestion": "Add 'Open in Word/Drive' to the panel and show a server-side drift indicator.",
+   "quick_win": true
+  },
+  {
+   "screen": "Templates - upload",
+   "file_ref": "frontend/src/pages/TemplatesPage.jsx:838-851",
+   "issue": "Templates can only be dropped from the local disk. There is no import from SharePoint, OneDrive or Drive, and no link back to the source library, so revising a template means download, edit and re-upload (see TemplatesPage.jsx:300-305).",
+   "severity": "medium",
+   "suggestion": "Add OneDrive File Picker v8 and Google Picker import, and show 'Source: SharePoint / Firm Templates / X.docx' with an 'Open source in Word' action.",
+   "quick_win": false
+  },
+  {
+   "screen": "Prepare document - output format choice",
+   "file_ref": "frontend/src/components/prepare/PrepareDocumentBody.jsx:328-352",
+   "issue": "PDF and Word output are either/or. Choosing 'PDF for signature' keeps no editable DOCX, and a Word document cannot be sent for signature later without a manual export.",
+   "severity": "medium",
+   "suggestion": "Save both (DOCX working copy plus signing PDF), or add 'Convert to PDF' on saved DOCX.",
+   "quick_win": false
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "microsoft",
+   "endpoint": "PUT /me/drive/items/{parent}:/{filename}:/content?@microsoft.graph.conflictBehavior=rename",
+   "method": "PUT",
+   "purpose": "Store generated/uploaded matter files (Auto-mode OneDrive = connecting admin's drive)",
+   "scope_needed": "Files.ReadWrite.All (delegated)",
+   "file_ref": "backend/app/services/matter_file_store.py:866-870"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST /me/drive/items/{parent}:/{filename}:/createUploadSession",
+   "method": "POST",
+   "purpose": "Large OneDrive uploads (>4 MiB)",
+   "scope_needed": "Files.ReadWrite.All",
+   "file_ref": "backend/app/services/matter_file_store.py:925"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "PUT /drives/{drive}/items/{parent}:/{filename}:/content",
+   "method": "PUT",
+   "purpose": "Store to bound SharePoint library",
+   "scope_needed": "Files.ReadWrite.All (+Sites.Read.All for site discovery)",
+   "file_ref": "backend/app/services/matter_file_store.py:1385-1386"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /drives/{d}/items/{i}/content | /me/drive/items/{i}/content",
+   "method": "GET",
+   "purpose": "Exact-byte read-back, download, e-sign source, adopt cloud edits",
+   "scope_needed": "Files.Read.All",
+   "file_ref": "backend/app/services/matter_file_store.py:274-288"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /drives/{d}/items/{i}?$select=id,webUrl,eTag,cTag,lastModifiedDateTime,deleted",
+   "method": "GET",
+   "purpose": "Fresh 'open in Word' URL",
+   "scope_needed": "Files.Read.All",
+   "file_ref": "backend/app/services/matter_file_store.py:344-361"
+  },
+  {
+   "provider": "google",
+   "endpoint": "POST upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true (and resumable)",
+   "method": "POST",
+   "purpose": "Store matter files in Shared Drive",
+   "scope_needed": "https://www.googleapis.com/auth/drive (service account preferred)",
+   "file_ref": "backend/app/services/matter_file_store.py:1120-1126"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET drive/v3/files/{id}?alt=media&supportsAllDrives=true",
+   "method": "GET",
+   "purpose": "Exact-byte read-back/download/adopt",
+   "scope_needed": "drive",
+   "file_ref": "backend/app/services/matter_file_store.py:273"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET drive/v3/files/{id}?fields=id,webViewLink,modifiedTime,sha256Checksum,version,trashed",
+   "method": "GET",
+   "purpose": "Fresh open URL",
+   "scope_needed": "drive",
+   "file_ref": "backend/app/services/matter_file_store.py:338-342"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /me/drive/root/children (root only, one page)",
+   "method": "GET",
+   "purpose": "Firm-knowledge sync listing",
+   "scope_needed": "Files.Read",
+   "file_ref": "backend/app/services/document_sync.py:148-150"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET drive/v3/files?q=(legal mimeTypes) and (name contains .ext)",
+   "method": "GET",
+   "purpose": "Firm-knowledge sync listing (excludes native Docs, no supportsAllDrives)",
+   "scope_needed": "drive / drive.readonly",
+   "file_ref": "backend/app/services/document_sync.py:281-305"
+  }
+ ],
+ "open_questions": [
+  "Is WORKSPACE_MCP_ENABLED on in any production tenant? The lh_platform connector exposes propose_document_from_template, and that raises the priority of the formatting-flattening and missing-regions defects.",
+  "In production, how many Microsoft tenants run in Auto mode (admin's /me/drive) versus a bound SharePoint library? Word Online co-authoring and Graph conversion depend on the answer.",
+  "Is leaving document_edit_mode at 'lawhand_text' for source_docx_bytes drafts deliberate (so a reviewer can make small text fixes), or an oversight given docs/workspace_mcp_adapter.md:489-491?",
+  "Would firms accept a transient staging upload to their own OneDrive/SharePoint so previews can use Graph ?format=pdf, or must the preview stay on LawHand until Save?",
+  "Do target Google Workspace firms keep templates and drafts as native Google Docs? That decides whether the Docs API path is worth doing before a native-Docs fidelity policy exists.",
+  "How common are Copilot for M365 and Gemini Enterprise licences among target firms, and would they allow a third-party MCP/agent connector (tenant admin consent, DLP)?",
+  "Should an adopted cloud edit to a document that already has a pending or completed signature request create a new version and void the request, or be blocked?"
+ ]
+}

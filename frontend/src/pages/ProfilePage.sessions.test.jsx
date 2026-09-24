@@ -17,6 +17,7 @@ vi.mock('../api', () => ({
 }))
 vi.mock('../components/ReleaseInfoPanel', () => ({ default: () => null }))
 vi.mock('../components/WorkspaceMcpGrantsPanel', () => ({ default: () => null }))
+vi.mock('../components/ConnectedAccountsCard', () => ({ default: () => null }))
 
 const renderPage = () => render(<MemoryRouter><ProfilePage /></MemoryRouter>)
 

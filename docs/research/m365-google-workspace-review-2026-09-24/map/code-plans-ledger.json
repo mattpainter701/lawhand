@@ -1,0 +1,608 @@
+{
+ "area": "Existing plans and status ledger for M365 / Google / Copilot / Gemini integration work",
+ "summary": "The canonical ecosystem plan is BK28 (TASKS.md:395-551, docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md). It keeps LawHand as the system of record for matter identity, permissions, review and audit. Microsoft 365 and Google may supply context for the signed-in user, but agents may only read and propose; they never send, docket, file, clear conflicts or replace files (plan:34-57, 174-185).\n\n**Recorded Copilot/Gemini direction**\n- The first commercial wedge is a Microsoft \"LawHand Matter Agent\": Copilot Studio / Microsoft 365 Copilot connected to the existing OAuth 2.1 Workspace MCP (ECO-09 to ECO-13).\n- ECO-19 is a later Google Workspace add-on (Gmail, Calendar, Drive, Docs).\n- ECO-21 is a Gemini Enterprise MCP/A2A pilot. It is gated until the Microsoft agent passes its matter-match, citation, review and margin tests.\n- ECO-20 allows Gemini only as approved API-key / Cloud-Billing capacity behind LiteLLM.\n\n**Explicitly ruled out**\n- Using a personal Google One, Google AI or Microsoft Copilot subscription as LawHand inference capacity (plan:55-57, 99-106, 763).\n- Marketing the agent as included with Microsoft 365. Copilot licensing must be checked for each tenant (plan:200-204).\n- Broad mailbox ingestion, or a second \"shadow\" copy of the matter database inside Microsoft or Google (plan:771-772).\n- One SharePoint site per routine matter.\n\n**What has shipped**\n- Security, reliability and observability fixes (remediation phases 0-2).\n- Org-owned Google Shared Drive roots.\n- Separate Personal Google and Google Workspace modes. This is the substance of ECO-17, but it is still unchecked in TASKS.md.\n- Sending client mail from the user's own connected mailbox (Mail.Send / gmail.send).\n- Calendar push of tasks.\n- Teams channel notifications.\n- Workspace MCP with read and propose tools, including propose_document_from_template, propose_client_email and propose_client_sms.\n\n**Not started or incomplete**\n- Every Copilot/Gemini agent item (ECO-09 to ECO-16 and ECO-18 to ECO-22).\n- Microsoft app-only access with Sites.Selected.\n- Delta sync and webhooks.\n- The Office add-in: only Slice 0 exists, behind pilot flags, with four actions.\n- The Word Template Builder add-in (W2): not started.\n\n**Conflicts with the recorded direction**\n- A tenant bring-your-own-key route named \"gemini\"/\"copilot\" bypasses LiteLLM, and \"copilot\" actually means an Azure OpenAI key.\n- By default, Microsoft 365 tenants store matter files in the connecting admin's personal OneDrive, which the storage design itself rates at risk.\n- A Teams app package is checked in, but the tab cannot load inside Teams.\n\n**Constraint for implementation**\nPer the S1.02 ownership record, only the BE owner may change api.js signatures and only FE-A may edit MatterDetailPage (core-ux-s1-02:37,30).",
+ "capabilities": [
+  {
+   "name": "Workspace MCP (OAuth 2.1 + DCR) read/propose tools incl. propose_document_from_template, propose_client_email, propose_client_sms, propose_task_update",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/workspace_mcp_protocol.py:101-130",
+   "notes": "Model-neutral channel the Copilot/Gemini agent plan builds on; deploy flag WORKSPACE_MCP_ENABLED defaults False (backend/app/config.py:423). Accepts any HTTPS redirect URI (workspace_mcp_oauth.py:239-263), so Copilot Studio DCR is not blocked, but it is uncertified (ECO-09)."
+  },
+  {
+   "name": "OAuth hardening: id_token verification, PKCE S256, Google revoke on disconnect, state GC, config pre-checks",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "docs/integrations-remediation-plan.md:153-161",
+   "notes": "Microsoft revoke is a documented no-op; tenant auto-creation policy (0.8) deferred."
+  },
+  {
+   "name": "Token vault single-flight refresh with row lock, persisted health, invalid_grant -> revoked",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "docs/integrations-remediation-plan.md:167-173",
+   "notes": "Shared HTTP clients migrated only for mail readers; wide raw-HTTP fanout (calendar/cloud_sync/cloud_init) deferred (1.1b)."
+  },
+  {
+   "name": "Integration observability spine: integration_sync_runs, callback scope audit, ErrorLog wiring, admin health cards",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "TASKS.md:2802-2808",
+   "notes": "Actual migration is backend/alembic/versions/082_integration_observability.py."
+  },
+  {
+   "name": "Health-first Integrations hub; fresh consent clears refresh failure; per-user token health reported",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "CHANGELOG.md:480-486"
+  },
+  {
+   "name": "Matter document provider IDs, cloud-document delete, matter-scoped folder sync, Google 409 recovery",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "TASKS.md:2813-2860",
+   "notes": "Delta sync, recursive indexing, repair and backfill still deferred."
+  },
+  {
+   "name": "Org-owned Google Shared Drive root with LawHand service account; root ownership classification durable/at_risk/unbound",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "CHANGELOG.md:269-277",
+   "notes": "SharePoint access is still delegated; Microsoft app-only is planned (docs/storage-root-ownership-and-handoff.md:85-93)."
+  },
+  {
+   "name": "Personal Google vs Google Workspace connection modes (no Admin SDK for personal)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/integrations.py:266-286",
+   "notes": "Onboarding copy at frontend/src/pages/OnboardingWizard.jsx:446-453; release CHANGELOG.md:279-289. This is ECO-17 substance but ECO-17 remains unchecked."
+  },
+  {
+   "name": "Auto Microsoft 365 storage binds to OneDrive; cloud-bound writes fail closed; portal originals to client_uploads (TC-02)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "TASKS.md:567-569",
+   "notes": "OneDrive root is /me/drive of the connecting admin (backend/app/services/cloud_init.py:1506-1508), rated at_risk by the storage-root design."
+  },
+  {
+   "name": "Client correspondence and e-sign notices sent from the user's connected Outlook/Gmail mailbox; platform-relay fallback off by default",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/connected_mail.py:44-45",
+   "notes": "Direct send via /me/sendMail and gmail messages/send (connected_mail.py:92,178); gating CHANGELOG.md:514-519, 559. No draft-handoff path (VA-6)."
+  },
+  {
+   "name": "Task push to Outlook/Google calendars with timezone-aware due times; drag-to-reschedule follows",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "CHANGELOG.md:406-410"
+  },
+  {
+   "name": "Personal Microsoft/Google reconnect returns to Calendar with health and recovery messages",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "CHANGELOG.md:55-59",
+   "notes": "Partial delivery of the deferred remediation 2.5 user re-auth prompts."
+  },
+  {
+   "name": "Chat/Admin Cloud Search over OneDrive/SharePoint/Drive/Outlook/Gmail with source selection and exact-phrase mode",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "CHANGELOG.md:37-46",
+   "notes": "Graph mixed entity-type fix at CHANGELOG.md:61-69."
+  },
+  {
+   "name": "Scheduled correspondence capture; email persisted only when matched to an active matter contact",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "docs/email-capture-retention-plan.md:1-27",
+   "notes": "Cleanup dry-run for legacy unlinked email logs still planned (lines 29-36)."
+  },
+  {
+   "name": "Teams Phase 1: matter-to-channel linking and Adaptive Card notifications (deadline alerts, captured voice calls)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "TASKS.md:2355-2367",
+   "notes": "Rules-editor UI and dispatch at other MatterEvent sites still open (2366-2367)."
+  },
+  {
+   "name": "Teams Phone inbound calls in intake feed (app-only client_credentials)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "RELEASE_NOTES.md:1842-1846"
+  },
+  {
+   "name": "Teams app package (manifest, personal/config tabs) and /teams tab pages",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "teams-app/manifest.json:25-51",
+   "notes": "No Teams SSO exchange; the tab is framed-blocked by the edge (see defects). TASKS 1402/1403 still say PENDING."
+  },
+  {
+   "name": "Office add-in Slice 0: NAA-to-cookie exchange, policy/plans/result endpoints, 4 allowlisted actions (Word replace_selection, Excel values/formulas, Outlook set_subject)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "backend/app/routers/office_assistant.py:47-110",
+   "notes": "Two fail-closed gates: OFFICE_ASSISTANT_ENABLED plus the pilot tenant allowlist (docs/office-pilot-activation.md:1-10; backend/app/config.py:112-122). No /api/office/context or /api/office/capture yet."
+  },
+  {
+   "name": "Legacy word-addin prototype removed",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "docs/office-document-assistant-plan.md:355"
+  },
+  {
+   "name": "Existing-DOCX conversational revision slice (VA-10): exact replacements, derivative lineage, SHA-bound approval",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "docs/virtual-document-assistant-plan.md:100-120",
+   "notes": "Server-side DOCX. It is the in-app equivalent of Word + Copilot editing, without the user's Office suite."
+  },
+  {
+   "name": "Daily OAuth client-secret liveness probe in CI for Google and Entra",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "docs/integrations-setup.md:83-107"
+  },
+  {
+   "name": "Workspace MCP grants revoked on password reset / Privacy Mode, with reconnect banner",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "CHANGELOG.md:602-603"
+  },
+  {
+   "name": "Tenant bring-your-own-key LLM: provider 'gemini' (Gemini API key) or 'copilot' (actually Azure OpenAI), direct to the provider, bypassing LiteLLM",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/routers/admin.py:1505-1573",
+   "notes": "API only; api.js wrappers exist (frontend/src/api.js:917-920) but no JSX consumer. Routing at backend/app/services/llm_routing.py:529-571. Conflicts with ECO-20."
+  },
+  {
+   "name": "30-day trials enforced via Tenant.expires_at plus operator extend/revoke/convert and gated public registration (ECO-01/04 substance)",
+   "provider": "neither",
+   "status": "partial",
+   "file_ref": "CHANGELOG.md:312-318",
+   "notes": "Makes the BK28 plan's trial-gap statement (plan:66, 262-265) stale."
+  },
+  {
+   "name": "Provider-backed SMS consent/STOP/review queue and review-first propose_client_sms (ECO-24 to ECO-28 substance)",
+   "provider": "neither",
+   "status": "partial",
+   "file_ref": "docs/sms-provider-operations.md:11-40",
+   "notes": "TASKS BK28 still shows ECO-23 to ECO-29 unchecked. The A2P/StatusCallback items at TASKS.md:152-159 are genuinely open."
+  }
+ ],
+ "defects": [
+  {
+   "title": "Teams app tab cannot render inside Teams: edge forbids framing and there is no Teams SSO",
+   "severity": "high",
+   "file_ref": "nginx/nginx.conf:412-415",
+   "detail": "The server-level `X-Frame-Options SAMEORIGIN` and CSP `frame-ancestors 'self'` are inherited by `location /` (nginx/nginx.conf:690-700), which serves the SPA route /teams (frontend/src/App.jsx:346-353). Only the Office snippet whitelists Microsoft ancestors (nginx/snippets/office_addin.conf:26). The committed Teams manifest points staticTabs/configurableTabs at https://getlawhand.com/teams and declares webApplicationInfo for SSO (teams-app/manifest.json:25-51). However, routers/teams.py has no SSO exchange (only link/notification/voice routes, lines 106-591). TeamsTabPage relies on cookie auth, and session cookies default to SameSite=Lax (backend/app/config.py:60). TASKS 1403 (SSO) is still pending (TASKS.md:2380-2389).",
+   "user_impact": "A firm admin who installs the checked-in lawhand-teams.zip gets a refused or blank LawHand tab in Teams, so the only Teams-embedded surface appears broken."
+  },
+  {
+   "title": "Default Microsoft 365 storage lands in the connecting admin's personal OneDrive, contrary to the org-owned-root guarantee",
+   "severity": "high",
+   "file_ref": "backend/app/services/matter_file_store.py:150-153",
+   "detail": "In Auto mode, an active Microsoft 365 connection binds storage to OneDrive (TC-02, TASKS.md:567-569; RELEASE_NOTES.md:1735). The OneDrive root is `/me/drive` (backend/app/services/cloud_init.py:1506-1508), so it is the delegated admin's personal drive. The design of record promises that business-tenant roots are organisation-owned (docs/storage-root-ownership-and-handoff.md:12-14) but rates OneDrive 'No \u2014 at risk' (line 28). SharePoint, the org-owned custody option, requires an explicit admin override, and its access is still delegated (lines 92-93). The at_risk warning mitigates this but does not prevent it.",
+   "user_impact": "For the Microsoft 365 first-customer profile, firm matter records live in one person's OneDrive. Custody and access are lost or disputed when that admin leaves or is deprovisioned."
+  },
+  {
+   "title": "BK28/ECO ledger is stale: shipped work is still unchecked, and the plan's current-state gaps are outdated",
+   "severity": "medium",
+   "file_ref": "TASKS.md:395-518",
+   "detail": "The epic is headed '(PLANNED)' and every ECO item is [ ]. However, the ECO-17 substance (Personal Google mode) shipped (backend/app/routers/integrations.py:266-286; CHANGELOG.md:279-289). ECO-24 to ECO-28 largely shipped (docs/sms-provider-operations.md:11-40; propose_client_sms in workspace_mcp_protocol.py:124), and ECO-01/04 partially shipped (CHANGELOG.md:312-318, 752-758). The plan's leverage table still says 'personal Gmail directory sync fails' (plan:64). It also says signup's trial_ends_at is unread (plan:66, 262-265), which was fixed in 2026.09.11.8.",
+   "user_impact": "New M365/Google/Copilot recommendations measured against this ledger will duplicate or re-plan shipped work, and sequencing (e.g. ECO-17 as a P2 prerequisite for ECO-19) looks more expensive than it is."
+  },
+  {
+   "title": "Docs understate granted mail scopes: code requests Mail.Send / gmail.send, docs say read-only",
+   "severity": "medium",
+   "file_ref": "docs/integrations-setup.md:42-53",
+   "detail": "The setup doc lists the Microsoft admin/user scopes without Mail.Send and says Google consent covers 'Gmail read' (docs/integrations-setup.md:46-47, 71-72). The virtual document assistant plan states 'Existing Microsoft and Google mail integrations use read-only scopes' (docs/virtual-document-assistant-plan.md:544-545). The code requests Mail.Send and gmail.send in admin, user and solo scope sets (backend/app/routers/integrations.py:241-272; constants at backend/app/services/connected_mail.py:44-45) and sends via /me/sendMail and gmail messages/send.",
+   "user_impact": "The setup doc tells operators to record granted scopes in the customer security record, so customer security records and consent disclosures under-report send permission. ECO-18 Google scope verification planning starts from the wrong baseline."
+  },
+  {
+   "title": "BYOK 'copilot'/'gemini' customer-LLM path contradicts ECO-20 and the LiteLLM-only ledger",
+   "severity": "medium",
+   "file_ref": "backend/app/services/llm_routing.py:529-571",
+   "detail": "A tenant admin endpoint 'Configure the tenant to use their own LLM subscription (Gemini/Copilot)' (backend/app/routers/admin.py:1515-1520) stores a key that bypasses the LiteLLM gateway entirely (backend/app/services/llm.py:261-275). Provider 'copilot' is actually an Azure OpenAI resource (backend/app/services/byok_security.py:33-58; config comment 'Azure OpenAI (Copilot backend)' at backend/app/config.py:155). The default Gemini model is hard-coded 'gemini-2.0-flash'. Gateway accounting metadata is skipped for customer keys (llm.py:351). This conflicts with TASKS.md:2622 ([x] direct Azure/Gemini paths removed) and with ECO-20 ('behind LiteLLM, never ... a subscription benefit or an unmetered tenant route', TASKS.md:479-481).",
+   "user_impact": "Naming and docstrings invite the ruled-out misconception that a firm's Microsoft 365 Copilot or Gemini subscription powers LawHand. The tenant route also escapes the gateway's approval, fallback and metering controls."
+  },
+  {
+   "title": "Teams ledger stale and a build artifact committed against plan",
+   "severity": "low",
+   "file_ref": "TASKS.md:2371-2378",
+   "detail": "1402 (manifest/packaging) is marked PENDING although teams-app/manifest.json and package.ps1 exist. The same task says 'do not commit the zip', yet teams-app/lawhand-teams.zip is tracked (git ls-files). The launch list also requires updating Teams/Office manifests to new app IDs (TASKS.md:146), so a committed zip can silently drift from manifest.json.",
+   "user_impact": "Operators may sideload a stale zip with old app IDs, and planners see Teams packaging as not started."
+  },
+  {
+   "title": "Office add-in roadmap has no live task entries; the only TASKS item refers to the removed prototype",
+   "severity": "low",
+   "file_ref": "TASKS.md:958-959",
+   "detail": "TASKS says 'Ship the Word add-in properly (it hardcodes localhost ... localStorage) or archive it'. But word-addin/ was removed and replaced by office-addin/ (docs/office-document-assistant-plan.md:355; office-addin/README.md). The Office plan's Slices 1-5 (docs/office-document-assistant-plan.md:259-306) and the W2 Template Builder (docs/template-studio-clio-parity-execution-status.md:187-191) have no tracked TASKS entries.",
+   "user_impact": "The Word/Outlook/Excel roadmap, the main 'use the client's office suite' path, is invisible in the ledger and easy to drop or duplicate."
+  },
+  {
+   "title": "Remediation plan status and migration references are wrong",
+   "severity": "low",
+   "file_ref": "docs/integrations-remediation-plan.md:3",
+   "detail": "The header still says 'Status: Proposed' although phases 0-2 are marked Done. It cites migrations '073_integration_observability' and '074' under migrations/versions (lines 31, 179, 195), but the real files are backend/alembic/versions/082_integration_observability.py and 083_matter_doc_storage_meta.py.",
+   "user_impact": "Readers cannot tell which remediation items are live or find the schema changes."
+  },
+  {
+   "title": "Mojibake in customer-facing release notes on Workspace MCP entries",
+   "severity": "low",
+   "file_ref": "RELEASE_NOTES.md:1766-1769",
+   "detail": "'\u0393\u00c7\u00f6' and '\u0393\u00c7\u00d6' appear 3 times in RELEASE_NOTES.md (lines 1647, 1766, 1769) and 3 times in backend/app/release_notes.json, which feeds in-app release notes.",
+   "user_impact": "In-app 'What's new' shows garbled text on the Workspace MCP (connected assistants) announcements."
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "ECO-09 Certify Copilot Studio against Workspace MCP (DCR, scoped consent, revocation, Privacy Mode, kill switches)",
+   "detail": "No code change is needed to attempt it: DCR accepts HTTPS redirects. Prove the flow in one Microsoft dev tenant and record the evidence. This is the gate for every Copilot feature.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "TASKS.md:440-442; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:187-204"
+  },
+  {
+   "title": "ECO-10/ECO-11 Artifact-to-matter resolver and review-first artifact-link, meeting-note and attention tools",
+   "detail": "Add resolve_matter_from_artifact, propose_artifact_link, propose_matter_note_from_meeting, get_matter_attention_brief and get_portfolio_attention_queue (none exist today), with deep links in every proposal.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:174-185; TASKS.md:443-448"
+  },
+  {
+   "title": "ECO-12 Package the LawHand Matter Agent (brief matter / analyze message-document / prepare next event) for Outlook, Teams, Word and M365 Copilot",
+   "detail": "No declarative-agent or copilotAgents packaging exists in the repo, and the Teams manifest has static tabs only. The agent would reuse the Workspace MCP propose tools, including propose_document_from_template for template doc prep.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "TASKS.md:449-451; teams-app/manifest.json:25-51"
+  },
+  {
+   "title": "ECO-13 50+ case agent evaluation set (wrong/ambiguous matter, injection, revoked consent, citations)",
+   "detail": "This is a precondition for both the Copilot pilot and the Gemini Enterprise gate (ECO-21).",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "TASKS.md:452-454"
+  },
+  {
+   "title": "ECO-14/15/16 SharePoint Matter Hub site template, per-matter Document Set, and access/lifecycle reconciliation",
+   "detail": "A tenant-installed, versioned template with provisioning receipt. It would also resolve the at-risk OneDrive default by giving M365 firms an org-owned root.",
+   "effort": "XL",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "TASKS.md:455-465; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:332-412"
+  },
+  {
+   "title": "Microsoft app-only (Sites.Selected) access and forbidding business roots in /me/drive",
+   "detail": "Planned but not done: SharePoint access is still delegated; migrate existing OneDrive roots via the non-copying storage-migration framework.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/storage-root-ownership-and-handoff.md:85-93,103-108; docs/integrations-remediation-plan.md:226-227"
+  },
+  {
+   "title": "ECO-18 Minimize and verify Google scopes (restricted gmail.readonly, full drive)",
+   "detail": "Current sets still request full drive plus gmail.readonly plus gmail.send. Justify each scope and complete OAuth verification and security assessment before general personal-Gmail use.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "TASKS.md:473-475; backend/app/routers/integrations.py:245-272"
+  },
+  {
+   "title": "ECO-19 LawHand Google Workspace add-on for Gmail/Calendar/Drive/Docs",
+   "detail": "Contextual sidebar: confirm matter, cited brief, and stage task/correspondence/document proposals. This is the Google counterpart to the Office add-in.",
+   "effort": "XL",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "TASKS.md:476-478; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:108-116"
+  },
+  {
+   "title": "ECO-20 Put Gemini API behind LiteLLM as an approved route and fold or rename the BYOK 'gemini'/'copilot' path",
+   "detail": "Route tenant Gemini/Azure keys through LiteLLM virtual keys or rename them to 'Gemini API key' and 'Azure OpenAI' with explicit copy that M365 Copilot / Google One subscriptions are not used.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "TASKS.md:479-481; backend/app/services/llm_routing.py:529-571"
+  },
+  {
+   "title": "ECO-21 Gemini Enterprise MCP/A2A pilot after Microsoft agent gates pass",
+   "detail": "Same Workspace MCP contract; enterprise-licensed only. Consider re-sequencing because one first-customer profile is Google-based (platform review:67-69).",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "TASKS.md:482-484; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:117-123,721-725"
+  },
+  {
+   "title": "ECO-22 Controlled pilot measurement (wrong-matter rate, citation coverage, proposal edits, AI margin)",
+   "detail": "Required before packaging or pricing 'LawHand for Microsoft 365 / Google Workspace'.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "TASKS.md:485-488; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:727-757"
+  },
+  {
+   "title": "Office add-in Slice 1 Word MVP (content-control anchors, redline/insert clause, capture to matter)",
+   "detail": "Today there is only replace_selection. Add /api/office/context and /api/office/capture, tracked-change handling and Windows/web/Mac matrix proof.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/office-document-assistant-plan.md:199-225,259-269"
+  },
+  {
+   "title": "Office add-in Slice 2 Outlook read/compose + explicit correspondence capture",
+   "detail": "Summarize, extract tasks, draft reply in compose (body anchors), capture to matter without broad Graph mail scopes.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/office-document-assistant-plan.md:271-279"
+  },
+  {
+   "title": "Office add-in Slice 3 Excel schedules (damages/asset schedules, reconcile totals)",
+   "detail": "Bounded range capture with a cell and formula diff preview.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/office-document-assistant-plan.md:281-289"
+  },
+  {
+   "title": "W2 Word Template Builder add-in (content controls to new Template Studio draft version)",
+   "detail": "Author LawHand templates inside Word, Clio-parity. The capability spike on content controls has not started.",
+   "effort": "XL",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/template-studio-clio-parity-plan-2026-09-11.md:308-331; docs/template-studio-clio-parity-execution-status.md:187-191"
+  },
+  {
+   "title": "Office Slice 4 template-to-document content-control binding and repeated deterministic smart-fill; Smart Alerts",
+   "detail": "Governed automation after host MVP telemetry.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/office-document-assistant-plan.md:291-299"
+  },
+  {
+   "title": "NEW: 'Open in Word for the web' handoff so the client's own Copilot edits LawHand-generated drafts",
+   "detail": "Generated drafts already land in OneDrive/SharePoint, and NAA on the web works only for docs opened from SharePoint/OneDrive. Deep-link the generated draft and let the firm's licensed Copilot in Word refine it. The LawHand add-in or revision flow captures the approved version back with hash lineage. Not yet in any plan.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "docs/office-pilot-activation.md:65-67; frontend/src/components/MatterDocumentsTab.jsx:192-202"
+  },
+  {
+   "title": "NEW: Google Docs working copy for Gemini-in-Docs users",
+   "detail": "Optionally save a generated DOCX as a Google Doc in the matter Drive folder so Workspace users can apply Gemini in Docs. Re-export to DOCX/PDF for LawHand review and seal. Not in any plan.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:108-116"
+  },
+  {
+   "title": "VA-6 Delegated Outlook/Gmail draft handoff instead of direct send",
+   "detail": "The recommended first email step. Create a draft with the approved attachment in the user's mailbox, so they finish it (optionally with Copilot in Outlook / Gemini in Gmail) and send. The code currently only direct-sends.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "docs/virtual-document-assistant-plan.md:540-557,770"
+  },
+  {
+   "title": "1403 Teams tab SSO exchange (+ edge framing allowance for Teams hosts)",
+   "detail": "POST /api/teams/sso/exchange with AAD token validation and a tid cross-tenant check. Add Teams frame-ancestors for /teams only.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "TASKS.md:2380-2389"
+  },
+  {
+   "title": "1404/1405 Teams bot with proactive 1:1 and inbound commands",
+   "detail": "Azure Bot, conversation refs, and tenant resolution from activity. This is also the natural host for a Copilot agent in Teams.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "TASKS.md:2393-2408"
+  },
+  {
+   "title": "1401 follow-ups: Teams notification rules editor UI and dispatch at matter/task/calendar events",
+   "detail": "Backend CRUD exists; dispatch today covers only deadline alerts and voice calls.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "TASKS.md:2366-2367"
+  },
+  {
+   "title": "Remediation 3.2/5.5 Graph /delta + Drive changes.list and change-notification webhooks",
+   "detail": "Polling only today; the index is not pruned. This is the prerequisite for reliable two-way SharePoint/Drive document state.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "docs/integrations-remediation-plan.md:192,230"
+  },
+  {
+   "title": "Remediation 3.3/3.7/3.8 subfolder indexing, folder reconcile/repair job, local-to-cloud backfill",
+   "detail": "Still deferred.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "docs/integrations-remediation-plan.md:193-198"
+  },
+  {
+   "title": "Remediation 4B/4C email-to-matter pipeline and deterministic RAG email search with per-user filter",
+   "detail": "email_matter_links, matching v2, review queue, 'searched Gmail (3 hits)' metadata; closes S11 cross-user mail metadata exposure.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "docs/integrations-remediation-plan.md:210-220"
+  },
+  {
+   "title": "TC-10/TC-11 Global cited Workspace MCP search and Outlook/Google task-divergence review",
+   "detail": "Improves what Copilot/Gemini agents can ground on and keeps LawHand tasks authoritative.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "TASKS.md:584-587"
+  },
+  {
+   "title": "First-customer identity cutover: production Entra app (organizations), getlawhand Google OAuth client, reconnect tenants, update Teams/Office manifests",
+   "detail": "Operator prerequisites for any M365/Google or Copilot pilot.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "TASKS.md:139-146"
+  },
+  {
+   "title": "Storage handoff XLSX manifest and admin health surfacing for at_risk roots",
+   "detail": "Planned follow-ups; the manifest builder and endpoint do not exist.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "docs/storage-root-ownership-and-handoff.md:95-111"
+  }
+ ],
+ "open_questions": [
+  "Microsoft tenant-wide auth model: commit to app-only (client_credentials + Sites.Selected) or keep delegated admin with health monitoring (remediation decision 2, docs/integrations-remediation-plan.md:270)? This blocks the org-owned SharePoint root.",
+  "Should Auto storage for Microsoft 365 business tenants default to SharePoint (org-owned) instead of the admin's OneDrive, given docs/storage-root-ownership-and-handoff.md:12-14?",
+  "MICROSOFT_TENANT_ID still defaults to 'common' (backend/app/config.py:108) while the launch list requires 'organizations' (TASKS.md:140). Which value is production running, and should consumer Microsoft accounts be refused?",
+  "Fate of the BYOK 'gemini'/'copilot' path: rename to Gemini API / Azure OpenAI, move behind LiteLLM per ECO-20, or remove?",
+  "Sequencing: ECO-21 (Gemini Enterprise) and ECO-19 (Google add-on) are gated behind Microsoft agent metrics, but one first-customer profile is Google-based (docs/platform-feature-review-2026-09-06.md:67-69). Should the Google channel be pulled forward?",
+  "Has any pilot tenant's Copilot Studio / Microsoft 365 Copilot licensing been validated (plan:200-204)? Without it, ECO-09 cannot be proven.",
+  "Teams: fix the tab (edge framing + SSO, 1403) or remove tabs from the shipped manifest until it works?",
+  "Email transport: the VA plan recommends draft handoff before direct send (docs/virtual-document-assistant-plan.md:547-557, 791), yet direct send via Mail.Send/gmail.send shipped. Is draft handoff still wanted so users can use Outlook/Gmail AI before sending?",
+  "Office product decisions still open: whole-document analysis, snapshot retention, supported channels/mobile, non-Microsoft accounts, capture confirmation, mandatory tracked changes, Excel formulas (docs/office-document-assistant-plan.md:370-380).",
+  "Tenant auto-creation policy (remediation 0.8) and directory-sync auto license_active (2.7) remain undecided (docs/integrations-remediation-plan.md:269-272).",
+  "Platform-wide corpus posture D1/D3 is pending (TASKS.md:182). It affects whether matter emails/documents may be indexed for Copilot/Gemini grounding.",
+  "Who owns integration UI changes, given the S1.02 turn map (api.js is BE-owned, MatterDetailPage is FE-A-only, core-ux-s1-02:30,37)?"
+ ],
+ "ux_findings": [
+  {
+   "screen": "Administration > Integrations hub",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:217-240",
+   "issue": "Workspace MCP is the channel a firm would use to connect Claude/ChatGPT today and Copilot Studio/Gemini Enterprise later. It is labeled 'MCP servers', uses audience 'operator', and sits under Advanced (lines 34-43). Firm admins asking 'can we use our own AI assistant?' will not find it.",
+   "severity": "medium",
+   "suggestion": "Add a firm-audience card, 'Connected AI assistants', that shows the enablement state and a link to per-user connections. Keep policy controls operator-only. Name Copilot Studio as 'pilot' only after ECO-09.",
+   "quick_win": true
+  },
+  {
+   "screen": "Teams personal tab (/teams)",
+   "file_ref": "frontend/src/pages/TeamsTabPage.jsx:9-14",
+   "issue": "getTeamsLinks failures are caught and rendered as an empty 'Linked channels' list, so auth, framing and permission errors look like 'no channels' (also noted in docs/platform-feature-review-2026-09-06.md:46).",
+   "severity": "medium",
+   "suggestion": "Render a distinct error state with retry and a 'Sign in to LawHand' / 'Open in browser' fallback. Distinguish 403 (not admin/Teams not enabled) from empty.",
+   "quick_win": true
+  },
+  {
+   "screen": "Onboarding > Connect Google",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:446-453",
+   "issue": "The option is labeled 'Personal Google / Google One'. Given the product owner's interest in 'leveraging Gemini', this implies a Google One (Gemini) subscription does something in LawHand, which the recorded decision rules out.",
+   "severity": "low",
+   "suggestion": "Label it 'Personal Google account (Gmail)' and add one line: 'LawHand does not use Google One or Gemini subscriptions; AI runs on LawHand's approved routes.'",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter > Compose email",
+   "file_ref": "docs/reviews/PARALEGAL_UX_REVIEW.md:199-218",
+   "issue": "The review's attachment gap is now fixed (EmailAttachments in ComposeEmailModal.jsx:141), but CC/BCC is still absent. Legal correspondence copied to the supervising attorney must be sent outside LawHand (via Outlook/Gmail), breaking the matter record.",
+   "severity": "medium",
+   "suggestion": "Add CC (and optionally BCC) to the connected-mailbox send path, or offer 'Create draft in Outlook/Gmail' (VA-6) so the user finishes in their own client.",
+   "quick_win": false
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "microsoft",
+   "endpoint": "POST https://graph.microsoft.com/v1.0/me/sendMail",
+   "file_ref": "backend/app/services/connected_mail.py:92",
+   "method": "POST",
+   "purpose": "Send approved client correspondence / e-sign notices from the user's mailbox",
+   "scope_needed": "Mail.Send (delegated)"
+  },
+  {
+   "provider": "google",
+   "endpoint": "POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+   "file_ref": "backend/app/services/connected_mail.py:178",
+   "method": "POST",
+   "purpose": "Send approved client correspondence from the user's Gmail",
+   "scope_needed": "https://www.googleapis.com/auth/gmail.send"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET/POST https://graph.microsoft.com/v1.0/me/drive/root/children and /me/drive/items/{id}/children",
+   "file_ref": "backend/app/services/cloud_init.py:1506-1508",
+   "method": "GET/POST",
+   "purpose": "Provision the OneDrive records root and matter folders in the connecting admin's drive",
+   "scope_needed": "Files.ReadWrite.All (delegated)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST https://graph.microsoft.com/v1.0/me/drive/items/{id}/invite",
+   "file_ref": "backend/app/services/cloud_init.py:683",
+   "method": "POST",
+   "purpose": "Share a OneDrive matter folder",
+   "scope_needed": "Files.ReadWrite.All (delegated)"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/ (chat completions)",
+   "file_ref": "backend/app/services/byok_security.py:10",
+   "method": "POST",
+   "purpose": "Tenant BYOK Gemini inference bypassing LiteLLM",
+   "scope_needed": "Tenant Gemini API key"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "https://<resource>.openai.azure.com | .services.ai.azure.com | .cognitiveservices.azure.com",
+   "file_ref": "backend/app/services/byok_security.py:11-15",
+   "method": "POST",
+   "purpose": "Tenant BYOK 'copilot' (Azure OpenAI) inference bypassing LiteLLM",
+   "scope_needed": "Tenant Azure OpenAI API key"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "Entra token endpoint grant_type=client_credentials",
+   "file_ref": "backend/app/services/teams_voice.py:870",
+   "method": "POST",
+   "purpose": "App-only token for Teams voice/call capture (the only app-only Microsoft path today)",
+   "scope_needed": "Application permissions (app-only)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST /api/auth/office/exchange (validates Entra access token from NAA)",
+   "file_ref": "backend/app/routers/auth.py:1716-1777",
+   "method": "POST",
+   "purpose": "Exchange Office add-in NAA token for HTTP-only LawHand session (pilot-gated)",
+   "scope_needed": "office.access delegated scope on api://<client-id>"
+  }
+ ]
+}

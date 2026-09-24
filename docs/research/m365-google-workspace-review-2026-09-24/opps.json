@@ -1,0 +1,1472 @@
+[
+ {
+  "id": "addin-teams#O0",
+  "title": "Move to the unified Microsoft 365 manifest and ship add-in actions as a Copilot skill",
+  "detail": "Merge word-excel.xml, outlook.xml and the Teams app into one unified-manifest package. Declare copilotAgents plus runtime actions (insertClause, fillTemplateFields, applyTrackedRedline, fileToMatter) so the firm's Microsoft 365 Copilot becomes the natural-language front end and calls LawHand's deterministic Office.js functions with parameters. One app is then deployed through Integrated Apps. Keep the XML Outlook manifest as a fallback until the client-coverage matrix is proven. Microsoft only allows Word/Excel/PowerPoint add-ins as Copilot skills with the unified manifest (preview).",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "office-addin/manifests/word-excel.xml:1-29; teams-app/manifest.json:2-3; docs/office-document-assistant-plan.md:297"
+ },
+ {
+  "id": "addin-teams#O1",
+  "title": "LawHand Matter Agent (declarative agent) over the existing Workspace MCP",
+  "detail": "Finish ECO-09..12: a declarative agent in M365 Copilot, Teams, Outlook and Word that calls the existing read/propose Workspace MCP tools (matter context, templates, propose task/document). Reasoning and Work IQ grounding in the user's mail, meetings and files run on the client's Copilot license. LawHand keeps review-first execution and pays nothing for generic drafting.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "TASKS.md:440-451; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:137-185"
+ },
+ {
+  "id": "addin-teams#O2",
+  "title": "Template and clause insertion in Word via content controls",
+  "detail": "Build W2: in the pane, pick a matter and a template or clause, then insert it wrapped in tagged rich-text content controls. Fill fields deterministically from template_fill_engine/template bindings with no LLM, then round-trip to a new draft template version. This matches Clio Draft's Template Builder and uses the firm's own Word.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/template-studio-clio-parity-plan-2026-09-11.md:308-411; backend/app/services/template_fill_engine.py"
+ },
+ {
+  "id": "addin-teams#O3",
+  "title": "Connect the add-in to the cloud working-copy sync",
+  "detail": "When a document open in Word is a LawHand working copy (detect it via a custom XML part or document property written at push time), show a pane banner with 'Sync this revision to LawHand' that calls the existing /tasks/{id}/pending-action/sync-cloud. Users draft with their own Word (and Copilot in Word), and LawHand records a verified revision. The same pattern works for Google Docs through a Docs add-on.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/routers/tasks.py:1905-1915; backend/app/routers/tasks.py:1985-1994; backend/app/services/cloud_docx_snapshot.py:1-9"
+ },
+ {
+  "id": "addin-teams#O4",
+  "title": "Tracked-changes and comment mode for every Word apply",
+  "detail": "Before apply, set document.changeTrackingMode to trackAll (WordApi 1.4) and restore the user's setting afterwards. Put the plan summary and warnings in a Word comment on the edited range, and render a word-level diff in the preview. This resolves product decision 6 in the plan.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "office-addin/src/hosts/wordAdapter.ts:21; office-addin/src/hosts/wordAdapter.ts:99-103; docs/office-document-assistant-plan.md:379"
+ },
+ {
+  "id": "addin-teams#O5",
+  "title": "Outlook: file to matter, extract deadlines and tasks, pinnable pane",
+  "detail": "Replace the subject-only surface with read-mode actions: file the message as .eml via item.getAsFileAsync (Mailbox 1.14, no Graph Mail scope) into the correspondence_capture pipeline, propose tasks or deadlines as review-first proposals, and suggest the matter from the sender's party match. Add SupportsPinning and an ItemChanged handler.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/correspondence_capture.py:1-20; office-addin/manifests/outlook.xml:19; docs/office-document-assistant-plan.md:271-279"
+ },
+ {
+  "id": "addin-teams#O6",
+  "title": "Outlook Smart Alerts for privileged and wrong-matter email",
+  "detail": "Add an OnMessageSend handler (Mailbox 1.12, admin-deployed, soft-block first) that warns when recipients include opposing-party domains, when an attachment comes from a different matter, or when a privileged marker is missing. Add OnNewMessageCompose to insert a matter-specific disclaimer. This needs VersionOverridesV1_1 or the unified manifest.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/office-document-assistant-plan.md:291-299; office-addin/manifests/outlook.xml:35-36"
+ },
+ {
+  "id": "addin-teams#O7",
+  "title": "Teams SSO plus a bearer-token mode for embedded surfaces",
+  "detail": "Use Teams getAuthToken and Office NAA tokens directly as API bearer credentials (or exchange them for a short-lived in-memory token) instead of SameSite=Lax cookies. Add a /teams-scoped frame-ancestors rule covering teams.microsoft.com and *.cloud.microsoft. This single change unblocks the Teams tabs, Office on the web and new Outlook.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/routers/auth.py:1716-1797; teams-app/manifest.json:48-51; nginx/nginx.conf:412-415"
+ },
+ {
+  "id": "addin-teams#O8",
+  "title": "Teams message extensions that also work as Copilot plugins",
+  "detail": "Add a bot and message extensions: search matters and insert a matter card into a chat, 'Save message to matter', and link unfurling for getlawhand.com/matters URLs. Microsoft 365 Copilot can call message extensions as plugins, so the same work puts LawHand in the client's Copilot chat.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "teams-app/manifest.json:25-44; TASKS.md:723-724"
+ },
+ {
+  "id": "addin-teams#O9",
+  "title": "Meeting recap into a matter note and time entry",
+  "detail": "After a Teams meeting linked to a matter, pull the transcript or the Copilot meeting AI-insights recap (where the firm licenses Copilot) and stage propose_matter_note_from_meeting plus a draft time entry. Summarization runs on the client's Copilot.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:174-181; frontend/platform_docs/administrative-guide/13-microsoft-teams-administration.md:65"
+ },
+ {
+  "id": "addin-teams#O10",
+  "title": "Personal Teams activity-feed alerts instead of channel posts as a human",
+  "detail": "Use TeamsActivity.Send (already consented) to notify the responsible attorney of deadlines in their activity feed. This needs manifest 'activities' and the app installed for the user. Drop Chat.ReadWrite until a feature needs it.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/teams.py:40-46; backend/app/services/teams_notify.py:150-171"
+ },
+ {
+  "id": "addin-teams#O11",
+  "title": "Google Workspace add-on for Gmail, Calendar, Drive and Docs (ECO-19)",
+  "detail": "One Apps Script or HTTP-runtime add-on. Gmail contextual trigger: resolve the matter, file the thread, propose a task. Calendar: prepare for a hearing. Docs editor add-on: insert a template or clause and sync the working copy back. This is the Google parity for the Office pane and reuses the Workspace MCP contracts.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "TASKS.md:476-478; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:110-116"
+ },
+ {
+  "id": "addin-teams#O12",
+  "title": "Publish LawHand custom steps for Google Workspace Studio (Gemini flows)",
+  "detail": "Workspace Studio custom starters and steps began rolling out in September 2026 and are distributed as Workspace add-ons. Publish 'Find matter', 'File to matter' and 'Propose task/deadline' steps so firms can build Gemini-powered flows (for example, a court email arrives, Gemini summarizes it, LawHand proposes a deadline for review) that run on the firm's Gemini licenses.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "TASKS.md:476-484"
+ },
+ {
+  "id": "addin-teams#O13",
+  "title": "Register Workspace MCP in Gemini Enterprise (ECO-21)",
+  "detail": "Connect the same read/propose MCP server as a Gemini Enterprise custom MCP connector, so firms licensed for Gemini Enterprise get matter briefs without LawHand model spend.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "TASKS.md:482-484; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:117-123"
+ },
+ {
+  "id": "addin-teams#O14",
+  "title": "Admin 'Microsoft 365 apps' card: deploy the add-in and Teams app from LawHand",
+  "detail": "In Integrations, show add-in and Teams app status, download links for the rendered manifests (/office/manifests/*.xml) and a freshly generated Teams zip, Integrated Apps deployment steps, and a health check (policy endpoint, exchange, framing). Today nothing in frontend/src mentions the add-in.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "frontend/src/components/TeamsPanel.jsx:149-190; docs/office-pilot-activation.md:40-58"
+ },
+ {
+  "id": "addin-teams#O15",
+  "title": "Matter-grounded pane: matter picker plus RAG context in plans",
+  "detail": "Add optional matter_id and conversation_id to the context envelope, as the plan specifies. Ground plans in matter facts, templates and firm memory (today context='' in the LLM call), and record matter_id on office_action_runs for billing and time attribution.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/office_assistant.py:133-150; docs/office-document-assistant-plan.md:155-158; backend/app/models/office_action_run.py:48-88"
+ },
+ {
+  "id": "ai-client-leverage#O0",
+  "title": "Make the Workspace MCP registerable as a Copilot declarative-agent action, a Copilot Studio tool and a Gemini Enterprise custom MCP",
+  "detail": "Keep the current review-first design; the client's Copilot or Gemini pays for the reasoning. Changes: add confidential clients (DCR that issues client_secret with client_secret_post/basic), plus tenant-admin static client registration. Use sliding or non-expiring registrations for verified hosted clients. Make `resource` optional, defaulting to the canonical resource. Pre-approve host redirect URIs (for example https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect and the Copilot Studio and Gemini Enterprise callbacks). Certify each host with a recorded transcript test (ECO-09).",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/routers/workspace_mcp_oauth.py:297,313-418,697-708; backend/app/models/workspace_mcp_client.py:15-79; backend/app/config.py:444,463"
+ },
+ {
+  "id": "ai-client-leverage#O1",
+  "title": "Ship the LawHand Matter Agent package (unified manifest, declarative agent, MCP plugin)",
+  "detail": "Move Teams and Office to a unified app manifest with copilotAgents.declarativeAgents. Add an MCP plugin that uses dynamic tool discovery against /api/mcp/workspace. Write instructions and conversation starters for 'brief this matter', 'analyze this message/document' and 'prepare next event'. Ship it next to the existing Word/Outlook task pane so it installs through the M365 admin center.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "teams-app/manifest.json:1-52; office-addin/manifests/word-excel.xml:1-6; TASKS.md:449-451"
+ },
+ {
+  "id": "ai-client-leverage#O2",
+  "title": "Host-context matter resolver and absolute deep links in every tool result",
+  "detail": "Add resolve_matter_from_artifact. Inputs: Outlook internetMessageId/conversationId and participant addresses, Teams meeting attendees, SharePoint/OneDrive driveItem or webUrl, Gmail messageId, Drive fileId. It returns ranked candidates with match evidence and refuses to propose when the match is ambiguous. Return absolute FRONTEND_URL task, matter and document links from every read and proposal tool.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/schemas/chat_action.py:87-88; backend/app/services/chat_tools/handlers.py:764-808,246-261,396,1877-1894; TASKS.md:443-445"
+ },
+ {
+  "id": "ai-client-leverage#O3",
+  "title": "Adopt the document the user has open in Word or Google Docs as matter work, without base64",
+  "detail": "Add propose_matter_document_from_cloud_item(matter_id, driveItem/fileId or URL). LawHand fetches the exact bytes with its own Graph or Drive grant, checks the item is inside the firm's tenant, reuses the existing exact-byte DOCX safety checks and staged review, and returns the Word Online edit link. Copilot in Word or Gemini in Docs does the drafting; LawHand owns review and filing.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/automation_capabilities.py:584-600; docs/workspace_mcp_adapter.md:476-486"
+ },
+ {
+  "id": "ai-client-leverage#O4",
+  "title": "Template work and doc prep with the client's Copilot or Gemini",
+  "detail": "Extend get_document_template_text to return DOCX structure (field map, content controls, clause slots). Allow propose_document_template to accept DOCX, not only Markdown. Document an agent flow: pick an approved template, let Copilot or Gemini draft the narrative clauses from the user's M365 or Workspace context, render deterministically with propose_document_from_template, and return an editable DOCX in the matter's SharePoint or Drive folder for staff-then-attorney review.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/automation_capabilities.py:458-483,564-635; backend/app/schemas/workspace_mcp.py:156-167"
+ },
+ {
+  "id": "ai-client-leverage#O5",
+  "title": "Offer the Research MCP to Copilot Studio and Gemini Enterprise now, with API-key auth",
+  "detail": "Public-authority tools carry the lowest privilege risk, already accept an X-MCP-API-Key header and are already metered per call. Publish setup cards and a tested connector definition. The client's Copilot or Gemini pays for inference; LawHand bills per tool call.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/mcp_protocol.py:505-540; backend/app/services/mcp_product.py:25-48"
+ },
+ {
+  "id": "ai-client-leverage#O6",
+  "title": "Outbound: use the Microsoft 365 Copilot Retrieval API for Copilot-licensed users",
+  "detail": "Add a retrieval backend next to the keyword /search/query call. The Retrieval API returns permission-trimmed semantic extracts from SharePoint, OneDrive and Copilot connectors using the tenant's semantic index and the user's delegated token. It needs Files.Read.All and Sites.Read.All, which are covered by the scopes LawHand already requests (admin.py:1605-1613). Pay-as-you-go excludes OneDrive. Retrieved text must still pass the route data-class gate before reaching a LawHand model.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_search.py:888-1000; backend/app/routers/admin.py:1605-1613"
+ },
+ {
+  "id": "ai-client-leverage#O7",
+  "title": "Outbound: enterprise BYOK adapters for the client's own Azure OpenAI / AI Foundry and Vertex AI projects",
+  "detail": "Replace the gemini/copilot BYOK stub with explicit providers. Azure OpenAI v1: key or Entra workload identity, resource region shown. Vertex AI: Workload Identity Federation, regional endpoint, CMEK/VPC-SC attestations. Add a key test on save, rotation, a paid-tier/DPA attestation, no platform fallback, and a per-route confidential-data qualification so BYOK can carry matter context. Rename 'copilot' to 'azure_openai'.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/byok_security.py:10-86; backend/app/services/llm_routing.py:529-571,383-402; backend/app/routers/admin.py:1504-1599; docs/standard-premium-byok-billing-plan-2026-08-16.md:203-218"
+ },
+ {
+  "id": "ai-client-leverage#O8",
+  "title": "Tenant admin 'AI & external assistants' control plane",
+  "detail": "Put four things in one firm-admin page: (a) which route, provider and region processes firm data, (b) the BYOK connect/test flow, (c) an allowlist of approved assistant clients with verified publisher, redirect host and pre-approved scope set, (d) per-client usage and audit. Move the MCP card out of the operator-only area.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/pages/AdminPage.jsx:1343-1370; frontend/src/components/IntegrationsHub.jsx:218-236; backend/app/services/workspace_mcp_access.py:31-43"
+ },
+ {
+  "id": "ai-client-leverage#O9",
+  "title": "Downscoped consent instead of refusal",
+  "detail": "Grant the intersection of the requested scopes and the user's allowed scopes, and show the excluded ones with the reason. tools/list already filters per identity, so a partial grant works.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/routers/workspace_mcp_oauth.py:487-495; backend/app/services/workspace_mcp_protocol.py:249-258"
+ },
+ {
+  "id": "ai-client-leverage#O10",
+  "title": "Host-compatibility schema lint and a Copilot/Gemini eval suite",
+  "detail": "In CI, flatten or inline $ref and reject multi-type unions for workspace_mcp tool schemas. Build the 50+ case eval (ECO-13) covering wrong matter, injection, revoked consent, proposal truthfulness and latency against recorded Copilot Studio and Gemini Enterprise sessions.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/workspace_mcp_protocol.py:230-236; backend/app/services/workflow_run_contract.py:85-94; TASKS.md:452-454"
+ },
+ {
+  "id": "ai-client-leverage#O11",
+  "title": "Entra-federated agent identity",
+  "detail": "Reuse the Office NAA verifier (tid/oid mapping) so the Microsoft agent's LawHand authorization can piggyback on the firm's Entra sign-in and Conditional Access. LawHand would still issue its own grant-bound token and keep consent and audit.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/routers/auth.py:1715-1760"
+ },
+ {
+  "id": "ai-client-leverage#O12",
+  "title": "Value metering for the inbound agent channel",
+  "detail": "Record accepted proposals, tool calls and documents produced per client and grant as value units. The channel can then be priced (ECO-22) without charging for tokens LawHand did not buy.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/workspace_mcp_budgets.py:21-59; docs/byo-harness-channel-contract.md:14-27"
+ },
+ {
+  "id": "ai-client-leverage#O13",
+  "title": "Stream Workspace MCP audit to the firm's compliance tooling",
+  "detail": "Export tool_called/refused, grant and revocation events (metadata only) to Microsoft Purview/Sentinel or Google Chronicle. Agent actions then sit beside Copilot and Gemini interaction audit for privilege and eDiscovery review.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/workspace_mcp_protocol.py:455-527"
+ },
+ {
+  "id": "docs-templates#O0",
+  "title": "Use Graph DriveItem ?format=pdf for Word-to-PDF on Microsoft tenants",
+  "detail": "GET /drives/{d}/items/{i}/content?format=pdf on the DOCX working copy already in OneDrive/SharePoint renders with Word's engine (Calibri/Aptos, numbering, fields). Uses: (a) 'PDF for signature' at save (store the DOCX, convert, store the PDF), (b) a 'Convert to PDF' action on any matter DOCX, (c) keep LibreOffice as the fallback for Google or local tenants. Files.ReadWrite.All is already granted (routers/integrations.py:243). This removes the soffice load in the API and the font drift.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/docx_to_pdf.py:49; backend/app/routers/document_templates.py:4706-4720; backend/Dockerfile:27-36"
+ },
+ {
+  "id": "docs-templates#O1",
+  "title": "'Convert to PDF and send for signature' on any matter DOCX",
+  "detail": "E-sign is PDF-only (esign/render.py:181-191), and Word-edited or approved AI drafts have no path to signature except a manual export and re-upload. Add a derived-PDF action: Graph ?format=pdf; for Google, Drive files.copy(mimeType=google-apps.document) then files.export(application/pdf), or LibreOffice. Link the PDF to its DOCX source.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/prepare/PrepareDocumentBody.jsx:344-350; backend/app/routers/esignature.py:438-446"
+ },
+ {
+  "id": "docs-templates#O2",
+  "title": "Generalize 'adopt cloud edits' to all matter DOCX, with change detection and version history",
+  "detail": "Extend the tasks.py:1906 adopt flow to MatterDocument: 'Edit in Word/Docs', then detect drift via stored eTag/cTag (Graph delta or change-notification subscriptions; Drive changes.watch), then show an 'Edited in Word by X - adopt as new version?' banner that creates a superseding row with the new sha and size instead of a 409 conflict. Surface Graph /versions and Drive revisions in the document's history.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/routers/matter_documents.py:750-806; backend/app/routers/tasks.py:1906-2178"
+ },
+ {
+  "id": "docs-templates#O3",
+  "title": "Close the formatting and edit-loss gaps in the AI/MCP draft round-trip",
+  "detail": "Set document_edit_mode='office_snapshot' whenever source_docx_bytes is supplied (handlers.py:1835). Before a LawHand text save, read the current cloud object's eTag or hash and refuse with 'Word edits detected - refresh first' if it drifted (cloud_artifact_materialization.py:661). Pass collections and regions in render_workspace_template.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/document_template_workspace.py:274-284; backend/app/routers/tasks.py:1806-1835"
+ },
+ {
+  "id": "docs-templates#O4",
+  "title": "Embedded Word for the web / Drive preview inside LawHand",
+  "detail": "POST /drives/{d}/items/{i}/preview (Graph) returns an embeddable read-only Office viewer URL; Drive supports /file/d/{id}/preview. Use it in PrepareDocumentBody (which today says 'Download and open this generated DOCX'), MatterDocumentPreview (PDF-only today) and DocumentDraftWorkspace so reviewers see true Word pagination without downloading. Needs a frame-src CSP update.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-465; frontend/src/components/documents/MatterDocumentPreview.jsx:8-23"
+ },
+ {
+  "id": "docs-templates#O5",
+  "title": "Sync the firm template library from a SharePoint library or Drive folder",
+  "detail": "Admin binds a 'Firm Templates' SharePoint library or Drive folder. Graph /delta or Drive changes.list imports .docx/.dotx through the existing analyze_template_upload pipeline as draft versions that supersede the live one (the same semantics as document_template_push.py). Keep provider item id and eTag, flag 'source changed in SharePoint - re-verify', and never auto-activate. Add the OneDrive File Picker v8 and Google Picker for one-off imports. Template originals then live in the firm's tenant.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/pages/TemplatesPage.jsx:838-851; backend/app/routers/document_templates.py:760-790; backend/app/services/document_template_push.py:1-13"
+ },
+ {
+  "id": "docs-templates#O6",
+  "title": "Expose LawHand as a Microsoft 365 Copilot agent (Copilot Studio/declarative agent calling the Workspace MCP)",
+  "detail": "Attorneys already in Word or Teams Copilot ask 'draft the engagement letter for Smith from our template'. The agent calls find_matter, get_matter_context and propose_document_from_template. The DOCX lands in the matter's SharePoint folder with a LawHand review task, and Copilot in Word can polish it before 'Refresh edits'. This reuses the existing flagged-off MCP capability set and the firm's Copilot licence. Requires Entra-registered OAuth and a hardened MCP.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/automation_capabilities.py:564-599; backend/app/config.py:423"
+ },
+ {
+  "id": "docs-templates#O7",
+  "title": "'Refine in Word with Copilot' / 'Open in Google Docs with Gemini' hand-off",
+  "detail": "Rename the generic 'Open cloud working copy' to provider-specific actions: Word for the web (webUrl), Word desktop (ms-word:ofe|u|{url}), and Google Docs Office-editing. Add guidance chips ('Tighten with Copilot', 'Summarize changes') and a prominent 'Bring edits back' button. The client's Copilot or Gemini licence does the prose work, and LawHand keeps the review and approval evidence.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/chat/DocumentDraftWorkspace.jsx:168-175"
+ },
+ {
+  "id": "docs-templates#O8",
+  "title": "Word add-in: author and fill templates with content controls",
+  "detail": "Add actions: 'Insert LawHand field' (a content control tagged with the binding), 'Fill from matter' (populate controls from Smart Fill), 'Publish as template draft' (document_template_push) and 'Save to matter / adopt edits'. Moving to the unified JSON manifest makes the add-in eligible for Copilot agent plus add-in integration (Microsoft preview), so Copilot in Word can call LawHand actions on the open document.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "office-addin/src/hosts/wordAdapter.ts:17-27; office-addin/manifests/word-excel.xml:20-27"
+ },
+ {
+  "id": "docs-templates#O9",
+  "title": "Google-native template path (Docs API replaceAllText) and Gemini-editable working copies",
+  "detail": "For Workspace firms: Drive files.copy of a template Google Doc into the matter folder, then documents.batchUpdate replaceAllText for {{fields}} (named ranges for conditional sections), then files.export to PDF or DOCX for evidence. Optionally convert a DOCX working copy into a Google Doc so Gemini 'Help me write' works natively, and export back to DOCX on adoption. The drive scope already granted covers the Docs API. Needs the native-Docs fidelity policy the docs call for.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "docs/workspace_mcp_adapter.md:476-481; backend/app/routers/integrations.py:251"
+ },
+ {
+  "id": "docs-templates#O10",
+  "title": "Default Microsoft storage to a SharePoint document library, not /me/drive",
+  "detail": "Co-authoring, Copilot grounding and Graph conversion all work best on an org-owned library that every staff member can reach. Make SharePoint the Auto-mode default for Microsoft, or grant matter-folder permissions via Graph /invite on the OneDrive path.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/matter_file_store.py:199-204, 866-870"
+ },
+ {
+  "id": "docs-templates#O11",
+  "title": "Keep both an editable DOCX and the signing PDF",
+  "detail": "When 'PDF for signature' is chosen, also store the filled DOCX in the tenant cloud as the working copy, with the PDF as a derived rendition. Amendments after signature then have an editable source.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/routers/document_templates.py:4706-4720; frontend/src/components/prepare/PrepareDocumentBody.jsx:328-352"
+ },
+ {
+  "id": "docs-templates#O12",
+  "title": "Harden local LibreOffice conversion",
+  "detail": "Add fonts-crosextra-carlito and fonts-crosextra-caladea (plus a firm-font upload path). Put a process-wide conversion semaphore or durable job queue in front of docx_to_pdf_bytes for render-file and render, with rate limits per user.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "neither",
+  "refs": "backend/Dockerfile:27-36; backend/app/routers/document_templates.py:3510-3523"
+ },
+ {
+  "id": "docs-templates#O13",
+  "title": "SharePoint content types for firm templates",
+  "detail": "Publish active LawHand templates as .dotx document templates on a matter-library content type, with LawHand metadata columns such as MatterId, so 'New > Engagement letter' in SharePoint or Teams starts from firm-approved templates that LawHand can read back. SharePoint Premium content assembly is an option but needs an extra licence.",
+  "effort": "L",
+  "value": "low",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_init.py:80"
+ },
+ {
+  "id": "google#O0",
+  "title": "Fix tenant isolation for the Google service account and remove tenant-credential fallback for personal data",
+  "detail": "Scope every service-account Drive query to the tenant's driveId (corpora=drive, driveId=binding), or use a service account per tenant or Workload Identity. Stop falling back to the admin token for Gmail search, calendar pushes and send unless a designated firm mailbox is configured. Only then build the add-on and AI features on this foundation.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/services/cloud_search.py:1516-1527; backend/app/services/google_service_account.py:213-258; backend/app/services/google_calendar.py:18-38"
+ },
+ {
+  "id": "google#O1",
+  "title": "Least-privilege re-scope with incremental authorization",
+  "detail": "Use drive.file (non-sensitive) with Google Picker to link existing folders or files, calendar.events, and gmail.send. Move gmail.readonly and full drive into an opt-in 'mailbox capture / whole-Drive search' tier that requires CASA. Request scopes per feature with include_granted_scopes=true, login_hint and hd. Update integration-scopes.json and test_public_integration_scopes.py, and the full-calendar check in CALENDAR_REQUIRED_SCOPES (auth.py:92-95). This removes the restricted-scope verification blocker for most firms.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/routers/integrations.py:245-272; frontend/src/marketing/integration-scopes.json; TASKS.md:473-475"
+ },
+ {
+  "id": "google#O2",
+  "title": "Google Workspace Marketplace listing with admin domain-wide install",
+  "detail": "This is Google's equivalent of Microsoft admin consent. A Workspace admin installs LawHand for the domain or an OU and pre-approves the listed scopes, so attorneys connect without a consent wall. Also add an in-product checklist showing the client ID for Admin console > Security > API controls > Trusted apps, so restricted scopes aren't blocked by org policy.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "frontend/src/pages/OnboardingWizard.jsx:446-448; backend/app/routers/integrations.py:656-722"
+ },
+ {
+  "id": "google#O3",
+  "title": "LawHand Google Workspace add-on (Gmail, Docs, Drive, Calendar), matching the Office add-in",
+  "detail": "A card-based add-on on the HTTP runtime. In Gmail, 'File to matter' uses gmail.addons.current.message.readonly, which is per-message access instead of restricted mailbox-wide access, and 'Draft reply' inserts a LawHand draft through gmail.addons.current.action.compose, where the attorney can polish it with Gemini's Help me write. In Docs, a matter sidebar with a clause and template picker. In Drive, 'Link to matter'. This implements ECO-19 and replaces most server-side gmail.readonly use.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "TASKS.md:476-478; office-addin/manifests/outlook.xml:18; backend/app/services/correspondence_capture.py:280-285"
+ },
+ {
+  "id": "google#O4",
+  "title": "Docs API template merge and document prep in the client's own Google Docs",
+  "detail": "Keep firm templates as Google Docs. For each matter, files.copy the template into the matter folder, then documents.batchUpdate replaceAllText (or named ranges) with matter, client and party fields, and export PDF/DOCX via files.export for filing. The attorney finishes in Docs with their own Gemini side panel ('refine', 'summarize'), which uses the firm's Gemini license rather than LawHand tokens. Works with drive.file plus the documents scope on app-created docs.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "backend/app/services/matter_file_store.py:1122-1240; frontend/src/components/chat/DocumentDraftWorkspace.jsx:174"
+ },
+ {
+  "id": "google#O5",
+  "title": "Convert generated DOCX to a Google Doc and add 'Open in Google Docs'",
+  "detail": "Set mimeType application/vnd.google-apps.document on upload so Drive converts it, or keep the DOCX and offer a converted copy. Link to docs.google.com for collaborative editing, matching Word Online, and export back to DOCX/PDF on approval. Once converted, the firm's Gemini in Docs becomes available on LawHand drafts.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "frontend/src/components/MatterDocumentsTab.jsx:202; backend/app/services/cloud_search.py:1387-1397"
+ },
+ {
+  "id": "google#O6",
+  "title": "Google Meet links, attendee invites, and Meet transcripts and smart notes into the matter timeline",
+  "detail": "Add meeting_provider 'google_meet' using conferenceData.createRequest(hangoutsMeet) with conferenceDataVersion=1 and sendUpdates=all. After the meeting, use the Meet REST API (conferenceRecords, transcripts, smart notes) to file Gemini 'Take notes for me' output into the matter as correspondence. The client's Gemini license produces the summary.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "backend/app/services/calendar_sync.py:446-498; backend/app/schemas/calendar.py:101-106; backend/app/services/scheduled_events.py:93-110"
+ },
+ {
+  "id": "google#O7",
+  "title": "Gemini Enterprise and Gemini CLI connector for the Workspace MCP server",
+  "detail": "Publish and test a recipe that registers LawHand's MCP server (OAuth 2.1 + dynamic client registration already exists) in Gemini Enterprise, as an agent or data connector and via A2A, and in Gemini CLI. Firms' Gemini seats can then read matter context and create review-first proposals with no LawHand inference cost. Enforce the per-tool budgets and grants that already exist (ECO-21).",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "backend/app/services/workspace_mcp_oauth.py:239-262; TASKS.md:482-484"
+ },
+ {
+  "id": "google#O8",
+  "title": "Vertex AI BYOK in the customer's own GCP project",
+  "detail": "Today BYOK accepts only an AI Studio key with a fixed endpoint and a hard-coded gemini-2.0-flash default. Add Vertex AI (customer project, region pinning, enterprise data terms) through service-account or Workload Identity Federation, and validate the model against a live model list.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "backend/app/services/llm_routing.py:529-570; backend/app/services/byok_security.py:10-32"
+ },
+ {
+  "id": "google#O9",
+  "title": "Push-based sync (Gmail watch with Pub/Sub, Drive changes.watch, Calendar events.watch)",
+  "detail": "Replace 7-day, 200-message and 500-file polling with users.watch plus history.list, changes.getStartPageToken plus changes.watch, and events.watch plus syncToken. This gives near-real-time capture of edits and deletions, covering TC-11 for Google, and lower quota use.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/services/cloud_sync.py:455-568; TASKS.md:586"
+ },
+ {
+  "id": "google#O10",
+  "title": "Drive Labels on Shared Drive matter files",
+  "detail": "Apply labels for matter number, privilege and retention class through the Drive Labels API to files in the org Shared Drive. This lets Workspace Vault retention, DLP and Gemini-in-Drive filters respect LawHand matter boundaries inside the client's tenant.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/services/cloud_init.py:1214-1244"
+ },
+ {
+  "id": "google#O11",
+  "title": "Google Chat app for matter notifications and approvals, matching Teams",
+  "detail": "Send card notifications for approvals, deadlines and intake to a matter space, with review-first actions. Today only Teams has channel linking and adaptive cards.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "teams-app/manifest.json:25-36; backend/app/config.py:125-131"
+ },
+ {
+  "id": "google#O12",
+  "title": "Google Vault legal holds for the litigation plugin",
+  "detail": "For Workspace Business Plus and above, create matters and holds on custodians' Gmail and Drive through the Vault API when a litigation matter opens, and record hold status on the matter.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/services/plugins/manifest.py:57-75"
+ },
+ {
+  "id": "google#O13",
+  "title": "Gmail send polish: threading and large attachments",
+  "detail": "Set threadId, In-Reply-To and References when replying to captured correspondence, and use the upload/gmail/v1 endpoint (resumable) for attachments over the JSON limit, so client threads stay intact in Gmail.",
+  "effort": "S",
+  "value": "low",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/services/connected_mail.py:141-199"
+ },
+ {
+  "id": "ms-graph#O0",
+  "title": "Move firm-wide access to app-only Sites.Selected with a SharePoint library as the org root",
+  "detail": "Replace the admin-delegated /me/drive root with an app-only client_credentials token plus Sites.Selected, granted per site through the /sites/{id}/permissions write role. Use Files.SelectedOperations.Selected for per-folder grants. Keep delegated tokens only for per-user mail and calendar. This removes the admin-lifecycle outage, the admin-mailbox leak, and most tenant fallbacks. Migrate existing OneDrive roots with the existing storage_migration framework.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/storage-root-ownership-and-handoff.md:85-110; backend/app/services/matter_file_store.py:42-56"
+ },
+ {
+  "id": "ms-graph#O1",
+  "title": "Scope hygiene: one scope registry, least privilege, openid on admin connect",
+  "detail": "Keep a single module that defines scope sets and their consumers (integrations, admin audit, plugins, storage-readiness). Add openid profile to the admin connect. Drop admin Mail.Read, Chat.ReadWrite and TeamsActivity.Send. Change per-user Files.ReadWrite.All to Files.Read.All and add Sites.Read.All only if listItem search stays. Remove the fallback from other users to the admin token (search, fetch, calendar push).",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/routers/integrations.py:241-259; backend/app/routers/admin.py:1604-1612; backend/app/routers/plugins.py:370-389"
+ },
+ {
+  "id": "ms-graph#O2",
+  "title": "Permission-trimmed matter search with Graph Search KQL path: filters",
+  "detail": "Replace /me/drive/items/{id}/search with /search/query using a query like 'path:\"<matter folder webUrl>\"'. Microsoft then enforces each user's own permissions across drives and the /me/drive item-ID mismatch goes away. Add sortProperties and paging.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_search.py:1399-1485"
+ },
+ {
+  "id": "ms-graph#O3",
+  "title": "Delta queries + change notifications for drives, mail and calendar",
+  "detail": "Use /drives/{id}/root/delta and /me/mailFolders/inbox/messages/delta, stored in the unused sync_cursor, and /me/calendarView/delta. Add /subscriptions for driveItem roots and messages with lifecycle notifications, reusing the teams_voice subscription and renewal code. This also enables pruning of deleted items and automatic correspondence capture.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/teams_voice.py:1049-1157; backend/app/services/storage_discovery.py:183-300"
+ },
+ {
+  "id": "ms-graph#O4",
+  "title": "Word for the web round-trip for template and doc prep",
+  "detail": "Render a LawHand template to DOCX, save it to the matter SharePoint folder, and return an edit link (webUrl, or an ms-word:ofe|u| desktop deep link). The attorney drafts and polishes in Word using the firm's own Copilot in Word. LawHand then ingests the edited bytes through cloud_docx_snapshot, using eTag and /versions as review evidence.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_docx_snapshot.py:1-60; backend/app/services/matter_file_store.py:311-392"
+ },
+ {
+  "id": "ms-graph#O5",
+  "title": "Outlook drafts instead of direct sendMail for approved correspondence",
+  "detail": "POST /me/messages (draft) or /createReply, stamped with a matter category and a singleValueExtendedProperty. The attorney finalizes in Outlook, where Copilot in Outlook can help, and LawHand confirms the send through the extended property or delta. Needs Mail.ReadWrite. Large attachments go through an upload session instead of the 2 MiB inline limit.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/connected_mail.py:77-137; backend/app/services/mail_attachment.py:5"
+ },
+ {
+  "id": "ms-graph#O6",
+  "title": "Microsoft 365 Copilot declarative agent with LawHand MCP actions",
+  "detail": "Upgrade the Teams app manifest (currently v1.17, tabs only) to declare a declarative agent. Its actions should point at the existing workspace MCP server tools (search_matters, list_document_templates, propose_document_from_template, propose_task), so attorneys can call LawHand from Copilot Chat in Word, Outlook and Teams on the firm's own Copilot licenses. Proposals stay human-reviewed.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "teams-app/manifest.json:1-50"
+ },
+ {
+  "id": "ms-graph#O7",
+  "title": "Copilot connector (Graph external connections) for matter metadata",
+  "detail": "Push matter status, deadlines, parties and document titles as externalItems with per-matter ACLs (Entra user/group IDs) through /external/connections, using app-only ExternalConnection.ReadWrite.OwnedBy and ExternalItem.ReadWrite.OwnedBy. Microsoft Search and Copilot then answer 'what is due on Smith v Jones' natively under the firm's tenant permissions.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_sync.py:68-165"
+ },
+ {
+  "id": "ms-graph#O8",
+  "title": "Copilot Retrieval API for permission-aware grounding",
+  "detail": "For Copilot-licensed users, call /copilot/retrieval to fetch grounded SharePoint/OneDrive extracts. These honor permissions and sensitivity labels, so the RAG source index no longer needs LawHand's own crawl. Check GA status and per-user licensing.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/rag.py:1885-1905"
+ },
+ {
+  "id": "ms-graph#O9",
+  "title": "Teams meeting transcripts and Copilot meeting insights into matter communications",
+  "detail": "Read /me/onlineMeetings/{id}/transcripts/{id}/content (OnlineMeetingTranscript.Read.All) and, where licensed, the Copilot AI-insights endpoint (/copilot/users/{id}/onlineMeetings/{id}/aiInsights). Parse them into a matter communication record plus proposed tasks, matching the existing Zoom transcript path. LawHand already creates teamsForBusiness meetings (calendar_sync.py:296-298).",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/calendar_sync.py:237-300"
+ },
+ {
+  "id": "ms-graph#O10",
+  "title": "Graph file conversion and preview instead of local LibreOffice/downloads",
+  "detail": "GET /drives/{d}/items/{i}/content?format=pdf gives high-fidelity DOCX-to-PDF from Microsoft's renderer. POST /items/{i}/preview gives in-app previews without copying bytes into LawHand. Both use the client's Office Online compute.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/docx_to_pdf.py:1-30"
+ },
+ {
+  "id": "ms-graph#O11",
+  "title": "Purview retention labels, sensitivity labels and eDiscovery legal holds",
+  "detail": "Apply retention labels to matter folders and files (PATCH driveItem retentionLabel) and sensitivity labels (assignSensitivityLabel, metered). Back the litigation plugin's legal holds with /security/cases/ediscoveryCases/{id}/legalHolds on custodian mailboxes and sites, using the firm's own Purview licenses.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/plugins/manifest.py:56-60"
+ },
+ {
+  "id": "ms-graph#O12",
+  "title": "Revoke folder shares on assignment removal, and batch provisioning",
+  "detail": "Store permission IDs from /invite and DELETE /drives/{d}/items/{i}/permissions/{id} when an assignee is removed or a user is deactivated. Use JSON $batch (up to 20 requests) for subfolder creation, share invites and listings during matter provisioning.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_init.py:617-697; backend/app/routers/matters.py:1772-1825"
+ },
+ {
+  "id": "ms-graph#O13",
+  "title": "Microsoft To Do and Planner for tasks instead of 30-minute calendar blocks",
+  "detail": "Create /me/todo/lists/{id}/tasks with linkedResources back to LawHand, so deadlines appear in Outlook and Teams task views without cluttering calendars. Offer Planner plans per matter team.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/microsoft_calendar.py:71-104"
+ },
+ {
+  "id": "ms-graph#O14",
+  "title": "Office NAA/OBO for per-user Graph access, removing the separate connect dance",
+  "detail": "Use nested app authentication in the add-in, or the on-behalf-of flow on the backend from the verified NAA token. Users get per-user Graph (mail, calendar, current document) without the 'Connect Calendar' redirect, and the identity is bound to the Entra oid by construction.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/routers/auth.py:1715-1790; office-addin/src/auth/officeSession.ts:43-63"
+ },
+ {
+  "id": "ms-graph#O15",
+  "title": "Teams bot, activity feed and message extension via RSC",
+  "detail": "Replace admin-authored ChannelMessage.Send posts with a bot (RSC ChannelMessage.Send.Group) and activity-feed notifications (TeamsActivity.Send.User, manifest 'activities'). Add a message extension to attach matter docs or create tasks from a message, and drop tenant-wide Chat.ReadWrite.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/teams.py:365-420; teams-app/manifest.json:24-50"
+ },
+ {
+  "id": "ms-graph#O16",
+  "title": "Firm template library in SharePoint (Org Assets) for Word and Copilot",
+  "detail": "Sync active LawHand DOCX templates into a SharePoint library that the admin registers as an organization assets library, so they appear under Word File > New and can be referenced in Copilot in Word. LawHand stays the system of record for variables.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/document_template_push.py:1-60"
+ },
+ {
+  "id": "ms-graph#O17",
+  "title": "Work IQ / Microsoft-hosted M365 MCP servers and Agent 365 registration",
+  "detail": "Evaluate using Microsoft's hosted Work IQ and M365 MCP servers (mail, calendar, Teams, SharePoint context under the user's identity) from LawHand's agent in place of bespoke Graph code. Register LawHand's agent with Entra Agent ID so firm admins govern it centrally. Verify GA and licensing first.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/graph_client.py:1-37"
+ },
+ {
+  "id": "ms-graph#O18",
+  "title": "Bookings for consult scheduling into intake",
+  "detail": "Read and write /solutions/bookingBusinesses appointments so client consultations booked through the firm's Microsoft Bookings page create LawHand intakes.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/calendar_sync.py:78-120"
+ },
+ {
+  "id": "ms-graph#O19",
+  "title": "Token health and national cloud readiness",
+  "detail": "Add a scheduled token probe that maps AADSTS codes (50076/53003 Conditional Access or MFA, 700082 expired) to actionable UI, and alert on Entra app secret expiry. Move to a shared graph_request with 429/Retry-After everywhere. Parametrize the authority and Graph host (graph.microsoft.us, dod-graph.microsoft.us, microsoftgraph.chinacloudapi.cn) and the host allow-lists for GCC High and DoD firms.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/token_vault.py:77-90; backend/app/services/storage_discovery.py:30-32"
+ },
+ {
+  "id": "plans-ledger#O0",
+  "title": "ECO-09 Certify Copilot Studio against Workspace MCP (DCR, scoped consent, revocation, Privacy Mode, kill switches)",
+  "detail": "No code change is needed to attempt it: DCR accepts HTTPS redirects. Prove the flow in one Microsoft dev tenant and record the evidence. This is the gate for every Copilot feature.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "TASKS.md:440-442; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:187-204"
+ },
+ {
+  "id": "plans-ledger#O1",
+  "title": "ECO-10/ECO-11 Artifact-to-matter resolver and review-first artifact-link, meeting-note and attention tools",
+  "detail": "Add resolve_matter_from_artifact, propose_artifact_link, propose_matter_note_from_meeting, get_matter_attention_brief and get_portfolio_attention_queue (none exist today), with deep links in every proposal.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:174-185; TASKS.md:443-448"
+ },
+ {
+  "id": "plans-ledger#O2",
+  "title": "ECO-12 Package the LawHand Matter Agent (brief matter / analyze message-document / prepare next event) for Outlook, Teams, Word and M365 Copilot",
+  "detail": "No declarative-agent or copilotAgents packaging exists in the repo, and the Teams manifest has static tabs only. The agent would reuse the Workspace MCP propose tools, including propose_document_from_template for template doc prep.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "TASKS.md:449-451; teams-app/manifest.json:25-51"
+ },
+ {
+  "id": "plans-ledger#O3",
+  "title": "ECO-13 50+ case agent evaluation set (wrong/ambiguous matter, injection, revoked consent, citations)",
+  "detail": "This is a precondition for both the Copilot pilot and the Gemini Enterprise gate (ECO-21).",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "TASKS.md:452-454"
+ },
+ {
+  "id": "plans-ledger#O4",
+  "title": "ECO-14/15/16 SharePoint Matter Hub site template, per-matter Document Set, and access/lifecycle reconciliation",
+  "detail": "A tenant-installed, versioned template with provisioning receipt. It would also resolve the at-risk OneDrive default by giving M365 firms an org-owned root.",
+  "effort": "XL",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "TASKS.md:455-465; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:332-412"
+ },
+ {
+  "id": "plans-ledger#O5",
+  "title": "Microsoft app-only (Sites.Selected) access and forbidding business roots in /me/drive",
+  "detail": "Planned but not done: SharePoint access is still delegated; migrate existing OneDrive roots via the non-copying storage-migration framework.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/storage-root-ownership-and-handoff.md:85-93,103-108; docs/integrations-remediation-plan.md:226-227"
+ },
+ {
+  "id": "plans-ledger#O6",
+  "title": "ECO-18 Minimize and verify Google scopes (restricted gmail.readonly, full drive)",
+  "detail": "Current sets still request full drive plus gmail.readonly plus gmail.send. Justify each scope and complete OAuth verification and security assessment before general personal-Gmail use.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "TASKS.md:473-475; backend/app/routers/integrations.py:245-272"
+ },
+ {
+  "id": "plans-ledger#O7",
+  "title": "ECO-19 LawHand Google Workspace add-on for Gmail/Calendar/Drive/Docs",
+  "detail": "Contextual sidebar: confirm matter, cited brief, and stage task/correspondence/document proposals. This is the Google counterpart to the Office add-in.",
+  "effort": "XL",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "TASKS.md:476-478; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:108-116"
+ },
+ {
+  "id": "plans-ledger#O8",
+  "title": "ECO-20 Put Gemini API behind LiteLLM as an approved route and fold or rename the BYOK 'gemini'/'copilot' path",
+  "detail": "Route tenant Gemini/Azure keys through LiteLLM virtual keys or rename them to 'Gemini API key' and 'Azure OpenAI' with explicit copy that M365 Copilot / Google One subscriptions are not used.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "TASKS.md:479-481; backend/app/services/llm_routing.py:529-571"
+ },
+ {
+  "id": "plans-ledger#O9",
+  "title": "ECO-21 Gemini Enterprise MCP/A2A pilot after Microsoft agent gates pass",
+  "detail": "Same Workspace MCP contract; enterprise-licensed only. Consider re-sequencing because one first-customer profile is Google-based (platform review:67-69).",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "TASKS.md:482-484; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:117-123,721-725"
+ },
+ {
+  "id": "plans-ledger#O10",
+  "title": "ECO-22 Controlled pilot measurement (wrong-matter rate, citation coverage, proposal edits, AI margin)",
+  "detail": "Required before packaging or pricing 'LawHand for Microsoft 365 / Google Workspace'.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "TASKS.md:485-488; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:727-757"
+ },
+ {
+  "id": "plans-ledger#O11",
+  "title": "Office add-in Slice 1 Word MVP (content-control anchors, redline/insert clause, capture to matter)",
+  "detail": "Today there is only replace_selection. Add /api/office/context and /api/office/capture, tracked-change handling and Windows/web/Mac matrix proof.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/office-document-assistant-plan.md:199-225,259-269"
+ },
+ {
+  "id": "plans-ledger#O12",
+  "title": "Office add-in Slice 2 Outlook read/compose + explicit correspondence capture",
+  "detail": "Summarize, extract tasks, draft reply in compose (body anchors), capture to matter without broad Graph mail scopes.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/office-document-assistant-plan.md:271-279"
+ },
+ {
+  "id": "plans-ledger#O13",
+  "title": "Office add-in Slice 3 Excel schedules (damages/asset schedules, reconcile totals)",
+  "detail": "Bounded range capture with a cell and formula diff preview.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/office-document-assistant-plan.md:281-289"
+ },
+ {
+  "id": "plans-ledger#O14",
+  "title": "W2 Word Template Builder add-in (content controls to new Template Studio draft version)",
+  "detail": "Author LawHand templates inside Word, Clio-parity. The capability spike on content controls has not started.",
+  "effort": "XL",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/template-studio-clio-parity-plan-2026-09-11.md:308-331; docs/template-studio-clio-parity-execution-status.md:187-191"
+ },
+ {
+  "id": "plans-ledger#O15",
+  "title": "Office Slice 4 template-to-document content-control binding and repeated deterministic smart-fill; Smart Alerts",
+  "detail": "Governed automation after host MVP telemetry.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "docs/office-document-assistant-plan.md:291-299"
+ },
+ {
+  "id": "plans-ledger#O16",
+  "title": "NEW: 'Open in Word for the web' handoff so the client's own Copilot edits LawHand-generated drafts",
+  "detail": "Generated drafts already land in OneDrive/SharePoint, and NAA on the web works only for docs opened from SharePoint/OneDrive. Deep-link the generated draft and let the firm's licensed Copilot in Word refine it. The LawHand add-in or revision flow captures the approved version back with hash lineage. Not yet in any plan.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "docs/office-pilot-activation.md:65-67; frontend/src/components/MatterDocumentsTab.jsx:192-202"
+ },
+ {
+  "id": "plans-ledger#O17",
+  "title": "NEW: Google Docs working copy for Gemini-in-Docs users",
+  "detail": "Optionally save a generated DOCX as a Google Doc in the matter Drive folder so Workspace users can apply Gemini in Docs. Re-export to DOCX/PDF for LawHand review and seal. Not in any plan.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:108-116"
+ },
+ {
+  "id": "plans-ledger#O18",
+  "title": "VA-6 Delegated Outlook/Gmail draft handoff instead of direct send",
+  "detail": "The recommended first email step. Create a draft with the approved attachment in the user's mailbox, so they finish it (optionally with Copilot in Outlook / Gemini in Gmail) and send. The code currently only direct-sends.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "docs/virtual-document-assistant-plan.md:540-557,770"
+ },
+ {
+  "id": "plans-ledger#O19",
+  "title": "1403 Teams tab SSO exchange (+ edge framing allowance for Teams hosts)",
+  "detail": "POST /api/teams/sso/exchange with AAD token validation and a tid cross-tenant check. Add Teams frame-ancestors for /teams only.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "TASKS.md:2380-2389"
+ },
+ {
+  "id": "plans-ledger#O20",
+  "title": "1404/1405 Teams bot with proactive 1:1 and inbound commands",
+  "detail": "Azure Bot, conversation refs, and tenant resolution from activity. This is also the natural host for a Copilot agent in Teams.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "TASKS.md:2393-2408"
+ },
+ {
+  "id": "plans-ledger#O21",
+  "title": "1401 follow-ups: Teams notification rules editor UI and dispatch at matter/task/calendar events",
+  "detail": "Backend CRUD exists; dispatch today covers only deadline alerts and voice calls.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "TASKS.md:2366-2367"
+ },
+ {
+  "id": "plans-ledger#O22",
+  "title": "Remediation 3.2/5.5 Graph /delta + Drive changes.list and change-notification webhooks",
+  "detail": "Polling only today; the index is not pruned. This is the prerequisite for reliable two-way SharePoint/Drive document state.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "docs/integrations-remediation-plan.md:192,230"
+ },
+ {
+  "id": "plans-ledger#O23",
+  "title": "Remediation 3.3/3.7/3.8 subfolder indexing, folder reconcile/repair job, local-to-cloud backfill",
+  "detail": "Still deferred.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "docs/integrations-remediation-plan.md:193-198"
+ },
+ {
+  "id": "plans-ledger#O24",
+  "title": "Remediation 4B/4C email-to-matter pipeline and deterministic RAG email search with per-user filter",
+  "detail": "email_matter_links, matching v2, review queue, 'searched Gmail (3 hits)' metadata; closes S11 cross-user mail metadata exposure.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "docs/integrations-remediation-plan.md:210-220"
+ },
+ {
+  "id": "plans-ledger#O25",
+  "title": "TC-10/TC-11 Global cited Workspace MCP search and Outlook/Google task-divergence review",
+  "detail": "Improves what Copilot/Gemini agents can ground on and keeps LawHand tasks authoritative.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "TASKS.md:584-587"
+ },
+ {
+  "id": "plans-ledger#O26",
+  "title": "First-customer identity cutover: production Entra app (organizations), getlawhand Google OAuth client, reconnect tenants, update Teams/Office manifests",
+  "detail": "Operator prerequisites for any M365/Google or Copilot pilot.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "TASKS.md:139-146"
+ },
+ {
+  "id": "plans-ledger#O27",
+  "title": "Storage handoff XLSX manifest and admin health surfacing for at_risk roots",
+  "detail": "Planned follow-ups; the manifest builder and endpoint do not exist.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "docs/storage-root-ownership-and-handoff.md:95-111"
+ },
+ {
+  "id": "sync#O0",
+  "title": "Graph change notifications plus delta for per-user mail capture",
+  "detail": "Subscribe to /me/mailFolders('inbox')/messages and sentitems (created). On each notification run /messages/delta with a stored deltaLink, and enqueue a DurableJob per message. Reuse the Teams voice subscription lifecycle (create, renew, clientState, URL-move handling) and the 6-hourly renewal job. Removes the 7-day/top-50 blind spot and the 30-minute latency.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "microsoft",
+  "refs": "backend/app/services/teams_voice.py:1049-1144; backend/app/routers/teams.py:595-640; backend/app/services/scheduler.py:623-642; backend/app/services/correspondence_capture.py:388-491"
+ },
+ {
+  "id": "sync#O1",
+  "title": "Gmail users.watch through Pub/Sub plus history.list",
+  "detail": "Call users.watch (labelIds INBOX and SENT) per connected user, push to a signed endpoint, and fetch changes with users.history.list(startHistoryId). historyId is already stored as sync_cursor but never read. This takes about 2,450 Gmail calls per user per day (51 every 30 min) down to roughly one per new message.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "google",
+  "refs": "backend/app/services/cloud_sync.py:558; backend/app/services/google_mail.py:169-202"
+ },
+ {
+  "id": "sync#O2",
+  "title": "Drive changes feed and Graph driveItem delta instead of root listing and full re-walks",
+  "detail": "Persist a Drive changes.getStartPageToken, plus changes.watch, and a Graph /drives/{id}/root/delta deltaLink for each bound root. Apply adds, moves and deletes to cloud_metadata_index incrementally, including deletions. Retire the force=True reindex on every run and the root/children-only listing.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/cloud_sync.py:80-111,584-594; backend/app/services/storage_discovery.py:233-298"
+ },
+ {
+  "id": "sync#O3",
+  "title": "Two-way calendar sync with a stored event mapping",
+  "detail": "Stamp key-date events with an extended property (matter_id plus key) like tasks already do, and store provider event ids. Read changes through Graph /me/calendarView/delta or event subscriptions and Google events.list syncToken or events.watch, so moved or deleted deadlines update rather than duplicate, and attendee responses flow back to ScheduledEvent.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/calendar_sync.py:519-636; backend/app/services/microsoft_calendar.py:17-68"
+ },
+ {
+  "id": "sync#O4",
+  "title": "Directory sync using delta or SCIM, with deprovisioning",
+  "detail": "Use Graph /users/delta filtered to userType eq 'Member' and deactivate on accountEnabled=false or @removed. For Google, use Admin SDK users.watch or a suspended check. Alternatively, offer Entra and Google Workspace SCIM provisioning so the client's IdP drives joiners and leavers. Stop re-setting is_active=True.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/user_sync.py:114-370"
+ },
+ {
+  "id": "sync#O5",
+  "title": "Tenant-wide capture without an admin /me or per-user OAuth",
+  "detail": "Use app-only Mail.Read scoped by Exchange RBAC for Applications to a mail-enabled 'LawHand capture' group (get_app_only_token already exists for Teams voice). For Google, use domain-wide delegation with a subject (supported in google_service_account). This replaces the admin-token fallback that currently leaks the admin's mailbox.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/teams_voice.py:1081; backend/app/services/google_service_account.py:12,103-104; backend/app/services/cloud_search.py:1515-1540"
+ },
+ {
+  "id": "sync#O6",
+  "title": "Correlate outbound mail by internetMessageId",
+  "detail": "For Graph, create a draft with POST /me/messages (which returns id and internetMessageId), then /send, stamping an X-LawHand-Comm-Id internetMessageHeader. For Gmail, keep the id returned by send. Store it as external_ref and dedupe capture on internetMessageId across all ingestion paths.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/connected_mail.py:81-199; backend/app/routers/matters.py:2791-2840"
+ },
+ {
+  "id": "sync#O7",
+  "title": "Batch APIs for metadata reads",
+  "detail": "Use Graph $batch (20 requests per call) and the Gmail batch endpoint for format=metadata lookups. This cuts about 200 sequential calls per tenant cycle to about 10, and shortens the tenant-row lock window.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/cloud_sync.py:509-562; backend/app/services/google_mail.py:184-202"
+ },
+ {
+  "id": "sync#O8",
+  "title": "One mail ingestion pipeline with cached classification",
+  "detail": "Merge email_agent scan, correspondence capture and the inbound alias into a single pipeline keyed by internetMessageId. It writes one CommunicationLog plus the .eml, reuses classification instead of re-running the LLM, and applies the same matching rules including cc.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/email_agent.py:332-416; backend/app/services/correspondence_capture.py:186-491"
+ },
+ {
+  "id": "sync#O9",
+  "title": "'File to matter' from Outlook through Copilot or an add-in action",
+  "detail": "Expose capture_email_for_matter(message_id) as an API plugin or declarative agent action for Microsoft 365 Copilot and an Outlook add-in command. Filing becomes event-driven and user-intended instead of polled, and the firm's Copilot license handles summarizing and matter suggestion before it calls LawHand.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/correspondence_capture.py:236-385"
+ },
+ {
+  "id": "sync#O10",
+  "title": "Gmail Workspace add-on with a Gemini-assisted 'File to matter'",
+  "detail": "A Gmail contextual add-on that sends the open message id to LawHand for capture and lets Gemini in Gmail draft the matter note or summary on the client's license. It also offers 'Add deadline to matter' from Calendar.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "google",
+  "refs": "backend/app/services/correspondence_capture.py:236-385; backend/app/services/google_mail.py:231-256"
+ },
+ {
+  "id": "sync#O11",
+  "title": "Microsoft 365 Copilot connector (Graph connector) for LawHand matters",
+  "detail": "Push matter metadata, deadlines and correspondence summaries into the tenant's Microsoft Search and Copilot index, ACL'd to assigned users. The firm's Copilot can then answer matter questions on its own compute, which offloads LawHand's live fan-out search and LLM cost.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "backend/app/services/cloud_search.py:124-348"
+ },
+ {
+  "id": "sync#O12",
+  "title": "Meeting recaps and transcripts filed to the matter",
+  "detail": "For Teams events LawHand creates, subscribe to callTranscript and recording notifications and file the transcript and Copilot intelligent recap to the matter. For Google, add conferenceData (Meet) to events and pull Meet transcripts or Gemini 'take notes' Docs via the Meet REST API.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/scheduled_events.py:66-111; backend/app/services/calendar_sync.py:235-297"
+ },
+ {
+  "id": "sync#O13",
+  "title": "Notify LawHand when working-copy drafts change",
+  "detail": "Subscribe to driveItem changes (Graph subscription on the drive root, or delta) and Drive files.watch on materialized draft working copies. When a lawyer edits with Copilot in Word or Gemini in Docs, reviewers are notified and a new revision is snapshotted, instead of relying on on-demand read_current_cloud_bytes.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/cloud_artifact_materialization.py:351-368"
+ },
+ {
+  "id": "sync#O14",
+  "title": "Sensitivity labels and Drive labels on filed matter content",
+  "detail": "Apply a Purview sensitivity or retention label (driveItem assignSensitivityLabel) and Google Drive Labels (matter number, privileged) to files and .eml LawHand stores. The client's Copilot, Gemini and DLP then respect privilege and can scope by matter.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "backend/app/services/correspondence_capture.py:310-321"
+ },
+ {
+  "id": "sync#O15",
+  "title": "Adopt provider_http everywhere and move calendar pushes onto the durable queue",
+  "detail": "Route calendar, cloud sync, directory, discovery and search through provider_http, parse Google 403 reason codes as throttling, and turn fire-and-forget task pushes into DurableJob kinds with attempts and backoff. Treat a revoked user token as an explicit 'reconnect' state instead of falling back to the tenant token.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/services/provider_http.py:81-145; backend/app/services/task_notifications.py:36-50; backend/app/services/durable_job_worker.py:716-866"
+ },
+ {
+  "id": "ux-admin#O0",
+  "title": "Pre-consent 'What you are granting' sheet plus Microsoft admin-consent hand-off",
+  "detail": "Show a modal before each Connect/Re-authorize redirect. It should say who must approve (Microsoft 365 Global/Privileged Role Admin; Google Workspace super-admin), give a plain-language list of what LawHand can do (read all users, read and send mail as the connected mailbox, read/write all files that account can reach, calendars), firm-wide vs per-user, and how to revoke. Add 'Send this request to my IT admin', which copies a /adminconsent URL (Entra) or the Google Admin API-controls deep link plus LawHand's client ID. Map consent_required/access_denied to this guidance.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsPanel.jsx:174-181; frontend/src/pages/OnboardingWizard.jsx:35-39,420; backend/app/routers/integrations.py:241-273"
+ },
+ {
+  "id": "ux-admin#O1",
+  "title": "Shared connection-state model and component across all surfaces",
+  "detail": "Add one helper that maps backend fields to Not connected / Connecting / Connected / Needs reconnect / Missing permissions / Partial (some capabilities off) / Paused (agreements), each with one next action. Reuse it in the hub pill, ProviderCard, Cloud Search status, Teams gate, onboarding cards and the Calendar per-user state, so the six surfaces stop disagreeing.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsHub.jsx:46-52; frontend/src/components/IntegrationsPanel.jsx:615-629; frontend/src/pages/CloudSearchAdmin.jsx:66-99"
+ },
+ {
+  "id": "ux-admin#O2",
+  "title": "Per-capability toggles with incremental consent",
+  "detail": "Replace the read-only 'Features on this account' with switches for mail capture, send-as, calendar write, document storage, directory sync and cloud search per provider. Request Mail.Send, Files.ReadWrite.All, Sites.* and Calendars.ReadWrite only when a capability is switched on (Entra incremental consent; Google granular consent, including partial grants). Show each capability's own health.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsPanel.jsx:828-851; backend/app/services/capabilities.py:136-175"
+ },
+ {
+  "id": "ux-admin#O3",
+  "title": "Connection health center and 'Test connection'",
+  "detail": "Wire the unused /admin/integrations/health data (grantor deactivated, expired token). Show the last success per capability (mail capture, calendar push, storage write, index sync), not only directory sync. Add a Test button like Zoom Phone's that creates and deletes a probe file in the storage root, reads one calendar event and sends a test message to self.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/api.js:799-800; backend/app/routers/admin.py:309-380; frontend/src/components/ZoomPanel.jsx:121-132"
+ },
+ {
+  "id": "ux-admin#O4",
+  "title": "Proper disconnect flow with impact preview and provider-side revoke links",
+  "detail": "Expose the existing disconnect endpoints behind a confirm dialog listing consequences: N per-user tokens removed, storage-bound matters that will fail writes, Teams routes stopped, cloud search index retained under the retention policy. Add deep links to Entra Enterprise applications and Google Admin > Security > API controls for provider-side revocation.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "backend/app/routers/integrations.py:2105-2166; frontend/src/components/QBOPanel.jsx:146-147"
+ },
+ {
+  "id": "ux-admin#O5",
+  "title": "Let the firm's own Microsoft Copilot and Gemini act as LawHand Workspace MCP clients",
+  "detail": "Add setup cards and allowlist entries for Microsoft Copilot Studio (add LawHand as an MCP tool in a Copilot agent, published to Teams/M365 Copilot) and for Gemini (Gemini CLI MCP config; Gemini Enterprise agent via MCP). The firm's Copilot or Gemini licence pays for the reasoning. LawHand supplies scoped matter data plus proposal-only writes (propose_document_from_template, propose_client_email), which the existing activity audit already records.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/pages/MCPPage.jsx:144,205-214; frontend/src/components/WorkspaceMcpActivityPanel.jsx:33-66"
+ },
+ {
+  "id": "ux-admin#O6",
+  "title": "Promote external assistants from Advanced to a firm-facing 'AI assistants' card",
+  "detail": "Workspace MCP is a firm policy decision (which assistants, which users), not operator plumbing. Add a firm card, 'Copilot, Gemini, Claude, ChatGPT', with a tenant on/off switch, a per-client allowlist, a connected-assistant count and a link to activity. Keep Research MCP keys under Advanced.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsHub.jsx:217-237"
+ },
+ {
+  "id": "ux-admin#O7",
+  "title": "Firm template library in SharePoint or a Shared Drive, then 'Open in Word/Docs' for Copilot or Gemini refinement",
+  "detail": "Add an admin setting that binds a templates folder (reusing the SharePoint site/library picker and the Google Shared Drive root). LawHand fills merge fields into .dotx or Google Docs templates in the firm's own storage and opens the result in Word for the web or Google Docs. Staff use their licensed Copilot in Word or Gemini in Docs for drafting and redlines, and LawHand re-ingests the final version.",
+  "effort": "L",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsPanel.jsx:416-593; frontend/src/pages/OnboardingWizard.jsx:41-54"
+ },
+ {
+  "id": "ux-admin#O8",
+  "title": "Office apps deployment section (Office add-in, Teams app, Workspace add-on)",
+  "detail": "There is no admin surface today. Add a hub card that explains centralized deployment through the Microsoft 365 admin center (Integrated apps), with manifest download from office-addin/manifests and teams-app/manifest.json, install status, and Google Workspace Marketplace install for a Docs/Gmail add-on. This is the channel where Copilot in Word/Outlook and Gemini in Docs meet LawHand context.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/marketing/requirements.js:50; teams-app/manifest.json; office-addin/manifests"
+ },
+ {
+  "id": "ux-admin#O9",
+  "title": "Detect Copilot/Gemini licences in readiness and gate hand-off features",
+  "detail": "Show whether the tenant has Microsoft 365 Copilot SKUs (Graph /subscribedSkus) or Gemini for Workspace, so the UI offers 'Draft with Copilot in Word' or 'Refine with Gemini in Docs' only where licensed. Needs Organization.Read.All (Graph) or the Google Licensing API, both opt-in consent.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationReadinessCard.jsx:21-89"
+ },
+ {
+  "id": "ux-admin#O10",
+  "title": "Microsoft 365 Copilot connector (Graph connector) for matter metadata",
+  "detail": "Push matter and document metadata with per-user ACLs into the firm's Microsoft Search index, so M365 Copilot answers matter-status questions natively and links back to LawHand. The Google equivalent is a Gemini Enterprise data connector. Admin UI: on/off switch, scope preview, last crawl time.",
+  "effort": "XL",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsHub.jsx:54-292"
+ },
+ {
+  "id": "ux-admin#O11",
+  "title": "SharePoint / Shared Drive as a first-class choice in the onboarding Storage step",
+  "detail": "Offer the SharePoint site/library picker and Google Shared Drive status at setup, instead of 'finish with OneDrive, then change it'. This avoids at_risk personal-drive roots and a later migration for M365 firms.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/pages/OnboardingWizard.jsx:41-54,545-548; frontend/platform_docs/administrative-guide/21-onboarding-and-storage-setup.md:38"
+ },
+ {
+  "id": "ux-admin#O12",
+  "title": "A 'My connected accounts' page in Profile, replacing 'Connect Calendar'",
+  "detail": "The per-user grant covers mail read/send and all files, not just calendar. Move per-user connect and reconnect to Profile, with a scope explanation. In the admin card, add a 'Remind users who need to reconnect' action.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/components/IntegrationsPanel.jsx:787-791; frontend/src/api.js:2305-2306; backend/app/routers/integrations.py:256-259"
+ },
+ {
+  "id": "ux-user#O0",
+  "title": "Open in Word desktop / Google Docs everywhere a DOCX appears",
+  "detail": "Add 'Open in Word' (ms-word:ofe|u|<fresh url>) and 'Edit in Google Docs' actions on document rows, prepared-document saves, the draft workspace and previews, resolved through the existing /documents/{id}/open endpoint. The attorney then finishes the draft where their firm's Microsoft 365 Copilot in Word or Gemini in Docs licence already works, and LawHand needs no extra AI spend.",
+  "effort": "S",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/MatterDocumentsTab.jsx:1139-1147; frontend/src/components/prepare/PrepareDocumentBody.jsx:470-476; backend/app/routers/matter_documents.py:719-747"
+ },
+ {
+  "id": "ux-user#O1",
+  "title": "Draft in my Outlook / Gmail instead of sending from LawHand",
+  "detail": "From ComposeEmailModal and AI email proposals, create a draft in the user's mailbox (Graph POST /me/messages; Gmail users.drafts.create) with matter subject, body and reviewed attachments, then deep-link to it. The user polishes it with Copilot in Outlook or Gemini 'Help me write' and sends natively; capture rules bring the sent copy back. Needs Mail.ReadWrite or gmail.compose.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/ComposeEmailModal.jsx:51-78; frontend/src/components/chat/ActionProposalCard.jsx:26-60"
+ },
+ {
+  "id": "ux-user#O2",
+  "title": "Template and doc prep inside the client's office suite",
+  "detail": "Write Smart Fill DOCX output straight into the matter's OneDrive, SharePoint or Drive folder as a working copy and open it in Word or Docs for review, instead of 'download and open this DOCX'. LawHand keeps the exact-bytes approval via the existing refresh-edits-from-cloud flow. Copilot or Gemini in the editor handles the rewriting and summarising.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-466; frontend/src/components/chat/ActionProposalCard.jsx:547-566"
+ },
+ {
+  "id": "ux-user#O3",
+  "title": "Native OneDrive/SharePoint and Google Drive pickers",
+  "detail": "Use OneDrive File Picker v8 (which covers SharePoint libraries) and Google Picker for three jobs: import a file into a matter, link a context folder, and remap the matter folder. This replaces pasted IDs and URLs and the dead ConnectedFilesModal. The pickers enforce the user's own permissions and need no broad search.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/components/MatterSmbSharesTab.jsx:470-490; frontend/src/components/FileUpload.jsx:207-231; frontend/src/components/MatterImportWizard.jsx:121-124"
+ },
+ {
+  "id": "ux-user#O4",
+  "title": "Personal 'Connected accounts' card with least-privilege, return-to connect",
+  "detail": "A Profile card built on /auth/calendar-providers showing account, health and plain-language scopes, with Reconnect and a new per-user Disconnect. Pass return_to through intent=user OAuth so Reconnect from Compose, Correspondence or Documents lands back in context. Split the grants into calendar, mail and files increments (incremental consent) so 'Connect Calendar' asks only for calendar.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/pages/ProfilePage.jsx:276-281; backend/app/routers/auth.py:2731-2804; backend/app/routers/integrations.py:256-265,1750-1754"
+ },
+ {
+  "id": "ux-user#O5",
+  "title": "Connect Microsoft Copilot and Google Gemini as Workspace MCP clients",
+  "detail": "The workspace MCP already serves Claude, ChatGPT and Codex-type clients from Profile. Add tested setup guides and consent branding for Copilot Studio agents and Gemini Enterprise or Gemini CLI, where they support remote MCP with OAuth. Firm users could then ask their own Copilot or Gemini to search matters or propose tasks, drafts and emails, with LawHand's proposal-only guardrails and audit.",
+  "effort": "M",
+  "value": "high",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/WorkspaceMcpGrantsPanel.jsx:112-135; frontend/src/pages/ProfilePage.jsx:10-26"
+ },
+ {
+  "id": "ux-user#O6",
+  "title": "Microsoft 365 Copilot connector / declarative agent for LawHand matters",
+  "detail": "Publish a Graph (Copilot) connector that indexes matter metadata such as names, parties, key dates and folder links, ACL'd to matter team members, plus a declarative agent or Teams message extension. Copilot Chat can then answer 'what's due on Acme v. Smith' and link back into LawHand using the client's Copilot licence.",
+  "effort": "L",
+  "value": "medium",
+  "leverages_client_ai": true,
+  "provider": "microsoft",
+  "refs": "teams-app/; frontend/platform_docs/user-guide/15-teams-and-client-portals.md:14-20"
+ },
+ {
+  "id": "ux-user#O7",
+  "title": "In-app DOCX preview via provider preview endpoints",
+  "detail": "For cloud-stored documents, embed the Graph driveItem preview (POST /drives/{d}/items/{i}/preview) or Drive /preview iframe inside MatterDocumentPreview, so users can review Word files without downloading and without LawHand running a converter.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/components/documents/MatterDocumentPreview.jsx:8-23"
+ },
+ {
+  "id": "ux-user#O8",
+  "title": "Surface the Office add-in, Teams app and a Gmail/Workspace add-on to end users",
+  "detail": "The SPA never tells users that the Word/Outlook add-in or Teams app exists. The only mentions are marketing copy in frontend/src/marketing/requirements.js:50. Add a 'Use LawHand in Word/Outlook/Teams' entry, via centralized deployment status, on Profile and in the Documents and Correspondence empty states. Build an equivalent Gmail/Docs Workspace add-on for 'file this email or document to a matter'.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "office-addin/; frontend/src/marketing/requirements.js:50"
+ },
+ {
+  "id": "ux-user#O9",
+  "title": "Global connection-health banner with in-context recovery",
+  "detail": "Poll /auth/calendar-providers and storage-readiness once per session. If the user's token has needs_reconnect or the firm storage grant is broken, show a dismissible app-shell banner with the right action (Reconnect for the user; 'notify admin' for firm-level problems) instead of silent empty panels.",
+  "effort": "S",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/pages/CalendarPage.jsx:524-586; frontend/src/components/prepare/StorageReadinessNotice.jsx:6-33"
+ },
+ {
+  "id": "ux-user#O10",
+  "title": "Scheduling with Outlook/Google free-busy in New Event",
+  "detail": "Use Graph findMeetingTimes / getSchedule and Google freebusy.query in the New Event modal to suggest slots for the matter team and client, keeping the existing truthful sync messaging.",
+  "effort": "M",
+  "value": "medium",
+  "leverages_client_ai": false,
+  "provider": "both",
+  "refs": "frontend/src/pages/CalendarPage.jsx:783-812"
+ },
+ {
+  "id": "ux-user#O11",
+  "title": "Deep-link captured correspondence back to Outlook/Gmail",
+  "detail": "Store and show the provider webLink (Graph message.webLink / Gmail thread URL) next to the .eml download, so attorneys can reply in their mail client, with Copilot or Gemini thread summaries available there.",
+  "effort": "S",
+  "value": "low",
+  "leverages_client_ai": true,
+  "provider": "both",
+  "refs": "frontend/src/components/MatterCorrespondenceTab.jsx:738-747"
+ }
+]

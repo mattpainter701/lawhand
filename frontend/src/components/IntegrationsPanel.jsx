@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   API_BASE_URL,
+  disconnectCloudProvider,
   getAdminPermissions,
   triggerUserSync,
   retryCloudInit,
@@ -12,35 +13,102 @@ import {
   listSharePointDrives,
   saveSharePointBinding,
 } from '../api'
+import { useConfirm } from './dialog/ConfirmProvider'
 import { Disclosure } from './ui'
+import { oauthErrorMessage, oauthProviderLabel } from '../utils/oauthErrors'
 import { deriveStorageReadiness, STORAGE_PROVIDER_LABELS } from './storageReadiness'
 
+// Firm connections are delegated grants: every call acts as the account that
+// connected, so the labels say "the connected account" rather than implying
+// organization-wide mailbox access.
 const SCOPE_LABELS_MS = {
-  offline_access: 'Offline access (refresh tokens)',
-  'User.Read.All': 'Read all user profiles',
-  'Mail.Read': 'Read signed-in mailbox',
-  'Mail.Send': 'Send email from the connected mailbox',
-  'Files.Read.All': 'Read all files (OneDrive + SharePoint)',
-  'Files.ReadWrite.All': 'Read & write files (OneDrive + SharePoint)',
-  'Sites.Read.All': 'Access SharePoint sites',
-  'Calendars.ReadWrite': 'Read and write calendars',
-  openid: 'OpenID Connect',
+  offline_access: 'Stay connected without signing in again',
+  'User.Read.All': 'Read staff profiles in your organization (for user sync)',
+  'Mail.Read': "Read mail in the connected account's mailbox",
+  'Mail.Send': 'Send email as the connected account',
+  'Files.Read.All': 'Read every file the connected account can open (OneDrive + SharePoint)',
+  'Files.ReadWrite.All': 'Read and write every file the connected account can open (OneDrive + SharePoint)',
+  'Sites.Read.All': 'Read every SharePoint site the connected account can open',
+  'Calendars.ReadWrite': "Read and write the connected account's calendars",
+  openid: 'Confirm who signed in',
   email: 'Email address',
   profile: 'Profile info',
 }
 
 const SCOPE_LABELS_GOOGLE = {
-  'openid': 'OpenID Connect',
+  'openid': 'Confirm who signed in',
   'email': 'Email address',
   'profile': 'Profile info',
   'https://www.googleapis.com/auth/userinfo.email': 'Email address',
   'https://www.googleapis.com/auth/userinfo.profile': 'Profile info',
-  'https://www.googleapis.com/auth/admin.directory.user.readonly': 'Read directory users',
-  'https://www.googleapis.com/auth/gmail.readonly': 'Read Gmail messages',
-  'https://www.googleapis.com/auth/gmail.send': 'Send email from the connected mailbox',
-  'https://www.googleapis.com/auth/drive.readonly': 'Read Google Drive files (read-only)',
-  'https://www.googleapis.com/auth/drive': 'Read & write Google Drive (folders + files)',
-  'https://www.googleapis.com/auth/calendar': 'Read & write Google Calendar',
+  'https://www.googleapis.com/auth/admin.directory.user.readonly': 'Read your Workspace user directory (for user sync)',
+  'https://www.googleapis.com/auth/gmail.readonly': "Read mail in the connected account's Gmail",
+  'https://www.googleapis.com/auth/gmail.send': 'Send email as the connected account',
+  'https://www.googleapis.com/auth/drive.readonly': 'Read every Google Drive file the connected account can open',
+  'https://www.googleapis.com/auth/drive': 'Read and write every Google Drive file the connected account can open',
+  'https://www.googleapis.com/auth/calendar': "Read and write the connected account's Google Calendars",
+}
+
+// Sign-in plumbing scopes are listed for support but are not a feature a
+// firm administrator needs to weigh before connecting.
+const PLUMBING_SCOPES = new Set([
+  'openid',
+  'email',
+  'profile',
+  'offline_access',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+])
+
+// The capability matrix reports mail, calendar and storage as available from
+// the account tier alone; a scope the administrator declined still disables
+// the feature, so the card downgrades it from the audited missing list.
+const SCOPE_CAPABILITY = {
+  'User.Read.All': 'directory_sync',
+  'Mail.Read': 'email',
+  'Mail.Send': 'email',
+  'Files.ReadWrite.All': 'cloud_storage',
+  'Sites.Read.All': 'cloud_storage',
+  'Calendars.ReadWrite': 'calendar',
+  'https://www.googleapis.com/auth/admin.directory.user.readonly': 'directory_sync',
+  'https://www.googleapis.com/auth/gmail.readonly': 'email',
+  'https://www.googleapis.com/auth/gmail.send': 'email',
+  'https://www.googleapis.com/auth/drive': 'cloud_storage',
+  'https://www.googleapis.com/auth/calendar': 'calendar',
+}
+
+const JOB_LABELS = {
+  'user-sync': 'Directory sync',
+  'cloud-sync': 'File & email index',
+  'correspondence-capture': 'Email filing',
+}
+
+export function syncJobLabel(jobType) {
+  const key = String(jobType || '').replace(/_/g, '-')
+  if (JOB_LABELS[key]) return JOB_LABELS[key]
+  const words = key.replace(/-/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Sync'
+}
+
+// Plain-language first line for a provider error; the raw text stays one
+// click away for support.
+export function describeProviderError(raw) {
+  const text = String(raw || '')
+  if (/invalid_grant|revoked|expired/i.test(text)) {
+    return 'The provider no longer accepts the saved sign-in (it was revoked, expired, or blocked by an admin policy). Re-authorize to fix it.'
+  }
+  if (/\b(429|5\d\d)\b|timeout|timed out|temporar/i.test(text)) {
+    return 'The provider did not respond. LawHand retries automatically.'
+  }
+  if (/\b(401|403)\b|access.?denied|forbidden/i.test(text)) {
+    return 'The provider refused access. Re-authorize and approve every requested permission.'
+  }
+  return 'The provider returned an error.'
+}
+
+const CONNECT_WHO = {
+  microsoft: 'Sign in with an administrator account for your Microsoft 365 organization. Microsoft shows its own consent screen before anything is shared.',
+  google: 'Sign in with a Google Workspace administrator account, or with your Gmail account for a solo practice. Google shows its own consent screen before anything is shared.',
 }
 
 const CAPABILITY_LABELS = {
@@ -83,6 +151,17 @@ export function relTime(iso, now = Date.now()) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+// The connect callback lands here with ?connected=<provider> or
+// ?error=<code>&provider=<provider>; say what happened next to the card.
+export function readConnectReturn(search = globalThis.window?.location?.search) {
+  const params = new URLSearchParams(search || '')
+  const error = params.get('error')
+  const provider = error ? params.get('provider') : params.get('connected')
+  if (!['microsoft', 'google'].includes(provider)) return null
+  if (error) return { tone: 'error', text: oauthErrorMessage(error, provider) }
+  return { tone: 'ok', text: `${oauthProviderLabel(provider)} connected. Check the card below: anything that was not granted is listed there.` }
+}
+
 export default function IntegrationsPanel() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -97,6 +176,9 @@ export default function IntegrationsPanel() {
   const [contentSyncResult, setContentSyncResult] = useState(null)
   const [sharePointBinding, setSharePointBinding] = useState(null)
   const [sharePointFlash, setSharePointFlash] = useState(null)
+  const [disconnecting, setDisconnecting] = useState(null)
+  const [returnNotice, setReturnNotice] = useState(() => readConnectReturn())
+  const confirmAction = useConfirm()
 
   const handleRetryCloudInit = async () => {
     setRetrying(true)
@@ -171,13 +253,57 @@ export default function IntegrationsPanel() {
     ) : null
   }
 
-  const handleReauthorize = (provider) => {
+  const handleReauthorize = (provider, { accountMode } = {}) => {
     const intent = 'admin'
     if (provider === 'microsoft') {
-      window.location.href = `${API_BASE_URL}/integrations/microsoft/connect?intent=${intent}`
-    } else {
-      window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=${intent}`
+      window.location.href = `${API_BASE_URL}/integrations/microsoft/connect?intent=${intent}&return_to=integrations`
+      return
     }
+    // The connect endpoint defaults to Workspace and rejects a personal Gmail
+    // consent made in that mode, so a personal tenant must say so on re-authorize.
+    const mode = accountMode || (data.google?.account_type === 'personal' ? 'personal' : null)
+    window.location.href = `${API_BASE_URL}/integrations/google/connect?intent=${intent}&return_to=integrations${mode ? `&account_mode=${mode}` : ''}`
+  }
+
+  const handleDisconnect = async (provider) => {
+    const label = provider === 'google' ? 'Google' : 'Microsoft 365'
+    const storage = provider === 'google' ? 'Google Drive' : 'OneDrive or SharePoint'
+    const staff = data?.[provider]?.user_tokens?.total || 0
+    // Disconnect is firm-wide and removes every personal connection, so it
+    // needs a typed acknowledgement rather than a single click.
+    const confirmed = await confirmAction({
+      title: `Disconnect ${label} for the whole firm?`,
+      message: `This removes LawHand's ${label} access for everyone at the firm. Reconnecting later needs an administrator to connect again and each person to reconnect their own account.`,
+      details: [
+        `Saving matter documents to ${storage} stops. Files already there stay where they are.`,
+        'Email filing, sending from connected mailboxes and calendar updates stop.',
+        staff > 0
+          ? `${staff} staff ${staff === 1 ? 'member’s' : 'members’'} personal ${label} ${staff === 1 ? 'connection is' : 'connections are'} removed as well.`
+          : `Any staff member's personal ${label} connection is removed as well.`,
+        provider === 'google'
+          ? 'LawHand also revokes its access at Google.'
+          : 'LawHand deletes its Microsoft sign-ins. To remove LawHand completely, also remove it under Enterprise applications in Microsoft Entra.',
+      ],
+      requireText: `disconnect ${label}`,
+      confirmLabel: `Disconnect ${label}`,
+      destructive: true,
+    })
+    if (!confirmed) return
+    setDisconnecting(provider)
+    setError(null)
+    try {
+      await disconnectCloudProvider(provider)
+      setData(await getAdminPermissions())
+    } catch {
+      setError(`Failed to disconnect ${label}. Reload this page to check its status, then try again.`)
+    } finally {
+      setDisconnecting(null)
+    }
+  }
+
+  const providerName = (provider, info) => {
+    if (provider === 'google') return info?.account_type === 'personal' ? 'Google (personal Gmail)' : 'Google Workspace'
+    return info?.account_type === 'consumer' ? 'Microsoft (personal account)' : 'Microsoft 365'
   }
 
   const handleContentSync = async () => {
@@ -196,7 +322,8 @@ export default function IntegrationsPanel() {
   const overallColors = {
     healthy: 'bg-green-100 text-green-700 border-green-200',
     attention_needed: 'bg-amber-100 text-amber-700 border-amber-200',
-    disconnected: 'bg-red-100 text-red-700 border-red-200',
+    // Nothing connected yet is a starting point, not a failure.
+    disconnected: 'bg-gray-100 text-gray-600 border-gray-200',
   }
   const storageReadiness = deriveStorageReadiness({
     primaryCloud,
@@ -218,13 +345,26 @@ export default function IntegrationsPanel() {
         <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-medium">{error}</div>
       )}
 
+      {returnNotice && (
+        <div
+          role={returnNotice.tone === 'error' ? 'alert' : 'status'}
+          data-testid="connect-return"
+          className={`flex items-start justify-between gap-3 px-4 py-3 rounded-xl border text-xs font-medium ${
+            returnNotice.tone === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-800'
+          }`}
+        >
+          <span>{returnNotice.text}</span>
+          <button type="button" onClick={() => setReturnNotice(null)} className="shrink-0 font-bold" aria-label="Dismiss">×</button>
+        </div>
+      )}
+
       {/* Overall status — the one line an administrator needs first */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold ${overallColors[data.overall_health] || overallColors.disconnected}`}>
           <span className={`w-2 h-2 rounded-full ${
             data.overall_health === 'healthy' ? 'bg-green-500' :
-            data.overall_health === 'attention_needed' ? 'bg-amber-500' : 'bg-red-500'
-          }`} />
+            data.overall_health === 'attention_needed' ? 'bg-amber-500' : 'bg-gray-400'
+          }`} aria-hidden="true" />
           Integrations: {data.overall_health === 'healthy' ? 'Healthy' :
             data.overall_health === 'attention_needed' ? 'Needs Attention' : 'No integrations connected'}
         </div>
@@ -262,31 +402,40 @@ export default function IntegrationsPanel() {
 
       {/* Provider cards come first: they answer "is this working?" */}
       <ProviderCard
-        name="Microsoft 365"
+        name={providerName('microsoft', data.microsoft)}
         provider="microsoft"
         info={data.microsoft}
         scopeLabels={SCOPE_LABELS_MS}
         onReauthorize={handleReauthorize}
+        onDisconnect={handleDisconnect}
+        disconnecting={disconnecting === 'microsoft'}
+        otherConnected={Boolean(data.google?.connected)}
         relTime={relTime}
         onSyncNow={handleSyncNow}
         syncing={syncing}
       />
       <ProviderCard
-        name="Google Workspace"
+        name={providerName('google', data.google)}
         provider="google"
         info={data.google}
         scopeLabels={SCOPE_LABELS_GOOGLE}
         onReauthorize={handleReauthorize}
+        onDisconnect={handleDisconnect}
+        disconnecting={disconnecting === 'google'}
+        otherConnected={Boolean(data.microsoft?.connected)}
+        onConnectPersonal={() => handleReauthorize('google', { accountMode: 'personal' })}
         relTime={relTime}
         onSyncNow={handleSyncNow}
         syncing={syncing}
       />
 
-      {/* Storage settings are rarely changed and dangerous to change casually */}
+      {/* Storage settings are rarely changed and dangerous to change casually;
+          they open on their own only when a connected firm cannot save yet. */}
       <Disclosure
         title="Document storage"
         summary={storageSummary}
         tone={storageTone}
+        defaultOpen={anyConnected && !storageReadiness.ready}
         testId="document-storage"
       >
         <div className="space-y-6">
@@ -614,10 +763,81 @@ export function CloudRetryStatus({ result }) {
 
 const HEALTH_TEXT = {
   healthy: 'Healthy',
-  missing_scopes: 'Missing Scopes',
+  missing_scopes: 'Missing permissions',
   refresh_failed: 'Refresh Failed',
   revoked: 'Reconnect Required',
-  disconnected: 'Disconnected',
+  disconnected: 'Not connected',
+}
+
+/**
+ * A provider the firm has never connected. It explains what connecting asks
+ * for and who has to do it, instead of listing every permission as a red
+ * failure. When the firm already runs on the other suite it stays compact.
+ */
+function NotConnectedCard({ name, provider, requiredRows, scopeLabels, onReauthorize, onConnectPersonal, otherConnected }) {
+  const asks = requiredRows.filter((scope) => !PLUMBING_SCOPES.has(scope)).map((scope) => scopeLabels[scope] || scope)
+  const askList = (
+    <ul className="mt-2 space-y-1" data-testid={`connect-asks-${provider}`}>
+      {asks.map((label) => (
+        <li key={label} className="flex gap-2 text-xs text-brand-ink-2 font-sans">
+          <span className="text-brand-muted" aria-hidden="true">•</span>
+          <span>{label}</span>
+        </li>
+      ))}
+    </ul>
+  )
+  return (
+    <div className="bg-brand-surface border border-brand-line rounded-xl p-6" data-testid={`provider-card-${provider}`}>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 max-w-2xl">
+          <h3 className="text-brand-ink font-sans text-base font-bold">{name}</h3>
+          <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600">Not connected</span>
+          <p className="mt-2 text-xs text-brand-ink-2 font-sans">
+            {otherConnected ? `Only needed if your firm also uses ${name}.` : CONNECT_WHO[provider]}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <button
+            onClick={() => onReauthorize(provider)}
+            className={`px-4 py-2 font-sans text-xs font-medium rounded-lg transition-colors ${
+              otherConnected
+                ? 'border border-brand-line text-brand-ink hover:bg-brand-bg-soft'
+                : 'bg-brand-ink text-white hover:bg-brand-ink/90'
+            }`}
+          >
+            Connect
+          </button>
+          {onConnectPersonal && !otherConnected && (
+            <button type="button" onClick={onConnectPersonal} className="text-xs font-medium text-brand-accent hover:text-brand-ink font-sans">
+              Solo practice on personal Gmail? Connect it instead
+            </button>
+          )}
+        </div>
+      </div>
+      {asks.length > 0 && (otherConnected ? (
+        <details className="group mt-3">
+          <summary className="cursor-pointer list-none text-xs font-bold text-brand-ink font-sans marker:hidden [&::-webkit-details-marker]:hidden">
+            What {name} will be asked to allow <span className="inline-block text-brand-muted transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+          </summary>
+          {askList}
+        </details>
+      ) : (
+        <div className="mt-4 rounded-lg bg-brand-bg px-4 py-3">
+          <p className="text-xs font-bold text-brand-ink font-sans">What {name} will be asked to allow</p>
+          {askList}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ProviderError({ raw, testId }) {
+  return (
+    <details className="mt-1 text-xs font-sans" data-testid={testId}>
+      <summary className="cursor-pointer text-red-700 font-medium">{describeProviderError(raw)} <span className="text-brand-muted font-normal">Technical details</span></summary>
+      <p className="mt-1 text-red-600 font-mono bg-red-50 px-2 py-1 rounded break-all">{raw}</p>
+    </details>
+  )
 }
 
 const HEALTH_REMEDY = {
@@ -625,7 +845,34 @@ const HEALTH_REMEDY = {
   refresh_failed: 'LawHand could not refresh the firm-wide token. Re-authorize as an administrator; if it fails again, check the provider app configuration under Advanced.',
 }
 
-export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize, relTime, onSyncNow, syncing }) {
+export function ProviderCard({
+  name,
+  provider,
+  info,
+  scopeLabels,
+  onReauthorize,
+  onDisconnect,
+  disconnecting = false,
+  onConnectPersonal,
+  otherConnected = false,
+  relTime,
+  onSyncNow,
+  syncing,
+}) {
+  if (!info.connected) {
+    const rows = info.required_scopes?.length ? info.required_scopes : info.missing_required || []
+    return (
+      <NotConnectedCard
+        name={name}
+        provider={provider}
+        requiredRows={rows}
+        scopeLabels={scopeLabels}
+        onReauthorize={onReauthorize}
+        onConnectPersonal={onConnectPersonal}
+        otherConnected={otherConnected}
+      />
+    )
+  }
   const healthText = HEALTH_TEXT[info.health] || 'Needs Attention'
   const grantedScopes = info.granted_scopes || []
   const missingScopes = info.missing_required || []
@@ -718,10 +965,15 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
             </span>
           )}
           {info.connected && (
-            <p className="mt-2 text-[11px] uppercase tracking-wider font-bold text-brand-muted font-sans">Firm-wide connection</p>
+            <p className="mt-2 text-[11px] uppercase tracking-wider font-bold text-brand-muted font-sans">Firm connection</p>
           )}
           {info.connected && info.service_account_email && (
             <p className="text-xs text-brand-ink-2 font-sans">Granted by {info.service_account_email}</p>
+          )}
+          {info.connected && (
+            <p className="text-xs text-brand-ink-2 font-sans max-w-xl">
+              Mail and calendar features that use this connection act as {info.service_account_email || 'the administrator who connected it'}. It does not open other staff mailboxes.
+            </p>
           )}
           {info.connected && (
             <p className="mt-1 text-xs text-brand-ink-2 font-sans">
@@ -737,17 +989,13 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
             </p>
           )}
           {info.connected && info.last_sync_error && info.last_sync_status === 'failed' && (
-            <p className="mt-1 text-xs text-red-600 font-mono bg-red-50 px-2 py-1 rounded">
-              {info.last_sync_error}
-            </p>
+            <ProviderError raw={info.last_sync_error} testId={`sync-error-${provider}`} />
           )}
           {info.connected && info.last_refresh_error && (
-            <p className="mt-1 text-xs text-red-600 font-mono bg-red-50 px-2 py-1 rounded">
-              {info.last_refresh_error}
-            </p>
+            <ProviderError raw={info.last_refresh_error} testId={`refresh-error-${provider}`} />
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {canSyncDirectory && (
             <button
               onClick={onSyncNow}
@@ -760,13 +1008,22 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
           <button
             onClick={() => onReauthorize(provider)}
             className={`px-4 py-2 font-sans text-xs font-medium rounded-lg transition-colors ${
-              unusable || !info.connected
+              unusable || missingScopes.length > 0
                 ? 'bg-brand-ink text-white hover:bg-brand-ink/90'
                 : 'border border-brand-line text-brand-ink hover:bg-brand-bg-soft'
             }`}
           >
-            {info.connected ? 'Re-authorize' : 'Connect'}
+            Re-authorize
           </button>
+          {onDisconnect && (
+            <button
+              onClick={() => onDisconnect(provider)}
+              disabled={disconnecting}
+              className="px-4 py-2 font-sans text-xs font-medium rounded-lg border border-red-200 text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -777,6 +1034,16 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
         </div>
       )}
 
+      {!unusable && missingScopes.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 font-sans" role="status" data-testid={`missing-scopes-${provider}`}>
+          <p className="font-semibold">Some permissions were not granted, so part of this connection is off.</p>
+          <p className="mt-1">
+            Not granted: {missingScopes.map((scope) => scopeLabels[scope] || scope).join('; ')}.
+            {' '}Choose Re-authorize and approve every permission on the consent screen.
+          </p>
+        </div>
+      )}
+
       {info.connected && userTokens && (
         <div className="mb-4 rounded-lg border border-brand-line bg-brand-bg px-4 py-3" data-testid={`user-tokens-${provider}`}>
           <p className="text-[11px] uppercase tracking-wider font-bold text-brand-muted font-sans">Per-user connections</p>
@@ -784,11 +1051,11 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
             <p className="mt-1 text-xs text-brand-ink-2 font-sans">
               {userTokens.healthy} of {userTokens.total} connected
               {userTokens.needs_reauth > 0 && (
-                <span className="text-amber-700 font-medium"> · {userTokens.needs_reauth} need to open Calendar and choose Connect Calendar</span>
+                <span className="text-amber-700 font-medium"> · {userTokens.needs_reauth} need to reconnect from Profile → Connected accounts</span>
               )}
             </p>
           ) : (
-            <p className="mt-1 text-xs text-brand-ink-2 font-sans">No users have connected their own account yet. Each user opens Calendar and chooses Connect Calendar; an administrator cannot do it for them.</p>
+            <p className="mt-1 text-xs text-brand-ink-2 font-sans">No one has connected their own account yet. Each person connects from Profile → Connected accounts; an administrator cannot do it for them. It lets LawHand file their matter email, send approved client email from their address and put their tasks on their calendar.</p>
           )}
         </div>
       )}
@@ -797,9 +1064,9 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
           {info.recent_sync_runs.slice(0, 3).map((run) => (
             <div key={`${run.job_type}-${run.started_at}`} className="bg-brand-bg border border-brand-line rounded-lg px-3 py-2">
-              <div className="text-[11px] uppercase font-bold text-brand-ink-2">{run.job_type}</div>
+              <div className="text-[11px] uppercase font-bold text-brand-ink-2">{syncJobLabel(run.job_type)}</div>
               <div className={`text-xs font-bold ${run.status === 'completed' ? 'text-green-700' : 'text-red-600'}`}>
-                {run.status} · {relTime(run.started_at)}
+                {run.status === 'completed' ? 'Completed' : run.status === 'failed' ? 'Failed' : run.status} · {relTime(run.started_at)}
               </div>
               <div className="text-[11px] text-brand-ink-2">
                 {run.items_ok || 0} ok · {run.items_failed || 0} failed
@@ -832,7 +1099,15 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
             <p className="mb-2 text-xs text-brand-muted font-sans">Directory sync imports organization users. Its availability is separate from document storage.</p>
           )}
           <div className="space-y-1.5">
-            {Object.entries(info.capabilities).map(([key, capability]) => {
+            {Object.entries(info.capabilities).map(([key, reported]) => {
+              const declined = missingScopes.filter((scope) => SCOPE_CAPABILITY[scope] === key)
+              const capability = reported.status === 'ok' && declined.length
+                ? {
+                    ...reported,
+                    status: 'needs_reauth',
+                    reason: `Not granted: ${declined.map((scope) => scopeLabels[scope] || scope).join('; ')}.`,
+                  }
+                : reported
               const badge = CAP_BADGE[capability.status] || CAP_BADGE.unavailable
               const badgeText = isCapabilityUnconfirmed(info, key, capability)
                 ? 'Not confirmed'
@@ -840,9 +1115,15 @@ export function ProviderCard({ name, provider, info, scopeLabels, onReauthorize,
                   ? 'Unavailable for this account'
                   : badge.text
               return (
-                <div key={key} className="flex items-center justify-between gap-3" title={capability.reason}>
-                  <span className="text-xs text-brand-ink-2 font-sans">{CAPABILITY_LABELS[key] || key}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badgeText}</span>
+                <div key={key} data-testid={`capability-${key}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-brand-ink-2 font-sans">{CAPABILITY_LABELS[key] || key}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badgeText}</span>
+                  </div>
+                  {/* Reasons are sentences; a bare code such as "missing_scopes" is not shown. */}
+                  {capability.status !== 'ok' && /\s/.test(capability.reason || '') && (
+                    <p className="mt-0.5 text-[11px] text-brand-muted font-sans">{capability.reason}</p>
+                  )}
                 </div>
               )
             })}

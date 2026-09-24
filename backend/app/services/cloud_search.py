@@ -640,6 +640,11 @@ class CloudSearchService:
         token = token or await self._get_google_token(db, tenant_id, user_id)
         if not token:
             return []
+        # The platform service account belongs to every tenant's Shared Drive;
+        # with its token, search only this tenant's drive.
+        drive_scope = google_service_account.service_account_drive_scope(token)
+        if drive_scope == google_service_account.NO_TENANT_DRIVE:
+            return []
 
         clauses: list[str] = []
         for kw in keywords:
@@ -673,6 +678,9 @@ class CloudSearchService:
             "includeItemsFromAllDrives": True,
             "supportsAllDrives": True,
         }
+        if drive_scope:
+            params["corpora"] = "drive"
+            params["driveId"] = drive_scope
 
         async with httpx.AsyncClient(timeout=30) as client:
             try:
@@ -1095,6 +1103,23 @@ class CloudSearchService:
 
     # ── Content fetching ────────────────────────────────────────────────
 
+    @staticmethod
+    async def _drive_file_in_drive(
+        client: httpx.AsyncClient, token: str, file_id: str, drive_id: str
+    ) -> bool:
+        """True only when Drive confirms ``file_id`` lives in ``drive_id``."""
+        try:
+            resp = await client.get(
+                f"{GOOGLE_DRIVE_BASE}/files/{file_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"fields": "driveId", "supportsAllDrives": True},
+            )
+        except httpx.RequestError:
+            return False
+        if resp.status_code != 200:
+            return False
+        return resp.json().get("driveId") == drive_id
+
     async def _fetch_google_drive_content(
         self,
         db: AsyncSession,
@@ -1106,8 +1131,17 @@ class CloudSearchService:
         token = await self._get_google_token(db, tenant_id, user_id)
         if not token:
             return hit.snippet or None
+        drive_scope = google_service_account.service_account_drive_scope(token)
+        if drive_scope == google_service_account.NO_TENANT_DRIVE:
+            return hit.snippet or None
 
         async with httpx.AsyncClient(timeout=30) as client:
+            # The service account can open any tenant's Shared Drive file by
+            # id; read content only from this tenant's own drive.
+            if drive_scope and not await self._drive_file_in_drive(
+                client, token, hit.object_id, drive_scope
+            ):
+                return None
             # Try export for Google-native formats (Docs, Sheets, etc.)
             export_mime = self._drive_export_mime(hit.mime_type)
             if export_mime:

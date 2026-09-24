@@ -12,6 +12,7 @@ import {
 } from '../api'
 import { AgreementAcceptancePanel } from '../components/CompliancePanel'
 import WorkflowSynthesisPanel from '../components/workflows/WorkflowSynthesisPanel'
+import { oauthErrorMessage } from '../utils/oauthErrors'
 
 // Step numbers are shared with backend/app/routers/onboarding.py.
 export const STEP = {
@@ -31,12 +32,6 @@ const STEPS = [
   { id: STEP.REVIEW, label: 'Review' },
   { id: STEP.COMPLETE, label: 'Complete' },
 ]
-
-const OAUTH_ERROR_MESSAGES = {
-  account_mode_mismatch: 'The selected Google account type did not match the consented account. Choose Google Workspace or Personal Google and try again.',
-  identity_verification_failed: 'Google identity verification failed. No connection was saved; try again or contact LawHand support.',
-  token_exchange_failed: 'Google authorization could not be completed. No connection was saved; try again.',
-}
 
 const STORAGE_OPTIONS = [
   {
@@ -74,7 +69,7 @@ export default function OnboardingWizard() {
   const [step, setStep] = useState(STEP.WELCOME)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(() => initialOAuthError ? (OAUTH_ERROR_MESSAGES[initialOAuthError] || 'The cloud connection could not be completed. No connection was saved; try again.') : null)
+  const [error, setError] = useState(() => initialOAuthError ? oauthErrorMessage(initialOAuthError, searchParams.get('provider')) : null)
   const [syncing, setSyncing] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [restarting, setRestarting] = useState(false)

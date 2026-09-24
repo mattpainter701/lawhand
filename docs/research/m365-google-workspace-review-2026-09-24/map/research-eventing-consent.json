@@ -1,0 +1,429 @@
+{
+ "topic": "Sync, eventing, least-privilege consent, and admin-install UX for Microsoft 365 and Google Workspace integrations (as of 2026-09-23)",
+ "findings": [
+  {
+   "claim": "Graph subscription maximum lifetimes are: Outlook message, event and contact 10,080 min (under 7 days), or 1,440 min (under 1 day) with rich notifications; OneDrive driveItem and SharePoint list 42,300 min (under 30 days); user, group and directory 41,760 min; Teams chat, chatMessage and channel 4,320 min; presence 60 min. Microsoft warns that create or renew requests above the maximum will fail in the future.",
+   "status": "GA",
+   "as_of": "Graph docs repo commit 2026-08-27",
+   "relevance_to_lawhand": "LawHand has no mail, calendar or drive subscriptions today. cloud_sync.py polls /me/messages, /me/drive/root/children and Gmail messages.list. Moving to eventing needs a renewal scheduler. The Teams voice renewal job (teams_voice.py, scheduler 'teams-voice-subscription-renewal') is a pattern that can be reused.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/includes/change-notifications-subscription-lifetime.md",
+    "https://learn.microsoft.com/en-us/graph/change-notifications-overview"
+   ],
+   "licensing_or_cost": "No Graph charge for webhooks. Event Hubs or Event Grid delivery is billed to the subscriber's own Azure account."
+  },
+  {
+   "claim": "Webhook delivery contract: Graph treats a notification as delivered only after a 2xx response within 3 seconds. Failed deliveries are retried with backoff for up to 4 hours, with a 10-second timeout on retries. An endpoint is marked 'slow' when more than 10% of responses exceed 3 s in 10 minutes (new notifications then wait 10 minutes). It is marked 'drop' when more than 15% exceed 10 s, and notifications are then lost and cannot be recovered. clientState (up to 128 chars) is required and must be validated. The recommended pattern is to validate, enqueue, then return 202.",
+   "status": "GA",
+   "as_of": "doc ms.date 2025-01-15",
+   "relevance_to_lawhand": "The receiver must enqueue to durable_job_worker and return 202 without doing any work first. teams.py already validates clientState for the Teams voice subscriptions, so extend that router rather than build a new one.",
+   "source_urls": [
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/change-notifications-delivery-webhooks.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/resources/subscription.md"
+   ]
+  },
+  {
+   "claim": "Lifecycle notifications come in three types. reauthorizationRequired applies to all resources. subscriptionRemoved applies to Outlook messages, events and contacts and to Teams chat messages. missed applies to Outlook messages, events and contacts, and Microsoft's guidance is to recover with a full delta resync. Subscriptions without lifecycleNotificationUrl get no lifecycle notifications. The URL is mandatory for Teams resources when expiration is more than 1 hour away.",
+   "status": "GA",
+   "as_of": "Graph docs repo 2026-08-27",
+   "relevance_to_lawhand": "These signals map directly to connection-health states ('needs re-auth', 'resyncing'). A grep of teams_voice.py found no lifecycleNotificationUrl on the existing Teams subscriptions, so admin revocation shows up only as silent failure.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/change-notifications-lifecycle-events.md",
+    "https://learn.microsoft.com/en-us/graph/change-notifications-lifecycle-events"
+   ]
+  },
+  {
+   "claim": "Rich notifications (includeResourceData) are supported for Outlook message, event and contact (a $select is required) and for several Teams resources. They are not supported for driveItem or list. Payloads are encrypted with the app's RSA public key (encryptionCertificate plus encryptionCertificateId are required), and every JWT in validationTokens must be validated. Documented latency: message averages under 1 min (max 3 min); driveItem and list average under 1 min (max 6 hours).",
+   "status": "GA",
+   "as_of": "include ms.date 2024-11-07, repo 2026-08-27",
+   "relevance_to_lawhand": "Rich mail notifications let LawHand skip a follow-up GET per message, but only with certificate rotation and a 1-day subscription cap. Because driveItem notifications can arrive up to 6 hours late, document sync must still end in a delta reconcile.",
+   "source_urls": [
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/includes/change-notifications-rich-notifications-supported-resources.md",
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/includes/change-notifications-delivery-latency.md",
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/change-notifications-with-resource-data.md"
+   ]
+  },
+  {
+   "claim": "Permissions required to create subscriptions: message accepts Mail.ReadBasic or Mail.Read delegated, but Mail.Read for application. driveItem on OneDrive for Business needs Files.Read.All (delegated or application), and only the drive root can be subscribed. list needs Sites.Read.All. The header 'prefer: includesecuritywebhooks' adds notifications when permissions on SharePoint or OneDrive items change. The limit is 1,000 active Outlook subscriptions per mailbox across all apps.",
+   "status": "GA",
+   "as_of": "subscription-post-subscriptions ms.date 2024-10-28",
+   "relevance_to_lawhand": "This is the key trade-off. Narrowing SharePoint access to Sites.Selected probably loses driveItem and list webhooks (the table lists only *.Read.All), so a Matter Hub under Sites.Selected would sync by delta polling. The security webhooks could drive alerts when sharing changes on matter folders (ethical walls).",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/subscription-post-subscriptions.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/outlook-change-notifications-overview.md"
+   ]
+  },
+  {
+   "claim": "Delta query limits. Message delta is per mail folder (/mailFolders/{id}/messages/delta); $filter supports only receivedDateTime ge/gt, $orderby only receivedDateTime desc, and changeType=created|updated|deleted is available. Event delta in v1.0 works only on calendarView with startDateTime/endDateTime, with no $select, $filter or $orderby. driveItem delta applies to any folder. Outlook token lifetime is not fixed (it depends on cache size); directory tokens last 7 days; 410 Gone means a full resync. Delta is available in the global cloud, US Government and China.",
+   "status": "GA",
+   "as_of": "Graph docs repo 2026-08-27",
+   "relevance_to_lawhand": "This replaces the current fetch-last-N-messages polling with a cursor per folder. The cursor can be stored in the existing sync_cursor column, which Gmail sync already uses for historyId. Calendar sync needs a rolling calendarView window.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/delta-query-overview.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/message-delta.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/event-delta.md"
+   ]
+  },
+  {
+   "claim": "Outlook throttling per app and mailbox: 10,000 requests per 10 minutes, 4 concurrent requests, and 150 MB of uploads per 5 minutes. The global limit is 130,000 requests per 10 s per app across all tenants. Subscription writes are limited to 500 per 20 s per app per tenant, and subscription list reads to 25 per 20 s. A $batch holds at most 20 requests, and each sub-request is throttled on its own (429 with its own Retry-After; SDKs do not retry these). For Outlook, Graph runs at most 4 batch sub-requests in parallel, or runs them in sequence when dependsOn is set.",
+   "status": "GA",
+   "as_of": "Graph docs repo 2026-08-27",
+   "relevance_to_lawhand": "Per-mailbox concurrency should be capped at 4, and batch-level success must not be treated as item-level success. provider_http.py already honours Retry-After.",
+   "source_urls": [
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/includes/throttling-outlook.md",
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/includes/throttling-subscription-services.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/json-batching.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/throttling.md"
+   ]
+  },
+  {
+   "claim": "SharePoint and OneDrive throttle by resource units (RU) per app per tenant, scaled by license count. For example, a tenant with 0\u20131,000 licenses allows 1,250 RU per minute and 1.2M RU per 24 h. A delta call with a token costs 1 RU; list children or delta without a token costs 2. Throttled calls still count against the limit. Microsoft asks ISVs to set User-Agent to 'ISV|CompanyName|AppName/Version' and says well-decorated traffic is prioritized.",
+   "status": "GA",
+   "as_of": "doc ms.date 2025-10-02",
+   "relevance_to_lawhand": "cloud_sync.py and cloud_folder_audit walk /children recursively (2 RU each). Switching to delta with a token halves the cost. A grep of the Graph callers found no User-Agent header.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/general-development/how-to-avoid-getting-throttled-or-blocked-in-sharepoint-online.md"
+   ]
+  },
+  {
+   "claim": "The 'Let Microsoft manage your consent settings' policy is the default for new tenants and was rolled out to existing default tenants in July\u2013August 2025 (MC1097272). Under it, end users cannot consent to Files.Read.All, Files.ReadWrite.All, Sites.Read.All, Sites.ReadWrite.All, Mail.Read, Mail.ReadBasic, Calendars.Read, Calendars.ReadBasic, Calendars.ReadWrite, Chat.Read, Contacts.ReadWrite, People.Read and several other Microsoft Graph permissions. Those grants now need an admin, and existing grants remain valid.",
+   "status": "GA",
+   "as_of": "manage-app-consent-policies ms.date 2026-01-22",
+   "relevance_to_lawhand": "This is decisive for the product. LawHand's MICROSOFT_USER_SCOPES (Mail.Read, Files.ReadWrite.All, Calendars.ReadWrite) cannot be self-consented by a non-admin in a default tenant. Per-user 'Connect Outlook' fails with 'Need admin approval' unless tenant-wide admin consent was granted first. Onboarding has to be admin-first.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity/enterprise-apps/manage-app-consent-policies.md",
+    "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/manage-app-consent-policies",
+    "https://www.appgovscore.com/blog/microsoft-disables-user-consent-by-default-are-you-ready-for-mc1097272",
+    "https://office365itpros.com/2025/06/19/app-consent-policy-user-app-consent/"
+   ]
+  },
+  {
+   "claim": "The Entra admin consent workflow lets users send a request for admin approval instead of being blocked. Reviewers are notified by email, requests expire after a configurable number of days, and only Global Administrators can approve requests for Microsoft Graph app roles. For user consent, Microsoft recommends allowing it only for apps from verified publishers.",
+   "status": "GA",
+   "as_of": "doc ms.date 2024-12-29 / 2025-06-15",
+   "relevance_to_lawhand": "LawHand's UI should detect the consent_required or admin-approval outcome and show a 'Pending firm admin approval' state with a deep link to the /adminconsent URL. It should not show a generic OAuth error.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity/enterprise-apps/configure-admin-consent-workflow.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity/enterprise-apps/configure-user-consent.md"
+   ]
+  },
+  {
+   "claim": "Selected scopes (Sites.Selected, Lists.SelectedOperations.Selected, ListItems.SelectedOperations.Selected, Files.SelectedOperations.Selected) grant no access until three steps are all done: Entra consent, an explicit POST to /sites|lists|listitems|files/{id}/permissions with a role (read, write, owner or fullcontrol), and a token that carries the scope. Granting at site level needs Sites.FullControl.All. Admin consent: application variants always need it; delegated Sites.Selected does not; delegated Files.SelectedOperations.Selected does.",
+   "status": "GA",
+   "as_of": "doc ms.date 2024-11-07",
+   "relevance_to_lawhand": "LawHand requests tenant-wide Files.ReadWrite.All and Sites.Read.All. A governed Matter Hub could run on Sites.Selected with a one-time site grant, which gives much better least-privilege posture for law-firm security reviews.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/permissions-selected-overview.md",
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/permissions-reference.md"
+   ]
+  },
+  {
+   "claim": "Sites.Create.All (delegated and application, admin consent required) lets an app create site collections. On creation the app is automatically granted Sites.Selected plus FullControl on the new site. The Graph create-site API (POST /sites, templates sitepagepublishing or sts) is beta only.",
+   "status": "preview",
+   "as_of": "site-post-sites ms.date 2025-10-09",
+   "relevance_to_lawhand": "This is a clean least-privilege path for the SharePoint Matter Hub decision: create the hub site and hold access to that site only, with no tenant-wide Sites.* grant. It should not be used in production until the API reaches v1.0.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/beta/api/site-post-sites.md",
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/permissions-reference.md"
+   ]
+  },
+  {
+   "claim": "Mail.ReadBasic allows reading all message properties except body, previewBody, attachments and extended properties. Delegated use shows 'AdminConsentRequired: No', but it is still on the Microsoft-managed list that blocks user consent. The application form needs admin consent.",
+   "status": "GA",
+   "as_of": "permissions reference, repo 2026-08-27",
+   "relevance_to_lawhand": "LawHand's Outlook sync selects bodyPreview, and cloud_search reads full bodies. A two-tier model would work: Mail.ReadBasic for the background matter-matching index, and Mail.Read only when a user files or reads an email. This would first require removing bodyPreview from the sync.",
+   "source_urls": [
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/permissions-reference.md"
+   ]
+  },
+  {
+   "claim": "RBAC for Applications in Exchange Online replaces Application Access Policies, which Microsoft now labels legacy. It scopes application permissions (for example the 'Application Mail.Read' role) to mailboxes through management or admin-unit scopes and removes the 300-apps-per-tenant limit of Access Policies. No firm retirement date for Access Policies has been published. Separately, Microsoft blocks non-Microsoft apps from using EWS against Exchange Online from 2026-10-01.",
+   "status": "GA",
+   "as_of": "2025-12 to 2026-07 sources",
+   "relevance_to_lawhand": "If LawHand ever uses app-only mailbox access (for shared intake mailboxes or journaling to a matter), it should tell firms to scope it with RBAC for Applications, not tenant-wide Mail.Read or new Access Policies. A grep found no EWS usage in backend/app or office-addin, so the October 2026 EWS cutoff does not affect LawHand.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/exchange/permissions-exo/application-rbac",
+    "https://learn.microsoft.com/en-us/exchange/permissions-exo/application-access-policies",
+    "https://blog.icewolf.ch/archive/2025/12/03/exchange-online-app-access-policies-are-replaced-by-RBAC-for-applications/",
+    "https://practical365.com/migrate-from-ews-application-access-policy-to-rbac-for-applications/"
+   ]
+  },
+  {
+   "claim": "Resource-specific consent (RSC) grants a Teams app access to one team, chat or meeting, or one user, when the app is installed there. Examples are ChannelMessage.Read.Group, ChatMessage.Read.Chat, OnlineMeetingTranscript.Read.Chat and TeamsActivity.Send.User. Application RSC is granted by resource owners, and admins control it tenant-wide. It needs app manifest 1.6 or later (application RSC) or 1.12 or later (delegated RSC).",
+   "status": "GA",
+   "as_of": "doc ms.date 2025-02-20",
+   "relevance_to_lawhand": "The Teams app currently uses tenant-wide TeamsActivity.Send and Channel.Create (teams.py). Matter-channel features (such as reading channel messages into a matter timeline) could use RSC so access follows the matter team rather than the whole tenant.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/msteams-docs/main/msteams-platform/graph-api/rsc/resource-specific-consent.md"
+   ]
+  },
+  {
+   "claim": "Publisher verification is free. It needs a verified Microsoft AI Cloud Partner Program account (formerly MPN) and a matching publisher domain, and it adds a blue verified badge to consent prompts. Since November 2020, when risk-based step-up consent is enabled, users cannot consent to most newly registered multitenant apps that are not publisher-verified.",
+   "status": "GA",
+   "as_of": "doc ms.date 2024-08-13",
+   "relevance_to_lawhand": "Publisher verification is a prerequisite for any user-consent path and for the default low-impact consent policy. It is cheap, so do it first.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity-platform/publisher-verification-overview.md"
+   ]
+  },
+  {
+   "claim": "The Microsoft 365 App Compliance Program has three tiers. Publisher Attestation is a self-assessment against more than 80 factors, usually about an hour, and is required for all Teams apps. Microsoft 365 Certification adds a third-party audit mapped to SOC 2 and ISO 27001 controls, with annual recertification that can start 90 days before expiry and penetration testing free for up to 12 days. Certified or attested apps get badges in AppSource, the Teams Store and the M365 admin center (Integrated Apps, Security & Compliance tab).",
+   "status": "GA",
+   "as_of": "Microsoft blog 2025-11-04; Learn pages seen in results",
+   "relevance_to_lawhand": "Law firms' IT and security reviewers see these badges in the same admin center where they deploy LawHand's add-in, Teams app or agent. Attestation is a quick trust win.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365-app-certification/docs/attestation",
+    "https://learn.microsoft.com/en-us/microsoft-365-app-certification/docs/certfaq",
+    "https://techcommunity.microsoft.com/blog/microsoft_365blog/microsoft-365-certification/4465702",
+    "https://learn.microsoft.com/en-us/microsoftteams/overview-of-app-certification"
+   ],
+   "licensing_or_cost": "Attestation is free. Certification is free apart from penetration testing beyond 12 days plus retest days, and needs internal effort every year."
+  },
+  {
+   "claim": "The M365 admin center Integrated Apps portal deploys and manages Office add-ins (Outlook, Word, Excel, PowerPoint), Teams apps with unified manifest 1.13 or later (which also run in Outlook and the M365 app), SPFx apps, Entra web apps and Marketplace SaaS apps. It can target users and top-level groups but not nested groups. The deploy flow has an 'Accept permissions' step where only a Global Admin can consent.",
+   "status": "GA",
+   "as_of": "docs ms.date 2025-08-26 / 2026-03-16",
+   "relevance_to_lawhand": "One admin action can deploy LawHand's Office add-in, Teams app and Entra app together and grant Graph consent at the same time. That should be the documented Microsoft install path, replacing per-user OAuth as the entry point.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/admin/manage/test-and-deploy-microsoft-365-apps.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/admin/manage/teams-apps-work-on-outlook-and-m365.md"
+   ]
+  },
+  {
+   "claim": "National clouds use separate endpoints: GCC High uses graph.microsoft.us with portal.azure.us, DoD uses dod-graph.microsoft.us, and the 21Vianet cloud uses microsoftgraph.chinacloudapi.cn. GCC Moderate uses the worldwide endpoints. Tokens cannot be used across clouds, and apps can reach only tenants registered in that cloud.",
+   "status": "GA",
+   "as_of": "Graph docs repo 2026-08-27",
+   "relevance_to_lawhand": "LawHand hardcodes graph.microsoft.com and login.microsoftonline.com; a grep found no .us or GCC handling. That works for GCC Moderate but not GCC High, which some defense-adjacent or CMMC firms use.",
+   "source_urls": [
+    "https://github.com/microsoftgraph/microsoft-graph-docs-contrib/blob/main/concepts/deployments.md"
+   ]
+  },
+  {
+   "claim": "Gmail push works through users.watch. The Pub/Sub topic must be in the same Google Cloud project as the OAuth client, and gmail-api-push@system.gserviceaccount.com needs publish rights on it. A watch must be renewed at least every 7 days (Google recommends daily). Each user is capped at about 1 notification per second, with excess dropped, so history.list should be used as a fallback sweep. watch, stop and history.list all accept gmail.metadata or gmail.readonly.",
+   "status": "GA",
+   "as_of": "Gmail discovery rev 20260917",
+   "relevance_to_lawhand": "cloud_sync.py already stores Gmail historyId as sync_cursor but still re-lists 7 days with q=after:. watch plus history.list would give near-real-time filing. The Pub/Sub topic and its cost fall on LawHand's GCP project.",
+   "source_urls": [
+    "https://developers.google.com/workspace/gmail/api/guides/push",
+    "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest"
+   ],
+   "licensing_or_cost": "Pub/Sub usage is billed to LawHand's GCP project and is small at notification volumes."
+  },
+  {
+   "claim": "With gmail.metadata, messages.list cannot use the q parameter, and messages.get cannot use format=full or raw (only minimal and metadata). gmail.metadata is still a restricted scope. gmail.send is sensitive and gmail.labels is non-sensitive.",
+   "status": "GA",
+   "as_of": "Gmail discovery rev 20260917; scope pages seen in results",
+   "relevance_to_lawhand": "LawHand's Gmail sync uses format=metadata but also q=after:YYYY/MM/DD, so moving the background index to gmail.metadata would require history-based sync. It would not remove the CASA requirement, because every Gmail read scope is restricted.",
+   "source_urls": [
+    "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest",
+    "https://developers.google.com/workspace/gmail/api/auth/scopes",
+    "https://www.unipile.com/gmail-api-scopes-guide/"
+   ]
+  },
+  {
+   "claim": "Drive push notifications use webhook channels. files.watch lasts at most 86,400 s (1 day) and changes.watch at most 604,800 s (1 week). Changes are read with changes.getStartPageToken and changes.list, with supportsAllDrives and includeItemsFromAllDrives for shared drives. The discovery document lists drive.file among the scopes accepted for changes.watch and changes.list.",
+   "status": "GA",
+   "as_of": "Drive discovery rev 20260916",
+   "relevance_to_lawhand": "This is a cheap replacement for sync_google_drive's orderBy=modifiedTime polling. Under drive.file, changes are limited to files the user opened or created with LawHand.",
+   "source_urls": [
+    "https://developers.google.com/workspace/drive/api/guides/push",
+    "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+   ]
+  },
+  {
+   "claim": "The Google Workspace Events API now supports Google Drive subscriptions, reported as generally available (it was in developer preview in July 2025). Events are delivered to Pub/Sub and cover files added or moved into a folder or shared drive, edits and new revisions, trash and untrash, access proposals, and comments. payloadOptions (includeResource, fieldMask) work for Drive and Chat. A subscription is ACTIVE, SUSPENDED or DELETED, and a suspended one carries a suspensionReason: USER_SCOPE_REVOKED, APP_SCOPE_REVOKED, RESOURCE_DELETED, USER_AUTHORIZATION_FAILURE, APP_AUTHORIZATION_FAILURE, ENDPOINT_PERMISSION_DENIED, ENDPOINT_NOT_FOUND or ENDPOINT_RESOURCE_EXHAUSTED.",
+   "status": "GA",
+   "as_of": "v1 discovery rev 20260906; GA per Google release notes in search results",
+   "relevance_to_lawhand": "This is a better fit than changes.watch for matter-folder events such as 'new document added to the matter folder'. The suspensionReason values map one-to-one onto health states for the integrations settings page.",
+   "source_urls": [
+    "https://workspaceevents.googleapis.com/$discovery/rest?version=v1",
+    "https://developers.google.com/workspace/drive/api/guides/events-overview",
+    "https://developers.google.com/workspace/events/release-notes",
+    "https://workspaceupdates.googleblog.com/2025/07/google-drive-events-api-now-available.html"
+   ]
+  },
+  {
+   "claim": "Calendar supports events.watch webhook channels, which cannot be renewed and must be replaced. Channel expiry is the lower of the requested TTL and Google's internal limit, and each notification carries X-Goog-Channel-Expiration and X-Goog-Resource-State (sync, exists or not_exists). Incremental sync uses nextSyncToken; a 410 GONE response means a full resync, and timeMin, timeMax, q, orderBy and updatedMin cannot be combined with syncToken. Newer granular scopes include calendar.events.owned, calendar.events.owned.readonly, calendar.app.created, calendar.calendarlist and calendar.events.freebusy. Calendar scopes are classified as sensitive, not restricted.",
+   "status": "GA",
+   "as_of": "Calendar discovery rev 20260826",
+   "relevance_to_lawhand": "LawHand requests the broadest scope, https://www.googleapis.com/auth/calendar (see, edit, share and permanently delete all calendars). Deadline and docket events could use calendar.app.created (a LawHand-owned secondary calendar) or calendar.events.owned instead.",
+   "source_urls": [
+    "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest",
+    "https://developers.google.com/workspace/calendar/api/guides/push",
+    "https://developers.google.com/workspace/calendar/api/auth"
+   ]
+  },
+  {
+   "claim": "Google's consent screen is granular: users see checkboxes and can grant some scopes and refuse others. It applies when an app requests more than one non-sign-in scope, and apps must check which scopes were actually granted and disable the related features. Rollouts: Apps Script IDE from 2025-01-08, HTTP Workspace add-ons from 2025-05-06, Editor add-ons from December 2025, published web apps and Workspace add-ons from 2026-01-07, and Chat apps from 2026-01-20. Incremental auth uses include_granted_scopes=true, and Google's best practice is to request scopes in context.",
+   "status": "GA",
+   "as_of": "2026-01 rollout posts",
+   "relevance_to_lawhand": "integrations.py requests Gmail, send, Calendar and Drive in a single prompt=consent screen, with no include_granted_scopes. Admin connect runs apply_scope_audit, but features are not gated per scope on the user path. plugins.py maps capabilities from drive.readonly and Files.Read.All, while LawHand actually requests drive and Files.ReadWrite.All, so those capabilities are likely never detected (repo observation).",
+   "source_urls": [
+    "https://developers.google.com/identity/protocols/oauth2/resources/granular-permissions",
+    "https://workspaceupdates.googleblog.com/2025/11/granular-oauth-consent-in-webapps.html",
+    "https://workspaceupdates.googleblog.com/2026/01/granular-oauth-consent-google-chat-apps.html",
+    "https://developers.google.com/identity/protocols/oauth2/resources/best-practices"
+   ]
+  },
+  {
+   "claim": "Restricted scopes (all Gmail read scopes; drive, drive.readonly and drive.metadata*) need restricted-scope verification. If the data is stored on or passes through a third-party server, they also need a CASA security assessment, which for restricted scopes is Tier 2 by a Google-authorized lab and must be redone at least every 12 months from the Letter of Assessment date. Third-party sources put Tier 2 fees at roughly $540\u2013$1,800 per year (for example through TAC Security); Google does not publish pricing.",
+   "status": "GA",
+   "as_of": "2026 sources",
+   "relevance_to_lawhand": "LawHand requests gmail.readonly and the full drive scope, so a public Google launch commits the company to annual CASA. Dropping drive in favour of drive.file removes Drive from the restricted set; Gmail reading stays restricted.",
+   "source_urls": [
+    "https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification",
+    "https://deepstrike.io/blog/google-casa-security-assessment-2025",
+    "https://bright-softwares.com/blog/en/google-workspace/the-50000-gmail-add-on-myth-what-google-s-casa-certification-really-costs"
+   ],
+   "licensing_or_cost": "The CASA lab fee is paid by LawHand, reported by third parties at hundreds to low thousands of USD per year, plus engineering time for remediation."
+  },
+  {
+   "claim": "drive.file is non-sensitive and gives per-file access to files the user picks with Google Picker or creates with the app. Google recommends that apps using restricted Drive scopes migrate to it and use Picker instead of a custom file browser. Picker needs a token with drive.file, drive or drive.readonly.",
+   "status": "GA",
+   "as_of": "Drive scope guide, results seen 2026-09",
+   "relevance_to_lawhand": "Documents LawHand generates, and files a user attaches to a matter, can work under drive.file with no CASA. The firm-wide document root can stay on the service account in a Shared Drive, which needs no user OAuth verification.",
+   "source_urls": [
+    "https://developers.google.com/workspace/drive/api/guides/api-specific-auth",
+    "https://developers.google.com/workspace/drive/picker/guides/overview"
+   ]
+  },
+  {
+   "claim": "While an OAuth app is in 'Testing' it is limited to 100 listed test users, and its refresh tokens expire after 7 days. An unverified production app shows the unverified-app warning for sensitive or restricted scopes and has a 100-user cap. Google says sensitive-scope verification typically takes 3\u20135 business days, longer with extra review rounds; restricted verification plus CASA takes weeks. Production refresh tokens can still be revoked, or expire after about 6 months unused, and apps must handle invalid_grant.",
+   "status": "GA",
+   "as_of": "2026 sources",
+   "relevance_to_lawhand": "This matches the plan's 'allowlisted pilot' approach. The UI must show a 'Reconnect' state for invalid_grant, because 7-day expiry during testing looks like random disconnects.",
+   "source_urls": [
+    "https://developers.google.com/identity/protocols/oauth2/production-readiness/overview",
+    "https://support.google.com/cloud/answer/15549945?hl=en",
+    "https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification",
+    "https://developers.google.com/identity/protocols/oauth2/resources/best-practices"
+   ]
+  },
+  {
+   "claim": "Google Workspace admins set app access under Security > API controls to Trusted, Limited, Specific Google data (an allow-list of scopes) or Blocked, and can separately restrict high-risk Gmail, Drive and Chat scopes. Admins can authorize an unverified third-party app for their domain. Marketplace domain-wide installs grant the declared scopes for all users or selected organizational units. Domain-wide-install apps are exempt from brand verification but still need sensitive or restricted verification.",
+   "status": "GA",
+   "as_of": "Admin Help / dev docs seen 2026-09",
+   "relevance_to_lawhand": "For pilots, the customer's admin can mark LawHand's OAuth client as Trusted so the unverified screen and restricted-scope blocks go away. The launch path is a Marketplace listing with admin install. The 'Specific Google data' option makes a short, justified scope list a sales advantage.",
+   "source_urls": [
+    "https://support.google.com/a/answer/13152743",
+    "https://support.google.com/a/answer/9352843?hl=en",
+    "https://developers.google.com/identity/protocols/oauth2/production-readiness/google-workspace",
+    "https://developers.google.com/workspace/marketplace/configure-oauth-consent-screen"
+   ]
+  },
+  {
+   "claim": "Google recommends avoiding domain-wide delegation (DWD) whenever OAuth consent or plain service-account access can do the job. A DWD service account can impersonate any user in the domain, including super admins, so if used it should have minimal scopes and restricted key creation.",
+   "status": "GA",
+   "as_of": "Admin Help seen 2026-09",
+   "relevance_to_lawhand": "google_service_account.py supports DWD 'subject' impersonation using one platform-level GOOGLE_SERVICE_ACCOUNT_KEY with the full drive scope. In a multi-tenant product, one key authorized in many firms' admin consoles would widen the damage from a single compromise. Prefer a Marketplace admin install with OAuth, and keep the service account for Shared Drive membership only.",
+   "source_urls": [
+    "https://support.google.com/a/answer/14437356?hl=en-419",
+    "https://unit42.paloaltonetworks.com/critical-risk-in-google-workspace-delegation-feature/"
+   ]
+  },
+  {
+   "claim": "How mature SaaS products present integration health (patterns from their docs): HubSpot Connected Apps shows connection status, apps needing attention, 'Last activity', a Sync Health tab with API-call usage, sync-error cards with impacted-record counts, and an app log of connect, disconnect and setting changes. Zapier lets users filter connections by active, expired or non-compliant, with Reconnect and 'Test connection' actions. Merge shows 'Relink Needed', which pauses sync until the end user re-authenticates. Clio shows the last successful sync time for each synced calendar.",
+   "status": "GA",
+   "as_of": "vendor help centers seen 2026-09",
+   "relevance_to_lawhand": "A LawHand integrations page could use the same pieces: status per provider and per capability, last successful sync, error counts with affected matters, a reconnect or request-admin-approval call to action, a test button, and an audit log. A basis exists already in integration_observability.py.",
+   "source_urls": [
+    "https://knowledge.hubspot.com/integrations/manage-your-connected-apps",
+    "https://knowledge.hubspot.com/integrations/connect-and-use-hubspot-data-sync",
+    "https://help.zapier.com/hc/en-us/articles/8496290788109-Manage-your-app-connections",
+    "https://help.merge.dev/en/articles/6461253-relink-needed-status",
+    "https://help.clio.com/hc/en-us/articles/9289960611355-Calendar-Sync-and-Feeds"
+   ]
+  }
+ ],
+ "recommended_plays": [
+  {
+   "title": "Admin-first Microsoft onboarding (tenant-wide admin consent + 'Pending admin approval' state)",
+   "detail": "Make the firm admin's /adminconsent (or the Integrated Apps deploy flow) the entry point, and turn per-user 'Connect Outlook' into a token-acquisition step once admin consent exists. On the per-user callback, detect consent_required or admin-approval outcomes and show 'Waiting for your Microsoft 365 admin', with a copyable admin link and the admin consent workflow note. This is needed because the Microsoft-managed default consent policy blocks user consent to Mail.Read, Mail.ReadBasic, Calendars.* and Files.*/Sites.*.All.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "Publisher verification (Cloud Partner Program account and verified domain). An admin-consent URL builder already exists in teams.py.",
+   "risks": "Some firms disable admin consent to third parties entirely, so a written security and data-handling pack is needed. Tenants whose consent was granted before July 2025 will behave differently from new tenants.",
+   "who_pays_compute": "n/a"
+  },
+  {
+   "title": "Replace polling with event-driven sync (Graph subscriptions + delta; Gmail watch + history; Drive/Workspace Events; Calendar watch + syncToken)",
+   "detail": "Microsoft: per-user subscriptions on /users/{id}/messages and /events with lifecycleNotificationUrl. Renew before expiry: under 7 days for plain notifications, under 1 day for rich ones. Handle reauthorizationRequired, subscriptionRemoved and missed by running a delta resync. Reconcile with a mailFolder delta and a rolling calendarView delta. Use driveItem delta (1 RU with a token) nightly and on notification. Google: users.watch renewed daily into a LawHand Pub/Sub topic, then history.list from the stored historyId (sync_cursor already exists). Workspace Events API Drive subscriptions on matter folders, and events.watch plus syncToken for calendars. The receiver returns 202 within 3 s and enqueues to durable_job_worker. Reuse the renewal pattern in teams_voice.py.",
+   "effort": "L",
+   "value": "high",
+   "prerequisites": "Public HTTPS webhook endpoint; a Pub/Sub topic in the same GCP project as the OAuth client; a certificate for rich notifications, if used.",
+   "risks": "Endpoint slowness makes Graph drop notifications that cannot be recovered. Gmail caps at about 1 event/sec per user. driveItem notifications can lag up to 6 hours, so periodic delta sweeps stay mandatory.",
+   "who_pays_compute": "LawHand platform (webhook infra and GCP Pub/Sub)"
+  },
+  {
+   "title": "Least-privilege scope tiers mapped to features (incremental consent)",
+   "detail": "Microsoft: Mail.ReadBasic for the background matter-matching index (drop bodyPreview from the sync); Mail.Read only when a user files or opens an email; Sites.Selected for the Matter Hub, via a one-time admin grant or Sites.Create.All once POST /sites is GA; RBAC for Applications for any app-only mailbox access; RSC for Teams matter channels. Google: drive.file plus Picker for per-user document work; calendar.app.created or calendar.events.owned instead of the full calendar scope; gmail.send (sensitive) separated from Gmail reading (restricted); include_granted_scopes=true with scopes requested in context. Gate every capability on the scopes actually granted, and fix the plugins.py mismatch (drive.readonly vs drive, Files.Read.All vs Files.ReadWrite.All).",
+   "effort": "L",
+   "value": "high",
+   "prerequisites": "A per-capability scope registry (automation_capabilities.py already models required_scopes).",
+   "risks": "Sites.Selected probably removes driveItem and list webhooks (the subscription table lists only *.Read.All), so the Matter Hub would sync by delta. Mail.ReadBasic reduces matching quality with no body text.",
+   "who_pays_compute": "n/a"
+  },
+  {
+   "title": "Integration health model + settings UI",
+   "detail": "Define states for each connection and capability: Connected, Syncing, Degraded (throttled or lagging), Needs reconnect (invalid_grant, reauthorizationRequired, USER_SCOPE_REVOKED), Needs admin approval, Missing permissions (scope not granted), Paused by admin (APP_SCOPE_REVOKED or API controls), and Disconnected. Show the last successful sync, the next renewal, error counts with affected matters, a plain-language 'why we need this' line for each scope, per-capability toggles, Test connection, Reconnect, and an audit log. Feed the states from Graph lifecycle notifications, Workspace Events suspensionReason, token-refresh failures and Google Cross-Account Protection (RISC) revocation events.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "integration_observability.py scope audit, and a persisted per-provider health record.",
+   "risks": "Health must not flap on transient 429s; debounce them and show 'Degraded' instead of 'Broken'.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Google launch path decision: drive.file-first, restricted-scope CASA only if Gmail reading is core",
+   "detail": "Phase 1: pilots through customer admin 'Trusted' app configuration (API controls), with the internal 100-user and 7-day testing limits documented. Phase 2: move Drive to drive.file plus Picker, with the Shared Drive service account as the firm root, which removes Drive from the restricted set. Keep sensitive verification for Calendar and gmail.send (days). Phase 3: only if Gmail filing is a must-have, budget annual CASA Tier 2 and restricted verification (weeks), then list on Workspace Marketplace for admin install and stop using DWD for multi-tenant work.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "A production GCP project and OAuth brand; privacy policy and data-deletion controls; a scope-justification video per scope.",
+   "risks": "CASA must be redone every 12 months, and any new restricted scope triggers re-review. Admins can block restricted scopes regardless of Google's verification.",
+   "who_pays_compute": "LawHand platform (CASA lab fee, GCP project)"
+  },
+  {
+   "title": "Microsoft trust signals: publisher verification + Publisher Attestation now, M365 Certification later; ship via Integrated Apps",
+   "detail": "Complete publisher verification (free), then Publisher Attestation (about 1 hour, required for Teams apps), so admins see the badges in Integrated Apps Security & Compliance. Package the add-in, Teams app and Entra app so a Global Admin deploys them and grants Graph consent in one flow to chosen groups. Pursue M365 Certification (annual third-party audit) when enterprise firms ask for it.",
+   "effort": "S",
+   "value": "medium",
+   "prerequisites": "A Partner Center / Cloud Partner Program account; a unified manifest at version 1.13 or later.",
+   "risks": "Certification means yearly evidence collection. Attestation answers must stay accurate as features change.",
+   "who_pays_compute": "n/a"
+  },
+  {
+   "title": "Graph/SharePoint throttling hygiene",
+   "detail": "Set User-Agent to 'ISV|LawHand|LawHand/<version>' on all Graph and SharePoint calls. Cap concurrency at 4 per mailbox. Use $batch of up to 20 with per-item Retry-After handling, plus dependsOn when targeting the same mailbox. Replace recursive /children walks with delta using a token.",
+   "effort": "S",
+   "value": "medium",
+   "prerequisites": "The shared provider_http.py client.",
+   "risks": "Low.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Matter-file permission-change alerts (ethical walls)",
+   "detail": "Subscribe to the Matter Hub drive root with 'prefer: includesecuritywebhooks' so LawHand hears when sharing or permissions change on matter documents, and on Google subscribe to Drive access-proposal events. Surface these as reviewable alerts on the matter.",
+   "effort": "M",
+   "value": "medium",
+   "prerequisites": "Files.Read.All-level subscription permission (not available under Sites.Selected, per the current docs) or the Workspace Events Drive subscription.",
+   "risks": "Conflicts with the Sites.Selected least-privilege goal, so it would be an opt-in firm setting.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "National cloud readiness (defer until demand)",
+   "detail": "Make the authority and Graph base URLs configurable per tenant (graph.microsoft.us, login.microsoftonline.us) with a separate app registration for GCC High. GCC Moderate already works on the worldwide endpoints.",
+   "effort": "M",
+   "value": "low",
+   "prerequisites": "Demand from GCC High / CMMC firms.",
+   "risks": "Some features (webhooks for todoTask, some Copilot APIs) are missing from national clouds.",
+   "who_pays_compute": "LawHand platform"
+  }
+ ],
+ "caveats": [
+  "learn.microsoft.com, developers.google.com, support.google.com and most vendor sites were blocked by the egress proxy. Microsoft facts were verified against the official doc source repos on GitHub: microsoftgraph/microsoft-graph-docs-contrib (sparse clone, HEAD dated 2026-08-27), MicrosoftDocs/entra-docs, msteams-docs, microsoft-365-docs and SharePoint/sp-dev-docs. Google facts were verified against live API discovery documents (gmail rev 20260917, drive 20260916, calendar 20260826, workspaceevents v1 20260906) plus search-result snippets from developers.google.com and support.google.com. Some Learn page URLs are cited from search results rather than opened.",
+  "Drive events GA in the Workspace Events API rests on search snippets from Google release notes and a Q2 2026 community roundup, plus the v1 discovery document containing Drive scopes and payloadOptions. The exact GA date was not confirmed.",
+  "The CASA Tier 2 cost ($540\u2013$1,800 per year) comes from third-party sources, not Google. A third-party summary claimed that a Workspace admin's 'Trusted' designation lifts the testing-mode 7-day refresh-token expiry; I could not confirm this from Google's docs.",
+  "The Graph subscription permission table (ms.date 2024-10-28) lists only Files.Read.All for driveItem and Sites.Read.All for list subscriptions. Whether Sites.Selected-scoped apps can create these subscriptions is inferred from that table and should be tested in a dev tenant.",
+  "No firm retirement date for Exchange Application Access Policies was found; the only evidence is the 'legacy' label and community posts.",
+  "Repo observations (read-only greps, not exhaustive): scope sets are in backend/app/routers/integrations.py lines 240-265 and backend/app/routers/admin.py around 1616. Polling sync is in backend/app/services/cloud_sync.py. The possible capability-mapping mismatch is in backend/app/routers/plugins.py lines 370-390. Teams voice Graph subscriptions without lifecycleNotificationUrl are in backend/app/services/teams_voice.py. DWD support is in backend/app/services/google_service_account.py. No EWS usage, national-cloud handling or SharePoint User-Agent decoration was found."
+ ]
+}

@@ -8,6 +8,7 @@ import InvoicesPage from './InvoicesPage'
 import ProfilePage from './ProfilePage'
 import TrustAccountingPage from './TrustAccountingPage'
 
+vi.mock('../components/ConnectedAccountsCard', () => ({ default: () => null }))
 vi.mock('../App', () => ({
   useAuth: () => ({ user: { full_name: 'Test User', email: 'test@example.com', role: 'user' }, refreshUser: vi.fn() }),
 }))

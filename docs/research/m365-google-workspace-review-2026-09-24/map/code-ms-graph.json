@@ -1,0 +1,1005 @@
+{
+ "area": "Microsoft 365 / Microsoft Graph: inventory, auth, consent, tokens",
+ "summary": "Microsoft 365 connects through two delegated authorization-code flows (with PKCE) on a single multi-tenant Entra app (MICROSOFT_TENANT_ID defaults to \"common\"). The first is the admin \"tenant-wide\" connect. Its access token belongs to the admin who clicked Connect and is stored as a TenantCredential. The second is a per-user connect, reached only from the Calendar page's \"Connect Calendar\" button and stored as a UserOAuthToken. Only Teams voice (callRecords) uses app-only client_credentials. Every other Graph call is delegated, so \"firm-wide\" features run as the connecting admin: /me/drive becomes the firm's OneDrive root, /me/messages is the admin's mailbox, and /me/events is the admin's calendar. Tokens are Fernet-encrypted (MultiFernet rotation) and refreshed under a row lock, with retry and health fields (healthy/missing_scopes/refresh_failed/revoked). Microsoft offers no per-token revoke, so disconnect only deletes the stored tokens, and nothing in the UI calls it. Graph use covers OneDrive/SharePoint folder provisioning, uploads (including upload sessions), share invites, marker files, the Search API, Outlook listing and MIME capture, sendMail, calendarView/events with extended-property dedupe, Teams channels and messages, and callRecords subscriptions. There are no delta queries, no $batch, no file/mail change notifications, no ?format=pdf conversion, no preview/embed links, no labels, no To Do/Planner/Bookings/transcripts, and no Copilot surfaces. Several serious defects come from two design choices: the admin connect never requests openid, and code falls back to the admin's delegated token for other users. The consequences: account tier is stuck at \"unknown\", so directory sync is permanently blocked; the admin's mailbox is indexed into firm-wide search and served to other users; tasks for other users land on the admin's calendar; and matter documents live in one person's OneDrive. Requested scopes are over-broad in places and under-used in others (Chat.ReadWrite and TeamsActivity.Send are never called; per-user Files.ReadWrite.All is only used for reads). The app assumes commercial cloud only: hosts are hard-coded, so GCC High, DoD and China tenants are excluded. The Office add-in (NAA) is behind a flag and only mints LawHand sessions; it gets no Graph access.",
+ "capabilities": [
+  {
+   "name": "Microsoft sign-in (OIDC + PKCE + nonce, verified id_token, Entra tid/oid link)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/auth.py:1316-1410",
+   "notes": "Requests openid email profile User.Read offline_access but discards access/refresh tokens; profile comes from id_token only."
+  },
+  {
+   "name": "Admin 'tenant-wide' M365 connect (delegated auth code, stored as TenantCredential)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/integrations.py:241-244",
+   "notes": "Scopes: offline_access User.Read.All Mail.Read Mail.Send Files.ReadWrite.All Sites.Read.All Calendars.ReadWrite (+Teams scopes with &teams=1). No openid, so no id_token. This is the admin's own delegated identity, not app-only access."
+  },
+  {
+   "name": "Per-user M365 connect (intent=user)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/integrations.py:256-259",
+   "notes": "offline_access User.Read Mail.Read Mail.Send Files.ReadWrite.All Calendars.ReadWrite. The only UI entry point is the 'Connect Calendar' button (frontend/src/pages/CalendarPage.jsx:863-871). No identity binding to the LawHand user."
+  },
+  {
+   "name": "Token vault: Fernet keyring, row-locked refresh with retry/backoff, health tracking",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/token_vault.py:77-90",
+   "notes": "invalid_grant sets revoked and is_active=False; other failures set refresh_failed. Refresh omits scope (v2 default). Fresh-token path returns while still holding SELECT FOR UPDATE (token_vault.py:413-432)."
+  },
+  {
+   "name": "Disconnect Microsoft (admin only)",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "backend/app/routers/integrations.py:2105-2134",
+   "notes": "Deletes tenant and ALL per-user MS tokens locally. No revoke at Microsoft (token_vault.py:382-399). No Disconnect button in IntegrationsPanel and no per-user disconnect endpoint."
+  },
+  {
+   "name": "Account-tier detection (azure_ad / consumer) and capability matrix",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "backend/app/services/account_detect.py:45-105",
+   "notes": "Relies on id_token claims that the admin connect never receives. The /organization backfill is skipped because apply_detection already stamped account_detected_at."
+  },
+  {
+   "name": "Entra directory sync (GET /users) into LawHand users",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "backend/app/services/user_sync.py:114-212",
+   "notes": "Blocked by _directory_sync_blocked whenever tier is unknown (user_sync.py:122-124), which is the permanent state after an admin connect."
+  },
+  {
+   "name": "OneDrive/SharePoint matter storage: folder provisioning, small PUT + upload session, rename, invite-share, marker file, delete",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/matter_file_store.py:817-1013",
+   "notes": "OneDrive path is the admin's /me/drive via delegated token (matter_file_store.py:42-56). SharePoint path uses /drives/{id} (1336-1400). Root is auto-created in the admin's OneDrive on every admin connect (cloud_init.py:148-166)."
+  },
+  {
+   "name": "SharePoint site/library picker and binding",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/cloud_admin.py:303-411",
+   "notes": "GET /sites?search, /sites/root, /sites/{id}/drives. Saving always sets SharePoint as primary with health 'configured' and no write probe."
+  },
+  {
+   "name": "Scheduled metadata index sync (OneDrive top level, root-site SharePoint libraries, Outlook admin mailbox)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_sync.py:68-165",
+   "notes": "Every CLOUD_METADATA_SYNC_INTERVAL_MIN (scheduler.py:804-810). No delta; top-level children only. sync_sharepoint ignores the bound site and uses /sites/root."
+  },
+  {
+   "name": "Live connected-source search and content fetch for RAG/chat/plugins (Graph Search API + folder search)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_search.py:888-1017",
+   "notes": "Prefers the per-user token and falls back to the admin token (cloud_search.py:1530-1543)."
+  },
+  {
+   "name": "Outlook mail listing + full MIME capture for correspondence",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/microsoft_mail.py:25-98",
+   "notes": "Per-user token only (no fallback). ms_read_mail_tenant (101-134) is dead code and always returns [] because it passes Entra ids as LawHand user ids."
+  },
+  {
+   "name": "Client email via connected mailbox (user, then firm mailbox, then SMTP)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/connected_mail.py:77-137",
+   "notes": "POST /me/sendMail with inline attachments (2 MiB cap, mail_attachment.py:5). The 'firm mailbox' is the connecting admin's own mailbox (connected_mail.py:381-420)."
+  },
+  {
+   "name": "Admin notifications via Graph sendMail",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "backend/app/services/email_admin.py:98-115",
+   "notes": "Gated on service_account_email, which is never populated for Microsoft (see id_token defect), so it always falls through to Google/SMTP."
+  },
+  {
+   "name": "Calendar: task push with extended-property dedupe, calendarView read, scheduled events incl. Teams online meetings",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/microsoft_calendar.py:107-235",
+   "notes": "Task push falls back to the admin token when the assignee has no personal token (microsoft_calendar.py:23-44)."
+  },
+  {
+   "name": "Teams collaboration: joined teams, channels, create channel, post HTML/Adaptive Card",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/teams.py:40-47",
+   "notes": "Delegated; posts as the consenting admin. Behind TEAMS_FEATURE_ENABLED (default True, config.py:128) plus &teams=1 re-consent."
+  },
+  {
+   "name": "Teams voice: app-only callRecords, PSTN report, change-notification subscription",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/teams_voice.py:841-880",
+   "notes": "The only client_credentials use. Per-tenant opt-in; tenant-registered app preferred, otherwise the platform app. Admin consent via /adminconsent (routers/teams.py:395-403)."
+  },
+  {
+   "name": "Teams app (personal + configurable tabs, SSO webApplicationInfo)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "teams-app/manifest.json:24-50",
+   "notes": "No bot, message extension, activities block or Copilot agent."
+  },
+  {
+   "name": "Office add-in NAA session exchange (Word/Excel/Outlook)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "backend/app/config.py:110-122",
+   "notes": "OFFICE_ASSISTANT_ENABLED=False plus a pilot tenant allowlist (office_access.py:50-85). Exchanges the NAA token for LawHand cookies only (auth.py:1715-1790). No Graph/OBO."
+  },
+  {
+   "name": "Storage root ownership classification (OneDrive = at_risk)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/services/storage_root_ownership.py:37-120",
+   "notes": "Shown only in the onboarding wizard (OnboardingWizard.jsx:522-536), not on the admin Integrations panel."
+  },
+  {
+   "name": "Storage-migration inventory (recursive children walk)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/storage_discovery.py:183-300",
+   "notes": "BFS over /children with $top=999 instead of /delta."
+  },
+  {
+   "name": "Plugin integration availability detection",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/routers/plugins.py:370-389",
+   "notes": "Checks scopes that are never requested (see defects)."
+  },
+  {
+   "name": "App-only Sites.Selected org root / SharePoint library as firm root",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/storage-root-ownership-and-handoff.md:85-110",
+   "notes": "Docs state the code still uses the delegated admin token."
+  },
+  {
+   "name": "Delta sync + change notifications for files/mail",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/integrations-remediation-plan.md:192",
+   "notes": "Deferred; CloudMetadata.sync_cursor is unused for Graph."
+  },
+  {
+   "name": "National clouds (GCC High / DoD / China)",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "backend/app/services/storage_discovery.py:30-32",
+   "notes": "Not planned anywhere. Hosts are hard-coded to login.microsoftonline.com and graph.microsoft.com, and host allow-lists would reject .us hosts."
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "microsoft",
+   "endpoint": "login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
+   "method": "GET",
+   "file_ref": "backend/app/routers/integrations.py:480-495",
+   "purpose": "Admin/user connect (PKCE, prompt=select_account)",
+   "scope_needed": "n/a. Admin intent should add 'openid profile' to get tid/upn."
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "login.microsoftonline.com/{tenant}/oauth2/v2.0/token (authorization_code, refresh_token)",
+   "method": "POST",
+   "file_ref": "backend/app/services/token_vault.py:234-247",
+   "purpose": "Code exchange (integrations.py:519-545) and refresh",
+   "scope_needed": "offline_access"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "login.microsoftonline.com/{entraTid}/oauth2/v2.0/token (client_credentials, .default)",
+   "method": "POST",
+   "file_ref": "backend/app/services/teams_voice.py:863-870",
+   "purpose": "App-only token for Teams voice",
+   "scope_needed": "Application permissions consented on the app"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "login.microsoftonline.com/{tid}/adminconsent?client_id=",
+   "method": "GET",
+   "file_ref": "backend/app/routers/teams.py:395-403",
+   "purpose": "Admin consent for Teams voice app role",
+   "scope_needed": "Grants every application permission statically configured on the app"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "login.microsoftonline.com/{tenant}/discovery/v2.0/keys",
+   "method": "GET",
+   "file_ref": "backend/app/utils/oauth_security.py:18-20",
+   "purpose": "JWKS for id_token and NAA access-token verification",
+   "scope_needed": "none"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/organization?$select=verifiedDomains",
+   "method": "GET",
+   "file_ref": "backend/app/services/account_detect.py:88-105",
+   "purpose": "Tier/domain backfill (never runs after admin connect)",
+   "scope_needed": "User.Read (delegated least)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/users?$select=id,mail,userPrincipalName,displayName,givenName,surname,jobTitle,department,accountEnabled",
+   "method": "GET",
+   "file_ref": "backend/app/services/user_sync.py:131-148",
+   "purpose": "Directory sync",
+   "scope_needed": "User.Read.All (accountEnabled/jobTitle exceed User.ReadBasic.All). No userType filter."
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/users?$select=id,userPrincipalName,mail",
+   "method": "GET",
+   "file_ref": "backend/app/services/microsoft_mail.py:111-115",
+   "purpose": "Dead tenant mail fan-out",
+   "scope_needed": "User.ReadBasic.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/messages ($select incl. bodyPreview, $orderby, $filter receivedDateTime)",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_sync.py:725-790",
+   "purpose": "Admin-mailbox index sync; per-user listing (microsoft_mail.py:43-50)",
+   "scope_needed": "Mail.Read (Mail.ReadBasic excludes bodyPreview). Mail.ReadBasic would suffice if the snippet were dropped."
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/messages/{id}/$value",
+   "method": "GET",
+   "file_ref": "backend/app/services/microsoft_mail.py:80-98",
+   "purpose": "Full MIME capture for correspondence; RAG content fetch (cloud_search.py:1329-1362)",
+   "scope_needed": "Mail.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/sendMail (inline fileAttachments, saveToSentItems)",
+   "method": "POST",
+   "file_ref": "backend/app/services/connected_mail.py:77-137",
+   "purpose": "Approved client email",
+   "scope_needed": "Mail.Send (a shared firm mailbox would need Mail.Send.Shared + /users/{shared}/sendMail)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/users/{upn}/sendMail",
+   "method": "POST",
+   "file_ref": "backend/app/services/email_admin.py:26-54",
+   "purpose": "Admin notifications (unreachable for MS)",
+   "scope_needed": "Mail.Send"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/search/query entityTypes [driveItem,listItem]",
+   "method": "POST",
+   "file_ref": "backend/app/services/cloud_search.py:937-986",
+   "purpose": "Tenant/user-wide file search for RAG",
+   "scope_needed": "Files.Read.All + Sites.Read.All (listItem needs Sites.Read.All, which the per-user set lacks)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/search/query entityTypes [message]",
+   "method": "POST",
+   "file_ref": "backend/app/services/cloud_search.py:941-986",
+   "purpose": "Mailbox search for RAG (the admin mailbox under fallback)",
+   "scope_needed": "Mail.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/root/children, /me/drive/items/{id}/children",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_sync.py:571-620",
+   "purpose": "Index/matter-folder sync; folder listing (cloud_init.py:1499-1520, cloud_folder_audit.py:137)",
+   "scope_needed": "Files.Read (own drive)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/root:{path}:/children?$expand=thumbnails",
+   "method": "GET",
+   "file_ref": "backend/app/services/document_sync.py:130-160",
+   "purpose": "On-demand OneDrive listing (first page only)",
+   "scope_needed": "Files.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{id} ($select)",
+   "method": "GET",
+   "file_ref": "backend/app/services/matter_file_store.py:350-360",
+   "purpose": "Fresh open URL; folder metadata (cloud_init.py:1555-1570); reconciliation (workflow_run_reconciliation.py:44-49)",
+   "scope_needed": "Files.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{id}/content",
+   "method": "GET",
+   "file_ref": "backend/app/services/matter_file_store.py:283-289",
+   "purpose": "Read matter file bytes; RAG fetch (cloud_search.py:1182-1184)",
+   "scope_needed": "Files.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{parent}:/{filename}:/content?conflictBehavior=rename",
+   "method": "PUT",
+   "file_ref": "backend/app/services/matter_file_store.py:866-871",
+   "purpose": "Small upload (filename not URL-encoded)",
+   "scope_needed": "Files.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{parent}:/{filename}:/createUploadSession + uploadUrl chunks",
+   "method": "POST",
+   "file_ref": "backend/app/services/matter_file_store.py:914-1000",
+   "purpose": "Large upload >4 MiB",
+   "scope_needed": "Files.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/root/children | /me/drive/items/{id}/children (create folder)",
+   "method": "POST",
+   "file_ref": "backend/app/services/cloud_init.py:763-790",
+   "purpose": "Root/matter/subfolder provisioning",
+   "scope_needed": "Files.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{id} (rename)",
+   "method": "PATCH",
+   "file_ref": "backend/app/services/cloud_init.py:799-812",
+   "purpose": "Folder rename (also cloud_init.py:1353-1356)",
+   "scope_needed": "Files.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{id} | /drives/{d}/items/{id}",
+   "method": "DELETE",
+   "file_ref": "backend/app/routers/matter_documents.py:290-310",
+   "purpose": "Delete cloud backing; staged cleanup (matter_file_store.py:446-451)",
+   "scope_needed": "Files.ReadWrite / Files.ReadWrite.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{id}/invite (requireSignIn, sendInvitation=false)",
+   "method": "POST",
+   "file_ref": "backend/app/services/cloud_init.py:677-697",
+   "purpose": "Share matter folder with assignees (never revoked)",
+   "scope_needed": "Files.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/drive/items/{folder}/search(q='...')",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_search.py:1399-1435",
+   "purpose": "Matter-folder search (fails for items in another user's drive)",
+   "scope_needed": "Files.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{folder}:/.lawhand-matter.json (+ :/content PUT, conflictBehavior=fail)",
+   "method": "GET",
+   "file_ref": "backend/app/services/matter_folder_marker.py:114-143",
+   "purpose": "Matter folder marker read/write",
+   "scope_needed": "Files.ReadWrite(.All)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/root/children | /drives/{d}/items/{id}/children",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_init.py:826-852",
+   "purpose": "SharePoint folder listing; sync (cloud_sync.py:669,717); audit (cloud_folder_audit.py:135); migration inventory (storage_discovery.py:195-260)",
+   "scope_needed": "Files.Read.All or Sites.Read.All (app-only: Sites.Selected)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{id} ($select)",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_init.py:893-908",
+   "purpose": "SharePoint folder/item metadata; reconciliation (workflow_run_reconciliation.py:44-47)",
+   "scope_needed": "Files.Read.All / Sites.Selected"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{id}/content",
+   "method": "GET",
+   "file_ref": "backend/app/services/document_sync.py:350-358",
+   "purpose": "Download for ingestion; RAG fetch (cloud_search.py:1185-1188); file store read (matter_file_store.py:283-286)",
+   "scope_needed": "Files.Read.All / Sites.Selected"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{folder}:/{filename}:/content?conflictBehavior=rename",
+   "method": "PUT",
+   "file_ref": "backend/app/services/matter_file_store.py:1383-1396",
+   "purpose": "SharePoint upload (no upload session for large files; filename unencoded)",
+   "scope_needed": "Files.ReadWrite.All (least: Sites.Selected write role / Files.SelectedOperations.Selected)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{id}/children (create folder)",
+   "method": "POST",
+   "file_ref": "backend/app/services/cloud_init.py:855-890",
+   "purpose": "SharePoint subfolder provisioning",
+   "scope_needed": "Files.ReadWrite.All / Sites.Selected"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{id} (rename)",
+   "method": "PATCH",
+   "file_ref": "backend/app/services/cloud_init.py:911-925",
+   "purpose": "SharePoint folder rename (also 1394-1399)",
+   "scope_needed": "Files.ReadWrite.All / Sites.Selected"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/drives/{d}/items/{folder}/search(q='...')",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_search.py:1453-1485",
+   "purpose": "SharePoint matter-folder search",
+   "scope_needed": "Files.Read.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/shares/u!{b64url}/driveItem",
+   "method": "GET",
+   "file_ref": "backend/app/services/cloud_init.py:1574-1606",
+   "purpose": "Resolve pasted OneDrive/SharePoint folder links",
+   "scope_needed": "Files.Read.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/sites/root",
+   "method": "GET",
+   "file_ref": "backend/app/routers/cloud_admin.py:320-324",
+   "purpose": "Site picker default; SharePoint sync without binding (cloud_sync.py:641-647, document_sync.py:207-213)",
+   "scope_needed": "Sites.Read.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/sites?search={q}&$top=25",
+   "method": "GET",
+   "file_ref": "backend/app/routers/cloud_admin.py:313-319",
+   "purpose": "Site picker search",
+   "scope_needed": "Sites.Read.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/sites/{id}/drives",
+   "method": "GET",
+   "file_ref": "backend/app/routers/cloud_admin.py:347-378",
+   "purpose": "Library picker; sync (cloud_sync.py:652-655)",
+   "scope_needed": "Sites.Read.All (or Files.Read.All)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/calendarview?$expand=singleValueExtendedProperties",
+   "method": "GET",
+   "file_ref": "backend/app/services/calendar_sync.py:78-120",
+   "purpose": "Calendar page read",
+   "scope_needed": "Calendars.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/events?$filter=singleValueExtendedProperties/Any(...)",
+   "method": "GET",
+   "file_ref": "backend/app/services/microsoft_calendar.py:47-68",
+   "purpose": "Dedupe lookup for pushed task events",
+   "scope_needed": "Calendars.Read"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/events (task events with extended property; scheduled events, isOnlineMeeting teamsForBusiness)",
+   "method": "POST",
+   "file_ref": "backend/app/services/microsoft_calendar.py:170-181",
+   "purpose": "Task push; ms_create_event and ms_create_scheduled_event (calendar_sync.py:218-226, 285-293)",
+   "scope_needed": "Calendars.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/events/{id}",
+   "method": "PATCH",
+   "file_ref": "backend/app/services/microsoft_calendar.py:168-175",
+   "purpose": "Task event update",
+   "scope_needed": "Calendars.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/events/{id}",
+   "method": "DELETE",
+   "file_ref": "backend/app/services/microsoft_calendar.py:222-235",
+   "purpose": "Task/scheduled event removal (calendar_sync.py:315-320)",
+   "scope_needed": "Calendars.ReadWrite"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/me/joinedTeams",
+   "method": "GET",
+   "file_ref": "backend/app/services/teams.py:280-292",
+   "purpose": "Team picker",
+   "scope_needed": "Team.ReadBasic.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/teams/{id}/channels",
+   "method": "GET",
+   "file_ref": "backend/app/services/teams.py:295-310",
+   "purpose": "Channel picker",
+   "scope_needed": "Channel.ReadBasic.All"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/teams/{id}/channels",
+   "method": "POST",
+   "file_ref": "backend/app/services/teams.py:313-340",
+   "purpose": "Create matter channel",
+   "scope_needed": "Channel.Create"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/teams/{id}/channels/{id}/messages (HTML or Adaptive Card attachment)",
+   "method": "POST",
+   "file_ref": "backend/app/services/teams.py:365-420",
+   "purpose": "Matter notifications (posted as the admin)",
+   "scope_needed": "ChannelMessage.Send (RSC alternative: ChannelMessage.Send.Group via bot)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/communications/callRecords/getPstnCalls(fromDateTime,toDateTime)",
+   "method": "GET",
+   "file_ref": "backend/app/services/teams_voice.py:995-1012",
+   "purpose": "PSTN reconciliation feed",
+   "scope_needed": "CallRecords.Read.PstnCalls (app). Code consents CallRecords.Read.All."
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/communications/callRecords/{id}?$expand=sessions($expand=segments)",
+   "method": "GET",
+   "file_ref": "backend/app/services/teams_voice.py:1015-1031",
+   "purpose": "Call record detail",
+   "scope_needed": "CallRecords.Read.All (app)"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "/subscriptions (resource communications/callRecords, changeType created); PATCH/DELETE /subscriptions/{id}",
+   "method": "POST",
+   "file_ref": "backend/app/services/teams_voice.py:1049-1157",
+   "purpose": "Call-record change notifications with renewal",
+   "scope_needed": "CallRecords.Read.All (app)"
+  }
+ ],
+ "defects": [
+  {
+   "title": "Admin M365 connect never requests openid, so tier is 'unknown' forever, directory sync is blocked and service_account_email is never set",
+   "severity": "high",
+   "file_ref": "backend/app/routers/integrations.py:568-615",
+   "detail": "MICROSOFT_ADMIN_SCOPES (integrations.py:241-244) lacks openid/profile, so Microsoft returns no id_token. claims stays None, detect_microsoft(None) returns ('unknown', None), and apply_detection still stamps account_detected_at (account_detect.py:184-189). backfill_unknown_credentials then skips the row forever (account_detect.py:140-141). cap._directory_sync returns unavailable for an unknown tier (capabilities.py:98-103), and user_sync._directory_sync_blocked turns every Microsoft sync into not_applicable (user_sync.py:122-124). send_admin_notification needs service_account_email (email_admin.py:106) and so never uses Graph. No test covers the MS admin callback token response.",
+   "user_impact": "Microsoft 365 firms can never import users from Entra. The admin card shows 'Microsoft (tier unknown)' with 'reconnect to confirm directory access', and reconnecting cannot fix it. 'Granted by' is blank, and Teams voice cannot be pre-filled with the tid."
+  },
+  {
+   "title": "Connecting admin's personal mailbox is indexed every 15 minutes into firm-wide search and served to any user",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_sync.py:725-830",
+   "detail": "sync_all calls sync_outlook_mail(db, tenant_id) with no user_id (cloud_sync.py:153-160). _get_token therefore uses the tenant (admin) delegated token, so /me/messages is the admin's mailbox. The 200 newest subjects, participants and 500-character bodyPreview are upserted into cloud_metadata_index. search_index filters only on tenant_id and provider/object_type (cloud_search.py:471-481); there is no owner ACL. RAG calls it for every user (rag.py:1889-1905), and the scheduler runs it on an interval (scheduler.py:804-810).",
+   "user_impact": "Associates, staff or walled-off users can surface partner/HR/privileged email subjects and snippets through the AI assistant. This is a confidentiality and ethical-wall breach inside the firm."
+  },
+  {
+   "title": "Users without a personal Microsoft connection silently search and read the admin's mailbox and files through token fallback",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_search.py:1530-1543",
+   "detail": "_get_microsoft_token falls back to get_fresh_token (the admin's delegated grant). Graph /search/query for the message entity then searches the admin's mailbox (cloud_search.py:941-986), and _fetch_outlook_content downloads full MIME from /me/messages/{id}/$value (1329-1362). driveItem search returns anything the admin can access. Even matter-scoped searches keep 'outlook' in the global query (_microsoft_sources_without_scoped, 1745-1764).",
+   "user_impact": "Any firm user's chat question can return the full text of the admin's emails and the admin's private OneDrive/SharePoint files, bypassing Microsoft's permission model."
+  },
+  {
+   "title": "Firm matter documents default to one admin's personal OneDrive, and access dies with that account",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_init.py:148-166",
+   "detail": "Every admin connect auto-creates the LawHand root in the connecting admin's /me/drive via _ensure_cloud_root (integrations.py:2398-2438). Auto mode picks OneDrive when Microsoft is active (integrations.py:1996-2002). All reads and writes use the admin's delegated token (matter_file_store.py:42-56, 866-871). storage_root_ownership classifies this as at_risk, but that is shown only in onboarding. App-only Sites.Selected is planned only (docs/storage-root-ownership-and-handoff.md:85-110).",
+   "user_impact": "When the admin leaves, is disabled, resets MFA, or hits a Conditional Access change, every matter upload, open and sync fails. After Entra deletes the account, OneDrive retention can destroy the firm's matter files."
+  },
+  {
+   "title": "Removing a matter assignee never revokes the OneDrive/SharePoint/Drive folder share granted to them",
+   "severity": "high",
+   "file_ref": "backend/app/routers/matters.py:1772-1825",
+   "detail": "Assignees are invited with write roles via /me/drive/items/{id}/invite (cloud_init.py:617-697, called from matters.py:185-218 and 3095/3188/3263/3402). remove_assignment deletes the row and cleans calendars but never calls DELETE .../permissions/{id}. The codebase has no unshare function.",
+   "user_impact": "A lawyer screened off a matter (conflict or ethical wall) keeps write access to its cloud folder indefinitely, which is a professional-responsibility exposure."
+  },
+  {
+   "title": "Per-user Microsoft tokens break OneDrive matter-folder search, sync and fetch (items live in the admin's drive)",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_search.py:1399-1435",
+   "detail": "When a user has a personal token it is preferred, and folder search, sync and content fetch then call /me/drive/items/{adminFolderId}/... (cloud_search.py:1412, 1182-1184; cloud_sync.py:596-620). For an item in another user's drive Graph returns itemNotFound. _sync_graph_files logs and breaks (cloud_sync.py:1058-1064). The matter 'Sync folder' route passes user_id (matters.py:3407-3413) and reports status 'synced' with 0 files.",
+   "user_impact": "Attorneys who follow the 'Connect Calendar' prompt see empty matter cloud files and get AI answers without the matter documents. Users who never connected get results (via the admin token)."
+  },
+  {
+   "title": "Firm task deadlines are pushed to the admin's Outlook calendar when the assignee has no personal token",
+   "severity": "medium",
+   "file_ref": "backend/app/services/microsoft_calendar.py:23-44",
+   "detail": "upsert_task_event calls _get_token(tenant_id, user_id) without exact_user, so it falls back to get_fresh_token and /me/events is the admin's calendar (microsoft_calendar.py:132-181). push_task_to_calendars fires this for every dated task (task_notifications.py:290-317). Descriptions include matter/customer names.",
+   "user_impact": "The admin's calendar fills with other lawyers' deadlines, including matters they may be walled from, while the actual assignee gets nothing."
+  },
+  {
+   "title": "Directory sync (when it runs) imports guests, rooms and shared mailboxes as licensed users and re-activates users LawHand admins deactivated",
+   "severity": "medium",
+   "file_ref": "backend/app/services/user_sync.py:131-190",
+   "detail": "GET /users has no $filter on userType or assignedLicenses and $select omits userType. Every enabled object becomes role 'user' with license_active=True, and existing matches get is_active=True unconditionally (user_sync.py:170-173). Disabled Entra accounts are skipped, not deactivated. The bug is latent today because of the tier defect, but it is live for any legacy credential with a detected tier.",
+   "user_impact": "Deactivated departing staff come back on the next sync. External guests and room resources inflate seat counts and appear in assignment pickers."
+  },
+  {
+   "title": "Plugin integration detection checks scopes LawHand never requests, so OneDrive and Google Drive never show as available",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/plugins.py:370-389",
+   "detail": "The code checks 'Files.Read.All' and 'drive.readonly', but the connect flows request Files.ReadWrite.All and the full drive scope (integrations.py:241-259). The scope lists are hand-copied in four places: integrations.py:241-270, admin.py:1604-1622, plugins.py:370-389 and integrations.py:2031-2035.",
+   "user_impact": "Plugin cards and pages list 'Integrations: sharepoint, outlook, calendar' and omit OneDrive/Google Drive for fully connected firms (PluginsPage.jsx:88, PluginPage.jsx:159)."
+  },
+  {
+   "title": "Firm-mailbox fallback sends approved client email as the connecting admin",
+   "severity": "medium",
+   "file_ref": "backend/app/services/connected_mail.py:381-420",
+   "detail": "When the approver has no per-user grant, the tenant credential (the admin's delegated token) is used with /me/sendMail and saveToSentItems=True. There is no shared-mailbox support (Mail.Send.Shared or /users/{shared}/sendMail).",
+   "user_impact": "Clients receive correspondence from the managing partner's personal address, it lands in that partner's Sent Items, and replies go to the wrong person."
+  },
+  {
+   "title": "Unused and over-broad scopes requested: Chat.ReadWrite, TeamsActivity.Send, per-user Files.ReadWrite.All, admin Mail.Read",
+   "severity": "medium",
+   "file_ref": "backend/app/services/teams.py:40-47",
+   "detail": "No code calls /chats or sendActivityNotification, and the Teams manifest has no 'activities' block (teams-app/manifest.json:1-50), yet both scopes are required for teams_connected (teams_gate.py:25-28). Per-user Microsoft tokens are only used for reads (cloud_search, cloud_sync, document_sync), so Files.Read.All would do. Admin Mail.Read only reaches the admin's own mailbox and feeds the leak above. Sign-in also requests offline_access and User.Read and then discards the tokens (auth.py:1324, 1372).",
+   "user_impact": "The consent screens ask for 'read and write all your chats' and 'full access to all files' without need. Security-conscious firm admins refuse or delay consent."
+  },
+  {
+   "title": "Per-user token lacks Sites.Read.All but global Graph search requests the listItem entity",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_search.py:937-986",
+   "detail": "entityTypes ['driveItem','listItem'] is sent with the per-user token (MICROSOFT_USER_SCOPES has no Sites.Read.All, integrations.py:256-259). listItem requires Sites.Read.All, so the request likely returns 403 and search_group returns None. Status: PLAUSIBLE, needs a live check.",
+   "user_impact": "Users with a personal Microsoft connection get no OneDrive/SharePoint hits from connected-source search."
+  },
+  {
+   "title": "Filenames containing '#' or '%' break path-based OneDrive/SharePoint uploads",
+   "severity": "medium",
+   "file_ref": "backend/app/services/matter_file_store.py:866-871",
+   "detail": "The filename is interpolated unencoded into ':/{filename}:/content' (also createUploadSession at 925 and SharePoint at 1384-1387). '#' starts a URL fragment, which truncates the path and drops the conflictBehavior query. The inbound attachment sanitizer keeps '#' and '%' (inbound_email.py:271-283), and failures are logged and swallowed (inbound_email.py:386-400).",
+   "user_impact": "Attachments such as 'Exhibit #3.pdf' silently fail to file to the matter folder."
+  },
+  {
+   "title": "Tenant token row lock is held for the caller's whole transaction on the fresh-token path",
+   "severity": "medium",
+   "file_ref": "backend/app/services/token_vault.py:413-432",
+   "detail": "get_fresh_token takes SELECT ... FOR UPDATE (token_vault.py:196-209) and returns without committing when the token is fresh. Concurrent requests that need the same tenant credential (every no-personal-token user in RAG or search) wait on lock_timeout=5s, and _execute_locked_scalar then returns None, which reads as 'not connected'. Status: PLAUSIBLE, from code reading.",
+   "user_impact": "Under concurrent chat load, Microsoft sources drop out of answers intermittently with no visible error."
+  },
+  {
+   "title": "Per-user connect accepts any Microsoft account, including personal Outlook.com, with no identity or tenant check",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/integrations.py:616-646",
+   "detail": "The user-intent callback stores whatever account completed consent. There is no openid, no /me lookup, and no comparison with the user's Entra tid/oid or email domain. The authority is 'common' (config.py:108).",
+   "user_impact": "Client correspondence can go out from, and be captured from, a lawyer's personal mailbox, breaking firm retention and supervision."
+  },
+  {
+   "title": "No UI to disconnect M365, no per-user disconnect, and no revocation at Microsoft",
+   "severity": "medium",
+   "file_ref": "backend/app/services/token_vault.py:382-399",
+   "detail": "POST /microsoft/disconnect exists (integrations.py:2105-2134), but api.js and IntegrationsPanel have no caller. Users cannot remove their own grant, and the admin endpoint deletes every user's token.",
+   "user_impact": "Users cannot withdraw mailbox/file access from LawHand. Admins must delete the enterprise app in Entra, which the UI never mentions."
+  },
+  {
+   "title": "Capability matrix hard-codes email, calendar and cloud_storage as 'Available' regardless of granted scopes",
+   "severity": "low",
+   "file_ref": "backend/app/services/capabilities.py:169-171",
+   "detail": "resolve() always returns ok for these three, even when Mail.Send, Calendars.ReadWrite or Files.ReadWrite.All is missing.",
+   "user_impact": "The admin card shows 'Email: Available' while client sends fail with 'reconnect to grant permission to send email'."
+  },
+  {
+   "title": "Most Graph call sites ignore 429/Retry-After and truncate silently",
+   "severity": "low",
+   "file_ref": "backend/app/services/cloud_sync.py:1058-1064",
+   "detail": "Only graph_request (provider_http) retries. cloud_sync, cloud_search, cloud_init, document_sync, user_sync, calendar and storage_discovery use raw httpx and break or return empty on any non-200.",
+   "user_impact": "Large firms that hit throttling get partial indexes and folder trees with no alert."
+  },
+  {
+   "title": "Commercial cloud only: hard-coded authority and Graph hosts, plus host allow-lists",
+   "severity": "low",
+   "file_ref": "backend/app/services/cloud_folder_audit.py:140-145",
+   "detail": "login.microsoftonline.com and graph.microsoft.com appear in 18 modules (for example storage_discovery.py:18,30-32). Continuation-URL validators reject any other host.",
+   "user_impact": "Firms on GCC High or DoD (defense/CMMC clients) or 21Vianet cannot use LawHand at all."
+  },
+  {
+   "title": "SharePoint index sync ignores the bound site and indexes /sites/root",
+   "severity": "low",
+   "file_ref": "backend/app/services/cloud_sync.py:622-700",
+   "detail": "sync_all calls sync_sharepoint(db, tenant_id) without the sharepoint_binding site_id (cloud_sync.py:145-152). Only top-level children of each root-site library are indexed.",
+   "user_impact": "The matter library bound by the admin is not indexed, and intranet root-site files appear in firm search instead."
+  },
+  {
+   "title": "Admin data-visibility guide omits Mail.Send from both Microsoft scope lists",
+   "severity": "low",
+   "file_ref": "frontend/platform_docs/administrative-guide/16-integration-data-visibility.md:42",
+   "detail": "Code requests Mail.Send in both the admin and user sets (integrations.py:241-259).",
+   "user_impact": "Admins doing a privacy/DPA review get an inaccurate permission inventory."
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Calendar page, 'Connect Calendar' button",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:863-871",
+   "issue": "The only per-user Microsoft connect is labeled as calendar-only, but the consent screen asks to read and send mail and for full access to all files (integrations.py:256-259).",
+   "severity": "high",
+   "suggestion": "Rename it to 'Connect my Microsoft 365'. Before redirecting, show a consent explainer that lists mail read/send, files and calendar with the reason for each. Longer term, offer granular toggles backed by separate scope sets.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations > Microsoft card (tier/capabilities)",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:828-845",
+   "issue": "Every Microsoft tenant shows 'Microsoft (tier unknown)' with directory sync and Teams 'unconfirmed / reconnect to confirm'. Reconnecting never fixes it (openid defect), which drives a re-authorize loop.",
+   "severity": "high",
+   "suggestion": "Fix the backend (add openid profile, or run the /organization backfill after connect). Until then, change the copy so it does not promise reconnect will help.",
+   "quick_win": false
+  },
+  {
+   "screen": "Chat/email failures telling users to 'Reconnect ... in Integrations'",
+   "file_ref": "backend/app/services/connected_mail.py:235-241",
+   "issue": "Non-admins are sent to Integrations, which is admin-only (integrations.py:1817-1819, admin.py:1640). Their own connect lives on the Calendar page. The same wording appears in microsoft_mail.py:34-36.",
+   "severity": "medium",
+   "suggestion": "Add a per-user 'My connections' panel in Settings (connect, reconnect, disconnect, granted scopes) and point every reconnect message there. The copy change alone can be done in the frontend.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations > Primary provider selector",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:360-380",
+   "issue": "'Auto (Microsoft 365 \u2192 OneDrive)' and 'Microsoft OneDrive' carry no warning that files will live in the connecting admin's personal OneDrive. The root_ownership at_risk signal appears only in onboarding.",
+   "severity": "medium",
+   "suggestion": "Show the root_ownership badge and detail from the onboarding status API next to the selector. Recommend SharePoint and mark OneDrive 'personal drive \u2013 at risk'.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations > Microsoft card identity",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:715-726",
+   "issue": "'Granted by' is never shown for Microsoft because service_account_email is never set. Admins cannot see whose mailbox, calendar and OneDrive power the firm-wide features.",
+   "severity": "medium",
+   "suggestion": "Populate the identity (openid, or GET /me after connect). Display 'Firm-wide features run as <upn>' with a warning that removing this account breaks storage.",
+   "quick_win": false
+  },
+  {
+   "screen": "Integrations > Microsoft/Google cards",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:760-770",
+   "issue": "There is only Connect/Re-authorize. No Disconnect button exists even though the backend endpoint does, and nothing explains that Microsoft grants persist until the enterprise app is removed.",
+   "severity": "medium",
+   "suggestion": "Add Disconnect with a confirmation that lists the impact (all users' personal connections are removed too). Link to Entra 'Enterprise applications' or myapplications.microsoft.com for full revocation.",
+   "quick_win": false
+  },
+  {
+   "screen": "Integrations > capability badges",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:835-845",
+   "issue": "Email, Calendar and Cloud storage always read 'Available' even when Mail.Send, Calendars.ReadWrite or Files.ReadWrite.All is in missing_required.",
+   "severity": "medium",
+   "suggestion": "Downgrade badges in the frontend using info.missing_required (for example Mail.Send gives Email 'Reconnect needed').",
+   "quick_win": true
+  },
+  {
+   "screen": "Teams tab 'Enable Microsoft Teams' gate",
+   "file_ref": "frontend/src/components/TeamsPanel.jsx:138-145",
+   "issue": "The copy says re-consent grants 'channel and messaging access', but it also grants Chat.ReadWrite (all the admin's 1:1 and group chats) and TeamsActivity.Send, neither of which is used.",
+   "severity": "low",
+   "suggestion": "List the exact permissions and their purposes, and drop the unused scopes in the backend.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations > scope detail labels",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:18-30",
+   "issue": "Labels understate breadth: 'Access SharePoint sites' for Sites.Read.All (read every site collection) and 'Read & write files (OneDrive + SharePoint)' for all files the admin can reach.",
+   "severity": "low",
+   "suggestion": "Use Microsoft's consent wording and add a 'why LawHand needs this' line per scope.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations > SharePoint library card",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:480-492",
+   "issue": "Saving a library always sets SharePoint as primary (is_primary: true) and reports it saved without testing write access (cloud_admin.py:381-411 sets health 'configured').",
+   "severity": "medium",
+   "suggestion": "Add a 'make primary' checkbox and run a test-write/delete of a marker before confirming. Show the site and library path.",
+   "quick_win": false
+  },
+  {
+   "screen": "OAuth error return after onboarding",
+   "file_ref": "backend/app/routers/integrations.py:1790-1807",
+   "issue": "A failed admin re-authorize lands on the onboarding wizard, while success lands on /admin?tab=integrations (integrations.py:1765-1772).",
+   "severity": "low",
+   "suggestion": "Route errors to the same admin integrations card when onboarding is complete.",
+   "quick_win": false
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Move firm-wide access to app-only Sites.Selected with a SharePoint library as the org root",
+   "detail": "Replace the admin-delegated /me/drive root with an app-only client_credentials token plus Sites.Selected, granted per site through the /sites/{id}/permissions write role. Use Files.SelectedOperations.Selected for per-folder grants. Keep delegated tokens only for per-user mail and calendar. This removes the admin-lifecycle outage, the admin-mailbox leak, and most tenant fallbacks. Migrate existing OneDrive roots with the existing storage_migration framework.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/storage-root-ownership-and-handoff.md:85-110; backend/app/services/matter_file_store.py:42-56"
+  },
+  {
+   "title": "Scope hygiene: one scope registry, least privilege, openid on admin connect",
+   "detail": "Keep a single module that defines scope sets and their consumers (integrations, admin audit, plugins, storage-readiness). Add openid profile to the admin connect. Drop admin Mail.Read, Chat.ReadWrite and TeamsActivity.Send. Change per-user Files.ReadWrite.All to Files.Read.All and add Sites.Read.All only if listItem search stays. Remove the fallback from other users to the admin token (search, fetch, calendar push).",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/routers/integrations.py:241-259; backend/app/routers/admin.py:1604-1612; backend/app/routers/plugins.py:370-389"
+  },
+  {
+   "title": "Permission-trimmed matter search with Graph Search KQL path: filters",
+   "detail": "Replace /me/drive/items/{id}/search with /search/query using a query like 'path:\"<matter folder webUrl>\"'. Microsoft then enforces each user's own permissions across drives and the /me/drive item-ID mismatch goes away. Add sortProperties and paging.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_search.py:1399-1485"
+  },
+  {
+   "title": "Delta queries + change notifications for drives, mail and calendar",
+   "detail": "Use /drives/{id}/root/delta and /me/mailFolders/inbox/messages/delta, stored in the unused sync_cursor, and /me/calendarView/delta. Add /subscriptions for driveItem roots and messages with lifecycle notifications, reusing the teams_voice subscription and renewal code. This also enables pruning of deleted items and automatic correspondence capture.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/teams_voice.py:1049-1157; backend/app/services/storage_discovery.py:183-300"
+  },
+  {
+   "title": "Word for the web round-trip for template and doc prep",
+   "detail": "Render a LawHand template to DOCX, save it to the matter SharePoint folder, and return an edit link (webUrl, or an ms-word:ofe|u| desktop deep link). The attorney drafts and polishes in Word using the firm's own Copilot in Word. LawHand then ingests the edited bytes through cloud_docx_snapshot, using eTag and /versions as review evidence.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_docx_snapshot.py:1-60; backend/app/services/matter_file_store.py:311-392"
+  },
+  {
+   "title": "Outlook drafts instead of direct sendMail for approved correspondence",
+   "detail": "POST /me/messages (draft) or /createReply, stamped with a matter category and a singleValueExtendedProperty. The attorney finalizes in Outlook, where Copilot in Outlook can help, and LawHand confirms the send through the extended property or delta. Needs Mail.ReadWrite. Large attachments go through an upload session instead of the 2 MiB inline limit.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/connected_mail.py:77-137; backend/app/services/mail_attachment.py:5"
+  },
+  {
+   "title": "Microsoft 365 Copilot declarative agent with LawHand MCP actions",
+   "detail": "Upgrade the Teams app manifest (currently v1.17, tabs only) to declare a declarative agent. Its actions should point at the existing workspace MCP server tools (search_matters, list_document_templates, propose_document_from_template, propose_task), so attorneys can call LawHand from Copilot Chat in Word, Outlook and Teams on the firm's own Copilot licenses. Proposals stay human-reviewed.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "teams-app/manifest.json:1-50"
+  },
+  {
+   "title": "Copilot connector (Graph external connections) for matter metadata",
+   "detail": "Push matter status, deadlines, parties and document titles as externalItems with per-matter ACLs (Entra user/group IDs) through /external/connections, using app-only ExternalConnection.ReadWrite.OwnedBy and ExternalItem.ReadWrite.OwnedBy. Microsoft Search and Copilot then answer 'what is due on Smith v Jones' natively under the firm's tenant permissions.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_sync.py:68-165"
+  },
+  {
+   "title": "Copilot Retrieval API for permission-aware grounding",
+   "detail": "For Copilot-licensed users, call /copilot/retrieval to fetch grounded SharePoint/OneDrive extracts. These honor permissions and sensitivity labels, so the RAG source index no longer needs LawHand's own crawl. Check GA status and per-user licensing.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/rag.py:1885-1905"
+  },
+  {
+   "title": "Teams meeting transcripts and Copilot meeting insights into matter communications",
+   "detail": "Read /me/onlineMeetings/{id}/transcripts/{id}/content (OnlineMeetingTranscript.Read.All) and, where licensed, the Copilot AI-insights endpoint (/copilot/users/{id}/onlineMeetings/{id}/aiInsights). Parse them into a matter communication record plus proposed tasks, matching the existing Zoom transcript path. LawHand already creates teamsForBusiness meetings (calendar_sync.py:296-298).",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/calendar_sync.py:237-300"
+  },
+  {
+   "title": "Graph file conversion and preview instead of local LibreOffice/downloads",
+   "detail": "GET /drives/{d}/items/{i}/content?format=pdf gives high-fidelity DOCX-to-PDF from Microsoft's renderer. POST /items/{i}/preview gives in-app previews without copying bytes into LawHand. Both use the client's Office Online compute.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/docx_to_pdf.py:1-30"
+  },
+  {
+   "title": "Purview retention labels, sensitivity labels and eDiscovery legal holds",
+   "detail": "Apply retention labels to matter folders and files (PATCH driveItem retentionLabel) and sensitivity labels (assignSensitivityLabel, metered). Back the litigation plugin's legal holds with /security/cases/ediscoveryCases/{id}/legalHolds on custodian mailboxes and sites, using the firm's own Purview licenses.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/plugins/manifest.py:56-60"
+  },
+  {
+   "title": "Revoke folder shares on assignment removal, and batch provisioning",
+   "detail": "Store permission IDs from /invite and DELETE /drives/{d}/items/{i}/permissions/{id} when an assignee is removed or a user is deactivated. Use JSON $batch (up to 20 requests) for subfolder creation, share invites and listings during matter provisioning.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_init.py:617-697; backend/app/routers/matters.py:1772-1825"
+  },
+  {
+   "title": "Microsoft To Do and Planner for tasks instead of 30-minute calendar blocks",
+   "detail": "Create /me/todo/lists/{id}/tasks with linkedResources back to LawHand, so deadlines appear in Outlook and Teams task views without cluttering calendars. Offer Planner plans per matter team.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/microsoft_calendar.py:71-104"
+  },
+  {
+   "title": "Office NAA/OBO for per-user Graph access, removing the separate connect dance",
+   "detail": "Use nested app authentication in the add-in, or the on-behalf-of flow on the backend from the verified NAA token. Users get per-user Graph (mail, calendar, current document) without the 'Connect Calendar' redirect, and the identity is bound to the Entra oid by construction.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/routers/auth.py:1715-1790; office-addin/src/auth/officeSession.ts:43-63"
+  },
+  {
+   "title": "Teams bot, activity feed and message extension via RSC",
+   "detail": "Replace admin-authored ChannelMessage.Send posts with a bot (RSC ChannelMessage.Send.Group) and activity-feed notifications (TeamsActivity.Send.User, manifest 'activities'). Add a message extension to attach matter docs or create tasks from a message, and drop tenant-wide Chat.ReadWrite.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/teams.py:365-420; teams-app/manifest.json:24-50"
+  },
+  {
+   "title": "Firm template library in SharePoint (Org Assets) for Word and Copilot",
+   "detail": "Sync active LawHand DOCX templates into a SharePoint library that the admin registers as an organization assets library, so they appear under Word File > New and can be referenced in Copilot in Word. LawHand stays the system of record for variables.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/document_template_push.py:1-60"
+  },
+  {
+   "title": "Work IQ / Microsoft-hosted M365 MCP servers and Agent 365 registration",
+   "detail": "Evaluate using Microsoft's hosted Work IQ and M365 MCP servers (mail, calendar, Teams, SharePoint context under the user's identity) from LawHand's agent in place of bespoke Graph code. Register LawHand's agent with Entra Agent ID so firm admins govern it centrally. Verify GA and licensing first.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/graph_client.py:1-37"
+  },
+  {
+   "title": "Bookings for consult scheduling into intake",
+   "detail": "Read and write /solutions/bookingBusinesses appointments so client consultations booked through the firm's Microsoft Bookings page create LawHand intakes.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/calendar_sync.py:78-120"
+  },
+  {
+   "title": "Token health and national cloud readiness",
+   "detail": "Add a scheduled token probe that maps AADSTS codes (50076/53003 Conditional Access or MFA, 700082 expired) to actionable UI, and alert on Entra app secret expiry. Move to a shared graph_request with 429/Retry-After everywhere. Parametrize the authority and Graph host (graph.microsoft.us, dod-graph.microsoft.us, microsoftgraph.chinacloudapi.cn) and the host allow-lists for GCC High and DoD firms.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/token_vault.py:77-90; backend/app/services/storage_discovery.py:30-32"
+  }
+ ],
+ "open_questions": [
+  "Does the production Entra app registration statically list application permissions (such as CallRecords.Read.All)? If so, the /adminconsent link (routers/teams.py:395-403) grants all of them to every consenting tenant.",
+  "Is MICROSOFT_TENANT_ID 'common' in production (allowing personal MSAs)? If so, does admin consent with User.Read.All and Sites.Read.All fail outright for consumer accounts? There is no Microsoft equivalent of GOOGLE_SOLO_SCOPES.",
+  "How many production Microsoft TenantCredentials have account_type != 'unknown' (legacy backfilled)? Those tenants have live directory sync with the guest-import and reactivation behavior.",
+  "Does Graph /search/query return 403 for the combined driveItem+listItem request under per-user scopes (no Sites.Read.All)? This needs a live tenant check.",
+  "Is seat billing driven by users.license_active? Directory sync sets it True for every imported Entra object.",
+  "What share of target firms have Microsoft 365 Copilot licenses? That determines the priority of the Retrieval API, aiInsights and the declarative agent over LawHand-side AI.",
+  "Does the platform MICROSOFT_CLIENT_SECRET used as the Teams voice fallback (teams_voice.py:828-833) have a rotation and expiry alert?"
+ ]
+}

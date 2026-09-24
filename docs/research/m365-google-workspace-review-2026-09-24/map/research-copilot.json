@@ -1,0 +1,357 @@
+{
+ "topic": "Using a client's Microsoft 365 Copilot from a multi-tenant ISV (LawHand), as of 2026-09-23: Work IQ APIs, inbound agents and MCP, Copilot connectors, Office add-ins with Copilot, and governance",
+ "findings": [
+  {
+   "claim": "Work IQ APIs reached general availability on June 16, 2026. They have four areas: Chat (full Copilot answers with citations), Context (agent-ready context and source data), Tools (entity and action verbs exposed over MCP) and Workspaces (SharePoint Embedded storage for long-running agent state). Microsoft Licensing lists only the Chat, Context and Tool APIs as GA. I could not confirm that Workspaces is GA. Some Learn surfaces still say preview, for example 'Work IQ API quickstart (preview)', the /rest/beta endpoints and Work IQ MCP. The older 'Microsoft 365 Copilot APIs' are Graph /copilot endpoints and have not been renamed away. The Learn overview dated 08/06/2026 still lists them as a separate family alongside Work IQ.",
+   "status": "GA",
+   "as_of": "2026-06-02 announcement; GA 2026-06-16; docs checked Aug-Sep 2026",
+   "licensing_or_cost": "Usage-based, charged in Copilot Credits at $0.01 each. Tools cost a fixed 0.1 credit per call. Chat and Context are variable, shown as light, medium and heavy examples. Microsoft states there is 'no separate Work IQ API subscription, SKU, or per-user license'. Billing is prepaid or pay-as-you-go, with a cost dashboard in the M365 admin center.",
+   "relevance_to_lawhand": "This is the only supported way for LawHand's backend to 'ask the client's Copilot' headlessly. The cost goes to the client tenant's Copilot Credits meter, not to LawHand.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/02/announcing-the-new-work-iq-apis/",
+    "https://www.microsoft.com/en-us/licensing/news/work-iq-general-availability",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/work-iq/",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/index.md"
+   ]
+  },
+  {
+   "claim": "Work IQ authentication is delegated only. The single permission is WorkIQAgent.Ask (scope api://workiq.svc.cloud.microsoft/WorkIQAgent.Ask). It requires admin consent and supports on-behalf-of flows. App-only calls are 'not supported'. Multi-tenant apps must be registered as AzureADMultipleOrgs and users sign in through their home tenant. Each customer tenant must be enabled once: a Global Admin creates the Work IQ service principal (app id fdcc1f02-fc51-4226-8753-f668596af7f7) and sets up 'a usage-based billing plan set up in Copilot Studio with an Azure subscription and resource group assigned'. The A2A doc says a call returns 403 when the 'User [is] not a member of a usage-based billing plan'.",
+   "status": "GA",
+   "as_of": "docs ms.date 2026-06-16 to 2026-08-20",
+   "licensing_or_cost": "The client tenant's pay-as-you-go billing plan is charged.",
+   "relevance_to_lawhand": "A multi-tenant LawHand app can call Work IQ for a customer's users, but only while each user is signed in (delegated/OBO). Background batch summarization with app-only credentials is not possible. Onboarding needs three things from the customer: Global Admin enablement, an Azure billing plan, and user assignment. This is a big onboarding hurdle for small law firms.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/work-iq/permissions",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/permissions.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/api-overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/enable-work-iq.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/a2a/quickstart.md"
+   ]
+  },
+  {
+   "claim": "Work IQ licensing differs between Microsoft docs. The Work IQ overview says 'Work IQ API access is independent of Microsoft 365 Copilot licensing'. For Copilot-licensed users it is included in Microsoft's own experiences but 'subject to usage-based billing for custom and third-party agents'. Unlicensed users are 'billed based on usage'. Some surface docs contradict this. The Foundry Work IQ quickstart (ms.date 06/23/2026) and the Agent 365 Work IQ Word MCP server list 'a Microsoft 365 Copilot license for each user' as a prerequisite.",
+   "status": "GA",
+   "as_of": "2026-06 to 2026-08",
+   "licensing_or_cost": "A third-party app like LawHand is metered in Copilot Credits even when the user already has a Copilot seat. Some surfaces may also require a seat.",
+   "relevance_to_lawhand": "LawHand should not market Work IQ features as 'included with your Copilot license'. Before quoting a price, confirm in a pilot tenant whether both a seat and billing-plan membership are needed.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/index.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/mcp/quickstart/foundry.md",
+    "https://learn.microsoft.com/en-us/microsoft-agent-365/mcp-server-reference/word",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/cost-considerations.md"
+   ]
+  },
+  {
+   "claim": "The Work IQ Chat REST API is POST https://workiq.svc.cloud.microsoft/rest/conversations, then /{id}/chat, with a /beta variant. It supports multi-turn chat, OneDrive and SharePoint files passed as contextualResources, additionalContext, a per-turn web-grounding toggle (webContext.isWebEnabled), and returns sensitivity labels and attributions. The REST API 'doesn't support action or content generation skills like creating files, sending emails, or scheduling meetings' and returns text only. Work IQ A2A (JSON-RPC at /a2a/) can target a specific agent. However, the Word, Excel and PowerPoint agents 'don't produce useful responses when invoked headlessly via A2A'.",
+   "status": "GA",
+   "as_of": "docs ms.date 2026-08-20",
+   "licensing_or_cost": "Copilot Credits, variable per call.",
+   "relevance_to_lawhand": "'Summarize this matter's Outlook threads' and 'find related SharePoint documents' are feasible as text answers with citations, returned into LawHand Review. 'Draft in Word through the client's Copilot' is not feasible headlessly. LawHand would still create the .docx itself, or use the Work IQ Word MCP (preview), which creates a document from HTML in the user's OneDrive root and adds comments.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/rest/overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/rest/copilotroot-post-conversations.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/rest/copilotconversation-chat.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/a2a/quickstart.md"
+   ]
+  },
+  {
+   "claim": "Work IQ MCP (remote endpoint https://workiq.svc.cloud.microsoft/mcp) exposes 10 generic tools: fetch, create_entity, update_entity, delete_entity, do_action, call_function, ask, list_agents, get_schema and search_paths. Discovery uses /.well-known/oauth-protected-resource. Separately, Agent 365 offers per-service Work IQ MCP servers for Mail, Calendar, SharePoint, OneDrive, Teams and Word, hosted at agent365.svc.cloud.microsoft. All of these are labelled preview. Agent notifications and agents with their own user accounts are limited to Frontier-program tenants.",
+   "status": "preview",
+   "as_of": "2026-08-20",
+   "licensing_or_cost": "Copilot Credits. The Word MCP listing also requires a Copilot license and an Entra enterprise app.",
+   "relevance_to_lawhand": "This could let a LawHand agent create a Word draft or post a comment in the client's OneDrive. It is preview and Frontier-gated, so it should not be on the GA roadmap yet.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/mcp/overview.md",
+    "https://learn.microsoft.com/en-us/microsoft-agent-365/tooling-servers-overview",
+    "https://learn.microsoft.com/en-us/microsoft-agent-365/mcp-server-reference/word",
+    "https://github.com/microsoft/work-iq/"
+   ]
+  },
+  {
+   "claim": "The legacy Graph 'Microsoft 365 Copilot APIs' are still documented. The Retrieval API is GA (POST graph.microsoft.com/v1.0/copilot/retrieval). It is delegated only, needing Files.Read.All plus Sites.Read.All, or ExternalItem.Read.All for connectors; application permissions are not supported. It searches one source per request (sharePoint, oneDriveBusiness or externalItem), accepts a KQL filterExpression (for example Path, SiteID, InformationProtectionLabelId), returns at most 25 results, allows 200 requests per user per hour and batches of 20. It is free for Copilot-licensed users. Pay-as-you-go for unlicensed users is in preview and covers tenant-level sources only, not OneDrive. The Search API is preview, covers OneDrive only and requires a Copilot license. The Chat API is preview and 'Support for unlicensed users isn't currently available'.",
+   "status": "GA",
+   "as_of": "Retrieval doc ms.date 2026-08-20; overview 2026-08-06",
+   "licensing_or_cost": "Included in the client's Copilot seat. Pay-as-you-go preview for unlicensed users.",
+   "relevance_to_lawhand": "This is the cheapest option: 'related SharePoint documents for this matter' for Copilot-licensed users with no credits consumed. LawHand already requests Files.ReadWrite.All and Sites.Read.All in the admin flow (backend/app/routers/integrations.py MICROSOFT_ADMIN_SCOPES). The per-user scopes (MICROSOFT_USER_SCOPES) lack Sites.Read.All, and the Retrieval API lists 'Files.Read.All, Sites.Read.All' as least-privileged, so it is unverified whether Files.ReadWrite.All is accepted in place of Files.Read.All.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/api/ai-services/retrieval/overview",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/retrieval/overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/retrieval/copilotroot-retrieval.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/search/overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/chat/overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/copilot-apis-overview.md"
+   ]
+  },
+  {
+   "claim": "The Meeting AI Insights API is GA on v1.0 at GET /copilot/users/{userId}/onlineMeetings/{id}/aiInsights. It returns Copilot meeting notes, action items and mentions for transcribed Teams meetings. It supports both delegated and application OnlineMeetingAiInsight.Read.All. Application use requires the tenant admin to create an application access policy. 'All users of applications that use this API must have a Microsoft 365 Copilot license.' Change notifications for AI insights are in preview. The Interaction Export API (getAllEnterpriseInteractions, application permission AiEnterpriseInteraction.Read.All) exports Copilot prompts and responses for compliance.",
+   "status": "GA",
+   "as_of": "aiInsights doc ms.date 2026-04-03; overview 2026-08-06",
+   "licensing_or_cost": "Included in the client's Copilot seat, with no pay-as-you-go option.",
+   "relevance_to_lawhand": "A multi-tenant LawHand app with admin consent and an app access policy could pull Copilot meeting recaps and stage them as reviewable matter notes. That fits the planned propose_matter_note_from_meeting, and the client's Copilot seat pays for the summarization. Interaction export is a compliance feature and is out of scope for LawHand.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/meeting-insights/onlinemeeting-list-aiinsights.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/api/ai-services/meeting-insights/onlinemeeting-list-aiinsights",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/api/ai-services/interaction-export/aiinteractionhistory-getallenterpriseinteractions",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/interaction-export/resources/aiinteractionhistory.md"
+   ]
+  },
+  {
+   "claim": "Declarative agents can call a remote MCP server as a plugin. This is documented as GA (build-mcp-plugins ms.date 08/05/2026). Plugin manifest 2.4 adds the RemoteMCPServer runtime. Tools are either pinned or discovered dynamically; dynamic discovery is preview and runs RAI and XPIA validation on each new or changed tool. Agents Toolkit 6.12+ is required. Supported auth is static OAuth, OAuth with dynamic client registration (DCR, preview), Entra SSO, or none. Declarative agent manifest v1.8 (GA, 08/10/2026) allows 1-10 actions and M365 capabilities: OneDriveAndSharePoint, GraphConnectors, Email, EmailActions, TeamsMessages, Meetings, MeetingActions, People, WebSearch, CodeInterpreter and EmbeddedKnowledge. worker_agents (connected agents) is preview. Microsoft hosts the agent in Copilot, Teams, Outlook, Word, Excel and PowerPoint.",
+   "status": "GA",
+   "as_of": "2026-08-05 / 2026-08-10",
+   "licensing_or_cost": "Copilot-licensed users pay nothing extra, because the client's seat pays for the model reasoning. For Copilot Chat users without a seat, 'Usage-based billing charges (Copilot Credits) for shared tenant data usage (for example, SharePoint, Copilot connectors)'. It is unclear whether calls to an external MCP action alone are metered for unlicensed users.",
+   "relevance_to_lawhand": "This is the main way to have the client's Copilot license pay for reasoning while LawHand supplies the tools. A 'LawHand Matter Agent' declarative agent could combine the Email, Meetings and SharePoint capabilities (client context) with LawHand Workspace MCP read and propose tools. LawHand only pays to serve the MCP calls.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/build-mcp-plugins",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/build-mcp-plugins.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/declarative-agent-manifest-1.8.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/plugin-manifest-2.4",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-dynamic-tool-discovery.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/cost-considerations.md"
+   ]
+  },
+  {
+   "claim": "Auth details for MCP plugins in M365 Copilot. DCR (preview, 08/28/2026) needs RFC 9728 protected-resource metadata and RFC 8414 authorization-server metadata. It states: 'DCR without a client secret isn't supported yet. The authorization server must issue a client secret during registration.' It also says DCR is unavailable for Entra-protected servers. Static OAuth uses redirect https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect and is registered in the Teams Developer Portal. That registration should be scoped to 'Any Microsoft 365 organization' for cross-tenant use and to 'Any Teams app', not bound to a Teams app ID, or tool calls return 404. A public client with PKCE is allowed, so no secret is needed. Entra SSO requires pre-authorizing the Enterprise token store client ab3be6b7-f5df-413d-ac2d-abf1e3fd9c0b.",
+   "status": "preview",
+   "as_of": "2026-08-28",
+   "licensing_or_cost": "n/a",
+   "relevance_to_lawhand": "This is a concrete gap in the repo. LawHand's Workspace MCP DCR accepts only public clients: token_endpoint_auth_methods_supported ['none'], and it rejects any other token_endpoint_auth_method in backend/app/routers/workspace_mcp_oauth.py. Copilot's DCR would therefore fail against LawHand today. Fix it by pre-registering a static public PKCE client for the Microsoft redirect, or by adding confidential (client_secret) DCR.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication-dynamic-client-registration.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication-oauth.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/plugin-authentication-entra-sso"
+   ]
+  },
+  {
+   "claim": "'Agent connectors' are a unified app manifest node (agentConnectors, toolSource.remoteMcpServer, mcpServerUrl) that registers an MCP server for any M365 agent able to use MCP. They are in public developer preview and need manifest 1.27 or later; dynamic tool discovery needs 1.29 or later. Auth options are OAuthPluginVault, ApiKeyPluginVault, DynamicClientRegistration, AzureKeyVault or none. Separately, MCP Apps (interactive UI widgets built on the MCP Apps extension or the OpenAI Apps SDK) render inside M365 Copilot with OAuth 2.1 or Entra SSO. The doc (07/14/2026) states no GA or preview status, and many MCP Apps features, such as file upload and modals, are unsupported.",
+   "status": "preview",
+   "as_of": "2026-06-19 / 2026-07-14",
+   "licensing_or_cost": "Same as the hosting agent.",
+   "relevance_to_lawhand": "LawHand could register its MCP server once in a unified manifest that also carries the Teams app, the Office add-in and the agent. MCP Apps could render a LawHand 'proposal review card' inline in Copilot. Both are preview.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/msteams-docs/main/msteams-platform/m365-apps/agent-connectors.md",
+    "https://learn.microsoft.com/en-us/microsoftteams/platform/m365-apps/agent-connectors",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-mcp-apps.md"
+   ]
+  },
+  {
+   "claim": "Publishing: in Partner Center, submit under 'Apps and agents for Microsoft 365 and Copilot'. Approved agents appear in the Agent Store and Apps Store across M365 Copilot, Teams, Outlook, Word, Excel and PowerPoint, and admins enable them in the M365 admin center. Only declarative agents built with Agents Toolkit and custom engine agents can go to the commercial marketplace; Copilot Studio agents cannot. Requirements include the Microsoft AI Cloud Partner Program, publisher verification, RAI validation and the store validation guidelines (08/13/2026). The guidelines require differentiated value beyond native Copilot and response times of 99% under 9s, 75% under 5s and 50% under 2s. They also require 99.9% availability, at least 3 working prompt starters, and consequential MCP tools marked readOnlyHint=false with explicit user confirmation.",
+   "status": "GA",
+   "as_of": "2026-08-05 / 2026-08-13",
+   "licensing_or_cost": "No listing fee was found. Microsoft 365 App Compliance certification is optional.",
+   "relevance_to_lawhand": "This is the route for store distribution to firms. LawHand's propose_* tools must carry readOnlyHint=false so Copilot asks for confirmation. The existing teams-app/manifest.json is v1.17 with a static tab only, so it needs a new unified-manifest package.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/publish",
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/publish.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/msteams-docs/main/msteams-platform/concepts/deploy-and-publish/appsource/prepare/review-copilot-validation-guidelines.md",
+    "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/submit-agent-partner-center"
+   ]
+  },
+  {
+   "claim": "Copilot Studio remote MCP has been GA since May 29, 2025. It supports streamable transport only (SSE is deprecated) and OAuth with discovery or DCR, and creates a Power Platform connector underneath. Billing is in Copilot Credits: $0.01 pay-as-you-go, or $200 per pack of 25,000 credits per month. Agents in Teams, SharePoint and M365 Copilot are 'included with the Microsoft 365 Copilot user license at no additional charge' for licensed users, under fair use. Copilot Studio multitenant mode, for partners serving several tenants from one agent, is preview, and the host tenant is billed for all usage.",
+   "status": "GA",
+   "as_of": "2025-05-29 GA; licensing guidance current 2026",
+   "licensing_or_cost": "If LawHand hosts a multitenant Copilot Studio agent, LawHand pays. If a client builds its own Copilot Studio agent against LawHand MCP, the client pays.",
+   "relevance_to_lawhand": "This is the right bring-your-own path for a firm's IT team to connect Copilot Studio to LawHand Workspace MCP. LawHand should not host a multitenant Copilot Studio agent, because it would carry the compute cost.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/copilot/blog/copilot-studio/model-context-protocol-mcp-is-now-generally-available-in-microsoft-copilot-studio/",
+    "https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent",
+    "https://www.microsoft.com/licensing/guidance/Microsoft-Copilot-Studio",
+    "https://learn.microsoft.com/en-us/microsoft-copilot-studio/multi-tenant-overview"
+   ]
+  },
+  {
+   "claim": "Microsoft Agent 365 has been GA since May 1, 2026. It costs $15 per user per month standalone and is included in M365 E7. It is a control plane covering an agent registry, Entra Agent ID identities, observability and Defender/Purview/Intune policy. ISV agents (for example Egnyte and Zendesk) are 'observable, governable, and securable'. The Agent 365 SDK adds agent identity, governed Work IQ tools and OpenTelemetry. Agents with their own user accounts (mailbox, OneDrive) are Frontier-only. Submitting to the Marketplace needs a PartnerID and publisher verification.",
+   "status": "GA",
+   "as_of": "2026-05-01",
+   "licensing_or_cost": "The customer pays $15 per user per month, or has it through E7.",
+   "relevance_to_lawhand": "Agent 365 is a governance layer that customers buy. LawHand agents should show up well in it (Entra app with publisher verification, clear permissions, and OTel if using the SDK). It is not a distribution channel and does not pay for reasoning.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/security/blog/2026/05/01/microsoft-agent-365-now-generally-available-expands-capabilities-and-integrations/",
+    "https://learn.microsoft.com/en-us/microsoft-agent-365/overview",
+    "https://learn.microsoft.com/en-us/microsoft-agent-365/developer/agent-365-sdk"
+   ]
+  },
+  {
+   "claim": "Copilot Cowork has been GA worldwide since June 16, 2026. It requires the M365 Copilot user license plus usage-based Copilot Credits, is off by default, and has spending limits at tenant, group and user level. At GA it runs on Anthropic Opus 4.8 and Sonnet 4.6. Plugins are skills plus remote MCP connectors in an M365 app package, and ISVs publish them through Partner Center. The docs say an uploaded Claude-format plugin is 'automatically convert[ed]' into a publishable package. Partner plugins available at GA include Harvey (legal AI). Templafy (document templates) is listed as coming soon. Microsoft Q&A threads report DCR and OAuthPluginVault connector failures during the Frontier period.",
+   "status": "GA",
+   "as_of": "2026-06-16",
+   "licensing_or_cost": "The client's Copilot seat plus the client's Copilot Credits.",
+   "relevance_to_lawhand": "This is a direct channel for 'template work and document preparation using their Office suite'. A LawHand Cowork plugin would combine legal-drafting skills with the LawHand Workspace MCP connector, and the client's credits would pay. It is also competitive pressure: Harvey is already listed, and Templafy is coming for templates.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/16/copilot-cowork-is-now-generally-available/",
+    "https://www.microsoft.com/en-us/copilot/blog/2026/05/05/copilot-cowork-from-conversation-to-action-across-skills-integrations-and-devices/",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/cowork/cowork-plugin-development",
+    "https://learn.microsoft.com/en-au/answers/questions/5886163/cowork-(frontier)-plugin-connector-with-dynamiccli"
+   ]
+  },
+  {
+   "claim": "Synced Copilot connectors (formerly Graph connectors) index external items into the customer tenant's Microsoft Graph. Ingestion supports application ExternalItem.ReadWrite.OwnedBy, so a multi-tenant app with admin consent can push items. Each item's ACL entries are user, group, everyone, everyoneExceptGuests or externalGroup, each with grant or deny. Limits: 5 million items per connection by default, raisable to 50 million on request; items up to 30 MB; 128 schema properties; 100,000 external groups per tenant; 20 activities per call. Licensing: indexing is free with M365 licenses, and Microsoft Search works on any M365 plan. Using the data to ground Copilot needs the Copilot add-on, E7 or pay-as-you-go. Configuring connectors needs the AI Administrator role.",
+   "status": "GA",
+   "as_of": "prereqs 2026-06-01; limits 2025-05-15",
+   "licensing_or_cost": "The client's M365 or Copilot licenses. LawHand pays only for its ingestion compute.",
+   "relevance_to_lawhand": "This would make LawHand matters and documents searchable in the client's Microsoft Search and Copilot. For law firms it means copying privileged content into the tenant index, and ethical walls must be modelled as deny ACLs or external groups mapped to Entra IDs. A stale ACL is a confidentiality risk.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/prerequisites.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/overview.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/connecting-external-content-api-limits.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/resources/externalconnectors-acl.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/includes/permissions/externalconnectors-externalconnection-put-items-permissions.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/prerequisites"
+   ]
+  },
+  {
+   "claim": "Federated Copilot connectors query an MCP server in real time using the signed-in user's identity. They 'don't copy or store data in Microsoft 365' and activity can be audited in Purview. They are available in Copilot Chat, Copilot in Word, Excel, PowerPoint and Outlook, agents, Cowork and Researcher (read-only). Admin-center rollout began April 20, 2026 and user rollout ran late April to May 2026. However, the Learn page (ms.date 09/21/2026) still carries a beta disclaimer. Write, update and delete tools begin rolling out in early October 2026. Partners can submit a public-HTTPS, OAuth 2.0 MCP server with read-only-annotated tools, an 80-character description and at least 3 test prompts to the gallery, and each tenant admin must approve it. Licensing: 'available only to tenants and users with a Microsoft 365 Copilot add-on license (or Microsoft 365 E7)', and not with Copilot Studio or pay-as-you-go.",
+   "status": "GA",
+   "as_of": "rollout Apr-May 2026; doc ms.date 2026-09-21 (beta disclaimer)",
+   "licensing_or_cost": "A client Copilot add-on or E7 for every user who queries.",
+   "relevance_to_lawhand": "This is the best fit for law firms, because matter data stays in LawHand under LawHand's own authorization and ethical walls. It surfaces inside Copilot in Word and Outlook, for example 'draft an engagement letter using LawHand matter X facts'. LawHand's read tools (search_matters, get_matter_context, list_matter_documents) map directly to it.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/federated-connectors-overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/submit-federated-connector.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/federated-connectors-overview",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/submit-federated-connector",
+    "https://blog-en.topedia.com/2026/03/federated-copilot-connectors-will-reach-general-availability-in-microsoft-365-copilot/"
+   ]
+  },
+  {
+   "claim": "Office Add-ins plus Copilot. 'Combine Copilot Agents with Office Add-ins' is still preview. Only Word, Excel and PowerPoint add-ins can be configured as a Copilot skill; Outlook is in progress. It requires the unified manifest, with actions implemented as JavaScript functions (executeDataFunction) that Copilot calls. The Excel 'Copilot skills' (SKILL.md plus Office.js scripts in /scripts, registered in the unified manifest) are preview on Insider build 2608 or later only. The unified manifest works in Word, Excel and PowerPoint on Windows 2501+, Mac 16.103+ and the web, but not in perpetual Office, Outlook on Mac or mobile. Word, Excel and PowerPoint Agents (agent mode) need a Copilot license, and Copilot Chat users are getting access in the summer 2026 packaging update.",
+   "status": "preview",
+   "as_of": "unified manifest doc 2026-09-22; Excel skills 2026-08-13",
+   "licensing_or_cost": "Copilot reasoning is covered by the client's Copilot seat.",
+   "relevance_to_lawhand": "The client's Copilot in Word could call LawHand add-in functions such as 'insert clause from LawHand template', 'fill merge fields from matter' or 'save to matter for review'. That covers template and document-preparation work with the client paying for reasoning. LawHand's add-ins currently use XML manifests (office-addin/manifests/word-excel.xml, outlook.xml) and would need migrating to the unified manifest. The feature is preview.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/design/agent-and-add-in-overview",
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/quickstarts/agent-and-add-in-quickstart",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/excel/excel-skills.md",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/develop/unified-manifest-overview.md",
+    "https://www.microsoft.com/en-us/licensing/news/2026-m365-packaging-pricing-updates"
+   ]
+  },
+  {
+   "claim": "Governance: prompts, retrieved data and responses stay 'within the Microsoft 365 service boundary'. When a third-party agent or plugin is used, Copilot 'generate[s] a search query to send to your agent' based on the prompt, the conversation and data the user can access. That agent is 'individually governed by [its] terms of use and privacy policies', and admins review permissions, terms and privacy in the Integrated apps and Agents pages. Agent activity goes to the Purview unified audit log, including referenced files and their labels. Encrypted sensitivity labels must grant VIEW and EXTRACT for Copilot or agents to return content, and container labels are not inherited by items. Copilot is an EU Data Boundary service, except that Bing web-search queries and Anthropic-model processing are excluded. Anthropic models are used in Word, Excel and PowerPoint, Researcher, Copilot Studio and Cowork, and EU/EFTA/UK tenants have an admin toggle for them.",
+   "status": "GA",
+   "as_of": "2026-06-18 (extensibility privacy doc); Purview docs 2026",
+   "licensing_or_cost": "n/a",
+   "relevance_to_lawhand": "When Copilot calls a LawHand MCP or plugin, matter data leaves the client's M365 boundary for LawHand, and the reverse also happens. LawHand needs a published data-flow statement, a DPA and sub-processor list, and per-tenant kill switches. EU firms need to know that Cowork and Anthropic-backed Copilot features sit outside the EU Data Boundary.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/data-privacy-security.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/data-privacy-security",
+    "https://learn.microsoft.com/en-us/purview/ai-m365-copilot",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/connect-to-ai-subprocessor",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/manage-public-web-access",
+    "https://learn.microsoft.com/en-us/privacy/eudb/eu-data-boundary-excluded-services"
+   ]
+  },
+  {
+   "claim": "SMB Copilot pricing: the Copilot Business add-on is $21, discounted to $18 per user per month until December 31, 2026. Business Standard with Copilot is $23.50 and Business Premium with Copilot is $32 per user per month. Copilot Chat is free with eligible M365 plans, and organization-built agents are 'metered' for Chat users.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Paid by the client.",
+   "relevance_to_lawhand": "Many small firms will have Copilot Chat but no Copilot seat. Features that depend on a seat (Retrieval, Meeting Insights, federated connectors, Cowork) need license detection and graceful fallback to LawHand's own LLM route.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/microsoft-365-copilot/pricing"
+   ]
+  }
+ ],
+ "recommended_plays": [
+  {
+   "title": "Fix Workspace MCP OAuth so Microsoft 365 Copilot can connect",
+   "detail": "LawHand's DCR accepts only public clients, and Copilot DCR requires the authorization server to issue a client secret. Two options: (a) pre-register one static public PKCE OAuth client for redirect https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect and register it in the Teams Developer Portal as 'Any Microsoft 365 organization' and 'Any Teams app'; or (b) add confidential-client DCR (client_secret_post or client_secret_basic) to backend/app/routers/workspace_mcp_oauth.py. Either way, keep the tenant and user grants, the audit trail and the kill switches. Also set MCP tool annotations: readOnlyHint=true on read tools and false on propose_* tools.",
+   "effort": "S",
+   "value": "high",
+   "who_pays_compute": "LawHand platform",
+   "prerequisites": "A verified Entra publisher and domain, plus a Teams Developer Portal account in LawHand's tenant.",
+   "risks": "DCR is preview in M365 Copilot and Cowork, and Q&A threads report silent failures, so static registration is the safer default. Confidential DCR adds secret lifecycle handling."
+  },
+  {
+   "title": "Ship a 'LawHand Matter Agent' declarative agent (client Copilot seat pays for reasoning)",
+   "detail": "Build it with Agents Toolkit 6.12+, unified manifest, declarative agent manifest v1.8 and plugin manifest 2.4 RemoteMCPServer pointing at LawHand Workspace MCP. Turn on the Email, Meetings, OneDriveAndSharePoint, TeamsMessages and People capabilities so the client's Copilot grounds in their Outlook, Teams and SharePoint, and use LawHand tools for matter data and review-first proposals. Job 1 is 'Brief this matter'. Job 2 is 'Analyze this email or document and link it to a matter'. Job 3 is 'Prepare the next event'. The agent runs in Copilot Chat, Teams, Outlook, Word, Excel and PowerPoint. Distribute by sideload or org catalog for pilots, then through Partner Center to the Agent Store.",
+   "effort": "M",
+   "value": "high",
+   "who_pays_compute": "The client's Copilot license. Copilot Chat users without a seat are billed in client Copilot Credits when the agent uses shared tenant data. LawHand pays only for serving MCP calls.",
+   "prerequisites": "The OAuth fix above. Microsoft AI Cloud Partner Program enrollment and publisher verification. At least 3 working prompt starters. MCP p50 latency under 2s and p99 under 9s. 99.9% availability. An evaluation set as already planned in docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md.",
+   "risks": "Store validation requires value 'beyond native Copilot'. Microsoft's model reads LawHand tool output, so prompt injection from documents must be defended against. Unlicensed-user metering for external actions is unclear."
+  },
+  {
+   "title": "Package the same assets as a Copilot Cowork plugin (skills plus LawHand MCP connector)",
+   "detail": "Cowork plugins are an M365 app package containing SKILL.md skills and a remote MCP connector, and Claude-format plugins are converted automatically. Package legal document-preparation skills (engagement letter, demand letter, chronology, discovery checklist) that pull matter facts through LawHand MCP and produce Word or Excel output with Cowork's native Office abilities. Final documents come back through propose_matter_document_file for LawHand review. This answers the owner's 'template work and document preparation using their office suite' request using the client's own compute.",
+   "effort": "S",
+   "value": "high",
+   "who_pays_compute": "The client's Copilot license plus client Copilot Credits, since Cowork is usage-billed.",
+   "prerequisites": "The OAuth fix, and a pilot tenant with Cowork enabled (it is off by default and needs a spending limit set).",
+   "risks": "Harvey is already a Cowork partner and Templafy is arriving for templates, so differentiation must come from matter context and the review workflow. Cowork runs on Anthropic models, which are excluded from the EU Data Boundary. Frontier-era connector auth problems have been reported."
+  },
+  {
+   "title": "Submit a federated Copilot connector for LawHand matters (read-only)",
+   "detail": "Expose a read-only subset of Workspace MCP (search_matters, get_matter_context, list_matter_documents, get_matter_document_text, list_matter_tasks) at a public HTTPS endpoint with OAuth 2.0 and read-only annotations. Submit it to Microsoft's federated connector program. Once a tenant admin approves it, Copilot in Word, Outlook, Excel and PowerPoint, Copilot Chat, Researcher and Cowork can pull live LawHand matter facts while drafting. No content is indexed into M365, and LawHand's ethical walls still apply. Write tools can be added after Microsoft's October 2026 write rollout.",
+   "effort": "M",
+   "value": "high",
+   "who_pays_compute": "The client's Copilot add-on or E7, required for every user who queries. Pay-as-you-go and Copilot Studio licenses are not supported.",
+   "prerequisites": "The read-only tool surface, an 80-character description, logos, test credentials and 3 or more prompts with expected responses. A commitment to maintain the connector and respond to security issues.",
+   "risks": "Microsoft reviews on a rolling basis with no guaranteed timeline, and the Learn page still carries a beta disclaimer. It is unavailable to firms that only have Copilot Chat."
+  },
+  {
+   "title": "Meeting recap to matter note using the Meeting AI Insights API",
+   "detail": "For Copilot-licensed users, pull /copilot/users/{id}/onlineMeetings/{id}/aiInsights (notes, action items, mentions) with delegated OnlineMeetingAiInsight.Read.All. Alternatively use application permission with a tenant application access policy. Match the meeting to a matter using attendees or calendar links, and stage a propose_matter_note_from_meeting item in LawHand Review. The client's Copilot has already done the summarization, so LawHand spends no LLM tokens. Subscribe to AI-insight change notifications (preview) or poll after the meeting ends.",
+   "effort": "M",
+   "value": "high",
+   "who_pays_compute": "The client's Copilot license.",
+   "prerequisites": "Admin consent for OnlineMeetingAiInsight.Read.All. For app mode, a PowerShell application access policy. The meeting must be transcribed and not expired.",
+   "risks": "It only works where the users have Copilot licenses. Recaps contain privileged content, so matter routing must be confirmed by a person before anything is saved."
+  },
+  {
+   "title": "'Related SharePoint/OneDrive documents' using the Retrieval API (Copilot-licensed users)",
+   "detail": "Call POST /v1.0/copilot/retrieval with delegated Files.Read.All and Sites.Read.All, scoped by a KQL filterExpression (SiteID or Path of the matter's SharePoint Matter Hub). This returns grounded extracts with labels and is limited to 25 results and 200 requests per user per hour. Use it to suggest links or attachments for a matter and to ground LawHand's own drafts, citing the client's documents. Detect license status and fall back to plain Graph search for unlicensed users, or use Retrieval pay-as-you-go (preview) only if the tenant has opted in.",
+   "effort": "S",
+   "value": "medium",
+   "who_pays_compute": "The client's Copilot license (free for licensed users). Client pay-as-you-go applies for unlicensed users, and that path is preview.",
+   "prerequisites": "Add Sites.Read.All to MICROSOFT_USER_SCOPES (the admin flow already has it), and check whether Files.ReadWrite.All satisfies Files.Read.All.",
+   "risks": "Delegated only, so it can only run while a user is present. The per-user rate limit applies. Extracts may carry sensitivity labels, and LawHand must honor them in storage and display."
+  },
+  {
+   "title": "Optional tenant feature: 'Ask the firm's Copilot' using the Work IQ Chat and Context APIs",
+   "detail": "This is an opt-in per tenant. LawHand calls workiq.svc.cloud.microsoft/rest/conversations on behalf of the user (delegated WorkIQAgent.Ask) to summarize a matter's Outlook threads and Teams chats, or to build a cross-source brief with citations. The text answer is saved as a reviewable LawHand artifact. The integrations UI should show an explicit readiness checklist: Work IQ service principal provisioned, Copilot Studio billing plan attached to an Azure subscription, user in the billing plan, admin consent granted. It should also estimate the credit cost.",
+   "effort": "M",
+   "value": "medium",
+   "who_pays_compute": "Client Copilot Credits. Third-party use is metered even for licensed users.",
+   "prerequisites": "The customer's Global Admin enables Work IQ and sets up the billing plan. The LawHand Entra app is multi-tenant and requests the WorkIQAgent.Ask scope.",
+   "risks": "Heavy onboarding friction for small firms. The client may be surprised by costs. Docs disagree on whether a Copilot seat is also required. The API returns text only and cannot create files, send email or run headlessly against the Word, Excel or PowerPoint agents."
+  },
+  {
+   "title": "Word add-in as a Copilot skill for template and document preparation (preview track)",
+   "detail": "Migrate office-addin/manifests/word-excel.xml to the unified manifest and combine it with the Teams app, the agent and an agentConnector in one package. Expose add-in actions (executeDataFunction) that Copilot in Word can call: insert a LawHand template or clause, fill merge fields from the active matter, compare to the matter's last version, and save to the matter as a review proposal. The client's Copilot plans the edits and LawHand's Office.js code makes them deterministically.",
+   "effort": "L",
+   "value": "high",
+   "who_pays_compute": "The client's Copilot license.",
+   "prerequisites": "Unified manifest support: Word on Windows 2501+, Mac 16.103+ or web; no perpetual Office or mobile. Keep the XML manifest for Outlook on Mac and older clients.",
+   "risks": "Still preview. Word skill documentation trails Excel. Moving Outlook to the unified manifest has feature limits. The add-in and agent must go through store validation together."
+  },
+  {
+   "title": "Customer-facing M365 Copilot governance pack and integration-page UX",
+   "detail": "Publish a data-flow diagram showing what Copilot sends to LawHand MCP and what LawHand returns. Document tenant and user kill switches, the Purview audit expectations, sensitivity-label handling (only return content where VIEW and EXTRACT are granted, and do not persist labelled extracts without policy) and EU Data Boundary caveats (Anthropic and Cowork, Bing web grounding). In LawHand's integrations UI, add a 'Microsoft 365 Copilot' card that detects Copilot seat, Chat-only or none per user. It should show which LawHand features that unlocks (agent, federated connector, meeting recaps, Retrieval, Work IQ) and deep-link to the admin-center approval steps.",
+   "effort": "S",
+   "value": "medium",
+   "who_pays_compute": "n/a",
+   "prerequisites": "A Graph license check (subscribedSkus and assignedLicenses) with admin consent.",
+   "risks": "Overpromising. The docs change monthly, so date-stamp every claim and re-verify it in a pilot tenant."
+  },
+  {
+   "title": "Avoid: LawHand-hosted multitenant Copilot Studio agent, and a synced connector for privileged documents",
+   "detail": "In Copilot Studio multitenant mode (preview), the host tenant pays for all usage, which moves compute cost onto LawHand. A synced Copilot connector copies privileged matter content into the firm's Graph index, and ethical walls would have to be mirrored as deny ACLs and external groups. Prefer the federated connector. Firms that want Copilot Studio can connect their own agents to LawHand MCP (GA, streamable transport) in their own tenant.",
+   "effort": "S",
+   "value": "medium",
+   "who_pays_compute": "n/a",
+   "prerequisites": "None.",
+   "risks": "Some firms may explicitly ask for Microsoft Search indexing of LawHand metadata. If so, limit it to non-privileged metadata with strict ACL mirroring and a documented stale-ACL window."
+  }
+ ],
+ "caveats": [
+  "learn.microsoft.com, devblogs.microsoft.com and techcommunity.microsoft.com were blocked by the egress proxy. Learn content was confirmed through its GitHub sources: raw.githubusercontent.com copies of MicrosoftDocs/m365copilot-docs, copilot-connectors, msteams-docs, OfficeDev/office-js-docs-pr and microsoftgraph docs. Learn URLs listed are canonical pages that appeared in search results. Blogs on microsoft.com were fetched directly.",
+  "Status labels differ between sources. Work IQ Chat, Context and Tool APIs are GA per Microsoft Licensing (June 16, 2026), but several Work IQ pages (the quickstart, MCP, /beta endpoints) still say preview, and Workspaces GA is unconfirmed. Federated connectors were rolled out in April-May 2026 as GA, yet the Learn page (ms.date 09/21/2026) carries a beta disclaimer. I labelled it GA with that caveat.",
+  "Work IQ licensing is inconsistent across Microsoft docs. The overview says it is independent of Copilot licensing and usage-billed, but the Foundry quickstart and the Agent 365 Word MCP list a per-user Copilot license. Validate in a pilot tenant.",
+  "I could not confirm whether Copilot Chat users without a seat are metered when a declarative agent calls only an external MCP action, with no SharePoint or connector grounding. The cost doc covers only 'shared tenant data'.",
+  "Some details came from search-result summaries rather than full page reads: Agent 365 pricing, Cowork plugin conversion of Claude-format zips, SMB Copilot prices, the EU Data Boundary exclusions for Anthropic and Bing, the Purview EXTRACT/VIEW rule, and connector item quotas. The primary URLs are listed, but the quoted numbers should be rechecked before any customer quote.",
+  "Repo evidence cited (read-only): backend/app/routers/workspace_mcp_oauth.py (public-client-only DCR), backend/app/routers/integrations.py (MICROSOFT_ADMIN_SCOPES and MICROSOFT_USER_SCOPES), teams-app/manifest.json (v1.17, static tab only), office-addin/manifests/*.xml (XML add-in manifests) and docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md (existing Copilot Studio-first plan)."
+ ]
+}

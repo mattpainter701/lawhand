@@ -162,6 +162,8 @@ export const INTEGRATION_SECTIONS = [
       const teams = ms.capabilities?.teams
       if (teams?.status === 'ok') return { tone: 'ok', label: 'Connected' }
       if (teams?.status === 'needs_reauth') return { tone: 'warn', label: 'Reconnect with Teams enabled' }
+      // An unconfirmed account type is not the same as an unsupported one.
+      if (!ms.account_type || ms.account_type === 'unknown') return { tone: 'warn', label: 'Account type not confirmed' }
       return { tone: 'off', label: 'Not available on this account' }
     },
     render: () => <TeamsPanel />,
@@ -468,7 +470,7 @@ function Overview({ sections, operatorSections, summary, onSelect, showGuide }) 
 
 function NavButton({ active, onClick, icon: Icon, children }) {
   return (
-    <button type="button" onClick={onClick} className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${active ? 'border-brand-ink bg-brand-ink text-white' : 'border-brand-line bg-brand-surface text-brand-ink hover:border-brand-line-2'}`}>
+    <button type="button" onClick={onClick} aria-current={active ? 'page' : undefined} className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${active ? 'border-brand-ink bg-brand-ink text-white' : 'border-brand-line bg-brand-surface text-brand-ink hover:border-brand-line-2'}`}>
       <Icon size={15} /> {children}
     </button>
   )

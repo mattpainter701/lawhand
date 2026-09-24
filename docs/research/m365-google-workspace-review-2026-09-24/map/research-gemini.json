@@ -1,0 +1,398 @@
+{
+ "topic": "Using a client's Google Gemini / Workspace AI from LawHand (as of 2026-09-23): Gemini Enterprise agents and MCP, Gemini in Workspace extensibility, the client's own Vertex / Agent Platform (BYO cloud), Marketplace and CASA, and law-firm governance",
+ "findings": [
+  {
+   "claim": "Several products were renamed in 2025\u20132026. (1) Vertex AI was folded into the 'Gemini Enterprise Agent Platform', announced at Cloud Next on 2026-04-22; third-party reports say the rename took effect in May 2026 and the aiplatform.googleapis.com endpoints did not change. The ADK agent host is now documented as 'Agent Runtime' (formerly Agent Engine), and there is also a low-code builder called Agent Studio. (2) Agentspace is now the Gemini Enterprise app. (3) NotebookLM became 'Gemini Notebook' in July 2026, and NotebookLM Enterprise became 'Gemini Notebook Enterprise', although the subscription SKU is still called NotebookLM Enterprise. (4) Workspace Flows became 'Google Workspace Studio' (launched December 2025).",
+   "status": "GA",
+   "as_of": "2026-04-22 (platform rename); 2026-07 (Gemini Notebook rename)",
+   "relevance_to_lawhand": "The repo doc (docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md) and LawHand's UI copy should use the new names. The route that uses the customer's own Google Cloud project is now 'Gemini Enterprise Agent Platform', not 'Vertex AI'. The API host is unchanged, so LiteLLM's vertex_ai provider still works.",
+   "source_urls": [
+    "https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development",
+    "https://www.hpcwire.com/aiwire/2026/04/23/google-unveils-gemini-enterprise-agent-platform/",
+    "https://actgsys.com/en/blog/vertex-ai-gemini-enterprise-agent-platform-sme-2026-05",
+    "https://blog.google/innovation-and-ai/products/gemini-notebook/notebooklm-gemini-notebook/",
+    "https://docs.cloud.google.com/gemini/enterprise/notebooklm-enterprise/docs/set-up-licensing",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/register-and-manage-an-adk-agent",
+    "https://9to5google.com/2025/12/03/google-workspace-studio/"
+   ],
+   "licensing_or_cost": "n/a"
+  },
+  {
+   "claim": "Gemini Enterprise is licensed per seat and is a separate purchase from Workspace. Business edition is $21 per seat per month, capped at 300 seats, with no IT setup. Standard starts at $30 per seat per month. Plus pricing is through sales (resellers report about $50 on annual terms). Frontline is an add-on to Standard or Plus. A Pay-as-you-go edition was announced 2026-08-26: no base fee, billing by tokens and compute, hard monthly spend caps, and 10%/20% savings plans for 1- and 3-year terms. It is rolling out to select customers first. The Agent Marketplace (third-party agents) is included in Standard, Plus, Pay-as-you-go and Frontline, but not Business.",
+   "status": "GA",
+   "as_of": "2026-08-26",
+   "relevance_to_lawhand": "Most small firms on Workspace will have Gemini in Workspace (included in their plan) but not Gemini Enterprise. Any play that relies on Gemini Enterprise reaches only firms that bought it. Partner agents need Standard or above, while a custom MCP server also works on Business. Pay-as-you-go lowers the entry cost for a pilot firm.",
+   "source_urls": [
+    "https://cloud.google.com/gemini-enterprise/business",
+    "https://cloud.google.com/blog/products/ai-machine-learning/flexible-billing-and-cost-controls-for-agents-on-google-cloud",
+    "https://www.techrepublic.com/article/news-google-gemini-enterprise-pay-as-you-go-pricing/",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/editions",
+    "https://coworker.ai/blog/gemini-enterprise-pricing"
+   ],
+   "licensing_or_cost": "Business $21/seat/mo; Standard from $30/seat/mo; Plus by quote; Pay-as-you-go at model API rates. A third-party report gives $0.825 / $4.125 per million input/output tokens for non-global usage through 2026-12-31, doubling on 2027-01-01."
+  },
+  {
+   "claim": "Gemini Enterprise can connect a custom MCP server (the 'custom MCP server data store' or 'BYO-MCP'). It entered preview on 2026-04-28, and Business-edition admins gained 'Connected apps > Add MCP Server' around 2026-09-05; for Business it is covered by the Pre-GA Offerings Terms. Requirements: Streamable HTTP transport only (SSE is not supported), a public IP, a TLS certificate from a publicly trusted CA, no private VPC networking, and at most about 100 enabled actions. A Google-managed org policy constraint blocks creation by default, so the admin must override it. Auth is either none or OAuth 2.0: the admin enters a client ID, client secret, authorization URL, token URL and scopes. The redirect URI is fixed at https://vertexaisearch.cloud.google.com/oauth-redirect (this comes from community guides). The customer's Gemini model does the reasoning and chooses the tools. Unlike Google's managed MCP servers, custom MCP servers get no automatic Model Armor protection.",
+   "status": "preview",
+   "as_of": "2026-09 (docs last updated September 2026)",
+   "relevance_to_lawhand": "This is the main documented way for a client's Gemini seat to reason over LawHand data. LawHand serves tools only and pays for no LLM compute. LawHand's Workspace MCP already runs Streamable HTTP with OAuth and PKCE, but it only accepts public clients: backend/app/routers/workspace_mcp_oauth.py:297 advertises token_endpoint_auth_methods_supported ['none'], and :358 rejects any other method. Gemini Enterprise's form asks for a client ID and secret, so LawHand probably needs admin-issued confidential clients that allowlist Google's redirect URI. LawHand's read/propose-only tool design fits well because the server-side validation carries the security load.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/override-constraint-for-custom-mcp-data-stores",
+    "https://support.google.com/g/answer/17106276?hl=en",
+    "https://www.cloudscoop.io/updates/gcp-2026-04-28-gemini-enterprise-feature-gemini-enterprise-custom",
+    "https://cryptobriefing.com/google-gemini-business-mcp-server-support/",
+    "https://medium.com/google-cloud/how-to-configure-gemini-enterprise-to-connect-to-a-custom-mcp-server-2e28adc96420",
+    "https://promevo.com/blog/byo-mcp-gemini-enterprise-open-connectors"
+   ],
+   "licensing_or_cost": "Included with the customer's Gemini Enterprise seats (Business, Standard, Plus, Pay-as-you-go). The customer pays for the reasoning; LawHand pays only to serve MCP calls."
+  },
+  {
+   "claim": "Gemini Enterprise admins can register custom agents. A2A agents are registered in the console (Agents > Add Agents > Custom agent via A2A) or via REST (agents.create with jsonAgentCard). This needs the Discovery Engine Admin role, the Discovery Engine API and an existing Gemini Enterprise app, and end-user OAuth 2.0 can be configured (serverSideOauth2 with client ID, secret, auth URI and token URI). ADK agents hosted on Agent Runtime can also be registered, as can A2UI agents with rich UI. MCP servers and A2A agents can be imported from Agent Registry, which supports A2A protocol 1.0. Workflow Builder and Agent Designer can call MCP tools as deterministic steps or as tools inside a Gemini agent step.",
+   "status": "unknown",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "A firm on Standard or Plus could register a LawHand A2A agent without any Marketplace listing, but the agent does its own reasoning, so LawHand (or whoever hosts it) pays for the LLM. The launch stage (GA or preview) could not be confirmed from the primary docs, which were unreachable from this environment; the platform itself was declared GA on 2026-04-22.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini/enterprise/docs/register-and-manage-an-a2a-agent",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/register-and-manage-an-adk-agent",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/a2ui-agents/register-and-manage-an-a2ui-agent",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/import-govern-agent-registry",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/workflow-builder/connect-mcp-servers",
+    "https://discuss.google.dev/t/new-official-docs-register-and-manage-adk-and-a2a-agents-in-gemini-enterprise/290762"
+   ],
+   "licensing_or_cost": "Needs Gemini Enterprise Standard or Plus for custom and third-party agents. Agent compute is paid by whoever hosts the agent."
+  },
+  {
+   "claim": "There is an ISV path for partner agents via Google Cloud Marketplace, described in a Google blog on 2026-07-07. The agent must speak A2A and publish an A2A Agent Card (JSON). It uses public access or OAuth 2.0 authorization code with Dynamic Client Registration. Integration with the Partner Procurement API and Pub/Sub is mandatory. The customer flow is: a Billing Admin subscribes or accepts a private offer, a Discovery Engine Admin clicks 'Go to Gemini Enterprise' (the JWT order ID is checked by the partner's DCR), and the admin then assigns users. Since 2026-04-23, partner agents also appear in the Agent Gallery, where employees request an agent and IT approves it. The Marketplace listing requirements say the core product must run on Google Cloud and use Google or Model Garden models by default; only smaller control planes may run elsewhere. Featured agents carry the 'Google Cloud Ready \u2013 Gemini Enterprise' designation after a four-step evaluation. The partner's agent does the reasoning, not the customer's seat.",
+   "status": "GA",
+   "as_of": "2026-07-07",
+   "relevance_to_lawhand": "This is a way to get distribution and Marketplace billing, but it does not use the client's Gemini to do LawHand's work. LawHand runs on IONOS, so it would need an agent core hosted on GCP that uses Gemini or a Model Garden model (Claude is available there). The reasoning cost is LawHand's, recovered through Marketplace pricing. It fits a later phase.",
+   "source_urls": [
+    "https://cloud.google.com/blog/topics/developers-practitioners/publish-agents-in-gemini-enterprise-and-google-cloud-marketplace",
+    "https://cloud.google.com/blog/products/ai-machine-learning/partner-built-agents-available-in-gemini-enterprise",
+    "https://docs.cloud.google.com/marketplace/docs/partners/ai-agents",
+    "https://docs.cloud.google.com/marketplace/docs/partners/ai-agents/technical-integration",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/register-and-manage-marketplace-agents"
+   ],
+   "licensing_or_cost": "Partner sets SaaS pricing on Marketplace, and Google takes a Marketplace fee. The customer needs Gemini Enterprise Standard, Plus, Pay-as-you-go or Frontline (not Business)."
+  },
+  {
+   "claim": "Google launched 'Gemini Enterprise for Legal' in preview on 2026-08-25. Launch firms were Cleary Gottlieb, Freshfields, Weil and Williams & Connolly. It bundles four things. Legal skills cover contract review and redlining, playbooks, regulatory horizon scanning, research and DSAR. MCP connectors cover Google Workspace, Microsoft 365, iManage, NetDocuments (which keeps ethical walls), DocuSign, Everlaw, RelativityOne, Thomson Reuters HighQ, CourtListener, Courtroom5, Harvey, Solve Intelligence and Legora. Pre-built agents come from Deloitte, Eudia and Google. SI partners include Accenture, Deloitte, KPMG and others. No practice-management or matter-management vendor (such as Clio) is named.",
+   "status": "preview",
+   "as_of": "2026-08-25",
+   "relevance_to_lawhand": "Google is now selling legal agents directly to firms, which competes with LawHand's AI features. It also leaves an opening: there is no practice-management or matter system of record among the connectors. A LawHand MCP connector (matters, deadlines, tasks, templates) would fill the gap Google's own legal stack has.",
+   "source_urls": [
+    "https://cloud.google.com/blog/products/ai-machine-learning/introducing-gemini-enterprise-for-legal",
+    "https://www.googlecloudpresscorner.com/2026-08-25-Google-Cloud-Launches-Gemini-Enterprise-for-Legal",
+    "https://www.artificiallawyer.com/2026/08/25/google-launches-gemini-enterprise-for-legal/",
+    "https://cloud.google.com/ai/legal"
+   ],
+   "licensing_or_cost": "Pricing not published; preview."
+  },
+  {
+   "claim": "Gemini Enterprise supports Skills: a package containing a SKILL.md prompt file (upload a .md or a .zip up to 100 MB). Admins turn skills on, control sharing and can require approval for shared skills. Standard, Plus and Pay-as-you-go users can create and upload skills; Frontline users can only install them. Gemini Enterprise for Legal ships legal-specific skills.",
+   "status": "unknown",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "This is a cheap companion to the MCP connector. LawHand could publish a 'LawHand matter skills' pack (matter intake triage, drafting from a LawHand template, deadline check) that tells the customer's Gemini how to call LawHand's MCP tools and respect the propose/review flow. It uses the same SKILL.md format LawHand may already use for other assistants.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini/enterprise/docs/skills",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/manage-skills"
+   ],
+   "licensing_or_cost": "Included in Standard, Plus and Pay-as-you-go."
+  },
+  {
+   "claim": "The StreamAssist API (discoveryengine.googleapis.com \u2026/engines/{APP}/assistants/default_assistant:streamAssist; the Gemini Enterprise reference is v1alpha/v1beta) lets a program query a tenant's Gemini Enterprise assistant. agentsSpec can target a specific registered agent, and it supports sessions, file context, and web or data-store grounding. The caller needs the discoveryengine.assistants.assist IAM permission on the app's project and a Google OAuth token (cloud-platform scope). The user must hold a Gemini Enterprise license.",
+   "status": "preview",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "This is the only documented API that lets a third party run a task on the client's Gemini Enterprise, with the client's seat and quota paying. For LawHand it would mean requesting the broad cloud-platform scope from each user and having firms grant Discovery Engine IAM roles. Given the alpha/beta API surface, it is not worth building now. Watch it.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini/enterprise/docs/invoke-agent-streamassist",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/reference/rest/v1alpha/projects.locations.collections.engines.assistants/streamAssist",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/licenses",
+    "https://github.com/daveswersky/ge-streamassist-guide"
+   ],
+   "licensing_or_cost": "Uses the customer's Gemini Enterprise license and quota."
+  },
+  {
+   "claim": "Gemini features inside Workspace apps ('Help me write' in Docs and Gmail, the side panels, Gemini in Sheets, Drive and Meet) have no public developer API. The Docs, Gmail and Drive APIs expose no Gemini endpoints, and Workspace add-ons cannot call or feed the Gemini side panel. The one programmatic Gemini entry point inside Workspace is Workspace Studio flows (next finding). In September 2026 Google aligned all the Workspace Gemini side panels to the same feature set.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "LawHand cannot 'ask the client's Gemini in Docs to draft this' from its backend. The workable pattern is a hand-off: LawHand writes the prepared Doc (from a template, with matter context) into the firm's Drive, and the attorney uses their own Gemini in Docs to refine it. Gemini can @-reference Drive files, including a LawHand-written matter brief. This absence of an API is based on a developer-forum answer and Google's API references; no Google page states it outright.",
+   "source_urls": [
+    "https://discuss.ai.google.dev/t/gemini-for-workspace-api-access-for-docs/49917",
+    "https://9to5google.com/2026/09/09/gemini-workspace-side-panel-upgrade/",
+    "https://developers.google.com/workspace/add-ons"
+   ],
+   "licensing_or_cost": "Gemini in Workspace has been bundled into Business and Enterprise Workspace plans since 2025. The AI Expanded Access add-on (February 2026, about $20/user/mo reported, Business Standard and up) raises usage limits."
+  },
+  {
+   "claim": "On 2026-09-15 Google added third-party MCP connectors to Gemini in Google Workspace. Users can reach Asana, Atlassian Rovo, HubSpot, Mailchimp, QuickBooks, Monday and Salesforce from the Gemini side panels in Docs, Sheets, Slides, Gmail, Chat and Drive. The feature is ON by default and admins control it by domain, OU or group under Admin console > Apps > Google Workspace > Gemini for Workspace > Third-Party Connectors. The list is curated: there is no documented way for an admin to add a custom MCP server to Gemini in Workspace (custom MCP exists only in Gemini Enterprise), and no public ISV application process.",
+   "status": "GA",
+   "as_of": "2026-09-15",
+   "relevance_to_lawhand": "This is the best-reaching way for a firm's included Workspace Gemini to reason over LawHand data, but for now it depends on a partnership with Google, not on engineering. Worth a BD request. LawHand's existing Workspace MCP (Streamable HTTP, OAuth, read/propose) is already the right technical shape.",
+   "source_urls": [
+    "https://workspaceupdates.googleblog.com/2026/09/connect-to-more-tools-with-gemini-in-Google-Workspace.html",
+    "https://workspaceupdates.googleblog.com/2026/09/weekly-recap-09-18-2026.html",
+    "https://www.kucoin.com/news/flash/gemini-integrates-seven-business-systems-into-google-workspace"
+   ],
+   "licensing_or_cost": "Included for users with Gemini for Workspace access."
+  },
+  {
+   "claim": "Workspace Studio (formerly Flows) went GA in December 2025 for Business, Enterprise and Education plans. Its AI steps (Ask Gemini, Decide, Extract, Summarize and others) run on the customer's Gemini entitlement, and admins can allow or block Gemini steps. In September 2026 Google added custom starters and custom steps, built as Workspace add-ons in Apps Script or another runtime and published through the Workspace Marketplace. It also added webhooks, with a URL allowlist on Business Plus, Enterprise and Education Standard/Plus, and third-party integrations in beta (Asana, Confluence, HubSpot, Jira, Mailchimp, QuickBooks, Salesforce, Slack). Admin settings rolled out from 2026-09-17, Rapid Release domains from 2026-09-21, and Scheduled Release from 2026-09-30. Admins can allow or block custom starters and steps. The developer release notes also mention a limited preview, so check the current stage.",
+   "status": "GA",
+   "as_of": "2026-09-17",
+   "relevance_to_lawhand": "This is the most practical way to have the client's Gemini do work around LawHand. LawHand ships a custom starter (for example 'proposal awaiting review', 'matter opened', 'deadline approaching') and custom steps (for example 'create LawHand task', 'file Drive doc to matter', 'propose client email'). The firm then puts its own Ask Gemini and Extract steps between them, running on its own license. LawHand pays for no LLM compute, and every LawHand write stays a reviewable proposal.",
+   "source_urls": [
+    "https://workspaceupdates.googleblog.com/2026/09/automate-workflows-with-custom-starters-and-steps-third-party-integrations-and-webhooks-in-Workspace-Studio.html",
+    "https://developers.google.com/workspace/add-ons/studio",
+    "https://developers.google.com/workspace/add-ons/studio/build-a-step",
+    "https://knowledge.workspace.google.com/admin/studio/allow-or-block-ws-custom-steps",
+    "https://knowledge.workspace.google.com/admin/studio/allow-or-block-gemini-for-ws-steps",
+    "https://www.technobezz.com/news/google-workspace-studio-custom-steps-webhooks",
+    "https://developers.google.com/workspace/add-ons/release-notes"
+   ],
+   "licensing_or_cost": "Included in eligible Workspace editions (Business Starter through Enterprise Plus, Education, and the AI Expanded Access add-on)."
+  },
+  {
+   "claim": "One Google Workspace add-on can extend Gmail, Calendar, Drive, Docs, Sheets, Slides, Chat and Meet. With the HTTP (alternate) runtime it can be written in any language: it returns card JSON, requests are verified with ID tokens, the manifest lives in Google Cloud, and Cloud Run is recommended but not required. The add-on can also provide link previews as smart chips in Docs and Sheets (third-party chips are not supported in Slides) and let users create third-party resources from the Docs @ menu, which inserts a smart chip. Chat apps built as add-ons are GA.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "This is the concrete UX surface for 'integrations UI inside Google'. Examples: LawHand matter and task URLs render as smart chips in Docs; an attorney types @ and picks 'LawHand task' or 'LawHand matter note'; a Gmail sidebar resolves the thread to a matter. The FastAPI backend can serve the HTTP runtime directly, so no Apps Script is needed.",
+   "source_urls": [
+    "https://developers.google.com/workspace/add-ons/guides/alternate-runtimes",
+    "https://developers.google.com/workspace/add-ons/guides/preview-links-smart-chips",
+    "https://developers.google.com/workspace/add-ons/guides/create-insert-resource-smart-chip",
+    "https://developers.google.com/workspace/add-ons/concepts/types"
+   ],
+   "licensing_or_cost": "Free to build. Hosting is LawHand's. Marketplace listing is free but requires review."
+  },
+  {
+   "claim": "Apps Script has a Vertex AI advanced service, whose quickstart is now labelled 'Agent Platform'. It calls Gemini (for example Gemini 2.5 Flash) from a Google Cloud project with billing enabled. There is also a sample Gmail add-on that labels messages using Gemini on Vertex. Gems (custom Gemini instructions) can be shared through Drive since September 2025, under an admin control, but there is no public API to create or invoke a Gem.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "Apps Script is useful only if the firm deploys a LawHand-supplied script into its own GCP project, in which case the firm pays. That is fragile for a multi-tenant ISV. Gems are limited to documentation: LawHand can publish recommended Gem instructions such as 'LawHand drafting style', and firms create them by hand.",
+   "source_urls": [
+    "https://developers.google.com/apps-script/advanced/vertex-ai",
+    "https://developers.google.com/apps-script/quickstart/vertex-ai",
+    "https://developers.google.com/workspace/add-ons/samples/gmail-sentiment-analysis-ai",
+    "https://workspaceupdates.googleblog.com/2025/09/gem-sharing-gemini-app-workspace.html",
+    "https://pulse.appsscript.info/p/2026/01/vertex-ai-advanced-service-in-apps-script-a-step-forward-or-a-missed-opportunity/"
+   ],
+   "licensing_or_cost": "Vertex calls are billed to whichever GCP project runs the script."
+  },
+  {
+   "claim": "Gemini Notebook Enterprise (formerly NotebookLM Enterprise) has a preview API (google.cloud.notebooklm.v1alpha). It supports notebooks.create, adding sources, notebooks.audioOverviews.create (one audio overview per notebook) and notebook management. It runs in the customer's GCP project with CMEK, VPC-SC and US/EU data residency. The consumer NotebookLM has no public API.",
+   "status": "preview",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "Niche, but it fits the brief: 'Send matter bundle to your Gemini Notebook' would push selected matter documents into a notebook in the firm's own GCP project, and the firm's license does the synthesis and audio. It needs per-tenant GCP credentials (see the Agent Platform BYO route). Low priority.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini/enterprise/notebooklm-enterprise/docs/api-notebooks",
+    "https://docs.cloud.google.com/gemini/enterprise/notebooklm-enterprise/docs/api-audio-overview",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/reference/rpc/google.cloud.notebooklm.v1alpha"
+   ],
+   "licensing_or_cost": "Customer's NotebookLM Enterprise subscription."
+  },
+  {
+   "claim": "Bring-your-own-cloud route: LawHand calls Gemini on the customer's own Agent Platform (Vertex) project. There is an OpenAI-compatible Chat Completions endpoint at https://aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi, which accepts only Google Cloud auth, meaning an OAuth access token with the cloud-platform scope. Workload Identity Federation lets a workload on AWS, Azure, any OIDC/SAML identity provider or X.509 certificates impersonate a service account in the customer's project with short-lived tokens and no service-account keys. The customer grants roles/aiplatform.user and roles/iam.workloadIdentityUser to LawHand's federated identity. LiteLLM's vertex_ai provider accepts 'external_account' (WIF) credentials through vertex_credentials. Usage is billed to the customer's Cloud Billing account and is subject to their regional endpoint, CMEK, VPC-SC and org policies.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "This is the proper customer-billed, customer-governed Gemini route for law firms, better than today's AI Studio API-key BYOK. LawHand already routes through LiteLLM, so the change is a credential type (a WIF config with no secret) plus per-tenant project, region and model settings. It also exposes Claude and other Model Garden models in the customer's project.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/start/openai",
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/migrate/openai/overview",
+    "https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds",
+    "https://docs.cloud.google.com/iam/docs/workload-identity-federation",
+    "https://docs.litellm.ai/docs/providers/vertex",
+    "https://github.com/BerriAI/litellm/blob/main/litellm/llms/vertex_ai/vertex_llm_base.py",
+    "https://jasonstitt.com/google-vertex-aws-federated-workload-identity"
+   ],
+   "licensing_or_cost": "Customer's GCP billing, at standard model API rates."
+  },
+  {
+   "claim": "Data-use terms for the customer's Agent Platform project. The Training Restriction in Google Cloud's Service Specific Terms says Google will not train or fine-tune models on Customer Data without permission. Prompt logging for abuse monitoring applies only to customers on the standard GCP Terms of Service; customers on a Google Cloud Master Agreement are exempt by default, and others can request an exception. Published Gemini models cache inputs and outputs in memory only, isolated per project, for 24 hours, which Google says still counts as zero data retention. Grounding with Google Search stores derived queries for up to 3 days and cannot be turned off, so Google recommends Web Grounding for Enterprise when zero retention is required. Some Advanced AI features cannot be zero-retention. Stored data can be kept in region using regional or US/EU multi-region endpoints.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "This belongs on the firm's BYO-Gemini setup checklist: an MSA or abuse-logging exception, a regional endpoint, no Google Search grounding for privileged content, and the in-memory cache documented for client confidentiality questions.",
+   "source_urls": [
+    "https://cloud.google.com/terms/service-terms",
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/zero-data-retention",
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/abuse-monitoring",
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/data-residency",
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/grounding/grounding-with-google-search"
+   ],
+   "licensing_or_cost": "n/a"
+  },
+  {
+   "claim": "LawHand's current Gemini BYOK route uses the Gemini Developer API (an AI Studio key through the OpenAI-compatible generativelanguage endpoint in backend/app/services/byok_security.py:10). Its fallback model is 'gemini-2.0-flash' (backend/app/services/llm_routing.py:555), which was shut down on 2026-06-01. gemini-2.5-flash is scheduled to shut down on 2026-10-16, and some users reported 404s from 2026-07-09; Gemini 3.5 and 3.7 Flash are the current models. On Developer API terms, free-tier content is used to improve Google products and paid-tier content is not, and the free tier lost Pro models on 2026-04-01. There is a separate zero-data-retention guide for the Developer API.",
+   "status": "retired",
+   "as_of": "2026-06-01 (2.0 Flash shutdown)",
+   "relevance_to_lawhand": "Any tenant using Gemini BYOK without an explicit deployment set is being routed to a retired model, so those calls will fail. LawHand also cannot tell whether a pasted AI Studio key belongs to a free-tier project, where prompts may be used for training. For privileged legal data that should block the route or come with a warning.",
+   "source_urls": [
+    "https://ai.google.dev/gemini-api/docs/deprecations",
+    "https://ai.google.dev/gemini-api/docs/changelog",
+    "https://discuss.ai.google.dev/t/gemini-2-5-flash-and-gemini-2-5-flash-lite-returning-404-no-longer-available-today-july-9-contradicts-oct-16-2026-shutdown-date/174267",
+    "https://therouter.ai/news/gemini-2-flash-deprecation-june-2026-migration/",
+    "https://ai.google.dev/gemini-api/docs/billing",
+    "https://ai.google.dev/gemini-api/docs/zdr",
+    "https://ampm-aiops.com/en/guides/gemini-free-tier-data-tradeoff-2026/"
+   ],
+   "licensing_or_cost": "Customer's AI Studio or Cloud Billing project."
+  },
+  {
+   "claim": "Publishing on the Workspace Marketplace. A public listing needs OAuth app verification by Google Trust & Safety plus a Marketplace review of branding, naming, icons, scope consistency, consent screen and UX; about 3\u20135 working days when only sensitive scopes are used, longer for restricted ones. A private listing is limited to the publisher's own domain. Workspace admins can domain-install approved Marketplace apps, which skips the per-user consent screen. Admins can also mark apps as trusted in API controls or admin-install unverified Marketplace apps. An app used only within the developer's own Workspace organization does not need verification, but a multi-tenant ISV app does.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "Google's equivalent of Microsoft admin consent is domain-wide install from the Marketplace. LawHand's Google onboarding should offer 'Admin: install for the firm' as the main path, with per-user OAuth as the fallback, and show verification status honestly.",
+   "source_urls": [
+    "https://developers.google.com/workspace/marketplace/about-app-review",
+    "https://developers.google.com/workspace/add-ons/how-tos/publish-add-on-overview",
+    "https://developers.google.com/workspace/marketplace/configure-oauth-consent-screen",
+    "https://developers.google.com/identity/protocols/oauth2/production-readiness/google-workspace",
+    "https://knowledge.workspace.google.com/admin/apps/authorize-unverified-third-party-apps",
+    "https://support.google.com/cloud/answer/13464323?hl=en"
+   ],
+   "licensing_or_cost": "No listing fee."
+  },
+  {
+   "claim": "Restricted scopes such as full Gmail read and full Drive (drive, drive.readonly) need restricted-scope verification plus a CASA security assessment by an authorized lab, repeated every 12 months from the Letter of Validation date. Third-party sources say the App Defense Alliance now sits under the Linux Foundation and CASA has moved from Tiers 1\u20133 to assurance levels AL1/AL2, with a 'CASA Accelerator' that maps existing certifications. Typical cost is a few hundred to a few thousand dollars a year. Lower-cost alternatives: drive.file is non-sensitive and per-file, used with the Google Picker; the Gmail add-on contextual scope gmail.addons.current.message.readonly reads only the open message or thread while the add-on runs. A third-party source classifies that contextual scope as sensitive rather than restricted, which would mean no CASA.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "LawHand requests restricted scopes today: full 'drive' in backend/app/routers/integrations.py:251/264/271 and backend/app/services/google_service_account.py:41; gmail.readonly and drive in backend/app/routers/admin.py:1620-1623; drive.readonly in backend/app/routers/plugins.py:384. A public Google launch therefore implies annual CASA. Moving document flows to drive.file with the Picker, and email context to add-on contextual scopes, could avoid CASA for the add-on SKU.",
+   "source_urls": [
+    "https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification",
+    "https://support.google.com/cloud/answer/13463816?hl=en",
+    "https://support.google.com/cloud/answer/13465431?hl=en",
+    "https://appdefensealliance.dev/casa/casa-beta",
+    "https://deepstrike.io/blog/google-casa-security-assessment-2025",
+    "https://developers.google.com/workspace/drive/api/guides/api-specific-auth",
+    "https://developers.google.com/workspace/gmail/api/auth/scopes",
+    "https://developers.google.com/workspace/add-ons/concepts/workspace-scopes"
+   ],
+   "licensing_or_cost": "CASA assessment fee, paid by LawHand every year."
+  },
+  {
+   "claim": "Governance in Gemini Enterprise. Standard, Plus, Pay-as-you-go and Frontline support at-rest data residency in the US or EU multi-region, with ML processing in that multi-region for regionally available APIs. CMEK requires US or EU multi-region apps and data stores, not global ones. Connectors can use VPC-SC or Private Service Connect, and Workspace and third-party federated data stores can sit in Assured Workloads folders (FedRAMP High). Business edition documentation does not cover these controls. Google states that Gemini Enterprise for Legal outputs and customer data are not used to train its foundation models.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "relevance_to_lawhand": "Firms with residency or CMEK needs must be on Standard or above. Because a custom MCP server must be on a public IP with no private VPC, LawHand's MCP endpoint becomes an internet-facing data path from the firm's Gemini. Tenant-scoped tokens, per-matter access checks and audit logs remain LawHand's responsibility.",
+   "source_urls": [
+    "https://docs.cloud.google.com/gemini/enterprise/docs/locations",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/cmek",
+    "https://docs.cloud.google.com/gemini/enterprise/docs/release-notes",
+    "https://cloud.google.com/blog/products/ai-machine-learning/introducing-gemini-enterprise-for-legal"
+   ],
+   "licensing_or_cost": "Standard or Plus for residency and CMEK."
+  },
+  {
+   "claim": "Governance in Workspace. (1) Data regions for Gemini features in Workspace apps have been available since June 2025 for Enterprise Plus and the Assured Controls / Assured Controls Plus add-ons; data regions for the Gemini app arrived in June 2026. (2) Google Vault covers the Gemini app: search and export since February 2025, retention rules and litigation holds since June 2026. It does not cover in-app features such as 'Help me write' in Docs or Gmail. (3) Workspace client-side encryption (CSE) content cannot be read by Gemini or by any Google system. Through the Drive API it comes back encrypted, so a third-party server can read it only by integrating with the firm's key service. (4) Google says Workspace with Gemini does not use customer data to train its models. (5) The Admin Reports API has 'Gemini in Workspace apps' activity events for audit.",
+   "status": "GA",
+   "as_of": "2026-06",
+   "relevance_to_lawhand": "This belongs in LawHand's Google integration UX and firm guidance. When LawHand hands a draft to the attorney's Gemini in Docs, that Gemini interaction is not held in Vault, so the LawHand record and version history is the system of record. CSE-protected matter files will not be visible to LawHand's Drive sync or to Gemini, and the UI should say so rather than failing silently. Residency must be set on the Workspace side.",
+   "source_urls": [
+    "https://workspaceupdates.googleblog.com/2025/06/data-regions-support-for-gemini-features-in-google-workspace.html",
+    "https://workspaceupdates.googleblog.com/2026/06/gemini-app-data-regions-support.html",
+    "https://workspaceupdates.googleblog.com/2026/06/google-vault-now-supports-retention-rules-and-litigation-holds-for-Gemini-app.html?m=1",
+    "https://knowledge.workspace.google.com/vault/retention/retain-gemini-app-messages-with-vault",
+    "https://knowledge.workspace.google.com/admin/security/client-side-encryption-faq",
+    "https://developers.google.com/workspace/cse/guides/handle-cse-files",
+    "https://knowledge.workspace.google.com/admin/generative-ai/generative-ai-in-google-workspace-privacy-hub",
+    "https://developers.google.com/workspace/admin/reports/v1/appendix/activity/gemini-in-workspace-apps"
+   ],
+   "licensing_or_cost": "Data regions need Enterprise Plus or Assured Controls. CSE needs Enterprise Plus-class editions or Assured Controls."
+  }
+ ],
+ "recommended_plays": [
+  {
+   "title": "Fix the Gemini BYOK route and add a customer-project Agent Platform (Vertex) route using Workload Identity Federation",
+   "detail": "(a) Now: replace the 'gemini-2.0-flash' fallback in backend/app/services/llm_routing.py:555 with a current model such as a Gemini 3.x Flash alias, which should itself be configurable. Validate the chosen model when the admin saves settings so tenants are not routed to a shut-down model. (b) Add provider 'gemini_agent_platform'. The tenant supplies a GCP project, region (us-central1 / europe-west or a US/EU multi-region) and model; LawHand shows a copy-paste gcloud script that creates a WIF pool/provider trusting LawHand's OIDC issuer and grants roles/aiplatform.user to a service account the firm owns. Route through LiteLLM's vertex_ai provider with external_account credentials: no API key is stored, so LawHand holds no long-lived Google secret. (c) Setup checklist in the UI: MSA or abuse-logging exception, regional endpoint, Google Search grounding off, CMEK optional. (d) Mark AI Studio keys 'not for privileged data unless the project is on the paid tier', or restrict them to non-client data.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "An OIDC issuer for LawHand workloads, or AWS/Azure-native identity if hosted there; LiteLLM version with WIF support; per-tenant settings UI.",
+   "risks": "Customer IAM misconfiguration leads to support load. Model IDs keep retiring (2.5 Flash on 2026-10-16), so an alias map and health checks are needed. Some firms' org policies block external identity pools.",
+   "who_pays_compute": "client GCP billing"
+  },
+  {
+   "title": "Ship LawHand as a custom MCP connector for Gemini Enterprise, plus a SKILL.md pack",
+   "detail": "Reuse the Workspace MCP (Streamable HTTP, read/propose tools). Close the auth gap: add admin-issued confidential OAuth clients per tenant (client_id plus a secret shown once, token_endpoint_auth_method client_secret_post/basic), keep PKCE optional for these clients, and allowlist https://vertexaisearch.cloud.google.com/oauth-redirect. Today backend/app/routers/workspace_mcp_oauth.py:297/358 accepts only public clients. Add a 'Connect Gemini Enterprise' admin page that shows the MCP URL, authorization and token URLs, scopes and client credentials, plus the org-policy override step. Keep enabled tools well under 100. Publish a downloadable SKILL.md pack (matter lookup, draft from a LawHand template, deadline check, 'propose, never send') for firms to upload to Gemini Enterprise Skills. Pilot with one firm on Business or Standard.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "Confirm by a live test whether Gemini Enterprise custom MCP supports DCR or PKCE public clients; if it does, the confidential-client work shrinks. Firm needs a Gemini Enterprise license and an admin willing to override the org policy.",
+   "risks": "Preview terms for Business; the admin form or redirect may change. The MCP endpoint must be public, so abuse controls and per-user matter authorization carry the load. There is no Model Armor on custom MCP, so tool outputs must be treated as prompt-injection surface.",
+   "who_pays_compute": "client Gemini Enterprise seats (reasoning); LawHand platform (MCP tool serving only)"
+  },
+  {
+   "title": "LawHand for Google Workspace add-on (HTTP runtime) with narrow scopes, smart chips, and a 'refine in your Gemini' hand-off",
+   "detail": "Build one add-on, served by FastAPI through the HTTP runtime, covering Gmail, Calendar, Drive, Docs and Sheets. It should (1) resolve the open email or event to a matter using gmail.addons.current.message.readonly and calendar add-on scopes; (2) render LawHand matter and task URLs as smart chips in Docs and Sheets through linkPreviewTriggers; (3) offer '@ > LawHand task / matter note' creation in Docs through createActionTriggers; (4) prepare documents by copying a firm template Doc into the matter's Drive folder (drive.file) and filling it with the Docs API, then opening it so the attorney can use their own 'Help me write' or side panel to refine it. Also write a short 'LawHand matter brief' Doc into the folder that the attorney can @-reference in Gemini. Put a Google-side 'Open in LawHand / Stage proposal' button on every card.",
+   "effort": "L",
+   "value": "high",
+   "prerequisites": "OAuth consent screen verification; Marketplace SDK listing; card UX designs; a matter-to-Drive-folder mapping in LawHand.",
+   "risks": "Marketplace review time and rejection loops. The Gemini refinement happens outside LawHand's audit trail and outside Vault (in-app Gemini is not retained), so version-capture on re-import is needed. CSE files cannot be read.",
+   "who_pays_compute": "LawHand platform (minimal or no LLM); client Workspace license for any Gemini refinement"
+  },
+  {
+   "title": "Workspace Studio custom starters and steps so firms' own Gemini steps do the work between LawHand events",
+   "detail": "Extend the add-on with custom starters ('LawHand proposal awaiting review', 'matter opened', 'deadline within N days', 'intake submitted') and custom steps ('Create LawHand task', 'File this Drive doc to matter', 'Propose client email', 'Look up matter context'). Firms can then build flows such as 'new intake email > Extract (Gemini) > LawHand: create intake > Ask Gemini: draft engagement letter from template > LawHand: propose document'. The Gemini steps run on the firm's license, and LawHand steps only create reviewable proposals. Publish sample flow recipes for common legal tasks. Consider LawHand outbound webhooks into Studio webhook starters as a quicker first step.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "The Workspace add-on above, published on the Marketplace; the firm's admin allows custom steps and Gemini steps.",
+   "risks": "The Sept 2026 rollout is new; the developer notes mention a limited preview and third-party integrations are beta. Admins may block custom steps. Flow runs are harder to debug, so step-level logging on the LawHand side is needed.",
+   "who_pays_compute": "client Workspace Gemini entitlement (AI steps); LawHand platform (step handlers)"
+  },
+  {
+   "title": "Scope diet and CASA decision before any public Google launch",
+   "detail": "Inventory every Google scope. Move document flows from 'drive' and 'drive.readonly' to drive.file with the Google Picker. Use add-on contextual Gmail scopes in place of gmail.readonly where email sync is not essential. Split into two OAuth clients: a lightweight add-on/Picker client (sensitive or non-sensitive scopes, no CASA) and an optional 'full mailbox/Drive sync' client that goes through restricted-scope verification and annual CASA. Budget CASA if firm-wide sync is kept. Offer Marketplace domain install as the main firm onboarding path. Update the UI to label per-user versus firm-wide access and show verification state.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "A product decision on whether full mailbox and Drive sync is a must-have. The code sites are backend/app/routers/integrations.py:251-271, backend/app/routers/admin.py:1620-1623, backend/app/routers/plugins.py:384-388 and backend/app/services/google_service_account.py:41.",
+   "risks": "drive.file cannot see files the user never picked, which breaks auto-sync of existing matter folders. Two OAuth clients add onboarding complexity.",
+   "who_pays_compute": "n/a (LawHand pays any CASA assessment fee)"
+  },
+  {
+   "title": "Business development: pursue Gemini in Workspace third-party connectors and the Gemini Enterprise for Legal partner ecosystem",
+   "detail": "Gemini in Workspace's third-party MCP connectors (September 2026) are a curated list with no self-serve path, and Gemini Enterprise for Legal lists no practice-management system. Apply through Google Cloud Partner Advantage, the Workspace partner team and the Legal launch partners and SIs (for example Deloitte or Factor Law) to become the matter/practice-management connector. Bring the existing read/propose MCP, the audit log and a pilot firm reference.",
+   "effort": "S",
+   "value": "medium",
+   "prerequisites": "A working Gemini Enterprise custom MCP pilot (play 2) as a demo; security documentation (SOC 2 or equivalent).",
+   "risks": "Google may favor large vendors. Timelines are outside LawHand's control.",
+   "who_pays_compute": "client Workspace or Gemini Enterprise license (if accepted)"
+  },
+  {
+   "title": "Governance disclosures and per-surface data-flow labels in the integrations UI",
+   "detail": "On each Google integration card, state where reasoning happens ('LawHand model', 'your Gemini Enterprise', 'your Workspace Gemini', 'your GCP project'), where data rests (region), and what is not retained: Vault does not retain in-app Gemini; CSE files are unreadable by LawHand and Gemini; Google Search grounding is disabled for privileged content. Add a firm-admin checklist for Workspace data regions, Assured Controls, Gemini Enterprise US/EU location and CMEK. This answers the product owner's UX concern with concrete trust copy.",
+   "effort": "S",
+   "value": "medium",
+   "prerequisites": "Plays 1\u20134 define the surfaces.",
+   "risks": "Copy goes stale as Google renames products; keep it in one config file.",
+   "who_pays_compute": "n/a"
+  },
+  {
+   "title": "Later: a Marketplace-listed LawHand A2A agent for Gemini Enterprise",
+   "detail": "Only after the MCP connector proves itself. Build an ADK/A2A agent whose core runs on Google Cloud (Agent Runtime or Cloud Run), which the Marketplace listing requires, using Gemini or a Model Garden model such as Claude. It calls LawHand's MCP for data. Implement the A2A Agent Card, OAuth with DCR, the Procurement API and Pub/Sub entitlement handling, and aim for the 'Google Cloud Ready \u2013 Gemini Enterprise' designation. Alternative for a single firm: the firm registers the LawHand A2A agent directly (Standard or Plus) without a Marketplace listing.",
+   "effort": "XL",
+   "value": "medium",
+   "prerequisites": "GCP footprint for the agent core; Partner Advantage enrollment; Marketplace producer onboarding; results from play 2.",
+   "risks": "LawHand pays the agent's reasoning. The work duplicates the MCP path's value, is blocked for Business-edition firms, and runs into GCP-hosting requirements that conflict with the IONOS hosting.",
+   "who_pays_compute": "LawHand platform (recovered via Marketplace pricing)"
+  },
+  {
+   "title": "Defer: calling the client's Gemini Enterprise from LawHand through StreamAssist, and exporting to the Gemini Notebook Enterprise API",
+   "detail": "Both technically let LawHand trigger work on the client's Google AI license: StreamAssist runs a query or agent on the tenant's Gemini Enterprise, and the Notebook API pushes a matter bundle into a firm notebook. Both are alpha/beta or preview APIs. StreamAssist needs the broad cloud-platform user scope plus Discovery Engine IAM grants per user, and Notebook needs per-tenant GCP credentials. Revisit once play 1 has per-tenant GCP credentials and the APIs reach v1 or GA.",
+   "effort": "M",
+   "value": "low",
+   "prerequisites": "Play 1's per-tenant GCP identity; firm demand.",
+   "risks": "API churn. The cloud-platform scope needs verification and alarms security reviewers.",
+   "who_pays_compute": "client Gemini Enterprise / NotebookLM Enterprise license"
+  }
+ ],
+ "caveats": [
+  "The network proxy blocked docs.cloud.google.com, developers.google.com, support.google.com, workspaceupdates.googleblog.com, ai.google.dev, codelabs and Wikipedia. The only primary pages opened in full were cloud.google.com blog posts: the Gemini Enterprise one-platform post (2026-04-22), What's new (2026-04-22), partner agents (2026-04-23), publishing agents on Marketplace (2026-07-07), flexible billing (2026-08-26) and Gemini Enterprise for Legal (2026-08-25). Every other claim comes from search-result snippets of the cited Google URLs, and a few from third-party write-ups, which are labelled in the findings. Verify launch stages on the live docs before committing roadmap dates.",
+  "Launch stage of custom A2A/ADK agent registration in Gemini Enterprise is 'unknown': it is clearly documented, but GA vs preview could not be confirmed. Custom MCP is treated as preview based on the April 2026 preview notice and the Business-edition Pre-GA terms.",
+  "Workspace Studio add-on extensibility: the September 2026 Workspace Updates post describes a general rollout from 2026-09-17 to 09-30, but a developer release-notes snippet says 'limited preview', and the third-party integrations are explicitly beta.",
+  "The custom MCP OAuth redirect URI (https://vertexaisearch.cloud.google.com/oauth-redirect) and the client-ID/secret form fields come from community guides. Test whether Gemini Enterprise supports DCR or PKCE public clients before building confidential-client support.",
+  "Pricing for Plus, Pay-as-you-go token rates and AI Expanded Access comes from third-party or press reports; Google publishes only the $21 Business and $30 Standard entry prices.",
+  "The sensitive (non-restricted) classification of gmail.addons.current.message.readonly, and CASA's move to AL1/AL2 assurance levels under the Linux Foundation, come from third-party sources. Confirm in the Gmail scopes table and the ADA site.",
+  "There is no public API to invoke Gemini inside Docs or Gmail ('Help me write'). This is inferred from a developer forum answer and the absence of any such endpoint in the Workspace API references, not from an explicit Google statement.",
+  "Repo observations (read-only). The Gemini BYOK fallback model 'gemini-2.0-flash' in backend/app/services/llm_routing.py:555 was shut down on 2026-06-01. The Workspace MCP OAuth accepts only public clients (backend/app/routers/workspace_mcp_oauth.py:297,358). Google restricted scopes (drive, drive.readonly, gmail.readonly) are requested in backend/app/routers/integrations.py, admin.py, plugins.py and services/google_service_account.py. The existing plan doc docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md already puts the add-on first and Gemini Enterprise MCP/A2A later; these findings support that order but move 'Gemini Enterprise custom MCP' earlier because it is cheap and uses the client's seat.",
+  "No repository files were modified."
+ ]
+}

@@ -30,7 +30,13 @@ async def scan_emails(
 ):
     user = await get_current_user(request, db)
     tenant_id = getattr(request.state, "tenant_id", None)
-    user_id = str(user.id) if not body.user_id else body.user_id
+    user_id = str(user.id)
+    # A scan reads the mailbox behind a delegated grant, which only its owner
+    # may use. Naming another user used to scan that person's mailbox.
+    if body.user_id and str(body.user_id) != user_id:
+        raise HTTPException(
+            status_code=403, detail="You can only scan your own mailbox"
+        )
 
     if not tenant_id:
         raise HTTPException(status_code=400, detail="No tenant context")

@@ -1,0 +1,603 @@
+{
+ "area": "Frontend UX/UI of integrations: admin and setup surfaces (Integrations hub, Cloud/M365/Google panel, storage, Cloud Search, Teams gate, onboarding wizard, Workspace MCP admin)",
+ "summary": "Microsoft 365 and Google Workspace are set up in two places: the /onboarding wizard (Connect, Storage, Sync, Review) and Admin > Integrations. The Integrations hub has 8 firm cards plus 4 operator tools under Advanced. On the Cloud card the admin connects or re-authorizes the firm-wide connection, which is a full-page redirect with intent=admin. The page shows a scope tally, token and refresh health and user-sync freshness, and a read-only \"Features on this account\" list. Document storage (primary provider, SharePoint library, Create missing matter folders) is in a disclosure that starts collapsed. The status model is decent for revoked or refresh_failed connections, but other states are weak. A provider that was never connected is shown as red \"Disconnected\" with every scope marked Missing. Admin OAuth results (the connected= and error= parameters) are never shown in the Cloud section, and every admin-flow OAuth error sends the admin to /onboarding, even after setup is complete. There is no way in the UI to disconnect Microsoft 365 or Google, although the backend endpoints exist. Consent copy understates what is granted (Mail.Send, Files.ReadWrite.All), in both the wizard and the admin docs. Connection state appears in 6+ places (onboarding, hub pill, provider card, Cloud Search status, Teams gate, the Calendar page's per-user \"Connect Calendar\"). Each uses its own data source and wording, and they sometimes disagree: Cloud Search shows \"Available\"/\"Connected\" while the Cloud card says \"Needs attention\" or \"Reconnect Required\". There are no per-capability toggles. Mail, calendar, storage, directory sync and search are all-or-nothing, set by one consent. External assistants (Workspace MCP) are sold as a firm feature but hidden under Advanced/operator, and setup guides cover Claude, ChatGPT, Codex and OpenCode, but not Microsoft Copilot or Gemini. Accessibility is fair: status is shown as text, not colour alone. The gaps are tooltip-only reasons, tabs without ARIA semantics, focus lost when switching sections, and an unlabeled SharePoint search box.",
+ "capabilities": [
+  {
+   "name": "Integrations hub overview with per-card status pills, permissions/setup disclosure, Advanced operator section gated on manage_integrations",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:421-464",
+   "notes": "Status derived client-side from /admin/permissions, /integrations/zoom/status, /integrations/qbo/status (lines 351-369)."
+  },
+  {
+   "name": "Firm-wide (admin intent) connect / re-authorize for Microsoft 365 and Google",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:174-181",
+   "notes": "Full-page redirect to /api/integrations/{provider}/connect?intent=admin; Google path never passes account_mode (see defects)."
+  },
+  {
+   "name": "Scope audit (required/granted/missing), token health, refresh time, remedy banner for revoked/refresh_failed",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:628-778",
+   "notes": "Backed by GET /admin/permissions (backend/app/routers/admin.py:1640-1797)."
+  },
+  {
+   "name": "Directory user sync trigger (Sync now), tier-gated",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:114-126",
+   "notes": "Hidden when directory_sync unavailable (line 640); a fixed 4 s wait, then reload with no result shown."
+  },
+  {
+   "name": "Per-user connection summary (healthy / needs reauth counts)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:780-794",
+   "notes": "Read-only; users must connect via Calendar > Connect Calendar (frontend/src/pages/CalendarPage.jsx:864-871)."
+  },
+  {
+   "name": "Read-only capability matrix (directory_sync, cloud_storage, email, calendar, teams)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:828-851",
+   "notes": "No toggles; each reason exists only as a title tooltip."
+  },
+  {
+   "name": "Primary storage provider selector with explicit confirm",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:356-414"
+  },
+  {
+   "name": "SharePoint site/library binding",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:416-593",
+   "notes": "No folder picker (root_item_id 'root', folder_path '/' hard-coded at 489-491), no verification, and it silently sets primary provider (is_primary: true at 492)."
+  },
+  {
+   "name": "Create missing matter folders (cloud-init retry)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:306-331"
+  },
+  {
+   "name": "Client-side storage readiness derivation",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/storageReadiness.js:41-94"
+  },
+  {
+   "name": "Cloud metadata sync (Sync files + email / Sync Metadata Now)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/api.js:2882-2883",
+   "notes": "The same endpoint is exposed under two labels: IntegrationsPanel.jsx:255 and CloudSearchAdmin.jsx:345."
+  },
+  {
+   "name": "Cloud Search admin: status, test query, manual sync, metadata browser, cache invalidate",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/CloudSearchAdmin.jsx:558-602"
+  },
+  {
+   "name": "Microsoft Teams admin (channels, notifications, voice), separate consent via &teams=1",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/TeamsPanel.jsx:104-147",
+   "notes": "Also gated server-side by TEAMS_FEATURE_ENABLED (backend/app/routers/integrations.py:1863-1865; default True, backend/app/config.py:128)."
+  },
+  {
+   "name": "Onboarding wizard: agreements, connect MS/Google (workspace vs personal mode), storage root creation, sync, review",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:398-456",
+   "notes": "The storage step offers OneDrive/Google Drive only; SharePoint is deferred to Admin (545-548)."
+  },
+  {
+   "name": "Storage migration (discover/reconcile/cutover), operator only",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/StorageMigrationPanel.jsx:22-148"
+  },
+  {
+   "name": "Provider app readiness (env presence + redirect URIs), operator only",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/IntegrationReadinessCard.jsx:21-89"
+  },
+  {
+   "name": "Disconnect Microsoft 365 / Google (tenant credential + all user tokens)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/routers/integrations.py:2105-2166",
+   "notes": "Backend only. There is no api.js wrapper and no UI button; ProviderCard offers only Connect/Re-authorize (IntegrationsPanel.jsx:760-769)."
+  },
+  {
+   "name": "Integration health endpoint with grantor-deactivated / expiry warnings",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/api.js:799-800",
+   "notes": "getIntegrationsHealth is defined but never called; the warnings (backend/app/routers/admin.py:365-376) never reach the UI."
+  },
+  {
+   "name": "Workspace MCP external-assistant governance: user grants + revoke, firm activity audit, reconnect banner",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/WorkspaceMcpActivityPanel.jsx:8-66",
+   "notes": "Setup guides cover Claude, ChatGPT/Codex and OpenCode only (frontend/src/pages/MCPPage.jsx:144,205-214); none for Microsoft Copilot or Gemini. Sits under Advanced/operator (IntegrationsHub.jsx:235)."
+  }
+ ],
+ "defects": [
+  {
+   "title": "Personal-Google tenants cannot re-authorize from Admin > Cloud",
+   "severity": "high",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:174-181",
+   "detail": "handleReauthorize builds /integrations/google/connect?intent=admin without account_mode. The backend defaults it to 'workspace' (backend/app/routers/integrations.py:658-662), requests the directory scope, and the callback rejects a personal account with account_mode_mismatch (integrations.py:799-800). The error redirect then sends the admin to /onboarding (integrations.py:1805-1807).",
+   "user_impact": "A solo firm on personal Google whose token is revoked follows the card's own \"Re-authorize\" remedy, fails every time, and lands in the setup wizard. The only way out is to know to re-run onboarding and pick Personal Google."
+  },
+  {
+   "title": "Admin OAuth failures always land on /onboarding; the Cloud section never shows the connect result",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/integrations.py:1789-1807",
+   "detail": "_error_redirect sends every admin-intent error to /onboarding?error=..., even when onboarding_completed. On success, the redirect goes to /admin?tab=integrations&integration=cloud&connected=<provider>, but IntegrationsPanel never reads connected or error (IntegrationsPanel.jsx:145-158). ZoomPanel.jsx:89-105 and CalendarPage.jsx:508-548 both handle these parameters. For a completed tenant, OnboardingWizard shows the error above a 'Setup Complete!' screen (OnboardingWizard.jsx:73-77, 717). Docs claim admin connections return to the Cloud section (frontend/platform_docs/administrative-guide/04-integrations.md:51) and tell admins to look for errors 'in the address bar' (line 47).",
+   "user_impact": "An admin who cancels consent, or lacks tenant-admin rights, is thrown into the setup wizard with a vague message. A successful reconnect gives no confirmation."
+  },
+  {
+   "title": "No UI to disconnect Microsoft 365 or Google Workspace",
+   "severity": "medium",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:760-769",
+   "detail": "The backend exposes POST /integrations/microsoft/disconnect and /google/disconnect (backend/app/routers/integrations.py:2105-2166), but api.js has no wrapper (api.js:798-835) and ProviderCard offers only Connect/Re-authorize. The admin guide tells admins to 'disconnect through the supported interface' (04-integrations.md:85-91).",
+   "user_impact": "A firm cannot offboard a provider, switch the consenting account cleanly, or respond to a security incident without contacting support."
+  },
+  {
+   "title": "Saving a SharePoint library silently switches the primary storage provider",
+   "severity": "medium",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:485-493",
+   "detail": "SharePointBindingCard always sends is_primary: true. The backend then sets primary_cloud_provider='sharepoint' (backend/app/routers/cloud_admin.py:397-405), and the panel updates the selector (IntegrationsPanel.jsx:338). This skips the explicit confirmation that PrimaryCloudSelector enforces (comment at 351-354). The binding is also stored as 'configured' with no write check.",
+   "user_impact": "An admin who only wanted to try a SharePoint library repoints every new matter document write, with no warning and no verification that the library is writable."
+  },
+  {
+   "title": "Consent copy and admin docs understate granted access (send mail, write all files)",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:420",
+   "detail": "The wizard says 'Required: Read all users, read mail, read files (OneDrive + SharePoint), read/write calendars'. The actual admin scopes include Mail.Send and Files.ReadWrite.All (backend/app/routers/integrations.py:241-252; the Google admin grant includes gmail.send). The data-visibility guide lists MS scopes without Mail.Send and says the Gmail grant 'does not authorize sending' (16-integration-data-visibility.md:42,60-62). The hub card says only 'Mail and calendar access for enabled workflows' (IntegrationsHub.jsx:71-75).",
+   "user_impact": "Firms write client/privacy notices from inaccurate disclosures, and admins consent to send-as and full file write without being told."
+  },
+  {
+   "title": "'Granted by' line never renders; the deactivated-grantor warning is never shown",
+   "severity": "medium",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:723-725",
+   "detail": "ProviderCard reads info.service_account_email, but GET /admin/permissions never returns it (backend/app/routers/admin.py:1706-1797); only the test fixture has it (IntegrationsPanel.test.jsx:69). The 'User X who granted consent is deactivated' warning exists only in /admin/integrations/health (admin.py:365-376), whose client getIntegrationsHealth (api.js:799-800) is never called.",
+   "user_impact": "Admins cannot see who owns the firm-wide grant, and get no warning before offboarding that person breaks mail, storage and sync."
+  },
+  {
+   "title": "Cloud Search reports 'Available'/'Connected'/'Enabled' while the connection is broken",
+   "severity": "medium",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:106-110",
+   "detail": "The hub pill returns 'Available' for any cloud tone other than 'off', including 'Needs attention'. The Cloud Search status endpoint filters only is_active, not health, so revoked or refresh_failed credentials show 'Connected' (backend/app/routers/cloud_admin.py:170-176,257-263). It also hard-codes enabled: True, even in its error branch (cloud_admin.py:219-238, 267-272). The frontend ignores status:'error' (CloudSearchAdmin.jsx:52-57,73).",
+   "user_impact": "An admin told search is available keeps relying on it while the grant is revoked, and a status failure looks like 'Enabled, 0 items, Not connected'."
+  },
+  {
+   "title": "Onboarding 'Sync Users' button does not run a sync",
+   "severity": "low",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:133-151",
+   "detail": "handleSyncUsers only persists step numbers (POST /admin/onboarding/step/{n} just writes onboarding_step, backend/app/routers/onboarding.py:203-221) and advances to Review. It relies on the post-connect background sync having already happened.",
+   "user_impact": "If the auto-sync failed or is slow, the admin presses 'Sync Users', sees '0 users imported' and is told to sync later from Admin."
+  },
+  {
+   "title": "Microsoft token-exchange failure is reported as a Google error",
+   "severity": "low",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:35-39",
+   "detail": "OAUTH_ERROR_MESSAGES.token_exchange_failed reads 'Google authorization could not be completed', but the Microsoft callback emits the same code (backend/app/routers/integrations.py:545). access_denied, consent_required, interaction_required, invalid_state and oauth_failed all fall back to one generic message (line 77).",
+   "user_impact": "A Microsoft consent failure sends the admin to troubleshoot Google, and a 'needs admin approval' case gets no Global Administrator guidance."
+  },
+  {
+   "title": "Hub Teams pill and Teams panel use different sources and can contradict",
+   "severity": "low",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:153-161",
+   "detail": "The hub uses permissions.microsoft.capabilities.teams, which depends on account_type; /admin/permissions does not backfill unknown types (admin.py:1648-1652, compare 322-324). An unknown type shows 'Not available on this account'. TeamsPanel uses /integrations/status teams_connected (TeamsPanel.jsx:105-108), which backfills and also honours TEAMS_FEATURE_ENABLED (integrations.py:1844-1865). If the flag is off, the hub can say 'Connected' while the panel shows 'Reconnect to enable Teams', which reconnecting cannot fix.",
+   "user_impact": "Contradictory states and a reconnect loop for admins trying to enable Teams."
+  },
+  {
+   "title": "'Sync now' uses a fixed 4 s timer and shared spinner, and never reports a result",
+   "severity": "low",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:114-126",
+   "detail": "triggerUserSync is tenant-wide, and one syncing flag drives both provider cards (271-282). After 4 s it silently reloads, with no success, failure or count message. Errors go to a top-level banner that never clears.",
+   "user_impact": "Both cards spin together, and the admin cannot tell whether the sync worked or is still running."
+  },
+  {
+   "title": "Destructive actions without confirmation",
+   "severity": "low",
+   "file_ref": "frontend/src/components/StorageMigrationPanel.jsx:113-116",
+   "detail": "Storage migration 'Abandon' (button at line 140), Zoom 'Disconnect', Zoom Phone 'Disconnect' and 'Clear tenant app' (ZoomPanel.jsx:108-119,134-145,164-176) and Cloud Search 'Invalidate Cache' (CloudSearchAdmin.jsx:328-352) act on a single click. QBOPanel shows the intended confirm pattern (QBOPanel.jsx:146-147).",
+   "user_impact": "A mis-click discards migration evidence or cuts off call intake with no consequence explanation."
+  },
+  {
+   "title": "Connect endpoints return raw JSON errors on a top-level navigation",
+   "severity": "low",
+   "file_ref": "backend/app/routers/integrations.py:431-448",
+   "detail": "The 501 (OAuth not configured), 428 (agreements pending), 403 and 400 responses (also google_connect, 664-687) are HTTPExceptions, so the browser shows {\"detail\": ...}. The admin panel's Connect button is always enabled (IntegrationsPanel.jsx:760-769), unlike onboarding, which disables it until agreements are ready (OnboardingWizard.jsx:411-412).",
+   "user_impact": "The admin leaves the app for a raw JSON page with no way back and no next step."
+  },
+  {
+   "title": "In-product and doc navigation points to places that do not exist",
+   "severity": "low",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:538-540",
+   "detail": "Wizard: 'Admin > Integrations > Cloud > Storage migration'. Storage migration is actually under Advanced and needs manage_integrations (IntegrationsHub.jsx:238-257). CloudSearchAdmin.jsx:95 says 'Settings > Integrations'. The Teams gate says 'Integrations tab' with no link (TeamsPanel.jsx:133). Docs describe Shared Drive and root-repair controls that the UI lacks (21-onboarding-and-storage-setup.md:54,63) and send unbound-folder repair to 'File Shares', which is SMB (18-cloud-provider-support.md:97). The user drawer's 'MCP Servers' button (frontend/src/pages/admin/UserMcpAccess.jsx:411-417) silently falls back to Overview for admins without manage_integrations (IntegrationsHub.jsx:330-333,478-479).",
+   "user_impact": "Non-technical admins follow instructions into dead ends."
+  },
+  {
+   "title": "Cloud Search copy hard-codes a 15-minute sync interval",
+   "severity": "low",
+   "file_ref": "frontend/src/pages/CloudSearchAdmin.jsx:390",
+   "detail": "The interval is configurable (CLOUD_METADATA_SYNC_INTERVAL_MIN, backend/app/services/scheduler.py:804-809) and the job only runs if enabled.",
+   "user_impact": "The page states freshness that may be wrong."
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Pre-consent 'What you are granting' sheet plus Microsoft admin-consent hand-off",
+   "detail": "Show a modal before each Connect/Re-authorize redirect. It should say who must approve (Microsoft 365 Global/Privileged Role Admin; Google Workspace super-admin), give a plain-language list of what LawHand can do (read all users, read and send mail as the connected mailbox, read/write all files that account can reach, calendars), firm-wide vs per-user, and how to revoke. Add 'Send this request to my IT admin', which copies a /adminconsent URL (Entra) or the Google Admin API-controls deep link plus LawHand's client ID. Map consent_required/access_denied to this guidance.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsPanel.jsx:174-181; frontend/src/pages/OnboardingWizard.jsx:35-39,420; backend/app/routers/integrations.py:241-273"
+  },
+  {
+   "title": "Shared connection-state model and component across all surfaces",
+   "detail": "Add one helper that maps backend fields to Not connected / Connecting / Connected / Needs reconnect / Missing permissions / Partial (some capabilities off) / Paused (agreements), each with one next action. Reuse it in the hub pill, ProviderCard, Cloud Search status, Teams gate, onboarding cards and the Calendar per-user state, so the six surfaces stop disagreeing.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsHub.jsx:46-52; frontend/src/components/IntegrationsPanel.jsx:615-629; frontend/src/pages/CloudSearchAdmin.jsx:66-99"
+  },
+  {
+   "title": "Per-capability toggles with incremental consent",
+   "detail": "Replace the read-only 'Features on this account' with switches for mail capture, send-as, calendar write, document storage, directory sync and cloud search per provider. Request Mail.Send, Files.ReadWrite.All, Sites.* and Calendars.ReadWrite only when a capability is switched on (Entra incremental consent; Google granular consent, including partial grants). Show each capability's own health.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsPanel.jsx:828-851; backend/app/services/capabilities.py:136-175"
+  },
+  {
+   "title": "Connection health center and 'Test connection'",
+   "detail": "Wire the unused /admin/integrations/health data (grantor deactivated, expired token). Show the last success per capability (mail capture, calendar push, storage write, index sync), not only directory sync. Add a Test button like Zoom Phone's that creates and deletes a probe file in the storage root, reads one calendar event and sends a test message to self.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/api.js:799-800; backend/app/routers/admin.py:309-380; frontend/src/components/ZoomPanel.jsx:121-132"
+  },
+  {
+   "title": "Proper disconnect flow with impact preview and provider-side revoke links",
+   "detail": "Expose the existing disconnect endpoints behind a confirm dialog listing consequences: N per-user tokens removed, storage-bound matters that will fail writes, Teams routes stopped, cloud search index retained under the retention policy. Add deep links to Entra Enterprise applications and Google Admin > Security > API controls for provider-side revocation.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/routers/integrations.py:2105-2166; frontend/src/components/QBOPanel.jsx:146-147"
+  },
+  {
+   "title": "Let the firm's own Microsoft Copilot and Gemini act as LawHand Workspace MCP clients",
+   "detail": "Add setup cards and allowlist entries for Microsoft Copilot Studio (add LawHand as an MCP tool in a Copilot agent, published to Teams/M365 Copilot) and for Gemini (Gemini CLI MCP config; Gemini Enterprise agent via MCP). The firm's Copilot or Gemini licence pays for the reasoning. LawHand supplies scoped matter data plus proposal-only writes (propose_document_from_template, propose_client_email), which the existing activity audit already records.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/pages/MCPPage.jsx:144,205-214; frontend/src/components/WorkspaceMcpActivityPanel.jsx:33-66"
+  },
+  {
+   "title": "Promote external assistants from Advanced to a firm-facing 'AI assistants' card",
+   "detail": "Workspace MCP is a firm policy decision (which assistants, which users), not operator plumbing. Add a firm card, 'Copilot, Gemini, Claude, ChatGPT', with a tenant on/off switch, a per-client allowlist, a connected-assistant count and a link to activity. Keep Research MCP keys under Advanced.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsHub.jsx:217-237"
+  },
+  {
+   "title": "Firm template library in SharePoint or a Shared Drive, then 'Open in Word/Docs' for Copilot or Gemini refinement",
+   "detail": "Add an admin setting that binds a templates folder (reusing the SharePoint site/library picker and the Google Shared Drive root). LawHand fills merge fields into .dotx or Google Docs templates in the firm's own storage and opens the result in Word for the web or Google Docs. Staff use their licensed Copilot in Word or Gemini in Docs for drafting and redlines, and LawHand re-ingests the final version.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsPanel.jsx:416-593; frontend/src/pages/OnboardingWizard.jsx:41-54"
+  },
+  {
+   "title": "Office apps deployment section (Office add-in, Teams app, Workspace add-on)",
+   "detail": "There is no admin surface today. Add a hub card that explains centralized deployment through the Microsoft 365 admin center (Integrated apps), with manifest download from office-addin/manifests and teams-app/manifest.json, install status, and Google Workspace Marketplace install for a Docs/Gmail add-on. This is the channel where Copilot in Word/Outlook and Gemini in Docs meet LawHand context.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/marketing/requirements.js:50; teams-app/manifest.json; office-addin/manifests"
+  },
+  {
+   "title": "Detect Copilot/Gemini licences in readiness and gate hand-off features",
+   "detail": "Show whether the tenant has Microsoft 365 Copilot SKUs (Graph /subscribedSkus) or Gemini for Workspace, so the UI offers 'Draft with Copilot in Word' or 'Refine with Gemini in Docs' only where licensed. Needs Organization.Read.All (Graph) or the Google Licensing API, both opt-in consent.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationReadinessCard.jsx:21-89"
+  },
+  {
+   "title": "Microsoft 365 Copilot connector (Graph connector) for matter metadata",
+   "detail": "Push matter and document metadata with per-user ACLs into the firm's Microsoft Search index, so M365 Copilot answers matter-status questions natively and links back to LawHand. The Google equivalent is a Gemini Enterprise data connector. Admin UI: on/off switch, scope preview, last crawl time.",
+   "effort": "XL",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsHub.jsx:54-292"
+  },
+  {
+   "title": "SharePoint / Shared Drive as a first-class choice in the onboarding Storage step",
+   "detail": "Offer the SharePoint site/library picker and Google Shared Drive status at setup, instead of 'finish with OneDrive, then change it'. This avoids at_risk personal-drive roots and a later migration for M365 firms.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/pages/OnboardingWizard.jsx:41-54,545-548; frontend/platform_docs/administrative-guide/21-onboarding-and-storage-setup.md:38"
+  },
+  {
+   "title": "A 'My connected accounts' page in Profile, replacing 'Connect Calendar'",
+   "detail": "The per-user grant covers mail read/send and all files, not just calendar. Move per-user connect and reconnect to Profile, with a scope explanation. In the admin card, add a 'Remind users who need to reconnect' action.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/components/IntegrationsPanel.jsx:787-791; frontend/src/api.js:2305-2306; backend/app/routers/integrations.py:256-259"
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Cloud section: provider card (not connected)",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:629-685",
+   "issue": "A provider that was never connected shows a red 'Disconnected' pill and every required scope as a red X 'Missing'. The friendly empty state at 822-824 never renders, because the backend always sends required_scopes (the fixture at IntegrationsPanel.test.jsx:52-63 confirms this). An unused Google card looks broken for Microsoft-only firms, and the overall pill is red 'No integrations connected' (223-229).",
+   "severity": "high",
+   "suggestion": "When !info.connected, render a neutral 'Not connected' card listing 'What connecting lets LawHand do' with one Connect button. Hide the scope tally, and collapse the second provider as 'Not used' once one provider is connected.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: Connect / Re-authorize",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:760-769",
+   "issue": "The button redirects straight to Microsoft or Google with no explanation. The page never says a Global Administrator or super-admin is needed, that this is a firm-wide grant (different from per-user), or that it includes send-as mail and read/write on all files.",
+   "severity": "high",
+   "suggestion": "Add a pre-consent confirmation sheet with plain-language access, who must approve, and how to revoke, plus 'Copy link for my IT admin'.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section after OAuth return",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:145-158",
+   "issue": "The panel ignores ?connected= and ?error=, so a successful reconnect gives no confirmation. ZoomPanel (ZoomPanel.jsx:89-105) and Calendar handle these parameters, but the admin Cloud flow does not. The docs tell admins to read errors from the address bar (04-integrations.md:47).",
+   "severity": "medium",
+   "suggestion": "Read connected, error and provider, show a success or error banner with next steps, then strip the params (reuse the ZoomPanel logic). A backend change is also needed so admin errors return to /admin once onboarding is complete.",
+   "quick_win": true
+  },
+  {
+   "screen": "Onboarding: OAuth error banner",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:35-39",
+   "issue": "Only three codes have messages, and one names Google for a Microsoft failure. access_denied, consent_required, interaction_required, invalid_state and oauth_failed all get 'could not be completed'.",
+   "severity": "medium",
+   "suggestion": "Add per-code, per-provider copy, e.g. consent_required: 'Your Microsoft 365 Global Administrator must approve LawHand', with a copy-link action.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations IA (all surfaces)",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:427-429",
+   "issue": "The hero promises 'Every external connection, in one place', yet M365/Google state appears in the onboarding cards (OnboardingWizard.jsx:398-456), the hub pill, ProviderCard, Cloud Search status (CloudSearchAdmin.jsx:66-99), the Teams gate and Calendar 'Connect Calendar'. Assistant grants live in Profile, and Office add-in or Teams app deployment appears nowhere.",
+   "severity": "medium",
+   "suggestion": "Make Cloud the single source of connection truth: other surfaces show a compact status chip that links to it. Add an 'Office apps' card and a firm-facing 'AI assistants' card.",
+   "quick_win": false
+  },
+  {
+   "screen": "Naming across integration screens",
+   "file_ref": "frontend/src/pages/CloudSearchAdmin.jsx:95",
+   "issue": "The same things have many names. The section is 'Cloud accounts & storage', 'Cloud', 'Settings > Integrations' or 'Integrations tab' (IntegrationsHub.jsx:66-67; TeamsPanel.jsx:133). Providers appear as lowercase keys capitalised by CSS ('Google', 'Microsoft') (CloudSearchAdmin.jsx:72,367). The verb is 'Re-authorize', 'Reconnect' or 'Connect Calendar' (IntegrationsPanel.jsx:768,787; TeamsPanel.jsx:143). Health uses 'Missing Scopes' in title case (IntegrationsPanel.jsx:615-621).",
+   "severity": "medium",
+   "suggestion": "Adopt a glossary. Providers: Microsoft 365, Google Workspace, Personal Google. Storage: OneDrive, SharePoint library, Google Drive / Shared Drive. Single verb: Reconnect. States: 'Missing permissions', not 'scopes'. Always use 'Admin > Integrations > Cloud accounts'.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: Google card title",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:274-283",
+   "issue": "The card is always titled 'Google Workspace', even for a Personal Google connection. Only a small blue account_label pill differs, while onboarding names the tier properly (OnboardingWizard.jsx:430-432).",
+   "severity": "low",
+   "suggestion": "Title the card from account_type ('Personal Google' vs 'Google Workspace').",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: technical error text",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:739-748",
+   "issue": "Raw provider errors (e.g. '400 invalid_grant Token has been expired or revoked.') are shown in red monospace. The sync-run tiles show raw job_type and status strings (796-810), and the Teams gate lists raw Graph scope names (TeamsPanel.jsx:267-271).",
+   "severity": "medium",
+   "suggestion": "Map errors to plain sentences plus one action, and put the raw text under 'Technical details for support'.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: Features on this account",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:843",
+   "issue": "Each capability's reason exists only as a title tooltip, which keyboard, touch and screen-reader users cannot reach. Badges such as 'Error' or 'Reconnect needed' have no inline action.",
+   "severity": "medium",
+   "suggestion": "Render capability.reason as visible helper text, with a Reconnect or Learn more link per row.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: per-capability control",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:828-851",
+   "issue": "There are no toggles. A firm cannot turn off send-as, mail capture, calendar write or directory sync, or limit cloud search to one provider, without revoking everything. Cloud Search shows Enabled/Disabled with no control (CloudSearchAdmin.jsx:57).",
+   "severity": "high",
+   "suggestion": "Add a capability switch list backed by incremental consent (see opportunities).",
+   "quick_win": false
+  },
+  {
+   "screen": "Hub overview: Cloud and Cloud Search pills",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:46-52",
+   "issue": "'Needs attention' does not say which provider or what is wrong, and storage readiness (for example, no SharePoint library bound) is not reflected. The Cloud Search pill says 'Available' while Cloud needs attention (106-110).",
+   "severity": "medium",
+   "suggestion": "Label the pill with the cause ('Microsoft 365: reconnect needed', 'Storage not ready') and derive Cloud Search from the same state.",
+   "quick_win": true
+  },
+  {
+   "screen": "Hub cards: Permissions & setup",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:76-80",
+   "issue": "Firm-facing cards list operator prerequisites ('Approved OAuth redirect URLs and application credentials'; Zoom at 175-179). The readiness card itself says firm admins cannot act on these (IntegrationReadinessCard.jsx:15-20), and the refresh_failed remedy points to 'Advanced', which many admins cannot see (IntegrationsPanel.jsx:625).",
+   "severity": "medium",
+   "suggestion": "Rewrite the setup lists as firm actions ('A Microsoft 365 Global Administrator signs in once'). Replace the Advanced reference with 'contact LawHand support' when the user lacks manage_integrations.",
+   "quick_win": true
+  },
+  {
+   "screen": "Teams section gate",
+   "file_ref": "frontend/src/components/TeamsPanel.jsx:129-136",
+   "issue": "'Connect Microsoft 365 first' tells the admin to go to 'the Integrations tab' but offers no button, although the hub card invited 'Set up' (IntegrationsHub.jsx:401).",
+   "severity": "medium",
+   "suggestion": "Add a 'Go to Cloud accounts' button that calls onSectionChange('cloud'), or starts connect with &teams=1 directly.",
+   "quick_win": true
+  },
+  {
+   "screen": "Per-user connection guidance",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:787-791",
+   "issue": "Users are told to 'open Calendar and choose Connect Calendar'. That grant also covers reading and sending their mail and read/write on all their files (backend/app/routers/integrations.py:256-259; CalendarPage.jsx:864-871), so the label misrepresents the consent. On mobile the button text is hidden, leaving an icon plus a title.",
+   "severity": "medium",
+   "suggestion": "Rename the action to 'Connect Microsoft/Google account', explain the access, move it to Profile > Connected accounts, and give admins a 'Remind users' action.",
+   "quick_win": false
+  },
+  {
+   "screen": "Cloud section: Document storage disclosure",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:286-298",
+   "issue": "The disclosure stays collapsed even when storage is not ready. The amber 'Matter document storage is not ready' block sits inside it (Disclosure defaultOpen is false, ui.jsx:317-331).",
+   "severity": "medium",
+   "suggestion": "Pass defaultOpen={!storageReadiness.ready}, and show the next action ('Choose a SharePoint library', 'Reconnect Microsoft 365') on the summary line.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: SharePoint library picker",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:530-535",
+   "issue": "The site search input has only a placeholder, no label. There is no folder picker (root and '/' hard-coded, 489-491) and no 'verify write access' step, although readiness copy says 'Choose and verify' (storageReadiness.js:82-89). 'Save SharePoint binding' is jargon.",
+   "severity": "medium",
+   "suggestion": "Add a visible label, a folder browser, a Verify button that writes and deletes a probe file, and the copy 'Use this library for matter documents' plus the same confirm as the primary provider selector.",
+   "quick_win": false
+  },
+  {
+   "screen": "Storage migration (operator)",
+   "file_ref": "frontend/src/components/StorageMigrationPanel.jsx:126-141",
+   "issue": "The phase is shown as a raw enum (e.g. awaiting_confirmation). Free-text 'Root folder ID' and 'SharePoint drive ID' fields are required (131-132). Unresolved items appear as object_type and object_id with no matter name (141). Abandon has no confirm (140).",
+   "severity": "medium",
+   "suggestion": "Map phases to human labels and steps, pick the target root with a folder picker, show matter numbers and names, and confirm Abandon.",
+   "quick_win": true
+  },
+  {
+   "screen": "Hub navigation and section switch",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:466-471",
+   "issue": "Nav buttons lack aria-current. Clicking a card unmounts it and focus falls to body (519-541). TeamsPanel tabs (TeamsPanel.jsx:192-207) and Cloud Search tabs (CloudSearchAdmin.jsx:577-592) have no tablist/tab/aria-selected. The TeamsPanel spinner has no role=status (TeamsPanel.jsx:116-122), and the readiness card renders nothing while loading (IntegrationReadinessCard.jsx:85-88).",
+   "severity": "medium",
+   "suggestion": "Add aria-current='page' and move focus to the section h3 on change. Use proper tab semantics with arrow-key support, and add role=status loading states.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud Search admin layout and actions",
+   "file_ref": "frontend/src/pages/CloudSearchAdmin.jsx:66",
+   "issue": "Provider and sync-result grids are fixed at 2 columns (also line 364) and cramp on phones. 'Token expires' shows the hourly access-token expiry, which looks alarming (81-86). 'Sync Metadata Now' (345) duplicates 'Sync files + email' on the Cloud card (IntegrationsPanel.jsx:255). 'Invalidate Cache' is jargon with no busy state or confirm (348-352).",
+   "severity": "low",
+   "suggestion": "Use grid-cols-1 sm:grid-cols-2, drop token expiry for connection health, use one name ('Refresh search index'), and rename the cache action to 'Clear cached search results' with a confirm.",
+   "quick_win": true
+  },
+  {
+   "screen": "Cloud section: health and last-sync visibility",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:726-738",
+   "issue": "Only directory sync and token refresh times are shown. There is no last success for mail capture, calendar push, storage writes or the search index, and error_summary from recent runs is dropped (796-810).",
+   "severity": "medium",
+   "suggestion": "Add a per-capability 'Last worked' row with the failure reason and a Retry action.",
+   "quick_win": false
+  },
+  {
+   "screen": "Zoom section disconnect (pattern comparison)",
+   "file_ref": "frontend/src/components/ZoomPanel.jsx:108-119",
+   "issue": "Disconnect and 'Clear tenant app' fire immediately (134-145, 164-176) with no explanation of consequences. QBOPanel uses useConfirm (QBOPanel.jsx:146-147), so disconnect behaviour is inconsistent across integrations.",
+   "severity": "medium",
+   "suggestion": "Standardise on the ConfirmProvider with a consequence sentence, and use the same pattern when M365/Google disconnect is added.",
+   "quick_win": true
+  },
+  {
+   "screen": "Onboarding wizard: Connect and Storage steps",
+   "file_ref": "frontend/src/pages/OnboardingWizard.jsx:404-421",
+   "issue": "The Microsoft card gives no tier warning, although personal Microsoft accounts are unsupported (18-cloud-provider-support.md:23-25). SharePoint is not offered at setup (545-548). Decorative emojis are not aria-hidden (350-353). The button says 'Set up later' while the docs say 'Skip setup' (21-onboarding-and-storage-setup.md:79).",
+   "severity": "low",
+   "suggestion": "Add 'Use a work or school account; outlook.com is not supported', aria-hidden the emojis, align naming, and add a SharePoint option.",
+   "quick_win": true
+  },
+  {
+   "screen": "Firm assistant activity (MCP)",
+   "file_ref": "frontend/src/components/WorkspaceMcpActivityPanel.jsx:44-61",
+   "issue": "The panel shows raw scope strings (the grants panel uses normalized labels, WorkspaceMcpGrantsPanel.jsx:124,131), the raw client_id, reviewer UUIDs and SHA hashes inline. Its buttons are unstyled underlines with no type (34, 45, 48), and the error copy is generic (29).",
+   "severity": "low",
+   "suggestion": "Reuse normalizeWorkspaceMcpScopes, show client and reviewer names, and move hashes into the Audit evidence disclosure only.",
+   "quick_win": true
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "microsoft",
+   "endpoint": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
+   "method": "GET (browser redirect)",
+   "purpose": "Admin (firm-wide) and per-user consent from the Cloud card, Teams gate, onboarding and Calendar",
+   "scope_needed": "Admin: offline_access User.Read.All Mail.Read Mail.Send Files.ReadWrite.All Sites.Read.All Calendars.ReadWrite (+ Teams scopes when teams=1). User: offline_access User.Read Mail.Read Mail.Send Files.ReadWrite.All Calendars.ReadWrite",
+   "file_ref": "backend/app/routers/integrations.py:482-494"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+   "method": "POST",
+   "purpose": "Authorization-code + PKCE token exchange",
+   "scope_needed": "Same as authorize",
+   "file_ref": "backend/app/routers/integrations.py:518-545"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "https://graph.microsoft.com/v1.0/sites?search= and /sites/root",
+   "method": "GET",
+   "purpose": "SharePoint site picker in Document storage",
+   "scope_needed": "Sites.Read.All (delegated)",
+   "file_ref": "backend/app/routers/cloud_admin.py:314-323"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "https://graph.microsoft.com/v1.0/sites/{site_id}/drives",
+   "method": "GET",
+   "purpose": "SharePoint document library picker",
+   "scope_needed": "Sites.Read.All / Files.ReadWrite.All",
+   "file_ref": "backend/app/routers/cloud_admin.py:357-360"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+   "method": "GET (browser redirect)",
+   "purpose": "Admin (workspace or personal mode) and per-user consent",
+   "scope_needed": "Workspace admin: openid email profile admin.directory.user.readonly gmail.readonly gmail.send calendar drive. Personal: same minus directory. User: gmail.readonly gmail.send calendar drive",
+   "file_ref": "backend/app/routers/integrations.py:709-721"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://oauth2.googleapis.com/token",
+   "method": "POST",
+   "purpose": "Authorization-code + PKCE token exchange; the id_token is verified to classify workspace vs personal",
+   "scope_needed": "Same as authorize",
+   "file_ref": "backend/app/routers/integrations.py:759-800"
+  }
+ ],
+ "open_questions": [
+  "Should admin-intent OAuth errors return to /admin?tab=integrations&integration=cloud once onboarding_completed is true, as 04-integrations.md:51 claims? (Backend change in integrations.py:1789-1807.)",
+  "Is Mail.Send / gmail.send meant to be part of the default firm-wide grant, or should it be opt-in? The data-visibility guide (16-integration-data-visibility.md:42,62) still says the grants are read-only.",
+  "Is the Advanced/operator audience meant for LawHand staff or for firm IT? Workspace MCP policy (which assistants may connect, including a future Copilot or Gemini) looks like a firm-admin decision, yet it is gated on manage_integrations.",
+  "Is TEAMS_FEATURE_ENABLED ever false in production, and is CLOUD_SEARCH_ENABLED ever false? The Cloud Search status endpoint always reports enabled:true.",
+  "Does the Workspace MCP OAuth server support dynamic client registration and the redirect patterns Microsoft Copilot Studio and Gemini Enterprise use for MCP tools? This decides whether 'bring your own Copilot/Gemini' is setup copy only or needs auth work.",
+  "Should per-user connect move out of Calendar into Profile, given that it grants mail send and full file access?"
+ ]
+}

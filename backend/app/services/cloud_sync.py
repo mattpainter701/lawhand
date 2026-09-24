@@ -330,6 +330,11 @@ class CloudSyncService:
         token = await self._get_token(db, tenant_id, "google", user_id)
         if not token:
             return 0
+        # The platform service account belongs to every tenant's Shared Drive,
+        # so a listing with its token must be pinned to this tenant's drive.
+        drive_scope = google_service_account.service_account_drive_scope(token)
+        if drive_scope == google_service_account.NO_TENANT_DRIVE:
+            return 0
 
         # Build Drive API query — union of MIME-type and extension predicates
         mime_clause = " or ".join(f"mimeType='{m}'" for m in LEGAL_MIME_TYPES)
@@ -355,6 +360,9 @@ class CloudSyncService:
                         "includeItemsFromAllDrives": True,
                         "corpora": "user",
                     }
+                    if drive_scope:
+                        params["corpora"] = "drive"
+                        params["driveId"] = drive_scope
                     if page_token:
                         params["pageToken"] = page_token
 

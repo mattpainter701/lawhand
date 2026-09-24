@@ -1,0 +1,246 @@
+{
+ "topic": "How legal-tech competitors integrate with Microsoft 365, Google Workspace, Copilot and Gemini (as of 2026-09-24), and what that means for LawHand",
+ "findings": [
+  {
+   "claim": "Microsoft now ships its own contract-review agent inside Word, the 'Legal Agent in Microsoft 365 Copilot for Word'. It reviews contracts, flags risks, compares clauses to playbooks and writes suggested edits as native tracked changes. It reads document structure (tracked changes, tables, numbered clause hierarchies), and needs only a Copilot licence and Frontier enrollment, with nothing to install. It entered US Frontier public preview on 2026-04-30 and worldwide Frontier preview in mid-June 2026. GA has slipped twice (early July, then early September) and is now set for early October 2026 per message-center post MC1388706.",
+   "status": "preview",
+   "as_of": "2026-04-30 launch; GA target revised to early Oct 2026 (MC1388706)",
+   "licensing_or_cost": "Needs a Microsoft 365 Copilot licence and Frontier program enrollment. No third-party installation.",
+   "relevance_to_lawhand": "Generic contract redlining inside Word is being commoditized for any firm that has Copilot. LawHand's Word add-in (office-addin/src/contracts/office.ts) only supports replace_selection with a before/after preview, and competing on generic redlining is a losing position. The opening is to supply what Microsoft's agent does not have: matter facts, the firm's own templates, clause and playbook libraries, and a review/audit trail in the system of record.",
+   "source_urls": [
+    "https://techcommunity.microsoft.com/blog/microsoft-copilot-blog/word-legal-agent-in-frontier/4516218",
+    "https://legaltechnology.com/2026/04/30/microsoft-releases-new-legal-agent-for-word/",
+    "https://mc.merill.net/message/MC1388706",
+    "https://m365admin.handsontek.net/microsoft-365-copilot-legal-agent-available-frontier-worldwide/",
+    "https://complexdiscovery.com/microsoft-puts-legal-agent-inside-word-sharpening-contract-review-competition/"
+   ]
+  },
+  {
+   "claim": "Copilot Cowork became generally available on 2026-06-16 with third-party partner plugins. Harvey was one of nine launch partner plugins, alongside Enosix, LSEG, Miro, monday.com, Moody's, Morningstar, S&P Global Energy and TeamsMaestro. A 2026-05-05 Microsoft 365 blog post frames agents as the operating layer for work across Microsoft 365, Agent 365, Copilot Cowork and a new Microsoft 365 E7 suite.",
+   "status": "GA",
+   "as_of": "2026-06-16",
+   "licensing_or_cost": "Copilot Cowork itself is GA. Plugin publishing requirements, licence tier and E7 packaging are unconfirmed because I could not open the Microsoft docs.",
+   "relevance_to_lawhand": "This is a new host in the customer's tenant, separate from the older declarative-agent path. A plugin can run multi-step work that ends in a Word document or an Outlook draft. LawHand's planned Matter Agent (docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md section 2) targets Teams, Outlook, Word and Copilot but does not mention Cowork.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/16/copilot-cowork-is-now-generally-available/",
+    "https://techcommunity.microsoft.com/blog/microsoft-copilot-blog/what%E2%80%99s-new-in-microsoft-365-copilot--june-2026/4529572",
+    "https://www.microsoft.com/en-us/microsoft-365/blog/2026/05/05/microsoft-365-copilot-human-agency-and-the-opportunity-for-every-organization/"
+   ]
+  },
+  {
+   "claim": "Harvey runs as an agent inside Microsoft 365 Copilot (since March 2026) and as a Copilot Cowork plugin (since 2026-06-16). How it works for users: type '@Harvey' in Copilot chat or pick the Harvey agent from the sidebar to ask legal questions, research, analyze documents and pull content from Harvey Vault. The same workflow continues in Word, and Cowork can deliver multi-step outputs such as a Word document or an email-ready outline in Outlook. This builds on Harvey's December 2024 SharePoint, Copilot and Word integrations. In July 2026 Microsoft's own legal department adopted Harvey.",
+   "status": "GA",
+   "as_of": "2026-06-16 (Cowork plugin); 2026-07 (Microsoft CELA adoption)",
+   "licensing_or_cost": "Believed to need both a Harvey subscription and Microsoft 365 Copilot. Not confirmed from a primary page.",
+   "relevance_to_lawhand": "This is the reference pattern for a vertical AI vendor inside Copilot: an @mention or sidebar agent grounded in the vendor's own store (Vault), handing off to Word and Outlook. LawHand can copy the pattern with matter data instead of a research vault. Harvey is not a practice-management system, so it has no matters, tasks, deadlines, billing or client-communication records.",
+   "source_urls": [
+    "https://www.harvey.ai/blog/harvey-copilot-cowork-launch",
+    "https://www.harvey.ai/blog/agent-platform-and-microsoft-365-copilot",
+    "https://help.harvey.ai/release-notes/microsoft-copilotcowork-integration",
+    "https://www.harvey.ai/blog/announcing-harvey-integrations-with-microsoft",
+    "https://www.lawnext.com/2026/07/microsofts-own-legal-department-will-use-harvey-as-the-two-companies-deepen-their-alliance.html"
+   ]
+  },
+  {
+   "claim": "LexisNexis Prot\u00e9g\u00e9 works as a custom agent in Microsoft 365 Copilot and Microsoft Teams (unveiled at Build 2025, reinforced in a Build 2026 press release about the 'Frontier Intelligence Ecosystem'). It supports Word, PowerPoint, Excel, Teams and OneNote, and grounds answers in LexisNexis content plus the organization's trusted documents. In February 2026, Lexis+ with Prot\u00e9g\u00e9 fully replaced Lexis+ AI and went GA in the US, with integrations for Word, Teams and Outlook. A Microsoft Marketplace listing exists (office add-in WA200007758).",
+   "status": "GA",
+   "as_of": "2026-02 (Lexis+ with Prot\u00e9g\u00e9 GA); Build 2026 (May 2026) Copilot announcement",
+   "licensing_or_cost": "Needs a Lexis+ with Prot\u00e9g\u00e9 subscription. Microsoft 365 Copilot is needed for the Copilot agent path. Exact terms unconfirmed.",
+   "relevance_to_lawhand": "Research incumbents are already in Copilot. LawHand should not try to be the research agent in Copilot. It should be the matter and workflow agent that works next to these research agents.",
+   "source_urls": [
+    "https://www.lexisnexis.com/community/pressroom/b/news/posts/as-microsoft-build-2026-unveils-the-frontier-intelligence-ecosystem-lexisnexis-delivers-authoritative-legal-intelligence-through-protege-in-microsoft-365-copilot",
+    "https://www.lexisnexis.com/community/insights/legal/b/thought-leadership/posts/protege-legal-assistant-for-microsoft-365-and-teams",
+    "https://www.lawnext.com/2026/02/lexisnexis-launches-lexis-with-protege-replacing-lexis-ai-with-an-end-to-end-workflow-platform.html",
+    "https://www.lexisnexis.com/en-us/products/lexis-plus-protege/integrations.page",
+    "https://marketplace.microsoft.com/en-us/product/office/wa200007758?tab=overview"
+   ]
+  },
+  {
+   "claim": "Thomson Reuters sells 'CoCounsel for Microsoft Word' (Marketplace WA200006174) and 'CoCounsel for Microsoft Outlook' (Marketplace WA200007068) as Office add-ins, and the Outlook add-in has a Microsoft 365 App Certification record. TR says its integrations cover Word, Teams, Outlook and SharePoint. CoCounsel Drafting was the first of these, letting lawyers draft entirely in Word. At Build 2024, TR showed CoCounsel working with Copilot extensions (for example, reading an email and preparing recommended actions). I could not confirm a 2026 CoCounsel agent in the Copilot agent store.",
+   "status": "GA",
+   "as_of": "Marketplace listings current as of 2026-09; Copilot demo 2024-05",
+   "licensing_or_cost": "Needs a CoCounsel subscription. The add-ins are free to install from Marketplace.",
+   "relevance_to_lawhand": "Enterprise buyers expect Office add-ins listed in Marketplace and backed by Microsoft 365 App Certification. LawHand's Outlook and Word/Excel add-ins (office-addin/manifests/*.xml) have neither yet.",
+   "source_urls": [
+    "https://marketplace.microsoft.com/en-us/product/office/wa200006174?tab=overview",
+    "https://marketplace.microsoft.com/en-us/product/office/wa200007068?tab=overview",
+    "https://learn.microsoft.com/en-us/microsoft-365-app-certification/outlook/thomson-reuters-incorporated-cocounsel-for-microsoft-outlook",
+    "https://www.thomsonreuters.com/en/press-releases/2024/may/thomson-reuters-showcases-the-power-of-cocounsel-combined-with-microsoft-copilot-during-the-2024-microsoft-build-keynote",
+    "https://legal.thomsonreuters.com/en/products/cocounsel-legal"
+   ]
+  },
+  {
+   "claim": "NetDocuments sells a Microsoft 365 Copilot integration as a Marketplace SaaS offer, 'NetDocuments Copilot (US)' WA200008488 and '(CAN)' WA200008857. Users query NetDocuments from Copilot and Teams in natural language and get summaries and links to matching documents. Content permissions and ethical walls are respected. The offer needs both a Microsoft 365 Copilot subscription and a NetDocuments subscription and is available in North America. NetDocuments' ndMAX Assist agent roadmap includes specialized contract-review agents, automated classification, and starting any PatternBuilder MAX document automation from the agent.",
+   "status": "GA",
+   "as_of": "Marketplace listing current as of 2026-09; ndMAX roadmap 2024-2025",
+   "licensing_or_cost": "Needs Microsoft 365 Copilot plus a NetDocuments (ndMAX) subscription.",
+   "relevance_to_lawhand": "This shows a legal system of record can sell a Copilot integration through Marketplace while the customer's Copilot seat pays for the Copilot-side reasoning. Starting document automation from an agent (PatternBuilder MAX) is the closest competitor analog to LawHand's propose_document_from_template Workspace MCP tool.",
+   "source_urls": [
+    "https://marketplace.microsoft.com/en-us/product/saas/wa200008488?tab=overview",
+    "https://marketplace.microsoft.com/en-ca/product/wa200008857",
+    "https://www.netdocuments.com/company-news/netdocuments-expands-microsoft-integrations-connecting-microsoft-copilot-and-more/",
+    "https://www.netdocuments.com/company-news/netdocuments-expands-ndmax-ai-2025/",
+    "https://www.netdocuments.com/solutions/microsoft-integration/"
+   ]
+  },
+  {
+   "claim": "Microsoft documents an 'iManage Cloud connector (preview)' among its Microsoft 365 Copilot connectors. It indexes iManage Cloud workspaces, documents and metadata into the tenant so Copilot and Microsoft Search can find them, with semantic retrieval and incremental crawls. During preview it supports only multi-tenant iManage Cloud (no on-premises or private cloud) and English content only. iManage also publishes a 'Microsoft is our copilot' partnership post.",
+   "status": "preview",
+   "as_of": "2026 (learn.microsoft.com page)",
+   "licensing_or_cost": "Copilot connectors come with Microsoft 365 Copilot or Microsoft Search. Index quota and cost for this connector not confirmed.",
+   "relevance_to_lawhand": "This is the ingest-into-the-tenant pattern: grounding comes from Microsoft's semantic index, not from live tool calls. It suits matter lookup, such as working out which matter an email belongs to. But it copies LawHand data into the customer's Microsoft Graph, so it would need a mapping of per-item access lists to Entra identities and handling of ethical walls.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoftsearch/imanage-cloud-connector",
+    "https://imanage.com/resources/resource-center/blog/microsoft-is-our-copilot-a-partnership-built-on-trust/"
+   ]
+  },
+  {
+   "claim": "Microsoft has renamed Microsoft Graph connectors to 'Microsoft 365 Copilot connectors', and the iManage connector is documented under that name. Admins deploy and govern agents under 'Manage agents in the Microsoft 365 admin center' (integrated apps). Agent 365 is positioned as a central control plane for agent inventory, permissions, behavior and activity.",
+   "status": "unknown",
+   "as_of": "2026 (Learn pages); Agent 365 GA status not confirmed",
+   "licensing_or_cost": "Agent 365 licensing and SKU not confirmed.",
+   "relevance_to_lawhand": "A customer's IT admin will approve any LawHand agent or connector through the Microsoft 365 admin center and Agent 365. The admin experience (consent screens, scopes, kill switch, audit) is part of the product and should match what the plan doc promises for tenant and user kill switches.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/overview-copilot-connector",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/ecosystem",
+    "https://learn.microsoft.com/en-us/microsoft-365/admin/manage/manage-copilot-agents-integrated-apps?view=o365-worldwide",
+    "https://www.alphabold.com/microsoft-365-2026-copilot-security-intune-teams-updates/"
+   ]
+  },
+  {
+   "claim": "'Clio for Word' entered beta on 2026-05-11 for all Clio Work subscribers, with GA planned for later in 2026. It brings Vincent AI into Word: it reads the whole active document, including comments and existing redlines, suggests edits as native Word tracked changes, drafts from a blank page or firm precedent plus matter details, and flags risks conversationally. It also replaces the old 'Clio Draft Template Builder' add-in: Clio Draft customers build and manage templates, and convert existing Word documents into Clio Draft templates, inside Clio for Word. New Template Builder installs after 2026-05-11 go to Clio for Word.",
+   "status": "preview",
+   "as_of": "2026-05-11",
+   "licensing_or_cost": "The AI features need Clio Work or Vincent for Enterprise. Template features need Clio Draft.",
+   "relevance_to_lawhand": "This is now the baseline expectation for a Word add-in in SMB practice management: one add-in covering (a) template authoring and conversion in Word and (b) matter-aware AI drafting whose output is tracked changes. LawHand's Word add-in has neither. Template authoring lives in the SPA Template Studio.",
+   "source_urls": [
+    "https://www.clio.com/about/press/clio-for-word-beta-legal-ai-document-drafting/",
+    "https://www.clio.com/about/press/clio-for-word-beta/",
+    "https://www.artificiallawyer.com/2026/05/11/clio-for-word-add-in-launches-in-beta/",
+    "https://help.clio.com/hc/en-au/articles/50120936599451-Clio-for-Word-Template-Builder",
+    "https://help.clio.com/hc/en-us/articles/49815360439835-Clio-for-Word-and-Vincent",
+    "https://help.clio.com/hc/en-us/articles/24381897009563-Install-Clio-Draft-Template-Builder-Add-in",
+    "https://www.clio.com/enterprise/vincent/word/"
+   ]
+  },
+  {
+   "claim": "Clio offers an Outlook add-in (Marketplace WA200003566, free on all Clio Manage plans) and 'Clio for Gmail', a Google Workspace add-on. Both file emails, whole threads and attachments to a matter, create time entries and track billable communications, and add contacts. Outlook marks filed mail with a visible 'Filed to Clio' tag. Filed items appear in the matter's Communications and Documents. The Outlook add-in needs Outlook 2016 or later on Microsoft 365 business accounts.",
+   "status": "GA",
+   "as_of": "2026-09 (help-center and Marketplace pages)",
+   "licensing_or_cost": "Included in all Clio Manage plans at no extra cost.",
+   "relevance_to_lawhand": "This is table stakes, and LawHand lacks it. LawHand's Outlook add-in can only change the subject line (set_subject in office-addin/src/contracts/office.ts), and LawHand has no Gmail add-on. LawHand does have server-side filing: a forward-to-intake review queue (backend/app/services/firm_email_intake.py) and party/case-number correspondence capture (backend/app/services/correspondence_capture.py). What is missing is one-click 'file this email, its attachments and time' from inside the mail client.",
+   "source_urls": [
+    "https://help.clio.com/hc/en-us/articles/9125228224539-Clio-s-Outlook-Add-in",
+    "https://help.clio.com/hc/en-us/articles/9125226343579-Clio-for-Gmail",
+    "https://marketplace.microsoft.com/en-us/product/office/wa200003566?tab=overview",
+    "https://www.clio.com/app-directory/outlook-365-add-in/",
+    "https://support.clio.com/hc/en-us/articles/4413070776859-Get-Started-With-Clio-s-Outlook-Add-In"
+   ]
+  },
+  {
+   "claim": "Clio 'Automated Email Filing' connects Gmail, Outlook or Exchange mailboxes to Clio Manage and Clio Grow. By default it files mail to or from contact addresses already in Clio. If the contact is linked to exactly one matter, the email files automatically. Otherwise the user picks from 'suggested matters' or uses 'Find a matter' (for example, a contact with several matters and no matter name in the subject or body).",
+   "status": "GA",
+   "as_of": "2026-09 (help-center article 53167049724315); plan tier not confirmed",
+   "licensing_or_cost": "Plan tier not confirmed.",
+   "relevance_to_lawhand": "This is close to LawHand's correspondence_capture matching rules, but Clio pairs it with a clear rule set (auto-file when there is exactly one match, otherwise show suggestions) and a lightweight place to resolve ambiguous matches. LawHand's review-first model fits well: auto-file on an exact single match, and send everything else to a suggested-matter review queue.",
+   "source_urls": [
+    "https://help.clio.com/hc/en-us/articles/53167049724315-Automated-Email-Filing"
+   ]
+  },
+  {
+   "claim": "I found no primary evidence of a first-party Clio Manage agent in Microsoft 365 Copilot or Gemini Enterprise. A third-party source says that as of May 2026 there were four open-source Clio MCP connectors (LegalContext, lawquarter, LegalMCP, Oktopeak) plus no-code bridges (Zapier, viaSocket, Pipedream). A search-engine summary (not a primary Clio page) also said Clio announced a Vincent plugin for OpenAI Codex over MCP with an 'Astra for Law' launch on 2026-09-17.",
+   "status": "unknown",
+   "as_of": "2026-05 (third-party MCP survey); 2026-09-17 (unverified Codex claim)",
+   "licensing_or_cost": "Unknown",
+   "relevance_to_lawhand": "If this holds, LawHand's first-party, OAuth 2.1, review-first Workspace MCP is a real differentiator in SMB practice management. Recheck Clio's newsroom before claiming it in sales material.",
+   "source_urls": [
+    "https://github.com/oktopeak/clio-mcp",
+    "https://oktopeak.com/blog/clio-work-vs-claude-law-firms/",
+    "https://glama.ai/mcp/servers/oktopeak/clio-mcp"
+   ]
+  }
+ ],
+ "recommended_plays": [
+  {
+   "title": "Add one-click 'File to matter' in the Outlook add-in and a new Gmail add-on",
+   "detail": "Extend office-addin (Outlook host) and build a Google Workspace add-on (Gmail first, then Drive, Docs and Calendar) so a user can file the current email, its thread and selected attachments to a LawHand matter, and optionally log a time entry, without leaving the mail client. Borrow Clio's patterns: suggested-matter chips from sender/recipient-to-contact matching, a 'Find a matter' search, a visible 'Filed to LawHand' Outlook category or Gmail label, and deep links back to the matter. Reuse the existing capture pipeline (firm_email_intake / correspondence_capture) so a filed email lands as a CommunicationLog entry plus documents, exactly like forwarded mail. This needs new contract action types beyond set_subject.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "Office.js item access (the current item's REST/Graph token or getAsFileAsync) and a server endpoint that accepts a message ID and resolves the matter. For Gmail, a Workspace add-on project on the current-message-only add-on scopes rather than broad gmail.readonly, plus a Marketplace listing.",
+   "risks": "Gmail restricted-scope classification may trigger OAuth verification or a security assessment; check whether current-message add-on scopes avoid it. Filing the wrong matter is a malpractice-grade error, so ambiguous matches must require explicit confirmation. XML manifest limits on some Outlook clients.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Auto-file on exact contact match, with a suggested-matter review queue",
+   "detail": "Turn the per-matter correspondence_capture rules into a per-user, opt-in mailbox filing policy. Auto-file only when the sender or recipient maps to exactly one matter. Otherwise add the email to a 'Needs a matter' queue showing ranked suggestions and the evidence for each. Show the queue in the SPA, in the Outlook and Gmail sidebars, and as a Teams notification. Store only filed items and the metadata needed for matching, which keeps to the plan doc's rule of never bulk-copying a mailbox.",
+   "effort": "L",
+   "value": "high",
+   "prerequisites": "Delegated Graph Mail.Read and Gmail scopes with admin consent. Webhook or delta subscriptions. The deterministic matter matcher that already exists in email_agent._match_email_to_matters.",
+   "risks": "Restricted-scope verification on Gmail. Mailbox volume and cost. Privilege and ethical-wall leakage if matching crosses walled matters. Must never silently file on a fuzzy match.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Publish the LawHand Matter Agent in Microsoft 365 Copilot and as a Copilot Cowork plugin",
+   "detail": "Follow the Harvey, Prot\u00e9g\u00e9 and NetDocuments pattern: '@LawHand' in Copilot chat or a sidebar agent in Word, Outlook and Teams, backed by the existing Workspace MCP (read and propose tools only). Also ship a Cowork plugin so multi-step jobs ('prepare the client update for matter X from this thread') end as a Word draft or Outlook draft plus a pending LawHand review item. Position it as the practice-management and workflow agent that works alongside research agents (Prot\u00e9g\u00e9, CoCounsel, Harvey) the firm may already license, rather than as another research bot. Sell it through Marketplace on the NetDocuments model: the customer's Copilot seat covers Copilot-side reasoning, and LawHand covers its own tool calls.",
+   "effort": "M",
+   "prerequisites": "Copilot Studio or declarative-agent packaging with an MCP or OpenAPI action. Partner Center publisher account. The Cowork plugin developer requirements, which I did not verify. A pilot tenant with Microsoft 365 Copilot. The 50-prompt evaluation set from the plan doc.",
+   "risks": "Licensing and billing vary by host and extensibility path (Copilot Studio messages, pay-as-you-go). Agent store review lead time. The customer's AI may produce a wrong-matter proposal, so matter confirmation is mandatory. Harvey is ahead in mindshare with Microsoft's own legal department.",
+   "value": "high",
+   "who_pays_compute": "client Copilot license (Copilot reasoning) + LawHand platform (MCP tool execution)"
+  },
+  {
+   "title": "Complement Microsoft's Word Legal Agent instead of competing: tracked-change output plus matter and playbook context",
+   "detail": "Change LawHand's Word add-in so AI and template edits are written as native tracked changes, the pattern Clio for Word, Microsoft's Legal Agent and CoCounsel now train users to expect, rather than straight selection replacement. Expose firm clause libraries, playbooks and matter facts through the Workspace MCP and agent, so a firm with Copilot can pair Microsoft's Legal Agent for generic review with LawHand for firm-specific positions, defined terms, parties and dates, then save the result back to the matter as a reviewed document version.",
+   "effort": "M",
+   "value": "medium",
+   "prerequisites": "The WordApi change-tracking requirement set on the target clients. A new office contract action type such as insert_with_tracking. Clause and playbook content modeled in LawHand.",
+   "risks": "Legal Agent GA has slipped twice (now early October 2026) and started US/Frontier-only. I found no evidence that it can consume third-party playbooks, so the complement may only work through Copilot chat, not the Legal Agent pane.",
+   "who_pays_compute": "client Copilot license (Legal Agent) / LawHand platform (tracked-change drafting in LawHand add-in)"
+  },
+  {
+   "title": "Bring Template Studio authoring and 'generate from template' into the Word task pane",
+   "detail": "Reach parity with Clio for Word's Template Builder: convert the open Word document into a LawHand template, insert merge fields from a matter-field picker, add conditional sections, and generate a filled document for a chosen matter. Surface the same flow through the propose_document_from_template MCP tool, so Copilot and Gemini agents can start template-based document preparation that lands in LawHand review, similar to NetDocuments starting PatternBuilder MAX from its agent.",
+   "effort": "L",
+   "value": "high",
+   "prerequisites": "Template Studio placeholder authoring (docs/template-studio-word-placeholder-authoring.md). Office.js content controls. The Word add-in authenticated through the existing NAA exchange.",
+   "risks": "Word content-control fidelity across desktop, web and Mac. Scope creep into a full document-assembly IDE. Clio for Word goes GA later in 2026, so the gap widens if this slips.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Metadata-only Microsoft 365 Copilot connector for matter resolution (optional, enterprise tier)",
+   "detail": "On the iManage Cloud connector pattern, index a minimal, non-privileged projection into the customer's tenant: matter name and number, client, responsible attorney, open or closed state, and a deep link. Copilot and Work IQ could then resolve 'which matter is this about' natively, while privileged content stays behind live MCP tool calls. Each item's access list maps to the Entra users who can see that matter.",
+   "effort": "L",
+   "value": "medium",
+   "prerequisites": "Connector API access through Copilot connectors, Entra user mapping from LawHand users, per-item access lists that respect ethical walls, and an incremental crawl feed.",
+   "risks": "Pushes LawHand data into the customer's Microsoft semantic index, which is a data-residency and privilege-disclosure question. Access-list drift. Connector quotas and costs unverified. iManage's own connector is still in preview.",
+   "who_pays_compute": "client Copilot license / LawHand platform (feed)"
+  },
+  {
+   "title": "Register the same Workspace MCP in Gemini Enterprise after the Google add-on ships",
+   "detail": "Once the Gmail add-on has proven the matter-matching experience, register LawHand's Workspace MCP as a custom MCP connector or agent in the customer's Gemini Enterprise, so Google-based firms get the same brief, analyze and prepare jobs. Keep the plan doc's rule that personal Google One or Gemini subscriptions are never treated as LawHand inference capacity.",
+   "effort": "M",
+   "value": "medium",
+   "prerequisites": "A customer with Gemini Enterprise. Google Cloud project and OAuth verification. The existing OAuth 2.1 and DCR Workspace MCP.",
+   "risks": "I could not verify Gemini Enterprise agent-gallery legal partners or current listing requirements (no search budget left). Gemini Enterprise seat and GCP billing sit with the client, so adoption depends on their licensing.",
+   "who_pays_compute": "client GCP billing / Gemini Enterprise license (reasoning) + LawHand platform (MCP tools)"
+  },
+  {
+   "title": "Earn trust credentials: Marketplace listing plus Microsoft 365 App Certification, with an admin-first consent experience",
+   "detail": "List the Outlook and Word add-ins, and later the agent, in Microsoft Marketplace, and complete Microsoft 365 App Certification, as CoCounsel did for its Outlook add-in and Clio did for its Outlook add-in listing. Pair this with an admin setup page in LawHand that shows each requested scope, why it is needed, the data retained, tenant and user kill switches, and the matching Microsoft 365 admin center or Agent 365 deployment step.",
+   "effort": "M",
+   "value": "medium",
+   "prerequisites": "Partner Center account, security and compliance evidence, and a published privacy and data-handling statement per scope.",
+   "risks": "Certification timelines. Evidence upkeep on every scope change.",
+   "who_pays_compute": "n/a"
+  }
+ ],
+ "caveats": [
+  "Tooling limit 1: WebFetch was blocked by the network egress proxy for every primary domain I tried (marketplace.microsoft.com, learn.microsoft.com, netdocuments.com, clio.com, help.clio.com, harvey.ai, help.harvey.ai, lawnext.com, legaltechnology.com, mc.merill.net, developers.google.com). So I could not open any page in full. Every finding rests on search-result titles, URLs and the search tool's snippets and summaries. Confirm dates and licensing terms from the primary pages before quoting them externally.",
+  "Tooling limit 2: the session-wide WebSearch budget (200 calls, shared with the parallel investigators) ran out after about 11 of my searches. I therefore could NOT research MyCase, Smokeball, PracticePanther, Filevine, Spellbook, Litera, Gemini Enterprise agent-gallery legal partners, Copilot Cowork plugin developer requirements, or Microsoft's other legal agents beyond the Word Legal Agent, and there are no findings on them.",
+  "Unverified prior knowledge, not confirmed for 2026: Smokeball has deep Word and Outlook integration with automatic time capture; MyCase and PracticePanther have Outlook/Gmail sync or add-ins; Filevine has an Outlook add-in; Spellbook is a Word add-in for contract drafting; Litera sells Word-centric drafting tools (Litera One, Kira, Foundation). Treat these as leads, not facts.",
+  "The Clio items (a Vincent plugin for OpenAI Codex, an 'Astra for Law' launch on 2026-09-17, and no first-party Clio MCP) come from a search-engine summary of third-party pages, not from Clio. The status is 'unknown' on purpose.",
+  "Licences for Harvey and Prot\u00e9g\u00e9 inside Copilot (whether both a vendor seat and Microsoft 365 Copilot are needed) are inferred. Only the NetDocuments Copilot listing explicitly says both subscriptions are required.",
+  "The Microsoft Legal Agent GA date has moved from early July to early September to early October 2026. Recheck MC1388706 before telling customers about it.",
+  "The repo facts behind the relevance notes come from a read-only look at the code. The Office add-in supports only the action types replace_selection, set_selected_values, set_selected_formulas and set_subject (office-addin/src/contracts/office.ts). The Teams app (teams-app/manifest.json v1.17) has static and configurable tabs only. There is no Google Workspace add-on. Server-side email capture exists in backend/app/services/correspondence_capture.py and firm_email_intake.py."
+ ]
+}

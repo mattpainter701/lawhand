@@ -1,0 +1,731 @@
+{
+ "area": "Google Workspace: inventory, auth, consent, tokens",
+ "summary": "Google is connected through hand-built httpx calls, with no Google SDK. There are three OAuth grant shapes. An admin \"workspace\" grant verifies the id_token hd claim and adds Admin SDK directory read. A \"personal\" solo grant has the same Gmail/Drive/Calendar scopes minus directory. A per-user grant is started from the Calendar page's \"Connect Calendar\" button. All three request restricted scopes: gmail.readonly and full drive, plus full calendar and gmail.send. That happens up front with access_type=offline&prompt=consent, with no include_granted_scopes (incremental authorization) and no login_hint or hd hint (integrations.py:245-272, 710-721). The callback records whatever scope set the user granted and flags missing scopes. So granular consent is detected, but only as a health badge. The per-feature capability matrix still says email, calendar and storage are fine, and features fail silently with 403s. Tokens are Fernet-encrypted, refreshed under a row lock with retry, and revoked at Google on admin disconnect. An invalid_grant (including the 7-day refresh expiry for apps in Testing mode) is shown only as \"provider has revoked this grant\". A single, platform-wide LawHand service account is added as fileOrganizer to an auto-created Shared Drive for every Workspace tenant. `prefer_service_account` then swaps that account's token in for any Google call, including tenant-wide Drive search (corpora=allDrives) and Gmail. That swap creates a cross-tenant exposure path and breaks Gmail sync for those tenants. When a user has no own grant, their requests fall back to the tenant credential: Gmail/Drive search, AI context, calendar pushes and client-email sending. That credential is the connecting admin's personal account, which exposes the admin's mailbox and Drive to every staff member. Google APIs in use: OAuth/OIDC, Admin SDK users.list, Gmail list/get/raw/full/send, Drive v3 files/drives/permissions/export/upload, and Calendar primary events. The Docs, Sheets, Picker, Meet, Chat, People, Pub/Sub or watch, Labels and Vault APIs are not used. Domain-wide delegation is configuration only and never used. The Workspace add-on (ECO-19), scope minimization and CASA (ECO-18), and Gemini Enterprise (ECO-21) are planned but not built. Compared with Microsoft, Google lacks an add-in (Outlook/Word/Excel exist for Microsoft), Meet links, calendar invites, a Chat app and an admin-consent equivalent. Only Gemini API-key BYOK is shipped.",
+ "capabilities": [
+  {
+   "name": "Google sign-in (OIDC + PKCE + nonce, id_token verified with at_hash)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/auth.py:1530-1700",
+   "notes": "Always sends prompt=consent&access_type=offline for openid/email/profile; the refresh token is thrown away."
+  },
+  {
+   "name": "Admin tenant connect - Google Workspace mode (hd-verified account tier)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/integrations.py:656-875",
+   "notes": "The 'tenant credential' is the connecting admin's own delegated grant. Google has no tenant-wide admin consent through this flow."
+  },
+  {
+   "name": "Personal Google / Google One mode (no directory scope)",
+   "provider": "google",
+   "status": "partial",
+   "file_ref": "backend/app/routers/integrations.py:266-286",
+   "notes": "Connect works from onboarding (OnboardingWizard.jsx:129-131). Re-authorize from Admin > Integrations omits account_mode and fails. The scopes are no narrower than Workspace mode apart from directory."
+  },
+  {
+   "name": "Per-user Google grant (via Calendar 'Connect Calendar')",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/integrations.py:839-865",
+   "notes": "Asks for gmail.readonly, gmail.send, calendar and full drive. Has no openid scope, so the identity of the connected account is never recorded."
+  },
+  {
+   "name": "Granted-scope audit and health (missing_scopes)",
+   "provider": "google",
+   "status": "partial",
+   "file_ref": "backend/app/services/integration_observability.py:42-56",
+   "notes": "Records the scope gap. The capability matrix ignores it (capabilities.py:169-171)."
+  },
+  {
+   "name": "Token vault: Fernet at rest, locked refresh with retry, Google revoke on disconnect",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/token_vault.py:230-392",
+   "notes": "invalid_grant sets health to revoked and deactivates the credential. There is no special handling for Testing-mode expiry."
+  },
+  {
+   "name": "Workspace directory sync (Admin SDK users.list, projection=basic)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/user_sync.py:226-360",
+   "notes": "Creates licensed users for every non-suspended account. Never deactivates suspended or removed accounts."
+  },
+  {
+   "name": "Drive matter storage: root, matter folders and subfolders, upload (multipart/resumable), download, rename, delete, share",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_init.py:938-1260",
+   "notes": "Uses the tenant token (admin My Drive) or the service account when an org Shared Drive is bound."
+  },
+  {
+   "name": "Org Shared Drive auto-provision with the LawHand service account as fileOrganizer",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_init.py:236-273",
+   "notes": "On by default (GOOGLE_AUTO_SHARED_DRIVE=True) for Workspace tenants. One platform-wide service account is used across all tenants (google_service_account.py:108-160)."
+  },
+  {
+   "name": "Domain-wide delegation impersonation",
+   "provider": "google",
+   "status": "stub",
+   "file_ref": "backend/app/config.py:175-178",
+   "notes": "GOOGLE_IMPERSONATE_SUBJECT is defined but never read. get_access_token(subject=) has no callers that pass a subject."
+  },
+  {
+   "name": "Client email sent from the user's or firm's Gmail (gmail.send)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/connected_mail.py:303-419",
+   "notes": "Checks for the send scope. Falls back to the tenant credential, i.e. the connecting admin's mailbox. No reply threading."
+  },
+  {
+   "name": "Admin notifications via Gmail",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/email_admin.py:57-128",
+   "notes": "Sent from the connecting admin's Gmail. Does not check for the send scope first."
+  },
+  {
+   "name": "Gmail read for the email agent and correspondence capture (.eml into matter)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/google_mail.py:22-122",
+   "notes": "q=after:, format=metadata and format=raw, all of which need gmail.readonly."
+  },
+  {
+   "name": "Gmail metadata sync into cloud_metadata_index (7 days, 200 cap, polling)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_sync.py:455-568",
+   "notes": "Tenant-wide, using the tenant token (admin mailbox) or the service-account token (fails)."
+  },
+  {
+   "name": "Drive metadata sync into the index (500 cap, polling)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_sync.py:315-420",
+   "notes": "corpora=user with includeItemsFromAllDrives."
+  },
+  {
+   "name": "Cloud search: live Drive fullText, Gmail search, content fetch (native Docs exported to text)",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_search.py:628-890",
+   "notes": "Feeds RAG/chat (rag.py:1886-1905), plugins (plugins.py:539) and the admin test search."
+  },
+  {
+   "name": "Drive document import (document_sync)",
+   "provider": "google",
+   "status": "partial",
+   "file_ref": "backend/app/services/document_sync.py:268-321",
+   "notes": "Query ANDs the MIME and extension clauses, omits Shared Drives, and does not paginate."
+  },
+  {
+   "name": "Google Calendar: task push (extended property), deadline sync, event read, scheduled events",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/calendar_sync.py:322-517",
+   "notes": "Primary calendar only. No Meet link and no sendUpdates."
+  },
+  {
+   "name": "Per-user calendar status with scope check",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/auth.py:2753-2781",
+   "notes": "Hard-codes the full calendar scope as required."
+  },
+  {
+   "name": "Admin permission audit (tier-aware required scopes)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/admin.py:1614-1760",
+   "notes": "Drops the directory scope for personal tiers. This is the endpoint behind the ProviderCard UI."
+  },
+  {
+   "name": "Google disconnect (revokes all tenant and user tokens)",
+   "provider": "google",
+   "status": "partial",
+   "file_ref": "backend/app/routers/integrations.py:2137-2166",
+   "notes": "Backend endpoint only; no UI button. No per-user disconnect. Indexed Gmail/Drive metadata is not purged."
+  },
+  {
+   "name": "BYOK Gemini API key (AI Studio endpoint) for tenant LLM routing",
+   "provider": "google",
+   "status": "shipped",
+   "file_ref": "backend/app/services/llm_routing.py:529-570",
+   "notes": "Fixed generativelanguage endpoint (byok_security.py:10-32). Default model gemini-2.0-flash. No Vertex AI and no Workspace Gemini."
+  },
+  {
+   "name": "Workspace MCP server with generic dynamic client registration (usable by Gemini CLI/Enterprise as an MCP client)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/workspace_mcp_oauth.py:239-262",
+   "notes": "Provider-neutral. No Gemini Enterprise registration or tested recipe."
+  },
+  {
+   "name": "Google Workspace add-on for Gmail/Calendar/Drive/Docs (ECO-19)",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:476-478",
+   "notes": "No add-on manifest or code in the repo. The Office add-in exists for Microsoft (office-addin/manifests/outlook.xml:18)."
+  },
+  {
+   "name": "Scope minimization, verification and CASA (ECO-18)",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:473-475",
+   "notes": "docs/onboarding-hotfix-review-2026-09-16.md:23 lists the unverified-app interstitial as a launch blocker."
+  },
+  {
+   "name": "Gemini Enterprise Workspace MCP/A2A pilot (ECO-21)",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:482-484",
+   "notes": "Gated behind the Microsoft agent's quality bars."
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "google",
+   "endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+   "method": "GET (redirect)",
+   "purpose": "Authorize for integration (admin/solo/user) and for sign-in",
+   "scope_needed": "see the scope rows; sign-in needs only openid email profile",
+   "file_ref": "backend/app/routers/integrations.py:710-721"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://oauth2.googleapis.com/token (authorization_code + PKCE)",
+   "method": "POST",
+   "purpose": "Code exchange for integration and sign-in",
+   "scope_needed": "n/a",
+   "file_ref": "backend/app/routers/integrations.py:750-770"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://oauth2.googleapis.com/token (refresh_token)",
+   "method": "POST",
+   "purpose": "Access-token refresh for tenant and user rows",
+   "scope_needed": "n/a",
+   "file_ref": "backend/app/services/token_vault.py:248-258"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://oauth2.googleapis.com/token (jwt-bearer)",
+   "method": "POST",
+   "purpose": "Mint a service-account token (Drive scope, no subject)",
+   "scope_needed": "drive (drive.file would cover only files the service account itself created)",
+   "file_ref": "backend/app/services/google_service_account.py:108-160"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://oauth2.googleapis.com/revoke",
+   "method": "POST",
+   "purpose": "Revoke the grant on disconnect",
+   "scope_needed": "n/a",
+   "file_ref": "backend/app/services/token_vault.py:360-378"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/oauth2/v3/certs",
+   "method": "GET",
+   "purpose": "JWKS for id_token verification",
+   "scope_needed": "openid",
+   "file_ref": "backend/app/utils/oauth_security.py:17"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
+   "method": "GET",
+   "purpose": "Backfill account tier (hd) for legacy credentials",
+   "scope_needed": "openid email",
+   "file_ref": "backend/app/services/account_detect.py:82-85"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://admin.googleapis.com/admin/directory/v1/users?customer=my_customer&projection=basic",
+   "method": "GET",
+   "purpose": "Directory user sync",
+   "scope_needed": "admin.directory.user.readonly (already least privilege)",
+   "file_ref": "backend/app/services/user_sync.py:226-300"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=...",
+   "method": "GET",
+   "purpose": "List recent or search messages (email agent, capture, index sync, cloud search)",
+   "scope_needed": "gmail.readonly (RESTRICTED). gmail.metadata cannot use q and is also restricted.",
+   "file_ref": "backend/app/services/google_mail.py:22-45"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}?format=metadata",
+   "method": "GET",
+   "purpose": "Headers and snippet",
+   "scope_needed": "gmail.readonly as requested; gmail.metadata would cover this one call but is also restricted",
+   "file_ref": "backend/app/services/cloud_search.py:853-886"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}?format=raw",
+   "method": "GET",
+   "purpose": "Fetch full .eml to file as matter correspondence",
+   "scope_needed": "gmail.readonly (RESTRICTED). The non-restricted alternative is gmail.addons.current.message.readonly in a Gmail add-on.",
+   "file_ref": "backend/app/services/google_mail.py:97-122"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}?format=full",
+   "method": "GET",
+   "purpose": "Body text for AI context",
+   "scope_needed": "gmail.readonly (RESTRICTED)",
+   "file_ref": "backend/app/services/cloud_search.py:1140-1167"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+   "method": "POST",
+   "purpose": "Send approved client email and admin notifications",
+   "scope_needed": "gmail.send (sensitive, correct least privilege)",
+   "file_ref": "backend/app/services/connected_mail.py:166-199"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files (list, q, corpora=user|allDrives|drive)",
+   "method": "GET",
+   "purpose": "Index sync, fullText search, import, folder listing, migration discovery",
+   "scope_needed": "Whole-Drive search/sync needs drive or drive.readonly (both RESTRICTED). Matter-folder scope works with drive.file.",
+   "file_ref": "backend/app/services/cloud_search.py:628-690"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files/{id}?fields=description",
+   "method": "GET",
+   "purpose": "Snippet for each search hit",
+   "scope_needed": "drive.file for app files; drive.readonly otherwise",
+   "file_ref": "backend/app/services/cloud_search.py:731-748"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files/{id}/export and ?alt=media",
+   "method": "GET",
+   "purpose": "Download or convert content (Docs to text, Sheets to CSV)",
+   "scope_needed": "drive.file for app-created or Picker-selected files",
+   "file_ref": "backend/app/services/cloud_search.py:1098-1138"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files (create folder)",
+   "method": "POST",
+   "purpose": "Root, matter and subfolder creation",
+   "scope_needed": "drive.file",
+   "file_ref": "backend/app/services/cloud_init.py:938-972"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart|resumable",
+   "method": "POST",
+   "purpose": "Upload matter documents and the matter marker",
+   "scope_needed": "drive.file",
+   "file_ref": "backend/app/services/matter_file_store.py:1122-1240"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files/{id}",
+   "method": "PATCH",
+   "purpose": "Rename folders",
+   "scope_needed": "drive.file",
+   "file_ref": "backend/app/services/cloud_init.py:1247-1262"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files/{id}",
+   "method": "DELETE",
+   "purpose": "Delete a matter document (permanent, skips trash) and clean up staged uploads",
+   "scope_needed": "drive.file",
+   "file_ref": "backend/app/routers/matter_documents.py:261-289"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/files/{id}/permissions",
+   "method": "POST",
+   "purpose": "Share matter folders with the team; add the service account to the Shared Drive",
+   "scope_needed": "drive.file on app-created folders. Shared Drive membership needs drive.",
+   "file_ref": "backend/app/services/cloud_init.py:698-715"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/drive/v3/drives (create/get/delete)",
+   "method": "POST/GET/DELETE",
+   "purpose": "Auto-provision the per-tenant Shared Drive, service-account probe, rollback",
+   "scope_needed": "drive (RESTRICTED). This is the only storage path that truly needs full Drive.",
+   "file_ref": "backend/app/services/cloud_init.py:1162-1244"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://www.googleapis.com/calendar/v3/calendars/primary/events[/{id}]",
+   "method": "GET/POST/PATCH/DELETE",
+   "purpose": "Task and deadline push, event read, scheduled events",
+   "scope_needed": "calendar.events (sensitive). The full calendar scope that is requested also grants calendar/ACL management.",
+   "file_ref": "backend/app/services/google_calendar.py:99-210"
+  },
+  {
+   "provider": "google",
+   "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/",
+   "method": "POST",
+   "purpose": "Tenant BYOK Gemini inference",
+   "scope_needed": "API key (not OAuth)",
+   "file_ref": "backend/app/services/byok_security.py:10-32"
+  }
+ ],
+ "defects": [
+  {
+   "title": "Shared platform service account can expose other tenants' Shared Drive files in tenant-wide search and sync",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_search.py:1516-1527",
+   "detail": "The same service account (GOOGLE_SERVICE_ACCOUNT_KEY) is added as fileOrganizer to every Workspace tenant's auto-created Shared Drive (cloud_init.py:1214-1244). When a user has no own Google grant, or no user_id is passed (admin test search cloud_admin.py:465, tenant sync_all), _get_google_token and cloud_sync._get_token (cloud_sync.py:833-864) return that service-account token. _search_google_drive then queries with corpora=allDrives and no driveId when there is no matter folder (cloud_search.py:666-676). That covers every Shared Drive the service account belongs to, across all tenants. Content is then downloaded by fetch_contents (1098-1138), and there is no post-filter on drive_id (cloud_search.py:333-347). The prefer_service_account probe (google_service_account.py:213-258) only confirms access to this tenant's drive; it does not scope queries to it.",
+   "user_impact": "A general chat or plugin question at firm A can bring firm B's privileged document titles and text into firm A's AI answer and cloud index. This is a confidentiality breach across tenants."
+  },
+  {
+   "title": "Connecting admin's personal Gmail and Drive are searchable by every firm user through tenant-credential fallback",
+   "severity": "high",
+   "file_ref": "backend/app/services/rag.py:344-376",
+   "detail": "_connected_providers treats the tenant credential as 'connected' for every user. cloud_search._get_google_token falls back to get_fresh_token (the admin's delegated grant) when the user has no own token (cloud_search.py:1516-1527). Gmail search (751-850) and full-body fetch (1140-1167) are not matter-scoped. sync_all also indexes the admin's last 7 days of mail tenant-wide (cloud_sync.py:128-134, 455-568). The Hub copy asks admins to 'Confirm the ... mailbox boundary' (IntegrationsHub.jsx:100), but no such control exists.",
+   "user_impact": "Any associate or staff chat can surface the managing partner's private or other-client email bodies and Drive files. This breaks ethical walls, and it conflicts with the Limited Use statement that data is used only for the requesting user's features."
+  },
+  {
+   "title": "All firm tasks are pushed into the connecting admin's Google Calendar",
+   "severity": "high",
+   "file_ref": "backend/app/services/google_calendar.py:18-38",
+   "detail": "_get_token returns the tenant (admin) token whenever the assignee has no per-user Google token (exact_user is False). push_task_to_calendars fires upsert_task_event for every task with a due date (task_notifications.py:270-316). Event titles include the matter name. The Microsoft path has the same pattern (microsoft_calendar.py:23-43).",
+   "user_impact": "The admin's personal calendar fills with every staff member's deadlines and matter names, which may also be visible to anyone the calendar is shared with. Assignees don't get the events at all."
+  },
+  {
+   "title": "Gmail sync and search silently return nothing for tenants using the org Shared Drive",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:833-864",
+   "detail": "_get_token applies prefer_service_account for every Google call, not just Drive. For org_shared_drive tenants, the Gmail list call runs with a Drive-only service-account token and no domain-wide delegation subject, which Gmail rejects. sync_gmail_metadata then returns 0 without raising an error (cloud_sync.py:494-501). The sync run therefore looks successful with 0 items. The same token swap affects Gmail search through _get_google_token.",
+   "user_impact": "Workspace firms on the default Shared Drive path never get Gmail indexed or searched, and the UI shows no error."
+  },
+  {
+   "title": "Re-authorize for Personal Google tenants always fails",
+   "severity": "medium",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:174-181",
+   "detail": "handleReauthorize calls /integrations/google/connect?intent=admin without account_mode, so the backend defaults to 'workspace' (integrations.py:659-661). The callback detects a personal account and returns account_mode_mismatch (integrations.py:798-800). _error_redirect always sends admin errors to /onboarding (integrations.py:1790-1807).",
+   "user_impact": "A solo or personal-Gmail firm whose token was revoked or expired cannot repair it from Admin > Integrations, and gets bounced into the onboarding wizard with a confusing error."
+  },
+  {
+   "title": "Requested scopes exceed what the code uses; 'Connect Calendar' asks for Gmail read/send and full Drive",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/integrations.py:245-272",
+   "detail": "All modes request gmail.readonly and full drive (both restricted, requiring annual CASA) plus full calendar. The code only touches calendars/primary/events, so calendar.events is enough. Drive work is almost entirely on app-created folders and files, so drive.file is enough; full drive is needed only for drives.create and for whole-Drive search/sync. drive.readonly does not help because it is also restricted and writes are required. gmail.metadata does not help because it is restricted and cannot run the q search, the raw/full reads or capture. The per-user grant (integrations.py:260-265) is launched from a button labelled 'Connect Calendar' (api.js:2305-2307). The hotfix review says Personal mode uses 'least-privilege' scopes (docs/onboarding-hotfix-review-2026-09-16.md:17), but GOOGLE_SOLO_SCOPES only drops directory.",
+   "user_impact": "Users abandon consent at the unverified-app screen with restricted scopes. Verification and CASA are blocked or costly. Every attorney hands over their full Drive and mailbox just to get calendar sync."
+  },
+  {
+   "title": "Granular consent is detected but features don't degrade per capability",
+   "severity": "medium",
+   "file_ref": "backend/app/services/capabilities.py:158-175",
+   "detail": "If a user unticks Gmail or Drive on Google's granular consent screen, the scope gap is stored (integration_observability.py:42-56). resolve() still marks email, calendar and cloud_storage 'ok' regardless of scopes (169-171). Per-user rows with health missing_scopes are counted as needs_reauth indefinitely (integration_observability.py:81). Feature calls fail with 403 and only log a warning, returning [] (e.g. cloud_search.py:678-687). No include_granted_scopes and no per-feature scope request exist to recover incrementally.",
+   "user_impact": "The admin UI says email and storage are 'Available' while they silently fail. Users who deliberately declined Gmail are told forever that they must reconnect."
+  },
+  {
+   "title": "Deleting a matter document stored in a Shared Drive can orphan the file; deletes skip the Drive trash",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/matter_documents.py:261-289",
+   "detail": "_delete_cloud_provider_object issues DELETE files/{id} without supportsAllDrives=true, unlike the staged-cleanup path (matter_file_store.py:431-435). For a Shared Drive item, Drive answers 404. ProviderNotFound is treated as success and the database record is removed (matter_documents.py:347-348). For My Drive items, files.delete is permanent and bypasses trash, whereas the Graph DELETE moves items to the recycle bin. Plausible; confirm the 404 behavior against a live Shared Drive.",
+   "user_impact": "The firm thinks a document was deleted while it stays in the Shared Drive (a retention and privilege issue). Separately, an accidental delete on My Drive cannot be recovered."
+  },
+  {
+   "title": "No Google disconnect in the UI, no per-user disconnect, and synced data is not purged",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/integrations.py:2137-2166",
+   "detail": "The legal notice promises an administrator can disconnect Google from integration settings (LegalNoticePage.jsx:58). ProviderCard shows only Connect/Re-authorize (IntegrationsPanel.jsx:760-768), and api.js has no Google or Microsoft disconnect helper. Users cannot remove their own Google grant; Zoom has a per-user disconnect (integrations.py:2370-2391). Disconnect leaves Gmail subjects, snippets and participants in cloud_metadata_index.",
+   "user_impact": "This conflicts with the Google Limited Use and deletion commitments needed for verification. Staff who connected their mailbox have no in-app way to revoke it."
+  },
+  {
+   "title": "Per-user Google grant has no identity check",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/integrations.py:779-783",
+   "detail": "The user flow requests no openid or email scope, so no id_token or hd is available (the comment at 779-783 says this is deliberate). There is no check that the connected Gmail matches the LawHand user or the firm domain. connected_mail then sends approved client correspondence from whichever account was connected (connected_mail.py:350-379).",
+   "user_impact": "An attorney can connect a personal @gmail.com, and privileged client email goes out from, and is stored in, a non-firm account."
+  },
+  {
+   "title": "Google scheduled events send no invitations and cannot include a Meet link",
+   "severity": "medium",
+   "file_ref": "backend/app/services/calendar_sync.py:446-498",
+   "detail": "events.insert with attendees but no sendUpdates parameter defaults to 'none', so no invites are sent. There is no conferenceData or hangoutsMeet option; meeting_provider allows only none, teams or zoom (schemas/calendar.py:101-106). The Microsoft branch creates Teams meetings and Graph sends invites (scheduled_events.py:66-92).",
+   "user_impact": "Clients and opposing counsel added as attendees on a Google-calendar firm never receive the meeting, and Google firms must pay for Zoom to get video links."
+  },
+  {
+   "title": "Directory sync never deactivates suspended or removed Google users",
+   "severity": "low",
+   "file_ref": "backend/app/services/user_sync.py:306-340",
+   "detail": "Suspended accounts are skipped rather than setting is_active=False on an existing LawHand user. Users deleted from Workspace are never reconciled. Every other account is created as license_active=True (346). The Microsoft sync has the same pattern (user_sync.py:154-156).",
+   "user_impact": "Departed staff keep LawHand access and consume paid seats until someone deactivates them manually."
+  },
+  {
+   "title": "Google Drive import query is wrong: requires both MIME and extension, skips Shared Drives, no paging",
+   "severity": "low",
+   "file_ref": "backend/app/services/document_sync.py:281-305",
+   "detail": "It uses \" and \".join(mime, ext) where cloud_sync uses OR (cloud_sync.py:339). There is no supportsAllDrives or includeItemsFromAllDrives, and pageSize is min(max_files,100) with no nextPageToken.",
+   "user_impact": "The .odt/.wpd files it claims to support, files without an extension, and anything in a Shared Drive are never imported. The file-count stats top out at 100."
+  },
+  {
+   "title": "Plugin integration detection checks a Drive scope LawHand never requests",
+   "severity": "low",
+   "file_ref": "backend/app/routers/plugins.py:370-390",
+   "detail": "google_drive is detected only if drive.readonly is granted, but LawHand requests the full drive scope. OneDrive has the same problem (Files.Read.All versus the requested Files.ReadWrite.All).",
+   "user_impact": "The Plugins page never lists Google Drive (or OneDrive) as connected, even when it is working."
+  },
+  {
+   "title": "Domain-wide delegation is configuration only, and the comments are misleading",
+   "severity": "low",
+   "file_ref": "backend/app/services/google_service_account.py:1-41",
+   "detail": "The docstring says domain-wide delegation is used for directory and mail, but no caller passes subject and GOOGLE_IMPERSONATE_SUBJECT (config.py:175-178) is never read. DRIVE_SCOPES is described as 'least privilege' but is the full drive scope.",
+   "user_impact": "Operators may set up delegation expecting it to work. Reviewers may believe the scopes were already minimized."
+  },
+  {
+   "title": "/api/integrations/status reports Personal Google tenants as missing a scope",
+   "severity": "low",
+   "file_ref": "backend/app/routers/integrations.py:1856",
+   "detail": "google_required is always GOOGLE_ADMIN_SCOPES, with no effective_required_scopes for the personal tier, so missing_scopes includes admin.directory and reconnect_required is true (1904-1921). The /admin/permissions endpoint handles this correctly (admin.py:1702).",
+   "user_impact": "Consumers of this endpoint (Teams pages today, and any future agent or status UI) misreport healthy personal tenants."
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Calendar page 'Connect Calendar' button (per-user Google)",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:864-871",
+   "issue": "The button is labelled Calendar, but Google's consent screen asks for Gmail read and send plus full Drive (integrations.py:260-265). Users untick or abandon consent, and then get nagged as 'need reauth'.",
+   "severity": "high",
+   "suggestion": "In the short term, relabel it 'Connect Google (Calendar, Gmail, Drive)' and list each permission and why. Longer term, split it into per-feature incremental grants (include_granted_scopes=true) so Calendar asks only for calendar.events.",
+   "quick_win": true
+  },
+  {
+   "screen": "Admin > Integrations > Google card: Re-authorize",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:174-181",
+   "issue": "Re-authorize omits account_mode, so Personal Google tenants hit account_mode_mismatch and land on /onboarding.",
+   "severity": "high",
+   "suggestion": "Pass account_mode=info.account_type==='personal'?'personal':'workspace'. Also offer a mode toggle when the account type is unknown.",
+   "quick_win": true
+  },
+  {
+   "screen": "OAuth error return after onboarding",
+   "file_ref": "backend/app/routers/integrations.py:1790-1807",
+   "issue": "Admin-intent errors always redirect to /onboarding even when onboarding is finished, so the error isn't shown next to the card that was re-authorized.",
+   "severity": "medium",
+   "suggestion": "Mirror _post_connect_redirect: if onboarding is completed, redirect to /admin?tab=integrations&integration=cloud&error=... and render the mapped message on the ProviderCard.",
+   "quick_win": false
+  },
+  {
+   "screen": "Google ProviderCard header and remedy copy",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:720-725",
+   "issue": "'Firm-wide connection' and 'restore email, calendar and document access for the firm' (623-626) suggest org-wide mailbox access. For Google this grant is only the connecting admin's own mailbox, Drive and calendar. The onboarding copy says the same (OnboardingWizard.jsx:446-448).",
+   "severity": "medium",
+   "suggestion": "Say 'Connected as <email>: this account's Gmail, Drive and Calendar are used as the firm default'. State plainly that each attorney connects their own account.",
+   "quick_win": true
+  },
+  {
+   "screen": "Google ProviderCard 'Features on this account'",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:828-850",
+   "issue": "Email, Calendar and Storage always show Available (backend capabilities.py:169-171) even when missing_required contains gmail, calendar or drive scopes.",
+   "severity": "medium",
+   "suggestion": "Map missing_required scopes to capability badges in the frontend (gmail.* to Email, calendar to Calendar, drive to Storage) and show 'Declined at consent - re-grant' with a targeted re-consent link.",
+   "quick_win": true
+  },
+  {
+   "screen": "Google ProviderCard actions",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:760-768",
+   "issue": "There is no Disconnect action, although POST /integrations/google/disconnect exists and the legal notice promises one.",
+   "severity": "medium",
+   "suggestion": "Add Disconnect with a confirmation that lists what stops working, and add a per-user 'Disconnect my Google' on the Calendar/Profile page. Removing indexed data needs a backend purge.",
+   "quick_win": true
+  },
+  {
+   "screen": "Admin > Integrations > Cloud Search hub card",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:86-100",
+   "issue": "The setup step says 'Confirm the permitted site, drive, or mailbox boundary', but no control exists and search falls back to the admin's mailbox.",
+   "severity": "medium",
+   "suggestion": "Until a boundary control ships, show which account and mailbox each provider search runs as, and warn when tenant fallback is active for non-admin users.",
+   "quick_win": true
+  },
+  {
+   "screen": "ProviderCard unusable-health remedy",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:623-626",
+   "issue": "invalid_grant (token_vault.py:83-87) always reads 'The provider has revoked this grant'. There is no hint about the Google OAuth app being in Testing mode (7-day refresh expiry) or a password change or revocation.",
+   "severity": "low",
+   "suggestion": "When last_refresh_error contains invalid_grant and less than 8 days passed since the grant, show 'Google app may be in Testing mode (7-day tokens) - contact LawHand support'.",
+   "quick_win": true
+  },
+  {
+   "screen": "Google provider card title",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:274-279",
+   "issue": "The card is always titled 'Google Workspace', even for Personal Google tenants; only a small chip says 'Personal Google (Gmail)'.",
+   "severity": "low",
+   "suggestion": "Title it from account_label, and hide the directory-sync row entirely for personal tiers.",
+   "quick_win": true
+  },
+  {
+   "screen": "Google sign-in",
+   "file_ref": "backend/app/routers/auth.py:1553-1566",
+   "issue": "Every Google login forces prompt=consent and access_type=offline for basic scopes and then discards the refresh token, so users see a consent screen on every login.",
+   "severity": "low",
+   "suggestion": "Use prompt=select_account without offline access. Add include_granted_scopes=true so later feature grants build on top of the sign-in grant.",
+   "quick_win": false
+  },
+  {
+   "screen": "Per-user connections row",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:780-792",
+   "issue": "The row gives only counts ('N need to open Calendar and choose Connect Calendar'), with no list of who, what is missing, or a way to nudge them.",
+   "severity": "low",
+   "suggestion": "Add an expandable per-user list (health and missing scopes) with a 'Send connect link' action that deep-links to a scoped consent.",
+   "quick_win": false
+  },
+  {
+   "screen": "Provider app readiness (operator)",
+   "file_ref": "frontend/src/components/IntegrationReadinessCard.jsx:4-13",
+   "issue": "Google readiness covers only the client ID and secret. It does not show the service-account key, OAuth publishing status (Testing or Production), or verification and CASA status. Entra has a verification command.",
+   "severity": "low",
+   "suggestion": "Add GOOGLE_SERVICE_ACCOUNT_KEY presence, the configured scope tier, and an operator checklist for verification, CASA and the Marketplace listing.",
+   "quick_win": false
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Fix tenant isolation for the Google service account and remove tenant-credential fallback for personal data",
+   "detail": "Scope every service-account Drive query to the tenant's driveId (corpora=drive, driveId=binding), or use a service account per tenant or Workload Identity. Stop falling back to the admin token for Gmail search, calendar pushes and send unless a designated firm mailbox is configured. Only then build the add-on and AI features on this foundation.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/services/cloud_search.py:1516-1527; backend/app/services/google_service_account.py:213-258; backend/app/services/google_calendar.py:18-38"
+  },
+  {
+   "title": "Least-privilege re-scope with incremental authorization",
+   "detail": "Use drive.file (non-sensitive) with Google Picker to link existing folders or files, calendar.events, and gmail.send. Move gmail.readonly and full drive into an opt-in 'mailbox capture / whole-Drive search' tier that requires CASA. Request scopes per feature with include_granted_scopes=true, login_hint and hd. Update integration-scopes.json and test_public_integration_scopes.py, and the full-calendar check in CALENDAR_REQUIRED_SCOPES (auth.py:92-95). This removes the restricted-scope verification blocker for most firms.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/routers/integrations.py:245-272; frontend/src/marketing/integration-scopes.json; TASKS.md:473-475"
+  },
+  {
+   "title": "Google Workspace Marketplace listing with admin domain-wide install",
+   "detail": "This is Google's equivalent of Microsoft admin consent. A Workspace admin installs LawHand for the domain or an OU and pre-approves the listed scopes, so attorneys connect without a consent wall. Also add an in-product checklist showing the client ID for Admin console > Security > API controls > Trusted apps, so restricted scopes aren't blocked by org policy.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "frontend/src/pages/OnboardingWizard.jsx:446-448; backend/app/routers/integrations.py:656-722"
+  },
+  {
+   "title": "LawHand Google Workspace add-on (Gmail, Docs, Drive, Calendar), matching the Office add-in",
+   "detail": "A card-based add-on on the HTTP runtime. In Gmail, 'File to matter' uses gmail.addons.current.message.readonly, which is per-message access instead of restricted mailbox-wide access, and 'Draft reply' inserts a LawHand draft through gmail.addons.current.action.compose, where the attorney can polish it with Gemini's Help me write. In Docs, a matter sidebar with a clause and template picker. In Drive, 'Link to matter'. This implements ECO-19 and replaces most server-side gmail.readonly use.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "TASKS.md:476-478; office-addin/manifests/outlook.xml:18; backend/app/services/correspondence_capture.py:280-285"
+  },
+  {
+   "title": "Docs API template merge and document prep in the client's own Google Docs",
+   "detail": "Keep firm templates as Google Docs. For each matter, files.copy the template into the matter folder, then documents.batchUpdate replaceAllText (or named ranges) with matter, client and party fields, and export PDF/DOCX via files.export for filing. The attorney finishes in Docs with their own Gemini side panel ('refine', 'summarize'), which uses the firm's Gemini license rather than LawHand tokens. Works with drive.file plus the documents scope on app-created docs.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "backend/app/services/matter_file_store.py:1122-1240; frontend/src/components/chat/DocumentDraftWorkspace.jsx:174"
+  },
+  {
+   "title": "Convert generated DOCX to a Google Doc and add 'Open in Google Docs'",
+   "detail": "Set mimeType application/vnd.google-apps.document on upload so Drive converts it, or keep the DOCX and offer a converted copy. Link to docs.google.com for collaborative editing, matching Word Online, and export back to DOCX/PDF on approval. Once converted, the firm's Gemini in Docs becomes available on LawHand drafts.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "frontend/src/components/MatterDocumentsTab.jsx:202; backend/app/services/cloud_search.py:1387-1397"
+  },
+  {
+   "title": "Google Meet links, attendee invites, and Meet transcripts and smart notes into the matter timeline",
+   "detail": "Add meeting_provider 'google_meet' using conferenceData.createRequest(hangoutsMeet) with conferenceDataVersion=1 and sendUpdates=all. After the meeting, use the Meet REST API (conferenceRecords, transcripts, smart notes) to file Gemini 'Take notes for me' output into the matter as correspondence. The client's Gemini license produces the summary.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "backend/app/services/calendar_sync.py:446-498; backend/app/schemas/calendar.py:101-106; backend/app/services/scheduled_events.py:93-110"
+  },
+  {
+   "title": "Gemini Enterprise and Gemini CLI connector for the Workspace MCP server",
+   "detail": "Publish and test a recipe that registers LawHand's MCP server (OAuth 2.1 + dynamic client registration already exists) in Gemini Enterprise, as an agent or data connector and via A2A, and in Gemini CLI. Firms' Gemini seats can then read matter context and create review-first proposals with no LawHand inference cost. Enforce the per-tool budgets and grants that already exist (ECO-21).",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "backend/app/services/workspace_mcp_oauth.py:239-262; TASKS.md:482-484"
+  },
+  {
+   "title": "Vertex AI BYOK in the customer's own GCP project",
+   "detail": "Today BYOK accepts only an AI Studio key with a fixed endpoint and a hard-coded gemini-2.0-flash default. Add Vertex AI (customer project, region pinning, enterprise data terms) through service-account or Workload Identity Federation, and validate the model against a live model list.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "backend/app/services/llm_routing.py:529-570; backend/app/services/byok_security.py:10-32"
+  },
+  {
+   "title": "Push-based sync (Gmail watch with Pub/Sub, Drive changes.watch, Calendar events.watch)",
+   "detail": "Replace 7-day, 200-message and 500-file polling with users.watch plus history.list, changes.getStartPageToken plus changes.watch, and events.watch plus syncToken. This gives near-real-time capture of edits and deletions, covering TC-11 for Google, and lower quota use.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/services/cloud_sync.py:455-568; TASKS.md:586"
+  },
+  {
+   "title": "Drive Labels on Shared Drive matter files",
+   "detail": "Apply labels for matter number, privilege and retention class through the Drive Labels API to files in the org Shared Drive. This lets Workspace Vault retention, DLP and Gemini-in-Drive filters respect LawHand matter boundaries inside the client's tenant.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/services/cloud_init.py:1214-1244"
+  },
+  {
+   "title": "Google Chat app for matter notifications and approvals, matching Teams",
+   "detail": "Send card notifications for approvals, deadlines and intake to a matter space, with review-first actions. Today only Teams has channel linking and adaptive cards.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "teams-app/manifest.json:25-36; backend/app/config.py:125-131"
+  },
+  {
+   "title": "Google Vault legal holds for the litigation plugin",
+   "detail": "For Workspace Business Plus and above, create matters and holds on custodians' Gmail and Drive through the Vault API when a litigation matter opens, and record hold status on the matter.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/services/plugins/manifest.py:57-75"
+  },
+  {
+   "title": "Gmail send polish: threading and large attachments",
+   "detail": "Set threadId, In-Reply-To and References when replying to captured correspondence, and use the upload/gmail/v1 endpoint (resumable) for attachments over the JSON limit, so client threads stay intact in Gmail.",
+   "effort": "S",
+   "value": "low",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/services/connected_mail.py:141-199"
+  }
+ ],
+ "open_questions": [
+  "Is GOOGLE_SERVICE_ACCOUNT_KEY set in hosted production, and how many tenants have a google_drive binding with owner_type=org_shared_drive? The answer sets the real exposure of the cross-tenant service-account search defect.",
+  "What is the Google OAuth client's publishing status (Testing or In production) and verification status? TASKS.md:141 says the client still has to be re-created under a getlawhand.com project. Testing mode means 7-day refresh tokens and the unverified-user cap.",
+  "Is tenant-wide sync_all (Gmail and Drive metadata) scheduled in production, and is Cloud Search's tenant-token fallback for non-admin users an intended product behavior or an accident?",
+  "Does Drive files.delete without supportsAllDrives=true still return 404 for Shared Drive items on current Drive v3? Confirm on a live tenant before fixing matter_documents.py.",
+  "Is the BYOK default model gemini-2.0-flash still served by the Gemini API as of this date?",
+  "Is the Microsoft side affected by the same tenant-token fallback (_get_microsoft_token, microsoft_calendar._get_token)? The parallel Microsoft investigator should confirm so the fix is applied to both.",
+  "Product decision: will the Workspace add-on (ECO-19) replace server-side gmail.readonly entirely, or is a CASA-assessed 'mailbox capture' tier still wanted for automatic correspondence capture?"
+ ]
+}

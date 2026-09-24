@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../App'
 import { ArrowRight, BookOpen, Briefcase, Clock, DollarSign, Building, ShieldCheck, LogOut } from 'lucide-react'
 import { getMyMattersPage, getTimeEntries, getWorkspaceMcpGrants, revokeAllSessions, updateMe } from '../api'
+import ConnectedAccountsCard from '../components/ConnectedAccountsCard'
 import ReleaseInfoPanel from '../components/ReleaseInfoPanel'
 import WorkspaceMcpGrantsPanel from '../components/WorkspaceMcpGrantsPanel'
 
@@ -272,6 +273,10 @@ export default function ProfilePage() {
           </p>
         )}
       </section>
+
+      <div style={{ marginBottom: 24 }}>
+        <ConnectedAccountsCard />
+      </div>
 
       <div style={{ marginBottom: 24 }}>
         <WorkspaceMcpGrantsPanel

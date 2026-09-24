@@ -1,0 +1,979 @@
+[
+ {
+  "topic": "copilot",
+  "result": {
+   "checks": [
+    {
+     "claim": "M365 Copilot MCP plugin auth (F8, Play 1): Copilot's DCR requires the authorization server to issue a client_secret, and DCR is unavailable for Entra-protected servers. Static OAuth uses the redirect https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect, is registered in the Teams Developer Portal as 'Any Microsoft 365 organization' plus 'Any Teams app' (binding to one Teams app ID makes tool calls return 404), and allows a public PKCE client with no secret. DCR is labelled preview.",
+     "verdict": "partly_holds",
+     "current_fact": "All the technical facts hold. The DCR doc (ms.date 08/28/2026) says: 'DCR without a client secret isn't supported yet. The authorization server must issue a client secret during registration.' It also says 'The Microsoft Teams developer portal doesn't support DCR yet. Use Agents Toolkit or the declarative agent developer skill.' The OAuth doc (08/28/2026) confirms the redirect URI, the 'Any Microsoft 365 organization' and 'Any Teams app' guidance and the 404 failure mode (Toolkit equivalent: applicableToApps: AnyApp, and keep the appId field). It also says: 'To avoid client secrets entirely, register a public client ... and let PKCE secure the code exchange.' The preview label is not supported by current docs: plugin-authentication.md (08/12/2026) lists DCR as 'Supported' for MCP plugins with no preview label. Repo check: backend/app/routers/workspace_mcp_oauth.py:297 advertises token_endpoint_auth_methods_supported ['none'] and rejects other methods at line 358, so Copilot's DCR would fail against LawHand today.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication-dynamic-client-registration.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication-oauth.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication.md"
+     ],
+     "status": "Documented as supported (no preview label); gap in LawHand confirmed"
+    },
+    {
+     "claim": "Declarative agents can call a remote MCP server as a plugin, and this is GA (F7, Play 2). It uses plugin manifest 2.4 RemoteMCPServer and Agents Toolkit 6.12+. DA manifest v1.8 allows 1-10 actions and the Email, EmailActions, Meetings, MeetingActions, People, TeamsMessages and OneDriveAndSharePoint capabilities. worker_agents is preview. Dynamic tool discovery is preview and runs RAI/XPIA validation.",
+     "verdict": "partly_holds",
+     "current_fact": "build-mcp-plugins.md (08/05/2026) has no preview label and requires Agents Toolkit 6.12.0 or later. The Toolkit now configures dynamic tool discovery by default. DA manifest 1.8 (08/10/2026) confirms 1-10 actions, the new EmailActions and MeetingActions capabilities, and that worker_agents is 'in preview'. Dynamic tool discovery (plugin-dynamic-tool-discovery.md, 08/12/2026) has no preview label. Runtime RAI and XPIA screening of new or changed tools is confirmed. MCP confirmation behaviour: the first use prompts, and after that tools with readOnlyHint=true skip confirmation. Custom confirmation text works only for pinned tools, not dynamically discovered ones.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/build-mcp-plugins.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/declarative-agent-manifest-1.8.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-dynamic-tool-discovery.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-confirmation-prompts.md"
+     ],
+     "status": "GA (the preview claim about dynamic discovery appears outdated)"
+    },
+    {
+     "claim": "Who pays for a declarative agent (F7, Play 2): Copilot-licensed users pay nothing extra, and Copilot Chat users without a seat are billed in client Copilot Credits when the agent uses shared tenant data. So a 'LawHand Matter Agent' with the Email, Meetings, OneDriveAndSharePoint, TeamsMessages and People capabilities works for Chat users, who are metered. It was unclear whether calls to external MCP actions are metered.",
+     "verdict": "wrong",
+     "current_fact": "knowledge-sources.md marks Email, People, Teams messages and Teams meetings as 'Yes (license only)'. The prerequisites.md capability table shows them unavailable to Copilot Chat users even when usage-based billing is on. Only licensed users get them. The DA capabilities include says: 'Users can access declarative agents with any capabilities other than Web search only if their tenants allow metered usage or if they have a Microsoft 365 Copilot license.' Adding these capabilities can therefore lock Chat-only users out of the agent entirely. SharePoint/OneDrive knowledge is contradictory: the prerequisites table allows it with usage billing, but a knowledge-sources.md note says it 'require[s] the signed-in user to have an active Microsoft 365 Copilot license', with requests failing as 'Sorry, I wasn't able to respond'. The open question is resolved: 'Custom actions' are available to Copilot Chat users with no usage-based billing, and 'No costs are incurred for access to knowledge sources that are available to users without usage-based billing.' An MCP-actions-only agent is therefore free for Chat users.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/knowledge-sources.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/prerequisites.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/includes/declarative-agent-capabilities-license-requirement.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/cost-considerations.md"
+     ],
+     "status": "GA; capability licensing is stricter than the research stated"
+    },
+    {
+     "claim": "Store validation (F10, Play 2): agents must show differentiated value beyond native Copilot. Response times must be 99% under 9s, 75% under 5s and 50% under 2s, with 99.9% availability. At least 3 working prompt starters are required. Consequential MCP tools must have readOnlyHint=false and ask for explicit confirmation. Publishing goes through Partner Center into the Agent Store and the Apps store in M365 Copilot, Teams, Outlook, Word, Excel and PowerPoint.",
+     "verdict": "holds",
+     "current_fact": "review-copilot-validation-guidelines.md (08/13/2026) states all of these as Must fix: the value proposition, 'Response time mustn't exceed nine seconds for 99 percent, five seconds for 75 percent and two seconds for 50 percent', 99.9% availability, and 'MCP Server action, readOnlyHint annotation should be set to false' for consequential actions. It also adds that Cowork skills and connectors, published via the agentSkills and agentConnector manifest nodes, 'must deliver clear, differentiated Enterprise value beyond native Copilot Cowork capabilities.' publish.md (08/05/2026) confirms the store surfaces. Repo check: the Workspace MCP already emits readOnlyHint=true for READ tools and false for others (backend/app/services/automation_capabilities.py mcp_annotations(), used in services/workspace_mcp_protocol.py _as_mcp_tool). No tool 'title' is set.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/msteams-docs/main/msteams-platform/concepts/deploy-and-publish/appsource/prepare/review-copilot-validation-guidelines.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/publish.md"
+     ],
+     "status": "GA"
+    },
+    {
+     "claim": "Copilot Cowork (F13, Play 3) has been GA since June 16, 2026. It requires the M365 Copilot license plus Copilot Credits, is off by default and has tenant, group and user spending limits. It runs on Anthropic Opus 4.8 and Sonnet 4.6. Plugins are skills plus a remote MCP connector in an M365 app package, published through Partner Center, and uploaded Claude-format plugins are converted automatically. Harvey is available at GA and Templafy is coming soon. (F17) Anthropic models are outside the EU Data Boundary.",
+     "verdict": "partly_holds",
+     "current_fact": "The Microsoft blog (2026-06-16) confirms GA worldwide, 'requires the Microsoft 365 Copilot User Subscription License', PayGo at $0.01 per Copilot Credit or P3 commitment, 'Cowork is off by default', tenant, group and user spending limits, Opus 4.8 and Sonnet 4.6 (Cowork 1 model coming), Harvey among the available plugins, and Templafy under 'coming soon'. Frontier tenants were charged only from July 1, 2026. A search snippet from the Learn page 'Build plugins for Copilot Cowork' confirms that a Claude-format package is 'automatically convert[ed] into a publishable package'. Third-party guides say `atk import openplugin` does not generate the mcpToolDescription file required for store submission. Missing from the research: per secondary sources quoting the Cowork get-started page, 'Anthropic enabled in tenant' is a prerequisite. Search snippets from the Learn page 'Anthropic models in Microsoft Online Services' say that toggle defaults OFF for EU/EFTA/UK tenants and that Anthropic processing is excluded from the EU Data Boundary. Without an admin opt-in, Cowork is unusable for EU/UK firms. Templafy is also already a live federated connector in the gallery. Sources: Learn pages confirmed via search snippets only, because learn.microsoft.com is blocked.",
+     "source_urls": [
+      "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/16/copilot-cowork-is-now-generally-available/",
+      "https://learn.microsoft.com/en-us/microsoft-365/copilot/cowork/cowork-plugin-development",
+      "https://learn.microsoft.com/en-us/microsoft-365/copilot/connect-to-ai-subprocessor",
+      "https://holgerimbery.blog/cowork-day3",
+      "https://www.aguidetocloud.com/blog/microsoft-365-copilot-skills-cowork-packaging-distribution/"
+     ],
+     "status": "GA; needs Anthropic opt-in (default off in EU/EFTA/UK)"
+    },
+    {
+     "claim": "Federated Copilot connectors (F15, Play 4) are live MCP queries under the user's identity, with no indexing. They surface in Copilot Chat, Word, Excel, PowerPoint and Outlook, agents, Cowork and Researcher. The Learn page (09/21/2026) still carries a beta disclaimer. Write, update and delete tools roll out in early October 2026. Partners submit to the gallery an MCP server with read-only tools, an 80-character description and at least 3 prompts. Licensing is the Copilot add-on or E7 only, with no Copilot Studio or PAYG.",
+     "verdict": "partly_holds",
+     "current_fact": "The licensing claim holds verbatim (copilot-connectors prerequisites.md, 06/01/2026): 'available only to tenants and users with a Microsoft 365 Copilot add-on license (or Microsoft 365 E7). They aren't supported with Copilot Studio licenses or Microsoft 365 Copilot pay-as-you-go.' The October write rollout holds: write tools need user approval (Allow once, Allow for conversation or Always allow), and Researcher stays read-only. The beta-disclaimer caveat is wrong. The include on the page is wiqd-beta-disclaimer, which is about the Work IQ Dev Tools CLI, not federated connectors. Submission detail: ISVs package the connector as a plugin and submit it through Partner Center for store certification. Every tool needs a human-readable title and the readOnlyHint annotation. There is also a 'custom federated connector' path: a tenant AI Admin or Global Admin points Copilot at an MCP server with read-only tools, using Entra SSO, OAuth 2.0 or no auth, with no Microsoft gallery review. That is a pilot route. Surfaces are inconsistent across pages: the submission doc (06/03/2026) says Word and PowerPoint are 'coming soon', while the overview (09/21/2026) lists Word, Excel, PowerPoint and Outlook. The gallery's Legal category already includes Harvey, iManage Work, Everlaw, Relativity and others.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/federated-connectors-overview.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/submit-federated-connector.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/prerequisites.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/set-up-custom-federated-connectors.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/includes/wiqd-beta-disclaimer.md"
+     ],
+     "status": "GA (read); write rolling out early Oct 2026"
+    },
+    {
+     "claim": "The Meeting AI Insights API (F6, Play 5) is GA on v1.0 at GET /copilot/users/{userId}/onlineMeetings/{id}/aiInsights. It supports delegated and application OnlineMeetingAiInsight.Read.All, and application use needs a tenant application access policy. Every user must have a Copilot license and there is no pay-as-you-go option.",
+     "verdict": "holds",
+     "current_fact": "onlinemeeting-list-aiinsights.md (04/03/2026) shows the v1.0 path. It lists OnlineMeetingAiInsight.Read.All for both delegated and application permission types, requires an admin-created application access policy for app use, and says: 'Usage-based payment models and evaluation mode aren't supported for this API. All users of applications that use this API must have a Microsoft 365 Copilot license.' It works only for meetings that have not expired. The list is paged with a default of 20 items per page, followed via @odata.nextLink. LawHand's current Microsoft scopes do not include OnlineMeetingAiInsight.Read.All.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/meeting-insights/onlinemeeting-list-aiinsights.md"
+     ],
+     "status": "GA (v1.0)"
+    },
+    {
+     "claim": "The Copilot Retrieval API (F5, Play 6) is GA at POST /v1.0/copilot/retrieval. It is delegated only, needs Files.Read.All plus Sites.Read.All (or ExternalItem.Read.All for connectors), and does not support application permissions. It searches one source per request, takes a KQL filterExpression (Path, SiteID, InformationProtectionLabelId and others), returns at most 25 results and allows 200 requests per user per hour. It is free for Copilot-licensed users. PAYG for unlicensed users is preview and covers tenant sources only, not OneDrive.",
+     "verdict": "holds",
+     "current_fact": "The Retrieval overview and reference (08/20/2026) confirm every item. v1.0 and beta pivots exist, and the permissions table shows Delegated 'Files.Read.All, Sites.Read.All' with Application 'Not supported'. queryString is limited to 1,500 characters, maximumNumberOfResults to 25, and throughput to 200 requests per user per hour. The docs say: 'For users without a Microsoft 365 Copilot add-on license, the Retrieval API is available via pay-as-you-go consumption (preview) for tenant-level data sources such as SharePoint and Copilot connectors. User-level data sources such as OneDrive aren't available.' One caveat: cost-considerations.md (06/18/2026, older) still says Copilot APIs have no unlicensed support, so it conflicts with the newer Retrieval page. The docs do not say whether Files.ReadWrite.All is accepted in place of Files.Read.All. Repo check: MICROSOFT_USER_SCOPES in backend/app/routers/integrations.py:262 lacks Sites.Read.All, and MICROSOFT_ADMIN_SCOPES has it.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/retrieval/overview.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/api/ai-services/retrieval/copilotroot-retrieval.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/cost-considerations.md"
+     ],
+     "status": "GA; PAYG for unlicensed users is preview"
+    },
+    {
+     "claim": "Work IQ (F0-F2, Play 7) went GA on June 16, 2026 (Chat, Context and Tool APIs). Usage is billed in Copilot Credits at $0.01 each, with Tools at 0.1 credit per call, and there is no separate SKU or per-user license. Third-party agent use is billed even for Copilot-licensed users. Auth is delegated only with WorkIQAgent.Ask (admin consent). App-only calls are not supported. Each tenant needs Global Admin service-principal creation (fdcc1f02-...) and a Copilot Studio usage-based billing plan with an Azure subscription, with the user assigned to it. The REST API returns text only.",
+     "verdict": "holds",
+     "current_fact": "The Microsoft Licensing news confirms the GA date of June 16, 2026, the Chat, Context and Tool APIs (Workspaces not mentioned), 'Work IQ Tool API: 0.1 Copilot Credits per API call' and 'no separate Work IQ API subscription, SKU, or per-user license'. It also says users pay when 'You use a third-party agent that grounds in your Microsoft 365 data through the Work IQ APIs'. The permissions doc lists only a delegated WorkIQAgent.Ask with admin consent required. The REST reference (06/24/2026) says Application is 'Not supported'. enable-work-iq.md (06/16/2026) lists the billing plan with an Azure subscription and resource group, user assignment, and a Global Admin creating the fdcc1f02-fc51-4226-8753-f668596af7f7 service principal. The REST overview (08/20/2026) says it 'doesn't support action or content generation skills'. Nuances: the Work IQ MCP overview (08/20/2026) carries no preview label, which contradicts F4's 'all labelled preview', and it says 'Four broad OAuth permissions' gate MCP. The Foundry quickstart (06/23/2026) still lists a per-user Copilot license, so the license conflict persists. Multi-tenant apps must be AzureADMultipleOrgs, with users signing in through their home-tenant authority.",
+     "source_urls": [
+      "https://www.microsoft.com/en-us/licensing/news/work-iq-general-availability",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/index.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/permissions.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/enable-work-iq.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/rest/overview.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/api-overview.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/work-iq/mcp/overview.md"
+     ],
+     "status": "GA (Chat/Context/Tools); Workspaces status unconfirmed"
+    },
+    {
+     "claim": "Office Add-ins plus Copilot (F16, Play 8): 'Combine Copilot Agents with Office Add-ins' is preview. Word, Excel and PowerPoint add-ins can be configured as a Copilot skill through the unified manifest, with actions implemented as JS functions that Copilot calls. Excel Copilot skills (SKILL.md plus Office.js scripts) are preview on Insider build 2608+. (F9) agentConnectors register an MCP server for any M365 agent.",
+     "verdict": "wrong",
+     "current_fact": "The add-in-actions path appears withdrawn. OfficeDev/office-js-docs-pr at HEAD (commit 2026-09-23) no longer contains design/agent-and-add-in-overview.md, quickstarts/agent-and-add-in-quickstart.md or develop/agent-and-add-in.md. .openpublishing.redirection.json redirects all three to the generic /office/dev/add-ins/overview/office-add-ins. In m365copilot-docs, the 2026-07 redirect file sends build-api-plugins-local-office-api.md to /office/dev/add-ins/excel/excel-skills. The unified-manifest overview (09/22/2026) no longer mentions Copilot or agents. Search engines still index the old Learn pages, which is why the research saw them. The only surviving path is 'Copilot skills for Excel (preview)' (08/13/2026): an agentSkills node in a unified-manifest app package, built on the Cowork plugin model and Excel only. It 'require[s] version 2608 ... available in only the Beta and Current Channel (Preview) channels ... Don't use them in a production Copilot extension.' No Word equivalent is documented. agent-connectors.md (06/19/2026) says agentConnectors are 'public developer preview and only supported in Channel Agent for Microsoft Teams'. Cowork plugins and the store guidelines also use that node.",
+     "source_urls": [
+      "https://github.com/OfficeDev/office-js-docs-pr/blob/main/.openpublishing.redirection.json",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/excel/excel-skills.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/develop/unified-manifest-overview.md",
+      "https://github.com/MicrosoftDocs/m365copilot-docs/blob/main/redirects/.openpublishing.redirections.2026-07.json",
+      "https://raw.githubusercontent.com/MicrosoftDocs/msteams-docs/main/msteams-platform/m365-apps/agent-connectors.md"
+     ],
+     "status": "Add-in actions docs removed and redirected (likely retired); Excel skills preview (Insider only); agentConnectors dev preview"
+    },
+    {
+     "claim": "Copilot Studio (F11, Play 10): remote MCP is GA with streamable transport. Credits cost $0.01 PAYG or $200 per 25,000-credit monthly pack. Agents in Teams, SharePoint and M365 Copilot are included for Copilot-licensed users. Multitenant mode is preview and the host tenant is billed for all usage, so a LawHand-hosted multitenant agent moves compute cost onto LawHand.",
+     "verdict": "holds",
+     "current_fact": "Search snippets from the Learn 'Overview of multitenant mode in Copilot Studio (preview)' page say it is 'supported in public preview only by host tenants with a full Copilot Studio license' and that 'all usage is billed to the host tenant where the agent is created and published'. The guidance tells partners to show a Preview banner. Microsoft's pricing page and multiple 2026 guides confirm the $200 pack of 25,000 credits per tenant per month and the $0.01 PAYG rate. cost-considerations.md (06/18/2026) confirms Copilot Studio agents for Teams, SharePoint and Copilot Chat are included for Copilot-licensed users. The MCP GA date (May 2025) was not re-fetched, but nothing contradicts it.",
+     "source_urls": [
+      "https://learn.microsoft.com/en-us/microsoft-copilot-studio/multi-tenant-overview",
+      "https://www.microsoft.com/en-us/microsoft-365-copilot/pricing/copilot-studio",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/cost-considerations.md"
+     ],
+     "status": "MCP GA; multitenant mode preview"
+    },
+    {
+     "claim": "Pricing anchors for license detection (F18, F12, Play 9): Copilot Business add-on is $21, promotionally $18 until Dec 31, 2026. Business Standard with Copilot is $23.50 and Business Premium with Copilot is $32. Copilot Chat is free and org agents are metered for Chat users. Agent 365 has been GA since May 1, 2026 at $15 per user per month and is included in E7.",
+     "verdict": "holds",
+     "current_fact": "The microsoft.com pricing page shows Copilot Business (add-on) annual at $18.00, struck through from $21.00, with the promotion ending December 31, 2026; monthly billing is $25.20. Business Standard with Copilot is $23.50 annual ($28.20 monthly) and Business Premium with Copilot is $32.00 annual ($38.40 monthly). Custom agents are available 'on a metered basis' to Copilot Chat customers. The Microsoft Security blog (2026-05-01) and trade press confirm Agent 365 GA at $15 per user per month, bundled in M365 E7 (the Frontier Suite, $99 per user per month). Agent 365 now also hosts the 'Allowed agent types' tenant setting, which replaced the federated-connector PowerShell toggle. The legacy toggle is honored until Oct 20, 2026.",
+     "source_urls": [
+      "https://www.microsoft.com/en-us/microsoft-365-copilot/pricing",
+      "https://www.microsoft.com/en-us/security/blog/2026/05/01/microsoft-agent-365-now-generally-available-expands-capabilities-and-integrations/",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/manage-federated-connectors.md"
+     ],
+     "status": "GA; promo price expires 2026-12-31"
+    }
+   ],
+   "play_adjustments": [
+    {
+     "play_title": "Fix Workspace MCP OAuth so Microsoft 365 Copilot can connect",
+     "adjustment": "Keep the static public PKCE client as the default. Drop the 'DCR is preview' wording: current docs list DCR as Supported for MCP plugins. The real blockers are that the AS must issue a client_secret and that the Teams Developer Portal cannot create DCR configs. Remove 'set readOnlyHint annotations' from scope, because automation_capabilities.py mcp_annotations() already emits readOnlyHint true/false. Replace it with adding a human-readable `title` to every Workspace MCP tool (_as_mcp_tool sets none), which federated-connector certification requires. When provisioning with Agents Toolkit, use applicableToApps: AnyApp and keep the appId field."
+    },
+    {
+     "play_title": "Ship a 'LawHand Matter Agent' declarative agent (client Copilot seat pays for reasoning)",
+     "adjustment": "Update who pays and who can use it. The Email, People, TeamsMessages and Meetings capabilities are license-only and unavailable to Copilot Chat users even with metering. Declaring any capability other than web search restricts the agent to licensed or metered users. Ship two variants: a licensed 'client-context' agent with Email, Meetings, TeamsMessages and People, and a Chat-compatible agent with LawHand MCP actions only. Custom actions are available to Chat users with no usage billing, which resolves the 'external action metering' open question. SharePoint knowledge licensing is contradictory in the docs, so verify it in a pilot. Dynamic tool discovery is no longer labelled preview, but custom confirmation text only works for pinned tools."
+    },
+    {
+     "play_title": "Package the same assets as a Copilot Cowork plugin (skills plus LawHand MCP connector)",
+     "adjustment": "Add prerequisites. The tenant must enable Anthropic models (Cowork's get-started page lists it; the toggle is default OFF in EU/EFTA/UK), plus the Copilot USL and Cowork enablement with a spending limit. EU/UK firms need a DPIA because processing leaves the EU Data Boundary. The Claude-format conversion (`atk import openplugin`) does not generate the mcpToolDescription file needed for Partner Center, so budget for store-readiness work (effort nearer M). Store rules require value 'beyond native Copilot Cowork capabilities'. The competitive note needs updating: Templafy is already a live federated connector, and Harvey, iManage Work, Everlaw and Relativity are in the connector gallery."
+    },
+    {
+     "play_title": "Submit a federated Copilot connector for LawHand matters (read-only)",
+     "adjustment": "Remove the 'beta disclaimer' risk, because that include is about the wiqd CLI, not federated connectors. Submission is a plugin package certified through Partner Center, not a separate program form. It requires tool titles plus readOnlyHint, an 80-character description, 192/32px logos, the OAuth reference ID, a reviewer test account and 3 or more prompts with expected responses. Add a pilot step before Partner Center: a firm's AI Admin sets LawHand up as a 'custom federated connector', which needs no Microsoft review. Word and PowerPoint availability is inconsistent across pages ('coming soon' in the June submission doc, listed in the September overview), so verify it before marketing 'draft in Word'. Keep the license gate: Copilot add-on or E7 only, with no PAYG."
+    },
+    {
+     "play_title": "Meeting recap to matter note using the Meeting AI Insights API",
+     "adjustment": "No change to the approach. Add OnlineMeetingAiInsight.Read.All to LawHand's Microsoft consent set, since the current scopes lack it. Note that there is no PAYG or evaluation mode, the list is paged (default 20 items, follow @odata.nextLink), and it works only on unexpired meetings. The app-mode access policy must be granted to the relevant users, or globally, by a Teams admin."
+    },
+    {
+     "play_title": "'Related SharePoint/OneDrive documents' using the Retrieval API (Copilot-licensed users)",
+     "adjustment": "The facts are confirmed. Note that PAYG (preview) covers SharePoint and connectors only, not OneDrive, and that the older cost-considerations page still says there is no unlicensed support. Treat PAYG as opt-in and experimental. Adding Sites.Read.All to MICROSOFT_USER_SCOPES is still required. Whether Files.ReadWrite.All satisfies Files.Read.All is undocumented, so test it in a pilot tenant."
+    },
+    {
+     "play_title": "Optional tenant feature: 'Ask the firm's Copilot' using the Work IQ Chat and Context APIs",
+     "adjustment": "The facts are confirmed as GA. Price with Tools at 0.1 credit per call and Chat/Context as variable. Keep the readiness checklist: SP fdcc1f02-..., a Copilot Studio billing plan with an Azure subscription and resource group, the user assigned to the plan, and admin consent for WorkIQAgent.Ask. Register the app as AzureADMultipleOrgs and use the home-tenant authority. Keep the caveat that the Foundry quickstart still lists a per-user Copilot license."
+    },
+    {
+     "play_title": "Word add-in as a Copilot skill for template and document preparation (preview track)",
+     "adjustment": "Downgrade to 'park/watch'. The 'Combine Copilot Agents with Office Add-ins' docs (overview and quickstart) were removed and redirected to the generic add-ins overview, and the local-Office-API plugin doc now redirects to Excel skills. The only live path is Excel Copilot skills (agentSkills plus Office.js scripts). It is preview, Insider Beta/Current Channel (Preview) 2608+ only, and marked 'don't use in production'. No Word equivalent is documented, and agentConnectors are dev-preview (Teams Channel Agent host only). Put template and document-prep effort into the Cowork plugin and federated connector plays. Migrate to the unified manifest only for its GA add-in benefits, not for Copilot integration."
+    },
+    {
+     "play_title": "Customer-facing M365 Copilot governance pack and integration-page UX",
+     "adjustment": "Expand the license-detection matrix to show what each seat state unlocks. The Email, People, Teams and Meetings agent knowledge, federated connectors, Meeting AI Insights and Cowork all need a Copilot seat (federated connectors also accept E7). Retrieval PAYG is SharePoint-only and preview. Work IQ needs a billing plan. Add the Anthropic toggle state, which Cowork requires and which is default off in EU/UK. Date-stamp the Copilot Business $18 promotion, which ends 2026-12-31. Mention the Agent 365 'Allowed agent types' setting, which now governs federated connectors; the legacy cmdlet is honored until 2026-10-20."
+    },
+    {
+     "play_title": "Avoid: LawHand-hosted multitenant Copilot Studio agent, and a synced connector for privileged documents",
+     "adjustment": "Confirmed: multitenant mode is preview and bills the host tenant for all usage. Tighten the synced-connector note: Copilot grounding on synced connector data needs the Copilot add-on or E7. Copilot Studio or PAYG tenants get 'Agents only (no Copilot grounding)', and plain M365 gets Microsoft Search only."
+    }
+   ]
+  }
+ },
+ {
+  "topic": "gemini",
+  "result": {
+   "checks": [
+    {
+     "claim": "F16: LawHand's Gemini BYOK fallback 'gemini-2.0-flash' (backend/app/services/llm_routing.py:555) was shut down on 2026-06-01. gemini-2.5-flash shuts down on 2026-10-16, and Gemini 3.5 and 3.7 Flash are the current models.",
+     "verdict": "holds",
+     "current_fact": "Repo checked read-only: llm_routing.py:555 still hard-codes 'gemini-2.0-flash'. It is used only when the tenant has no deployment and no default_llm_model set. The backend calls the Developer API at generativelanguage.googleapis.com/v1beta/openai/ (byok_security.py:10). LiteLLM's model catalog (raw GitHub) gives vertex_ai/gemini-2.0-flash and -lite a deprecation date of 2026-06-01. It no longer lists a gemini/gemini-2.0-flash entry at all. It gives Vertex gemini-2.5-flash and -lite 2026-10-20. Search snippets (Gemini API changelog, benchr, aifounders) confirm 2.0-flash-001 was shut down on 2026-06-01 and Developer API 2.5-flash shuts down on 2026-10-16, with gemini-3.5-flash as the replacement. One correction: the catalog also lists gemini-3.6-flash, gemini-3.7-flash and gemini-3.8-flash, plus a gemini-flash-latest alias. Input price is $1.50/M tokens for gemini-3.5-flash and $0.75/M for 3.7 and 3.8 Flash. Both are far above 2.0 Flash.",
+     "status": "2.0 Flash retired; 2.5 Flash retires 2026-10-16 (Dev API) / 2026-10-20 (Vertex per LiteLLM). Sources: LiteLLM catalog on raw.githubusercontent.com plus search snippets (ai.google.dev blocked).",
+     "source_urls": [
+      "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+      "https://ai.google.dev/gemini-api/docs/changelog",
+      "https://benchr.org/deprecations/gemini-2-5-pro",
+      "https://aifounders.cz/en/gemini-2-0-flash-is-deprecated-3-5-flash-costs-15x-more-here-is-your-move/"
+     ]
+    },
+    {
+     "claim": "F0 + F14: Vertex AI is now 'Gemini Enterprise Agent Platform' and the API host is unchanged. The OpenAI-compatible endpoint is aiplatform.googleapis.com/v1/projects/{p}/locations/{l}/endpoints/openapi and uses a cloud-platform OAuth token. LiteLLM's vertex_ai provider accepts Workload Identity Federation 'external_account' credentials.",
+     "verdict": "holds",
+     "current_fact": "Google's Cloud blog (2026-04-22) says Agent Platform is the 'evolution of Vertex AI'. Google's Service Specific Terms (last modified 2026-09-16) say 'Gemini Enterprise Agent Platform (formerly Generative AI on Vertex AI)', and the product page is titled 'Gemini Enterprise Agent Platform (formerly Vertex AI)'. The Business edition page now says 'Gemini Notebook'. Google's generative-ai sample notebook uses https://{api_host}/v1/projects/{PROJECT_ID}/locations/{LOCATION}/endpoints/openapi with a google-auth token for the cloud-platform scope passed as api_key. LiteLLM's vertex_llm_base.py handles type=='external_account' through google.auth identity_pool, aws and executable credential sources. LawHand's LiteLLM image (litellm/Dockerfile, 1.93 main-latest digest) is new enough for this. Two small points are unconfirmed: the 2026-04-22 blog names 'Agent Designer', not 'Agent Studio', and the blog does not state that the endpoints are unchanged (the sample still uses aiplatform-style paths).",
+     "status": "GA platform. Primary sources: cloud.google.com blog and terms, GoogleCloudPlatform/generative-ai and BerriAI/litellm on raw GitHub.",
+     "source_urls": [
+      "https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development",
+      "https://cloud.google.com/terms/service-terms",
+      "https://cloud.google.com/products/gemini-enterprise-agent-platform",
+      "https://raw.githubusercontent.com/GoogleCloudPlatform/generative-ai/main/gemini/chat-completions/intro_chat_completions_api.ipynb",
+      "https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/llms/vertex_ai/vertex_llm_base.py"
+     ]
+    },
+    {
+     "claim": "F15: Google does not train on Customer Data in the customer's Agent Platform project. Grounding with Google Search stores derived queries for up to 3 days and cannot be turned off, while Web Grounding for Enterprise avoids this. Abuse-monitoring prompt logging does not apply to customers on a Google Cloud Master Agreement by default.",
+     "verdict": "partly_holds",
+     "current_fact": "Primary terms (Service Specific Terms, last modified 2026-09-16) confirm three points. \u00a718 Training Restriction: 'Google will not use Customer Data to train or fine-tune any AI/ML models without Customer's prior permission or instruction.' \u00a720(k)(ii) 'Storage for Debugging': Google collects queries derived from End User prompts plus contextual information 'for up to three (3) days' as an exception to the Agent Platform security controls. \u00a720(l) Web Grounding for Enterprise deletes subsection 20k(ii), so the 3-day log does not apply there. The Master Agreement exemption from abuse-monitoring logging could not be checked: the abuse-monitoring doc is blocked, and the terms mention prompt logging only for 'Partner or a Non-TOS Customer' in the partner section.",
+     "status": "Terms verified on cloud.google.com. The abuse-monitoring exemption is unverified (docs.cloud.google.com blocked).",
+     "source_urls": [
+      "https://cloud.google.com/terms/service-terms",
+      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/abuse-monitoring"
+     ]
+    },
+    {
+     "claim": "F2: Gemini Enterprise custom MCP server connections are in preview, and Pre-GA terms apply on Business edition. Requirements: Streamable HTTP only; a public IP with a publicly trusted TLS certificate and no private networking; about 100 enabled actions at most; an org-policy override. Auth is none or OAuth 2.0: the admin enters a client ID, client secret, auth and token URLs and scopes, and the redirect URI is fixed at https://vertexaisearch.cloud.google.com/oauth-redirect.",
+     "verdict": "partly_holds",
+     "current_fact": "Confirmed: search snippets from support.google.com/g/answer/17106276 say 'Creating a custom MCP Server connection is in Public Preview' and is subject to the Pre-GA Offerings Terms (admin path: Manage team > Connected apps). Snippets from Google's docs confirm Streamable HTTP only (SSE not supported), a publicly trusted TLS certificate, and a limit of 100 enabled actions. cloud.google.com/gemini-enterprise/connectors lists 'Connect a custom MCP server' for both Business and Standard/Plus. Google doc snippets (Notion, Salesforce and people connectors, A2A registration) confirm the redirect URI is fixed by Google and cannot be changed. Evidence against DCR: a privacyfence GitHub issue dated 2026-09-14, citing the SecureAuth guide, says Gemini Enterprise 'supports neither Dynamic Client Registration nor OAuth discovery' and that an admin pastes a client_id and client_secret by hand. A community Gemini Enterprise MCP server also requires MCP_CLIENT_SECRET. Refuted: 'no private networking'. Google doc snippets say Gemini Enterprise can reach private Cloud Run MCP services, sending a Google-signed ID token in X-Serverless-Authorization and the user's OAuth token in Authorization. Custom MCP also works in VPC-SC projects when egress is allowed through org-policy constraints (allowedEgressFqdns, allowedDataSources). This does not change LawHand's case, because its endpoint on IONOS is public anyway.",
+     "status": "Public Preview (Pre-GA terms). Sources: search snippets of Google docs and support pages (docs.cloud.google.com and support.google.com blocked), cloud.google.com connectors page, third-party GitHub.",
+     "source_urls": [
+      "https://support.google.com/g/answer/17106276?hl=en",
+      "https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server",
+      "https://cloud.google.com/gemini-enterprise/connectors",
+      "https://docs.cloud.google.com/gemini/enterprise/docs/connectors/notion/config",
+      "https://docs.cloud.google.com/gemini/enterprise/docs/register-and-manage-an-a2a-agent",
+      "https://github.com/privacyfence/privacyfence/issues/393",
+      "https://raw.githubusercontent.com/Nick-DCA/enterprise-mcp-server/main/README.md"
+     ]
+    },
+    {
+     "claim": "F1: Gemini Enterprise is a separate per-seat purchase: Business $21 per seat per month (up to 300 seats, no IT setup), Standard from $30, Plus through sales. Pay-as-you-go (announced 2026-08-26) has no base fee, spend caps and 10%/20% savings plans, is rolling out to select customers, and 'lowers the entry cost for a pilot firm'. Agent Marketplace and third-party agents need Standard or above, not Business.",
+     "verdict": "partly_holds",
+     "current_fact": "cloud.google.com/gemini-enterprise confirms Business 'Starting at $21 USD per seat per month', 'Up to 300 seats', 'No IT setup needed', and Standard/Plus 'Starting at $30 USD per seat per month' with unlimited seats. The blog of 2026-08-26 confirms Pay-as-you-go: token and compute billing, spend caps, alerts, and Flexible Savings Plans at 10% (1 year) and 20% (3 years). The research missed that the product page limits Pay-as-you-go to 'organizations with 20+ seats', says it 'is gradually rolling out and currently available to a limited group of customers', and states that 'Gemini Notebook is not currently included'. Standard/Plus include 'access to third-party agents', and custom and A2A agents are marked 'Available in the Standard and Plus editions'. Pay-as-you-go includes 'Everything in Standard / Plus'.",
+     "status": "GA editions; Pay-as-you-go limited rollout, 20+ seats. Primary: cloud.google.com product and blog pages.",
+     "source_urls": [
+      "https://cloud.google.com/gemini-enterprise",
+      "https://cloud.google.com/gemini-enterprise/business",
+      "https://cloud.google.com/gemini-enterprise/agents",
+      "https://cloud.google.com/blog/products/ai-machine-learning/flexible-billing-and-cost-controls-for-agents-on-google-cloud"
+     ]
+    },
+    {
+     "claim": "F6: Gemini Enterprise Skills accept a SKILL.md, or a .zip with SKILL.md at the root. Admins turn skills on, control sharing and can require approval. Standard, Plus and Pay-as-you-go users can create and upload skills; Frontline users can only install them.",
+     "verdict": "holds",
+     "current_fact": "Search snippets from docs.cloud.google.com/gemini/enterprise/docs/skills and manage-skills confirm several points. SKILL.md must sit at the zip root (optional scripts/ directory), and the name and description are extracted from it. Standard, Plus and Pay-as-you-go users can create and upload custom skills; Frontline users can only browse, install and use them. Admins can require approval for shared skills. Business edition is not listed among the editions that can create or upload skills.",
+     "status": "Launch stage not stated in the snippets. Source: search snippets (docs.cloud.google.com blocked).",
+     "source_urls": [
+      "https://docs.cloud.google.com/gemini/enterprise/docs/skills",
+      "https://docs.cloud.google.com/gemini/enterprise/docs/manage-skills"
+     ]
+    },
+    {
+     "claim": "F3 + F4: A firm on Standard or Plus can register a custom A2A agent directly. A Marketplace-listed partner agent needs an A2A Agent Card, public or OAuth/DCR auth with JWT order-ID validation, and mandatory Procurement API and Pub/Sub integration. Its core must run on Google Cloud using Gemini or Model Garden models, and 'only smaller control planes may run elsewhere'.",
+     "verdict": "partly_holds",
+     "current_fact": "Confirmed: the product page says custom agents, A2A agents and partner agents are 'Available in the Standard and Plus editions'. The Cloud blog of 2026-07-07 confirms the A2A Agent Card (protocolVersion 1.0), the auth options (public, OAuth authorization code, DCR with a signed-JWT software_statement and order-ID validation), mandatory Procurement API and Pub/Sub integration, and the roles involved (Billing Admin, Discovery Engine Admin). The hosting rule is stricter than stated: snippets of Google's Marketplace AI-agent docs say A2A 'AI Agents as a Service' must 'run on Google Cloud' and that 'All supporting components, including the AI agent, must run entirely on Google Cloud', using Google or Model Garden models by default. The 'Google Cloud Ready \u2013 Gemini Enterprise' designation is not in the blog and was not verified. The launch stage of direct A2A registration was not verified.",
+     "status": "Marketplace path GA (blog). Registration launch stage unverified. Sources: cloud.google.com blog and product page, search snippets of docs.cloud.google.com/marketplace/docs/partners/ai-agents.",
+     "source_urls": [
+      "https://cloud.google.com/gemini-enterprise/agents",
+      "https://cloud.google.com/blog/topics/developers-practitioners/publish-agents-in-gemini-enterprise-and-google-cloud-marketplace",
+      "https://docs.cloud.google.com/marketplace/docs/partners/ai-agents"
+     ]
+    },
+    {
+     "claim": "F7: The StreamAssist API is on the v1alpha/v1beta surface, so it is 'not worth building now'. It needs the cloud-platform scope, the discoveryengine.assistants.assist permission and a Gemini Enterprise license.",
+     "verdict": "partly_holds",
+     "current_fact": "The alpha/beta part is wrong. googleapis/googleapis (master) defines AssistantService.StreamAssist in google.cloud.discoveryengine.v1, the GA API surface: POST /v1/{name=projects/*/locations/*/collections/*/engines/*/assistants/*}:streamAssist, with AgentsSpec.agent_specs[].agent_id, ToolsSpec (Vertex AI Search, web grounding) and a session. It is also in v1beta. The service's OAuth scope is https://www.googleapis.com/auth/cloud-platform, which is confirmed. The IAM permission and license requirement were not checked.",
+     "status": "StreamAssist exists in Discovery Engine v1 (GA surface). Source: googleapis proto on raw GitHub.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/googleapis/googleapis/master/google/cloud/discoveryengine/v1/assistant_service.proto",
+      "https://raw.githubusercontent.com/googleapis/googleapis/master/google/cloud/discoveryengine/v1beta/assistant_service.proto"
+     ]
+    },
+    {
+     "claim": "F10: Workspace Studio custom starters and custom steps (built as Workspace add-ons and published through the Marketplace) rolled out in September 2026: admin settings from 2026-09-17, Rapid Release from 09-21, Scheduled Release from 09-30. AI steps run on the firm's Gemini, admins can allow or block custom steps, and third-party integrations are beta.",
+     "verdict": "partly_holds",
+     "current_fact": "Search snippets of the Workspace Updates post confirm the dates and the editions (Business Starter, Standard and Plus; Enterprise; Education). Snippets also say custom starters, custom steps, third-party integrations and webhooks are 'OFF by default' and admins must enable them in the Admin console. The developer docs snippet (developers.google.com/workspace/add-ons/studio) still says 'extending Google Workspace Studio with add-ons is in limited preview'. Custom steps can be written in Apps Script or 'their preferred coding language' and are made available through the Workspace Marketplace. So the end-user rollout is general availability, but the developer side of building custom steps and starters is still labelled limited preview.",
+     "status": "End-user features rolling out (GA). Developer extensibility labelled limited preview; admin toggle off by default. Source: search snippets (workspaceupdates, developers.google.com and support.google.com blocked).",
+     "source_urls": [
+      "https://workspaceupdates.googleblog.com/2026/09/automate-workflows-with-custom-starters-and-steps-third-party-integrations-and-webhooks-in-Workspace-Studio.html",
+      "https://developers.google.com/workspace/add-ons/studio",
+      "https://developers.google.com/workspace/add-ons/release-notes",
+      "https://support.google.com/a/answer/16704187?hl=en"
+     ]
+    },
+    {
+     "claim": "F11: A single Workspace add-on on the HTTP (alternate) runtime, in any language, can render third-party link previews as smart chips in Docs and Sheets and let users create third-party resources from the Docs @ menu.",
+     "verdict": "holds",
+     "current_fact": "Google's googleworkspace/add-ons-samples python/3p-resources sample confirms the design. Two HTTP Cloud Functions (Python) are declared in deployment.json with docs.linkPreviewTriggers (host and path patterns) and docs.createActionTriggers. The scopes are https://www.googleapis.com/auth/workspace.linkpreview and https://www.googleapis.com/auth/workspace.linkcreate. Sheets link-preview support and Chat-as-add-on GA were not rechecked.",
+     "status": "GA (long-standing). Source: Google's sample repo on raw GitHub.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/googleworkspace/add-ons-samples/main/python/3p-resources/deployment.json",
+      "https://raw.githubusercontent.com/googleworkspace/add-ons-samples/main/python/3p-resources/README.md"
+     ]
+    },
+    {
+     "claim": "F18: The contextual Gmail add-on scope gmail.addons.current.message.readonly is sensitive, not restricted, so using it instead of gmail.readonly avoids CASA.",
+     "verdict": "unverifiable",
+     "current_fact": "Google's Gmail scopes table (developers.google.com) could not be reached, and the search snippets of it show only the consent text ('View your email messages when the add-on is running'), not the classification. Third-party summaries returned by search (bright-softwares, unipile, emailengine) say it is Sensitive and avoids CASA. The claim is plausible but not confirmed from a primary source. The repo still requests restricted scopes, as stated: 'drive' in integrations.py:257/270/277 and google_service_account.py:41, gmail.readonly and drive in admin.py:1620/1622, and a drive.readonly check in plugins.py:384.",
+     "status": "Unconfirmed from a primary source. Search snippets and third-party pages only.",
+     "source_urls": [
+      "https://developers.google.com/workspace/gmail/api/auth/scopes",
+      "https://developers.google.com/workspace/add-ons/concepts/workspace-scopes",
+      "https://bright-softwares.com/blog/en/google-workspace/gmail-oauth-scopes-decoded-the-3-tier-system-that-determines-your-launch-path"
+     ]
+    },
+    {
+     "claim": "F9 + F5: Gemini in Workspace gained a curated set of seven third-party connectors on 2026-09-15: ON by default, admin-controlled, no custom MCP, no ISV application path. Gemini Enterprise for Legal (preview, 2026-08-25) names no practice-management or matter-management vendor among its connectors.",
+     "verdict": "holds",
+     "current_fact": "Snippets of the Workspace Updates post and KuCoin coverage confirm the details. On 2026-09-15 Google added Asana, Atlassian Rovo, HubSpot, Mailchimp, QuickBooks, Monday.com and Salesforce, reachable from the Gemini side panel in Docs, Sheets and Slides and from Chat. A Gmail Help page also exists; Drive is not confirmed. The feature is ON by default and admins control it by domain, OU or group under Apps > Google Workspace > Gemini for Workspace > Third-Party Connectors. New finding: the Gemini web app ('Gemini Spark') now lets users add a custom MCP server under Connected Apps, using DCR or manually entered credentials. It is available only to personal Google accounts, 'not available if you sign in with a work or school Google Account', so it is no route for firm Workspace users. The Cloud blog confirms Legal is in preview as of 2026-08-25, names Cleary Gottlieb, Freshfields, Weil and Williams & Connolly, and lists its MCP partners with no practice-management vendor (no Clio, Aderant, Intapp or Litify). It states customer data is never used to train Google's foundation models, and it gives no public path for adding connectors.",
+     "status": "Workspace connectors GA and curated; Legal in preview. Sources: cloud.google.com blog (primary), search snippets for Workspace Updates and Gemini Apps Help.",
+     "source_urls": [
+      "https://cloud.google.com/blog/products/ai-machine-learning/introducing-gemini-enterprise-for-legal",
+      "https://workspaceupdates.googleblog.com/2026/09/connect-to-more-tools-with-gemini-in-Google-Workspace.html",
+      "https://www.kucoin.com/news/flash/gemini-integrates-seven-business-systems-into-google-workspace",
+      "https://support.google.com/mail/answer/16796422?hl=en-uk",
+      "https://support.google.com/gemini/answer/17209137"
+     ]
+    }
+   ],
+   "play_adjustments": [
+    {
+     "play_title": "Fix the Gemini BYOK route and add a customer-project Agent Platform (Vertex) route using Workload Identity Federation",
+     "adjustment": "(a) Do not switch to gemini-2.5-flash: it retires on 2026-10-16 (Dev API) and 2026-10-20 (Vertex per LiteLLM). Pick a 3.x Flash. Per LiteLLM's catalog, 3.7 and 3.8 Flash cost $0.75/M input tokens and 3.5 Flash costs $1.50/M, so set price expectations. Prefer a pinned model ID plus a health check over the floating gemini-flash-latest alias, so privileged workloads do not silently change model. (b) WIF through LiteLLM external_account and the /endpoints/openapi path are confirmed, and the repo's LiteLLM 1.93 image already supports them. In UI copy, use 'Gemini Enterprise Agent Platform (formerly Vertex AI)'; Google's own terms and product pages use that form. (c) Checklist wording: the 3-day Google Search grounding debug log is confirmed in Service Specific Terms \u00a720(k)(ii), and Web Grounding for Enterprise deletes that clause. Do not claim a Master Agreement exempts a firm from abuse-monitoring logging by default; that is unverified. Phrase it as 'confirm abuse-monitoring logging status with Google for your agreement'."
+    },
+    {
+     "play_title": "Ship LawHand as a custom MCP connector for Gemini Enterprise, plus a SKILL.md pack",
+     "adjustment": "Treat confidential-client support as required, not contingent. Third-party evidence (privacyfence issue, 2026-09-14, and a community server) says Gemini Enterprise custom MCP supports neither DCR nor OAuth discovery and needs an admin-entered client_id and client_secret. Google's own connector docs confirm the fixed redirect https://vertexaisearch.cloud.google.com/oauth-redirect. So workspace_mcp_oauth.py:297/358 (public clients only, auth method 'none') must add client_secret_basic and client_secret_post clients. Business edition custom MCP is confirmed as Public Preview under Pre-GA terms. Two scope corrections: (1) the SKILL.md pack reaches only Standard, Plus and Pay-as-you-go, since Business is not listed as able to upload skills; a Business-edition pilot gets the MCP connector without the skills. (2) Pay-as-you-go is not a cheap pilot path for small firms: it requires 20 or more seats and is in limited rollout. Private Cloud Run and VPC-SC connectivity exist, so remove 'no private networking' from the docs; it does not change LawHand's public endpoint on IONOS."
+    },
+    {
+     "play_title": "LawHand for Google Workspace add-on (HTTP runtime) with narrow scopes, smart chips, and a 'refine in your Gemini' hand-off",
+     "adjustment": "The smart-chip and @-menu design is confirmed by Google's HTTP-runtime sample. Add the workspace.linkpreview and workspace.linkcreate scopes to the manifest. createActionTriggers is declared under 'docs' only, so @-menu resource creation is Docs-only. Before committing the 'no CASA' SKU, confirm the Sensitive (not Restricted) classification of gmail.addons.current.message.readonly in the Cloud console consent-screen scope picker; only third-party sources support it so far."
+    },
+    {
+     "play_title": "Workspace Studio custom starters and steps so firms' own Gemini steps do the work between LawHand events",
+     "adjustment": "Plan for preview status. Google's developer docs still say 'extending Google Workspace Studio with add-ons is in limited preview', so LawHand may need Google enrollment to publish. Custom starters, custom steps, third-party integrations and webhooks are OFF by default, so every firm's admin must enable them. Onboarding needs an explicit admin step, and a fallback (outbound webhooks or add-on cards) for firms that leave them off. Keep the play at high value, but move its date behind the add-on's Marketplace approval and a limited-preview check."
+    },
+    {
+     "play_title": "Scope diet and CASA decision before any public Google launch",
+     "adjustment": "Current repo scopes are confirmed: restricted 'drive' in integrations.py and google_service_account.py:41, and gmail.readonly plus drive in admin.py:1620-1622. The plan assumes add-on contextual Gmail scopes avoid CASA. That rests on third-party classification only, so verify it in Google's Gmail scopes table or the console before the product decision."
+    },
+    {
+     "play_title": "Business development: pursue Gemini in Workspace third-party connectors and the Gemini Enterprise for Legal partner ecosystem",
+     "adjustment": "The premise holds. Workspace's 2026-09-15 connectors are a curated seven with no self-serve path, and Legal (preview) names no practice-management vendor and no partner onboarding route. Note for positioning: the consumer Gemini web app now accepts custom MCP servers, including DCR ones like LawHand's current public-client flow, but only on personal Google accounts. Do not market it to firms, because attorneys would be moving client data into consumer accounts."
+    },
+    {
+     "play_title": "Governance disclosures and per-surface data-flow labels in the integrations UI",
+     "adjustment": "Use 'Gemini Enterprise Agent Platform (formerly Vertex AI)' and 'Gemini Notebook'; Google's product and terms pages confirm both names. Cite the Service Specific Terms (Training Restriction \u00a718; grounding debug log \u00a720(k)(ii)) instead of blog wording. Drop 'custom MCP requires a public IP / no private VPC'; Google now supports private Cloud Run and VPC-SC for custom MCP."
+    },
+    {
+     "play_title": "Later: a Marketplace-listed LawHand A2A agent for Gemini Enterprise",
+     "adjustment": "The hosting rule is stricter than stated. Google's Marketplace AI-agent docs say 'All supporting components, including the AI agent, must run entirely on Google Cloud', with Google or Model Garden models by default. The research's 'only smaller control planes may run elsewhere' did not survive checking. Scope it as a GCP-hosted agent core, and decide early whether calling the IONOS-hosted LawHand MCP backend is acceptable for listing. Direct A2A registration without a listing is confirmed to be Standard/Plus only. The 'Google Cloud Ready \u2013 Gemini Enterprise' designation was not confirmed."
+    },
+    {
+     "play_title": "Defer: calling the client's Gemini Enterprise from LawHand through StreamAssist, and exporting to the Gemini Notebook Enterprise API",
+     "adjustment": "Fix the rationale: StreamAssist (with agents_spec) is in Discovery Engine v1, the GA surface, not only v1alpha/v1beta. Deferral is still reasonable, but the reasons are the cloud-platform user scope, per-user Discovery Engine IAM grants and per-seat licensing, not API maturity. The Notebook API part stays unverified (preview)."
+    }
+   ]
+  }
+ },
+ {
+  "topic": "office-suite-docs",
+  "result": {
+   "checks": [
+    {
+     "claim": "Graph GET /drives/{d}/items/{i}/content?format=pdf is GA. It returns a 302 to a pre-authenticated URL that lasts a few minutes, converts doc/docx and similar files, needs at least Files.Read (delegated) or Files.ReadWrite.All (application), works on SPE with FileStorageContainer.Selected, and has no metered charge. (Play 2)",
+     "verdict": "partly_holds",
+     "current_fact": "Confirmed in the v1.0 source: the 302 and the few-minute pre-authenticated URL, docx\u2192pdf in the source list, and the permission table (delegated Files.Read; application Files.ReadWrite.All, higher Sites.ReadWrite.All; no Selected scope listed). The SPE note does require FileStorageContainer.Selected plus container-type permissions. No size limit is documented. What is wrong is 'no metered charge' for SPE files. The SPE billing-meters doc charges each explicit Graph call by the app as an API transaction, and data sent to a server counts as egress. Only downloads to Office desktop and web clients are exempt. It is free only for regular OneDrive and SharePoint.",
+     "status": "GA (v1.0)",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/driveitem-get-content-format.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/includes/permissions/driveitem-get-content-format-permissions.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/includes/sharepoint-embedded-app-driveitem-permissions.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/reference/billing-meters.md"
+     ]
+    },
+    {
+     "claim": "driveItem/preview returns short-lived embeddable getUrl/postUrl, is limited to SharePoint and OneDrive for Business, and carries a warning that the URL acts as the calling identity. nb=true hides the banner. Office for the web cannot be put in an iframe, so editing opens webUrl (action=edit|view|default) in a new tab. (Play 1)",
+     "verdict": "holds",
+     "current_fact": "The v1.0 preview page (ms.date 2024-08-01) says it is SharePoint/OneDrive for Business only and has the CAUTION that the URL acts with the caller's permissions. Its body options are page and zoom. Delegated least privilege is Files.Read; personal accounts are 'Not supported'. nb=true is documented only in the SPE preview-files article, not in the generic Graph page. The SPE 'office-collaboration-instead-of-building' doc says 'Office for the web isn't iframeable today' and describes action=view/edit/default on webUrl. Nuance: CSPP/WOPI hosts are the exception, since they do iframe Office for the web (search snippet of the CSPP docs).",
+     "status": "GA",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/driveitem-preview.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/includes/permissions/driveitem-preview-permissions.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/preview-files.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/plan/office-collaboration-instead-of-building.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/open-office-files.md"
+     ]
+    },
+    {
+     "claim": "Office URI schemes: ms-word:ofe|u|<url> opens for edit, and ms-word:nft|u|<template>|s|<save-location> creates a new document from a template and saves it to a location. Only http/https URIs work, with a 256-character path limit (216 for Excel). For SharePoint/SPE, build the URI from the parent folder's webUrl plus the file name. (Plays 1 and 3)",
+     "verdict": "partly_holds",
+     "current_fact": "ofe/ofv, http/https only, the 256/216 limits and Office 2010 SP2+ are all correct (spec ms.date 2016-01-14, still the current page). The SPE open-office-files doc gives the pattern ms-word:ofe|u|{folder.WebUrl}/{item.Name}. The nft part is overstated. The spec says the |s| argument only sets 'the default path offered as a save location when the file is first saved. It is possible for the user to choose a different location', and that the save location 'must be pointing to the same host name as the template'. So nft does not guarantee the new document lands in the matter folder, and the template must sit on the same SharePoint host.",
+     "status": "GA (legacy spec, 2016)",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/office-developer-client-docs/main/docs/office-uri-schemes.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/open-office-files.md"
+     ]
+    },
+    {
+     "claim": "Graph change notifications on OneDrive for Business/SharePoint drives can only subscribe to the drive root (Files.Read.All), not to individual files. Prefer: includesecuritywebhooks adds permission-change events, and delta catches up on missed changes. (Play 1)",
+     "verdict": "holds",
+     "current_fact": "Confirmed. On OneDrive for Business you can subscribe only to the root folder; files cannot be subscribed; includesecuritywebhooks applies to SharePoint/ODfB. Permission is Files.Read.All for both delegated work/school and application; SharePoint lists need Sites.Read.All. The subscription resource adds two limits: drive-root and list notifications support only the 'updated' changeType, and the maximum lifetime is 42,300 minutes (under 30 days), so renewal is needed. Sites.Selected and Files.SelectedOperations.Selected are not listed for subscriptions.",
+     "status": "GA",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/subscription-post-subscriptions.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/resources/subscription.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/includes/change-notifications-subscription-lifetime.md"
+     ]
+    },
+    {
+     "claim": "Graph Selected scopes (Sites.Selected, Lists/ListItems/Files.SelectedOperations.Selected) work delegated and app-only, start with no access until an explicit POST .../permissions grant (read/write/owner/fullcontrol), and break inheritance below site level. Graph v1.0 contentType supports documentTemplate, documentSet default content and copyToDefaultContentLocation for provisioning 'New' templates. (Plays 3 and 4)",
+     "verdict": "holds",
+     "current_fact": "The Selected overview (ms.date 2024-11-07) confirms all of this word for word. The contentType resource in v1.0 has documentSet and documentTemplate, and copyToDefaultContentLocation is in v1.0 at POST /sites/{siteId}/contentTypes/{id}/copyToDefaultContentLocation. Two points the plays leave out. (1) The Graph permission tables list tenant-wide scopes for these calls: contentType update/create needs Sites.Manage.All, and copyToDefaultContentLocation needs Sites.ReadWrite.All. No Selected scope is listed, so running them under Sites.Selected is unverified. (2) The POST /sites/{id}/permissions grant itself needs Sites.FullControl.All, or in delegated mode a SharePoint Administrator. Onboarding therefore needs a privileged admin step.",
+     "status": "GA",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/permissions-selected-overview.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/resources/contenttype.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/contenttype-copytodefaultcontentlocation.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/includes/permissions/contenttype-update-permissions.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/site-post-permissions.md"
+     ]
+    },
+    {
+     "claim": "Pickers: OneDrive/SharePoint File Picker v8 is delegated-only (MyFiles.Read / Files.Read / AllSites.Read; ChannelSettings.Read.All for channels). The Google Picker plus drive.file is non-sensitive; restricted scopes (drive, drive.readonly) need verification plus an annual CASA assessment. @googleworkspace/drive-picker-element (plus a React wrapper) is in developer preview. (Play 4)",
+     "verdict": "partly_holds",
+     "current_fact": "The File Picker v8 doc confirms: it always runs with delegated permissions, a POST to {baseUrl}/_layouts/15/FilePicker.aspx in an iframe or popup, the scopes table as stated, and a consumer OneDrive configuration. Search snippets confirm drive.file is non-sensitive and drive.readonly is restricted, with a CASA audit to revalidate yearly (developers.google.com was blocked). The web component could not be confirmed as 'developer preview'. It is pre-1.0 on npm (latest 0.7.3, last published 2025-12-09), with a React wrapper @googleworkspace/drive-picker-react, and its README carries no stability label. Treat it as unstable/pre-1.0.",
+     "status": "GA (File Picker v8; drive.file); pre-1.0 (picker web component)",
+     "source_urls": [
+      "https://raw.githubusercontent.com/OneDrive/onedrive-api-docs/live/docs/controls/file-pickers/index.md",
+      "https://raw.githubusercontent.com/googleworkspace/drive-picker-element/main/README.md",
+      "https://registry.npmjs.org/@googleworkspace/drive-picker-element",
+      "https://developers.google.com/workspace/drive/api/guides/api-specific-auth",
+      "https://support.google.com/cloud/answer/13465431?hl=en"
+     ]
+    },
+    {
+     "claim": "Word JS requirement sets: WordApi 1.9 adds ComboBox/DropDownList content controls. WordApiDesktop 1.3 (Windows 2507, not web) adds CustomXmlPart, XmlMapping, DatePicker/Picture/Group/RepeatingSection/BuildingBlockGallery content controls and Template. WordApiDesktop 1.4 (2508) adds Bookmarks, Revisions, TableOfAuthorities and Coauthoring locks; 1.5 is 2603. (Play 5)",
+     "verdict": "holds",
+     "current_fact": "The requirement-set table (ms.date 2026-09-10) and the per-set includes confirm every class and version listed. The play misses two things. (1) WordApi 1.9 and all WordApiDesktop sets are 'Not available' on volume-licensed perpetual/LTSC Office (Office 2024 stops at WordApi 1.8 / WordApiDesktop 1.1); WordApiDesktop 1.3 is available on Mac (16.99.2+). (2) Tracked-change review is already cross-platform in WordApi 1.6 (Word.TrackedChange, supported on the web). The LawHand add-in currently checks only WordApi 1.1/1.4 (office-addin/src/hosts/wordAdapter.ts).",
+     "status": "GA",
+     "source_urls": [
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/requirement-sets/word/word-api-requirement-sets.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-desktop-1-3.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-desktop-1-4.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-1-9.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-1-6.md"
+     ]
+    },
+    {
+     "claim": "Google merge path: documents.batchUpdate supports replaceAllText, replaceNamedRangeContent, insertTable, insertInlineImage/replaceImage (public URI \u22642 KB, <50 MB, \u226425 MP, PNG/JPEG/GIF), insertDate/insertPerson/insertRichLink chips and addDocumentTab under drive.file, with no variable or placeholder chips. files.export caps at 10 MB. Drive approvals write methods accept drive.file (read GA). Labels are applied with files.modifyLabels and need Business Standard or higher. HTTP Workspace add-ons get per-file access with requestFileScopeForActiveDocument plus onFileScopeGranted. (Plays 6 and 7)",
+     "verdict": "partly_holds",
+     "current_fact": "The Docs v1 discovery (rev 20260916) lists every request type named, with drive.file on batchUpdate. The discontinuous named-range behaviour and the image limits match word for word, and there is no variable, placeholder or building-block schema. Correction: RichLink is defined as 'A link to a Google resource (such as a file in Drive, a YouTube video, or a Calendar event)', so insertRichLink cannot make a chip for a LawHand URL. Drive v3 (rev 20260916) confirms export 'limited to 10 MB', files.download operations valid 24h, and approvals start/approve/decline/cancel/reassign/comment accepting drive.file. The GA status of the approvals write methods could not be confirmed; snippets only say reading is GA. Snippets confirm labels are on Business Standard/Plus, Enterprise, Frontline, Education and Essentials but not Business Starter, and confirm requestFileScopeForActiveDocument plus onFileScopeGranted with drive.file for add-ons that call REST APIs.",
+     "status": "GA (Docs API, Drive export/labels, approvals read); approvals write GA status unconfirmed",
+     "source_urls": [
+      "https://docs.googleapis.com/$discovery/rest?version=v1",
+      "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+      "https://drivelabels.googleapis.com/$discovery/rest?version=v2",
+      "https://developers.google.com/workspace/drive/api/guides/approvals",
+      "https://support.google.com/a/answer/9292382?hl=en",
+      "https://developers.google.com/workspace/add-ons/editors/gsao/editor-actions",
+      "https://developers.google.com/workspace/add-ons/guides/alternate-runtimes"
+     ]
+    },
+    {
+     "claim": "SharePoint Embedded: containers live in the customer tenant under Purview, don't count against M365 storage, and are billed PAYG (storage, archived storage, transactions, egress). Pass-through billing charges the customer (their Billing Admin activates it); the billing model can't be changed after creation. Office co-authoring works without an Office license (except @mentions). urlTemplate went GA in June 2026. Not available in GCC High/DoD. (Play 9)",
+     "verdict": "holds",
+     "current_fact": "Confirmed by the SPE overview, choose-billing-model, billing-meters and create-container-type sources. The create-container-type doc says 'An Office license isn't required to collaborate on Office documents stored in a container, except ... mentions'. It is available in commercial, GCC and 21Vianet, not GCC High/DoD. urlTemplate is listed in v1.0 fileStorageContainerTypeSettings, and whats-new (June 2026) calls it a 'new urlTemplate setting' rather than using the word 'GA'. Missing risk: create-container-type says 'You can delete only trial container types; deletion of standard container types isn't yet supported'. The billing doc's 'delete and re-create to switch models' escape route therefore does not exist for non-trial types. The agent/Retrieval message meter is private preview.",
+     "status": "GA (Retrieval sharePointEmbedded source and agent meter: preview)",
+     "source_urls": [
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/overview.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/plan/choose-billing-model.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/reference/billing-meters.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/create-container-type.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/whats-new.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/resources/filestoragecontainertypesettings.md"
+     ]
+    },
+    {
+     "claim": "Copilot: agentic editing in Word went GA on 2026-04-22 with no third-party extensibility, and the 'Combine Copilot agents with Office add-ins (preview)' pages are gone. Copilot Cowork (skills plus MCP connectors in an M365 app package) was Frontier-only and its GA is unconfirmed; licensing is the client's M365 Copilot license. (Play 8)",
+     "verdict": "wrong",
+     "current_fact": "The Word agentic GA on 2026-04-22 is confirmed (Microsoft blog: Microsoft 365 Copilot, Premium, Personal, Family; no partner extensibility mentioned). The agent-and-add-in pages return 404 and the office-js TOC only lists 'Copilot skills for Excel (preview)'. The Cowork status is wrong: the Microsoft 365 blog announced Copilot Cowork GA worldwide on 2026-06-16. It needs a Microsoft 365 Copilot user license plus usage-based Copilot Credits ($0.01/credit PAYG, P3 commitment discounts). Organizations can build custom plugins (skills plus MCP connectors) and upload them through the M365 admin center. Store publication goes through Microsoft validation. Also relevant: MCP-based 'federated Copilot connectors' (ms.date 2026-09-21) surface in Copilot in Word/Excel/PowerPoint/Outlook and Cowork. Partner connectors need Microsoft approval, and write/update/delete actions start rolling out in early October 2026.",
+     "status": "GA (Word agentic 2026-04-22; Cowork 2026-06-16); federated connector write actions rolling out Oct 2026",
+     "source_urls": [
+      "https://www.microsoft.com/en-us/copilot/blog/2026/04/22/copilots-agentic-capabilities-in-word-excel-and-powerpoint-are-generally-available/",
+      "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/16/copilot-cowork-is-now-generally-available/",
+      "https://learn.microsoft.com/en-us/microsoft-365/copilot/cowork/cowork-plugin-development",
+      "https://learn.microsoft.com/en-us/microsoft-365/copilot/cowork/cowork-manage-plugins",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/federated-connectors-overview.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/toc.yml"
+     ]
+    },
+    {
+     "claim": "Gemini: since September 2026 the Gemini side panel in Docs/Sheets/Slides/Chat can call a curated set of third-party MCP connectors (Asana, Atlassian Rovo, HubSpot, Mailchimp, QuickBooks, monday.com, Salesforce), on by default and admin-managed. Custom MCP servers are supported in Gemini Enterprise \u2013 Business edition. (Play 8)",
+     "verdict": "holds",
+     "current_fact": "Search snippets of the Workspace Updates post (Sept 15, 2026) confirm the seven MCP connectors in the Docs/Sheets/Slides/Chat side panels, ON by default, managed under Apps > Google Workspace > Gemini for Workspace > Third-Party Connectors (the blog was blocked). Snippets of the Gemini Enterprise help and Cloud docs confirm custom MCP in Gemini Enterprise \u2013 Business edition: set up in business.gemini.google > Manage team > Connected apps > Add MCP Server. It requires Streamable HTTP (no SSE) and a publicly trusted TLS certificate, and supports OAuth 2.0 or no auth (GCP service-account token since June 15, 2026). Nuance: the custom MCP runs in the Gemini Enterprise app, not the Docs side panel.",
+     "status": "GA (rolling out Sept 2026)",
+     "source_urls": [
+      "https://workspaceupdates.googleblog.com/2026/09/connect-to-more-tools-with-gemini-in-Google-Workspace.html",
+      "https://support.google.com/g/answer/17106276?hl=en",
+      "https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server"
+     ]
+    },
+    {
+     "claim": "WOPI/CSPP targets cloud-storage ISVs, requires partner eligibility review, and every end user needs an M365 license. Firm-funded M365 document processing costs content assembly $0.15/doc, autofill $0.005/page and eSignature $2/request (simple e-signatures, up to 10 recipients, no Indonesia, no API), and the free trial capacity ended June 2026. (Play 10)",
+     "verdict": "partly_holds",
+     "current_fact": "CSPP (search snippets of the Learn pages): WOPI requires CSPP membership, each end user needs an M365 license, and third-party developers should not apply on a customer's behalf. Prices match the MicrosoftDocs public-branch PAYG table (ms.date 2025-08-01): content assembly $0.15 (manual generation free for per-user licensees, Power Automate generation charged), autofill $0.005 per page, eSignature $2.00 per request with up to 10 recipients. eSignature is 'simple electronic signatures' under eIDAS, worldwide except Indonesia, needs Entra B2B for external signers, and eSignature for Word needs the Beta/Current/Monthly Enterprise channel. The trial claim is wrong: the public GitHub branch says 'Through June 2026', but the live Learn promo page says 'Through December 2026, your organization can use included monthly capacity'. The branch shows 50 content-assembly docs, 100 autofill pages and 5 eSignature requests per tenant per month.",
+     "status": "GA",
+     "source_urls": [
+      "https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/online/apply-for-cspp-program",
+      "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/syntex-pay-as-you-go-services.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/esignature-overview.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/promo-syntex.md",
+      "https://learn.microsoft.com/en-us/microsoft-365/documentprocessing/promo-syntex?view=o365-worldwide",
+      "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/content-assembly.md"
+     ]
+    }
+   ],
+   "play_adjustments": [
+    {
+     "play_title": "Open draft in Word (web or desktop); edits sync back",
+     "adjustment": "The sync-back design needs tenant-wide scopes. Drive-root subscriptions on OneDrive for Business/SharePoint need Files.Read.All, delegated or app; lists need Sites.Read.All. Selected scopes aren't documented for subscriptions, which conflicts with the Sites.Selected move in the pickers play. Test in a dev tenant, and plan a delta-polling fallback for Selected-only firms. Only the 'updated' changeType fires on drive root, and subscriptions live at most 42,300 minutes, so the renewal job is required. nb=true is documented only for SPE previews; test it on regular SharePoint. preview is not supported for personal OneDrive, so hide the inline view there. Verify the Google files.watch channel expiry before relying on it."
+    },
+    {
+     "play_title": "Tenant-side PDF conversion with LibreOffice fallback",
+     "adjustment": "Drop 'no metered charge' for SPE. Converting and downloading an SPE-stored file adds an API transaction plus egress on the SPE meters, paid by the firm under pass-through or by LawHand under standard billing. It stays free for regular OneDrive/SharePoint. The least-privileged application permission is Files.ReadWrite.All (write) for a read-only operation. Prefer running the conversion with the user's delegated Files.Read token at request time, or test Sites.Selected before adding app-wide write."
+    },
+    {
+     "play_title": "Firm template library in SharePoint/Drive, published back as native 'New' templates",
+     "adjustment": "ms-word:nft|u|{template}|s|{folder} only offers a default save location that the user can change, and the location must share the template's host name. The new document may not land in the matter folder, and sync-back can miss it. A more reliable pattern: copy the template into the matter folder server-side through Graph, then launch ms-word:ofe on the copy. Graph permission tables list tenant-wide scopes for content-type provisioning (Sites.Manage.All for create/update, Sites.ReadWrite.All for copyToDefaultContentLocation), so running these under Sites.Selected needs an owner/fullcontrol grant and a test. The Selected grant itself needs Sites.FullControl.All or a SharePoint Admin, so budget an admin onboarding step. Keep LawHand templates separate from Syntex/content-assembly modern templates, because content assembly requires removing existing content controls."
+    },
+    {
+     "play_title": "Native file pickers and least-privilege scopes",
+     "adjustment": "@googleworkspace/drive-picker-element is pre-1.0 (0.7.3, last published Dec 2025) and its GA status is unconfirmed. Pin the version or wrap the classic Picker API. Moving M365 to Sites.Selected conflicts with the Graph-subscription sync-back (Files.Read.All/Sites.Read.All documented) and with content-type provisioning. Either keep a narrowly used Files.Read.All for webhooks or accept delta polling for Selected-only tenants. Granting Selected access needs a SharePoint Admin or a Sites.FullControl.All app, so the onboarding flow needs a firm-admin step."
+    },
+    {
+     "play_title": "Content-control template fields in the LawHand Word add-in",
+     "adjustment": "WordApi 1.9 and all WordApiDesktop sets are 'Not available' on volume-licensed perpetual/LTSC Office (Office 2024 stops at WordApi 1.8 / WordApiDesktop 1.1), which many law firms run. Make plain/rich-text content controls (WordApi 1.4\u20131.8) the baseline and gate everything else on isSetSupported. Use cross-platform WordApi 1.6 TrackedChange for revision review, which works in Word on the web, instead of the desktop-only WordApiDesktop 1.4 Revisions API. Add Mac 16.99.2+ to the WordApiDesktop 1.3 test matrix."
+    },
+    {
+     "play_title": "Google Docs template merge path for Google-first firms",
+     "adjustment": "insertRichLink only creates chips for Google resources (Drive files, YouTube, Calendar), so LawHand matter links must be plain hyperlinks or come from the Workspace add-on link previews. Confirm the Drive approvals write methods are GA before building partner sign-off; only read GA is confirmed. Labels exclude Business Starter, and labels must be created and published by an admin with the Manage Labels privilege before files.modifyLabels can set them."
+    },
+    {
+     "play_title": "LawHand for Google Docs (HTTP Workspace add-on)",
+     "adjustment": "No change to the approach: requestFileScopeForActiveDocument plus onFileScopeGranted with drive.file is confirmed for add-ons that call REST APIs. Expect a per-document authorization click in the UX."
+    },
+    {
+     "play_title": "Put drafting on the client's Copilot/Gemini with LawHand as the data and skills provider",
+     "adjustment": "Remove the 'Cowork GA status confirmed' prerequisite and the 'Frontier' risk: Cowork went GA on 2026-06-16. Change who_pays: the client pays a Microsoft 365 Copilot license plus usage-based Copilot Credits ($0.01/credit PAYG), which makes per-run cost variable. Custom org plugins (skills plus MCP connectors) deploy through the M365 admin center; store listing needs Microsoft validation. Add the MCP-based federated Copilot connector path: it surfaces in Copilot in Word/Excel/PowerPoint/Outlook and Cowork, partner connectors need Microsoft approval, and write actions roll out from early Oct 2026. That path is a better 'Copilot in Word' route than the withdrawn agent-plus-add-in pages. For Google, the custom-MCP path runs in the Gemini Enterprise app (a separate SKU), not the Docs side panel. It requires a Streamable HTTP MCP endpoint with a publicly trusted TLS certificate."
+    },
+    {
+     "play_title": "Evaluate SharePoint Embedded as a 'LawHand-managed, in-tenant' storage tier (pilot only)",
+     "adjustment": "Run the pilot on a trial container type. Standard (non-trial) container types can't be deleted today, so the documented 'delete and re-create to change billing model' route is not available. Choosing pass-through vs standard is effectively permanent per owning app. Add the caveat that SPE-side PDF conversion and downloads to LawHand's servers count as transactions plus egress. The Copilot/Retrieval sharePointEmbedded meter is preview."
+    },
+    {
+     "play_title": "Decision: do not build a WOPI host; point firm-side document automation at the firm's own PAYG",
+     "adjustment": "Rewrite the risk line. Per the live Learn promo page, included monthly capacity runs through December 2026, not June 2026: the public-branch copy lists 50 content-assembly docs, 100 autofill pages and 5 eSignature requests per tenant per month. PAYG prices ($0.15, $0.005/page, $2/request) are still as documented. Note that eSignature for Word needs Beta/Current/Monthly Enterprise channel and that content-assembly templates can't contain existing content controls."
+    }
+   ]
+  }
+ },
+ {
+  "topic": "eventing-consent",
+  "result": {
+   "checks": [
+    {
+     "claim": "F8 / Play 1: the 'Let Microsoft manage your consent settings' policy is the default. It rolled out July\u2013August 2025 (MC1097272), and under it end users cannot consent to Files.Read.All, Files.ReadWrite.All, Sites.Read.All, Sites.ReadWrite.All, Mail.Read, Mail.ReadBasic, Calendars.* and similar scopes.",
+     "verdict": "partly_holds",
+     "status": "GA (Microsoft-managed policy, auto-updating)",
+     "current_fact": "The current blocked list in entra-docs manage-app-consent-policies.md (ms.date 2026-01-22, repo HEAD) matches the claim. It also blocks Mail.ReadWrite, the *.Shared variants, MailboxItem.Read, MailBoxFolder.*, MailBoxSettings.*, OnlineMeetings.*, Tasks.* and the Exchange Online permissions EAS, EWS, IMAP and POP.AccessAsUser.All. The timeline in the claim is wrong. MC1097272 (July to August 2025) blocked only the four Files and Sites .All permissions. Mail, Calendars, Chat, Contacts, Tasks and People were added in a later update that started at the end of October 2025 (MC1163922). More Exchange permissions followed from June 2026 (MC1304287). The policy only affects tenants that use the Microsoft-managed policy; tenants with custom policies are not affected. A separate 'Mail client policy' lets users consent only for named mail clients (Apple Mail, Spark, eM Client), not for ISVs such as LawHand. Mail.Send, Files.Read, Files.ReadWrite and User.Read are not on the blocked list, so users can still consent to them.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity/enterprise-apps/manage-app-consent-policies.md",
+      "https://mc.merill.net/message/MC1097272",
+      "https://mc.merill.net/message/MC1163922",
+      "https://mc.merill.net/message/MC1304287",
+      "https://blog-en.topedia.com/2025/11/microsoft-managed-default-app-consent-policy-now-blocks-20-additional-permissions/",
+      "https://blog-en.topedia.com/2026/05/microsoft-managed-default-app-consent-policy-will-block-8-additional-permissions/"
+     ]
+    },
+    {
+     "claim": "F9 / F17 / Play 1 and 6: in the admin consent workflow only Global Administrators can approve requests for Microsoft Graph app roles. In the Integrated Apps deploy flow, only a Global Admin can accept permissions. Deployment targets top-level groups only (not nested groups), and Teams apps need unified manifest 1.13 or later to run in Outlook and the M365 app.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "Confirmed. configure-admin-consent-workflow.md (ms.date 2024-12-29) says reviewers can view, block or deny requests, 'but only Global Administrators can approve admin consent requests for apps requesting for Microsoft Graph app roles'. teams-apps-work-on-outlook-and-m365.md (ms.date 2025-08-26) says 'If the app needs consent, select Accept permissions. Only a global administrator can give consent.' test-and-deploy-microsoft-365-apps.md confirms the top-level-group rule and the manifest 1.13 split. That doc also says the Integrated Apps portal is 'available to world-wide customers only' and 'not available in sovereign and government clouds'.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity/enterprise-apps/configure-admin-consent-workflow.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/admin/manage/teams-apps-work-on-outlook-and-m365.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/admin/manage/test-and-deploy-microsoft-365-apps.md"
+     ]
+    },
+    {
+     "claim": "F0 / Play 2: maximum Graph subscription lifetimes are 10,080 min for Outlook message, event and contact (1,440 min with rich notifications) and 42,300 min for driveItem and list. Requests above the maximum will fail in the future.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "This matches the include change-notifications-subscription-lifetime.md exactly (ms.date 2024-11-07, repo HEAD), including the note 'In the future, any requests to create or renew a subscription beyond the maximum value will fail.' That table also says todoTask webhooks are not available in national clouds.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/includes/change-notifications-subscription-lifetime.md"
+     ]
+    },
+    {
+     "claim": "F1 / F2 / Play 2: webhook delivery counts only after a 2xx within 3 s. Retries run for up to 4 h with a 10 s timeout. An endpoint is marked 'slow' at more than 10% over 3 s and 'drop' at more than 15% over 10 s, and dropped notifications are unrecoverable. The recommended pattern is to validate, enqueue and return 202. Lifecycle events: reauthorizationRequired applies to all resources; subscriptionRemoved and missed apply only to Outlook (subscriptionRemoved also to Teams chatMessage).",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "Confirmed word for word in change-notifications-delivery-webhooks.md (ms.date 2025-01-15) and change-notifications-lifecycle-events.md. driveItem and list get only reauthorizationRequired, never 'missed', so periodic delta sweeps are the only recovery path for files.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/change-notifications-delivery-webhooks.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/change-notifications-lifecycle-events.md"
+     ]
+    },
+    {
+     "claim": "F4 / Plays 3 and 8: a message subscription accepts delegated Mail.ReadBasic or Mail.Read. A driveItem subscription on OneDrive for Business needs Files.Read.All and can only be on the root folder. A list subscription needs Sites.Read.All. 'prefer: includesecuritywebhooks' sends notifications when permissions change.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "Confirmed in subscription-post-subscriptions.md (ms.date 2024-10-28). The permission table lists no Sites.Selected or Files.SelectedOperations.Selected option for driveItem or list. The conclusion that a Sites.Selected-only app cannot use drive or list webhooks is an inference from that table and should be tested in a dev tenant.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/subscription-post-subscriptions.md"
+     ]
+    },
+    {
+     "claim": "F10 / F11 / F12 / Play 3: selected scopes need three steps (Entra consent, a POST to /permissions, and the scope in the token). Granting at site level needs Sites.FullControl.All. Delegated Sites.Selected needs no admin consent, but delegated Files.SelectedOperations.Selected does. Sites.Create.All auto-grants Sites.Selected plus FullControl on the new site. POST /sites exists only in beta. Delegated Mail.ReadBasic does not need admin consent.",
+     "verdict": "holds",
+     "status": "Selected scopes GA; POST /sites beta only (v1.0 page returns 404)",
+     "current_fact": "Confirmed in permissions-selected-overview.md and in the permissions-reference.md entries: Sites.Selected is admin consent Yes (application) and No (delegated); Files.SelectedOperations.Selected and Lists.SelectedOperations.Selected are Yes and Yes; Sites.Create.All is Yes and Yes, and its description is 'granted Sites.Selected + FullControl to the newly created site'; Mail.ReadBasic is Yes (application) and No (delegated). The beta site-post-sites.md carries the beta disclaimer (ms.date 2025-10-09), and api-reference/v1.0/api/site-post-sites.md does not exist. Mail.ReadBasic is 'no admin consent required' only in principle: the Microsoft-managed policy still blocks user consent to it.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/permissions-selected-overview.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/permissions-reference.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/beta/api/site-post-sites.md"
+     ]
+    },
+    {
+     "claim": "F13 / Play 3: RBAC for Applications in Exchange Online replaces Application Access Policies, which are now labelled legacy, and no retirement date has been published. Microsoft blocks non-Microsoft apps from using EWS against Exchange Online from 2026-10-01.",
+     "verdict": "holds",
+     "status": "GA (RBAC for Apps); EWS retirement in progress",
+     "current_fact": "The Learn page is titled 'Application Access Policies (legacy)', and no retirement date appears in results (a community post from July 2026 says the same). On EWS: from 1 October 2026, tenants whose EWSEnabled is still null are switched to False, which blocks EWS. Admins who set up an AppID allow list (deadline around the end of August 2026) can keep access until EWS is permanently disabled on 1 April 2027. LawHand does not use EWS, so this is informational only. From search snippets only; the Exchange doc repos are not public on GitHub and learn.microsoft.com is blocked.",
+     "source_urls": [
+      "https://learn.microsoft.com/en-us/exchange/permissions-exo/application-access-policies",
+      "https://learn.microsoft.com/en-us/exchange/permissions-exo/application-rbac",
+      "https://practical365.com/migrate-from-ews-application-access-policy-to-rbac-for-applications/",
+      "https://mikecrowley.us/2026/07/10/exchange-app-access-policy-rbac-migration/",
+      "https://techcommunity.microsoft.com/blog/exchange/exchange-online-ews-your-time-is-almost-up/4492361",
+      "https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/deprecation-of-ews-exchange-online"
+     ]
+    },
+    {
+     "claim": "F15 / F16 / Play 6: publisher verification is free and needs a verified Cloud Partner Program account plus a matching publisher domain. Publisher Attestation is a self-assessment of about 1 hour and is required for all Teams apps.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "publisher-verification-overview.md says 'Microsoft doesn't charge developers for publisher verification. No license is required.' It requires a partner global account (PGA) Partner One ID, not a location ID, and a publisher domain that is not *.onmicrosoft.com. Learn snippets confirm 'Publisher Attestation is a requirement for all Teams apps' and 'Most attestations can be completed in one hour or less', filled in through Partner Center, and Microsoft does not independently verify the answers. Attestation is tied to Partner Center (store or AppSource) submissions. Attestation content comes from search snippets only; the M365 certification doc repo is not public.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/entra-docs/main/docs/identity-platform/publisher-verification-overview.md",
+      "https://learn.microsoft.com/en-us/microsoft-365-app-certification/docs/attestation",
+      "https://learn.microsoft.com/en-us/microsoft-365-app-certification/docs/faq"
+     ]
+    },
+    {
+     "claim": "F19 / Play 2: Gmail users.watch must be renewed at least every 7 days (Google recommends daily). The Pub/Sub topic must be in the same GCP project, and gmail-api-push@system.gserviceaccount.com needs publish rights. Each user is capped at about 1 notification per second. watch and history.list accept gmail.metadata.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "The Gmail discovery document (rev 20260917) describes WatchRequest.topicName as: the 'my-project-identifier' portion 'must exactly match your Google developer project id (the one executing this watch request)'. The watch and history.list scopes include gmail.metadata, gmail.readonly, gmail.modify and mail.google.com. The q parameter 'cannot be used when accessing the api using the gmail.metadata scope'. Search snippets of the official push guide confirm the 7-day and daily renewal and the gmail-api-push publisher grant. The official guide says notifications over 1/sec are dropped; one third-party guide says 'batched or delayed', so the history.list fallback sweep is still needed.",
+     "source_urls": [
+      "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest",
+      "https://developers.google.com/workspace/gmail/api/guides/push",
+      "https://www.unipile.com/gmail-api-push-notifications/"
+     ]
+    },
+    {
+     "claim": "F22 / Plays 2 and 8: Google Drive subscriptions in the Workspace Events API are generally available (developer preview in July 2025). They cover files added or moved, edits and revisions, trash and untrash, access proposals and comments.",
+     "verdict": "holds",
+     "status": "GA (announced 2026-05-18 per release-notes snippet)",
+     "current_fact": "A search snippet of the Workspace Events release notes says 'Subscriptions are now generally available for Google Drive events', dated May 18, 2026, and a Q2 2026 roundup headline says 'Drive Events GA'. The v1 discovery document (rev 20260906) has no Developer Preview marker for Drive; the only preview is org-wide Chat subscriptions. It includes DriveOptions.includeDescendants and accepts the drive, drive.file, drive.readonly, drive.metadata and drive.metadata.readonly scopes. The July 2025 event list confirms added/moved, edited/revision, trash/untrash and access proposal; the claimed 'comments' event type could not be confirmed. developers.google.com is blocked, so this rests on the discovery document and snippets.",
+     "source_urls": [
+      "https://workspaceevents.googleapis.com/$discovery/rest?version=v1",
+      "https://developers.google.com/workspace/events/release-notes",
+      "https://workspaceupdates.googleblog.com/2025/07/google-drive-events-api-now-available.html",
+      "https://pulse.appsscript.info/p/2026/07/q2-2026-developer-roundup-apps-script-core-status-drive-events-ga-and-mcp-servers/"
+     ]
+    },
+    {
+     "claim": "F25 / Play 5: restricted scopes need restricted-scope verification plus a CASA 'Tier 2' assessment by a Google-authorized lab, redone every 12 months from the Letter of Assessment date. The cost is about $540\u2013$1,800 per year.",
+     "verdict": "partly_holds",
+     "status": "GA program; naming changed in 2026",
+     "current_fact": "The 12-month reassessment from the LOA approval date is confirmed in a snippet of Google's restricted-scope verification page. The naming is out of date: the App Defense Alliance CASA Specification v2.1.1 (2026-06-03, ADA ASA-WG GitHub) replaces tiers with 'ADA Assurance Level 1 (Verified Self Assessment, lab reviews evidence)' and 'Assurance Level 2 (Lab Assessment, lab tests the app directly)', and the program is now described as the ADA Application Security Assessment. Google assigns the level. Third parties disagree on whether restricted-scope multi-tenant apps land at AL1 or AL2, and on price ($500\u2013$4,500 depending on level). The $540\u2013$1,800 figure is third-party and applies to the old Tier 2.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/appdefensealliance/ASA-WG/develop/CASA/CASA%20Specification.md",
+      "https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification",
+      "https://deepstrike.io/blog/google-casa-security-assessment-2025",
+      "https://valuementor.com/blogs/casa-certification-for-web-applications-and-apis-the-engineering-guide-to-al1-al2-assessment",
+      "https://github.com/overfolder/overslash/pull/650"
+     ]
+    },
+    {
+     "claim": "F26 / F27 / F28 / Play 5: drive.file is non-sensitive and grants per-file access through Picker. A Testing-status app is capped at 100 test users and its refresh tokens expire in 7 days. An unverified production app shows a warning and has a 100-user cap. Admins can trust an unverified app for their domain.",
+     "verdict": "partly_holds",
+     "status": "GA",
+     "current_fact": "drive.file is confirmed non-sensitive with per-file and Picker access; Google recommends migrating from restricted Drive scopes to it (Drive scope guide snippet). The Drive discovery document (rev 20260916) lists drive.file for changes.watch and changes.list. The 7-day refresh-token expiry applies to projects with an External user type in Testing status (Manage App Audience help snippet). A clarification the play needs: when a Workspace admin marks an app as Trusted in API controls, Google treats it as internal for that org, so its users see no unverified-app screen and are not subject to the 100-user cap. That applies to an app in production that is unverified, not to one in Testing, which still allows only listed test users with 7-day tokens. Admin-help content comes from search snippets because support.google.com is blocked.",
+     "source_urls": [
+      "https://developers.google.com/workspace/drive/api/guides/api-specific-auth",
+      "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+      "https://support.google.com/cloud/answer/15549945?hl=en",
+      "https://support.google.com/cloud/answer/13464323?hl=en",
+      "https://support.google.com/a/answer/9352843?hl=en"
+     ]
+    },
+    {
+     "claim": "F23 / Play 3: Google Calendar offers granular scopes (calendar.events.owned, calendar.events.owned.readonly, calendar.app.created, calendar.calendarlist, calendar.events.freebusy) usable with events.watch and a syncToken.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "The Calendar discovery document (rev 20260826) lists all of these scopes. events.watch and events.list accept calendar.app.created, calendar.events.owned and calendar.events.owned.readonly. events.insert accepts calendar.app.created and calendar.events.owned. 'owned' covers only calendars the user owns, not shared or delegated calendars.",
+     "source_urls": [
+      "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"
+     ]
+    },
+    {
+     "claim": "F6 / F7 / Play 7: Outlook limits are 10,000 requests per 10 min and 4 concurrent requests per app per mailbox. Subscription writes are limited to 500 per 20 s per app per tenant. SharePoint charges 1 RU for delta with a token (2 without). The ISV User-Agent format is 'ISV|CompanyName|AppName/Version', and decorated traffic is prioritized.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "The limits are confirmed in throttling-outlook.md and throttling-subscription-services.md (per app per tenant: 500 writes per 20 s, 25 list reads per 20 s) and in how-to-avoid-getting-throttled-or-blocked-in-sharepoint-online.md (ms.date 2025-10-02): 1,250 RU per minute and 1.2M RU per 24 h for 0\u20131,000 licenses, and 'Well-decorated traffic will be prioritized'. The User-Agent guidance is SharePoint-specific and also asks for a registered AppID and AppTitle.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/includes/throttling-outlook.md",
+      "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/includes/throttling-subscription-services.md",
+      "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/general-development/how-to-avoid-getting-throttled-or-blocked-in-sharepoint-online.md"
+     ]
+    }
+   ],
+   "play_adjustments": [
+    {
+     "play_title": "Admin-first Microsoft onboarding (tenant-wide admin consent + 'Pending admin approval' state)",
+     "adjustment": "1) Fix the timeline: MC1097272 (July\u2013August 2025) blocked only Files and Sites .All. Mail, Calendars, Chat, Contacts, Tasks and People were blocked from the end of October 2025 (MC1163922), and Exchange EAS, EWS, IMAP and POP from June 2026 (MC1304287). Replace the risk 'tenants consented before July 2025 behave differently' with: existing grants stay valid; new users and broader scopes in tenants on the Microsoft-managed policy need an admin; tenants on custom consent policies are unaffected. 2) Users can still self-consent to Mail.Send, Files.Read, Files.ReadWrite (their own OneDrive), User.Read and offline_access. Per-user send and own-file features can therefore stay self-serve, and only the mail, calendar and tenant-file read tiers wait for an admin. 3) Say which admin role is needed. Integrated Apps 'Accept permissions' requires a Global Admin, and so does approving admin-consent-workflow requests for Graph application permissions. The copyable link should say which role to send it to. 4) The 'Mail client policy' allow-list does not cover third-party ISVs, so do not suggest it as a workaround. 5) Integrated Apps is worldwide-cloud only."
+    },
+    {
+     "play_title": "Replace polling with event-driven sync (Graph subscriptions + delta; Gmail watch + history; Drive/Workspace Events; Calendar watch + syncToken)",
+     "adjustment": "The core facts hold (lifetimes, 3 s/202 receiver, lifecycle events, Gmail 7-day watch). Workspace Events Drive subscriptions are GA as of May 2026 (release-notes snippet); do not rely on a 'comments' event type until it is confirmed. The Gmail Pub/Sub topic's project ID must exactly match the GCP project that runs users.watch, so LawHand cannot use a topic in another project. For driveItem and list, Graph sends no 'missed' lifecycle events, and OneDrive for Business subscriptions are root-only. The nightly and on-notification delta sweep is therefore the recovery mechanism, not a fallback. If Play 5 moves Drive to drive.file, test whether Workspace Events folder subscriptions with includeDescendants deliver events or resources for child files the app was never granted through Picker."
+    },
+    {
+     "play_title": "Least-privilege scope tiers mapped to features (incremental consent)",
+     "adjustment": "1) Delegated Mail.ReadBasic is still blocked by the Microsoft-managed policy, so it gives no consent benefit over Mail.Read in those tenants. It is a data-minimization choice only; justify it that way or drop it. 2) Remove 'or Sites.Create.All once POST /sites is GA'. POST /sites is still beta only (no v1.0 page), so plan on the one-time Sites.Selected grant. Granting at site level needs Sites.FullControl.All (or an admin using the SharePoint admin tooling), and all three steps must be done. 3) RBAC for Applications only narrows access if the tenant-wide Entra application Mail.Read grant is removed. Entra and Exchange RBAC grants are additive, so an unscoped Entra app role still reaches every mailbox. 4) Google calendar.events.owned and calendar.app.created are confirmed and work with events.watch and events.list; note that owned excludes shared and delegated calendars."
+    },
+    {
+     "play_title": "Google launch path decision: drive.file-first, restricted-scope CASA only if Gmail reading is core",
+     "adjustment": "1) Rename 'CASA Tier 2'. The ADA CASA Specification v2.1.1 (2026-06-03) uses Assurance Level 1 (lab-reviewed self-assessment) and Assurance Level 2 (lab-run assessment), and Google assigns the level. Budget for AL2, because the $540\u2013$1,800 figure is third-party and applies to the old Tier 2; third parties now quote $500\u2013$4,500. 2) Phase 1 pilots should run with the OAuth app in 'In production' status (unverified) and each customer admin marking it Trusted in API controls. Google then treats it as internal for that org: no unverified-app screen and no 100-user cap. Do not pilot in 'Testing' status, which allows only listed test users and expires refresh tokens after 7 days for External apps. The phrase 'internal 100-user and 7-day testing limits' conflates the Internal user type with Testing status. 3) Before committing, confirm that picking a folder with Picker under drive.file gives the access the matter-folder model needs (child files and events)."
+    },
+    {
+     "play_title": "Microsoft trust signals: publisher verification + Publisher Attestation now, M365 Certification later; ship via Integrated Apps",
+     "adjustment": "Publisher verification (free, PGA Partner One ID, publisher domain not onmicrosoft.com) and Attestation (at most about 1 hour, required for Teams apps) both check out. Attestation is filed through Partner Center for store or AppSource listings, so badges appear only if LawHand's Teams app, add-in or SaaS app is published there, not if firms side-load or upload it as a custom or LOB app. Sequence the store submission before counting on badges in the Integrated Apps Security & Compliance tab. Integrated Apps deploy and consent needs a Global Admin, and the portal does not exist in sovereign or government clouds."
+    },
+    {
+     "play_title": "Matter-file permission-change alerts (ethical walls)",
+     "adjustment": "The Microsoft half holds: 'prefer: includesecuritywebhooks' on a Files.Read.All subscription at the drive root, for OneDrive for Business and SharePoint only. The Google half needs correcting. Drive 'access proposal' events report that someone requested access; they do not report actual sharing or permission changes. To detect real permission changes on Google, diff permissions from changes.list or the Drive Activity API, or use the Admin SDK Reports Drive audit log (needs admin authorization). Keep the Workspace Events access-proposal subscription as an extra signal, not the main one."
+    },
+    {
+     "play_title": "Graph/SharePoint throttling hygiene",
+     "adjustment": "The numbers hold. The User-Agent 'ISV|LawHand|LawHand/<version>' rule and the traffic prioritization are documented for SharePoint Online APIs; setting the header on Graph is harmless but the prioritization is not promised there. The doc also asks ISVs to use a registered AppID and AppTitle. Subscription writes are limited to 500 per 20 s per app per tenant, so a firm-wide renewal pass for large tenants must be rate-limited."
+    },
+    {
+     "play_title": "National cloud readiness (defer until demand)",
+     "adjustment": "Add that the M365 admin center Integrated Apps portal is not available in sovereign or government clouds, so the Play 6 one-flow admin deploy does not exist for GCC High or DoD. Those tenants need Teams admin center or centralized deployment plus a separate /adminconsent flow against login.microsoftonline.us. todoTask webhooks are global-only, as the play already says."
+    }
+   ]
+  }
+ },
+ {
+  "topic": "competitors",
+  "result": {
+   "checks": [
+    {
+     "claim": "Microsoft's Legal Agent in Word (Microsoft 365 Copilot) is in Frontier preview only (US from 2026-04-30, worldwide Frontier from mid-June 2026). GA has slipped twice and is now set for early October 2026 per MC1388706. It needs a Microsoft 365 Copilot licence plus Frontier enrollment, with nothing to install. The research also says there is no evidence it can use third-party playbooks.",
+     "verdict": "partly_holds",
+     "status": "preview (Frontier); GA target early Oct 2026",
+     "current_fact": "Status and licensing hold. Per MC1388706 (updated 2026-08-24), Frontier preview runs from mid-June 2026 and GA is 'early October 2026 (previously early September)'. It needs a Microsoft 365 Copilot licence, is on by default for tenants in Frontier, needs no separate installation, and does not affect tenants outside Frontier. As of 2026-09-24 it is still preview. The claim that it has no route for firm playbooks is wrong: several secondary sources say a playbook is an ordinary Word document kept in OneDrive or SharePoint, which the agent reviews clauses against. One secondary source says it ran only in Word for Windows desktop at launch. Method: mc.merill.net, handsontek, cloudscout and support.microsoft.com were all blocked by the proxy, so this rests on search-result snippets of those pages.",
+     "source_urls": [
+      "https://mc.merill.net/message/MC1388706",
+      "https://app.cloudscout.one/evergreen-item/mc1388706/",
+      "https://mwpro.co.uk/blog/2026/08/12/mc1388706-microsoft-365-copilot-expands-legal-agent-in-word-to-frontier-users-worldwide-3/",
+      "https://support.microsoft.com/en-us/word/get-started-with-the-legal-agent-frontier",
+      "https://findskill.ai/blog/microsoft-legal-agent-word-solo-lawyer-30-min-setup/",
+      "https://msftnewsnow.com/microsoft-365-copilot-legal-agent-word/"
+     ]
+    },
+    {
+     "claim": "Copilot Cowork became generally available on 2026-06-16 with nine partner plugins, Harvey among them. The research left licence tier and plugin requirements unconfirmed, and play 3 assumes the customer's Copilot seat pays for the Copilot-side reasoning.",
+     "verdict": "partly_holds",
+     "status": "GA (2026-06-16)",
+     "current_fact": "The GA date and partner list hold. The nine plugins available now are Enosix, Harvey, LSEG, Miro, monday.com, Moody's, Morningstar, S&P Global Energy and TeamsMaestro; eight more are coming (Adobe, Atlassian, Box, Canva, CB Insights, Databricks, MoneyForward, Templafy). Licensing is not what the play assumes. Per the primary Microsoft 365 blog, which I fetched directly, Cowork 'requires the Microsoft 365 Copilot User Subscription License (USL)', and users are then 'billed for Cowork on a usage-based basis' in Copilot Credits: PayGo is $0.01 per credit, or P3 prepurchase at a discount. No allowance is included. 'Cowork is off by default'; admins enable it and choose who gets it, with spending caps at tenant, group and user level. On developer requirements, the MicrosoftDocs m365copilot-docs file plugin-authentication.md (ms.date 2026-08-12) says 'Cowork MCP plugins' use the same auth model as MCP plugins for declarative agents.",
+     "source_urls": [
+      "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/16/copilot-cowork-is-now-generally-available/",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication.md"
+     ]
+    },
+    {
+     "claim": "Who pays in play 3: the customer's Microsoft 365 Copilot seat covers Copilot-side reasoning for a LawHand agent (the NetDocuments model), and LawHand covers only its own tool calls.",
+     "verdict": "partly_holds",
+     "status": "GA (declarative agents); Cowork metered",
+     "current_fact": "This holds for declarative agents used by licensed users. MicrosoftDocs m365copilot-docs cost-considerations.md (ms.date 2026-06-18) says: 'For users with Microsoft 365 Copilot add-on licenses, no extra charges', even when the agent has actions, plugins or connectors. It does not hold in two cases. (1) Users without a Copilot licence: an agent grounded in shared tenant data (SharePoint, Copilot connectors) is billed in Copilot Credits. (2) Every Cowork task is billed in Copilot Credits on top of the USL.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/cost-considerations.md",
+      "https://www.microsoft.com/en-us/microsoft-365/blog/2026/06/16/copilot-cowork-is-now-generally-available/"
+     ]
+    },
+    {
+     "claim": "Harvey runs as an agent in Microsoft 365 Copilot (@Harvey or the sidebar, grounded in Harvey Vault) and as a Copilot Cowork plugin. Users are believed to need both a Harvey subscription and Microsoft 365 Copilot.",
+     "verdict": "holds",
+     "status": "GA (agent + Cowork plugin); federated connectors listed",
+     "current_fact": "The core claim holds. A search snippet of Harvey's help page says: 'To use Harvey for Copilot, you'll need an active Microsoft 365 Copilot license and a Harvey subscription.' There is also a Harvey SaaS listing on Microsoft Marketplace (WA200007562). Harvey is additionally listed as a federated (MCP) Copilot connector in Microsoft's gallery: 'Harvey' under Legal, plus 'Harvey AU (preview)' and 'Harvey EU (preview)'. So the reference pattern is agent plus Cowork plugin plus federated connector, not the agent alone. I did not independently verify the 'since March 2026' date or the July 2026 adoption by Microsoft's legal department (CELA). Method: help.harvey.ai and the marketplace were blocked, so this uses search snippets plus the MicrosoftDocs copilot-connectors GitHub repo.",
+     "source_urls": [
+      "https://help.harvey.ai/release-notes/microsoft-copilotcowork-integration",
+      "https://marketplace.microsoft.com/en-us/product/saas/wa200007562",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/connectors-gallery-microsoft.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/federated-connectors-overview.md"
+     ]
+    },
+    {
+     "claim": "NetDocuments sells 'NetDocuments Copilot' as a Microsoft Marketplace SaaS offer (US WA200008488, CAN WA200008857). It needs both a Microsoft 365 Copilot subscription and a NetDocuments subscription, respects ethical walls, and is available in North America.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "The claim holds, with refinements. Per search snippets of the listings, 'NetDocuments Copilot requires both Microsoft 365 Copilot and NetDocuments subscriptions'. The US offer covers 'North, Central and South America', and there are separate regional offers, for example DE (WA200008865) and AU. Each regional app has a Microsoft 365 App Certification record, filed under Teams, which confirms the certification program is still active in 2026. Customers are told to buy ndMAX through their account executive. The marketplace and Learn pages were blocked, so this rests on snippets.",
+     "source_urls": [
+      "https://marketplace.microsoft.com/en-us/product/saas/wa200008488?tab=overview",
+      "https://marketplace.microsoft.com/en-us/product/WA200008865?tab=Overview",
+      "https://learn.microsoft.com/en-us/microsoft-365-app-certification/teams/netdocuments-copilot-us"
+     ]
+    },
+    {
+     "claim": "Microsoft documents an 'iManage Cloud connector (preview)', a synced Copilot connector that indexes iManage workspaces, documents and metadata into the tenant. Play 6 copies this ingest-into-the-tenant pattern.",
+     "verdict": "wrong",
+     "status": "superseded; iManage Work is now a federated (MCP) connector in preview",
+     "current_fact": "The pattern is out of date. In the MicrosoftDocs/copilot-connectors repo, redirects/.openpublishing.redirection.2026-08.json redirects /copilot-connectors/imanage-cloud-connector.md to the general connectors gallery, so the Learn page is retired. Search snippets show it was a private preview that needed tenant allow-listing ('the gallery tile won't appear otherwise'), limited to multi-tenant iManage Cloud and English content. Microsoft's own gallery (connectors-gallery-microsoft.md) now lists 'iManage Work (preview): Search your documents, matters, folders, and recent activity' as a federated connector, meaning live MCP retrieval with no indexing. The only synced iManage connectors left are third-party ones from BA Insight. iManage also ships an 'iManage Work MCP' connector for Copilot Studio.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/redirects/.openpublishing.redirection.2026-08.json",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/connectors-gallery-microsoft.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/connectors-gallery-partners.md",
+      "https://learn.microsoft.com/en-us/microsoftsearch/imanage-cloud-connector",
+      "https://docs.imanage.com/ai/mcpserver-user-help/en-US/Adding_the_iManage_Work_MCP_connector_for_Microsoft_Copilot_Studio.html"
+     ]
+    },
+    {
+     "claim": "Microsoft Graph connectors are now called 'Microsoft 365 Copilot connectors'. Agent 365 is the central control plane for agents, but its GA status and licensing are unknown.",
+     "verdict": "partly_holds",
+     "status": "GA (Copilot connectors, Agent 365); write actions rolling out early Oct 2026",
+     "current_fact": "The name is current: all Microsoft docs now say 'Microsoft 365 Copilot connectors'. The research missed that there are two models. Synced connectors index content into Microsoft Graph. Federated connectors are MCP-based and 'retrieve content in real time ... without indexing data into Microsoft Graph', 'access data using the user's identity and permissions', and can be published by Microsoft or submitted by partners and approved by Microsoft. They run in Copilot Chat, Agents, Cowork, Copilot in Word, Excel, PowerPoint and Outlook, and Researcher. Create, update and delete actions start rolling out in early October 2026 and need the user's approval; Researcher stays read-only. On Agent 365, it is no longer unknown: per search snippets of the Microsoft Tech Community post and licensing guides, it went GA together with Microsoft 365 E7 ('Frontier Suite', GA 2026-05-01, $99 per user per month). Agent 365 alone is $15 per user per month. Admins can bulk-disable Microsoft-published and third-party federated connectors under Agent 365 'Allowed agent types'.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/overview-copilot-connector.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/federated-connectors-overview.md",
+      "https://techcommunity.microsoft.com/blog/microsoft_365blog/microsoft-365-e7-and-agent-365-are-now-generally-available/4516295",
+      "https://samexpert.com/agent-365/"
+     ]
+    },
+    {
+     "claim": "Play 3 prerequisite: publish the Matter Agent through Copilot Studio or declarative-agent packaging with an MCP or OpenAPI action. The research did not verify the Cowork plugin developer requirements.",
+     "verdict": "partly_holds",
+     "status": "GA (MCP plugins for declarative agents); federated connector submission open",
+     "current_fact": "MCP server plugins for declarative agents are documented as a standard option with no preview label (overview-plugins.md, ms.date 2026-08-12). MCP plugin authentication supports Entra SSO, Dynamic Client Registration, the OAuth 2.0 authorization code flow and anonymous access, and 'Cowork MCP plugins' use the same model. That fits LawHand's existing OAuth 2.1 and DCR setup. What the play misses is a second, cross-surface route: submitting a partner federated connector through Partner Center. The same connector then works in Chat, Excel, Cowork and Researcher, with Word and PowerPoint 'coming soon'. Microsoft names 'Legal and compliance: contract repositories, matter management' as a target use case. Submission requirements: a public HTTPS MCP endpoint, every tool annotated readOnlyHint, OAuth 2.0 credentials registered with Microsoft (Teams Developer Portal client ID and secret, PKCE optional, no DCR listed), a reviewer test account, and at least three sample prompts. LawHand's MCP already emits readOnlyHint per capability effect (backend/app/services/automation_capabilities.py:222), and propose_* tools are marked non-read-only. They would therefore be excluded from a read-only submission until the write-action rollout arrives.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/overview-plugins.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/m365copilot-docs/main/docs/plugin-authentication.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/submit-federated-connector.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/set-up-custom-federated-connectors.md"
+     ]
+    },
+    {
+     "claim": "Clio for Word entered beta on 2026-05-11 for all Clio Work subscribers, with GA planned for later in 2026. It suggests AI edits as native tracked changes and replaces the Clio Draft Template Builder add-in.",
+     "verdict": "partly_holds",
+     "status": "beta",
+     "current_fact": "Current Clio pages, per search snippets, still call it beta in September 2026. Clio's enterprise page says it is 'currently in beta for large law firms and in-house legal teams', which is narrower than 'all Clio Work subscribers'. A Marketplace SaaS listing exists ('Clio for Microsoft Word', WA200010602). Vincent proposes 'native Word Track Changes (redlines)' that users accept or reject, or it can apply changes directly. The Template Builder replacement is confirmed: 'users who are starting with the Template Builder after May 11, 2026 should refer to the Clio for Word documentation'. I found no primary source for a GA date. clio.com and help.clio.com were blocked.",
+     "source_urls": [
+      "https://www.clio.com/enterprise/vincent/word/",
+      "https://help.clio.com/hc/en-us/articles/49815360439835-Clio-for-Word-and-Vincent",
+      "https://help.clio.com/hc/en-au/articles/50120936599451-Clio-for-Word-Template-Builder",
+      "https://marketplace.microsoft.com/en-us/product/saas/wa200010602?tab=overview"
+     ]
+    },
+    {
+     "claim": "Clio's Outlook add-in is free on all Clio Manage plans, and Clio for Gmail files emails, threads and attachments to matters. Clio's Automated Email Filing auto-files when a contact maps to exactly one matter and otherwise offers suggested matters or 'Find a matter'.",
+     "verdict": "partly_holds",
+     "status": "GA",
+     "current_fact": "The filing mechanics hold. Automated Email Filing connects Gmail, Outlook or Exchange to Clio Manage and Grow and files mail to or from known contact addresses. Whole threads file together, a thread that is already filed is not filed again, and mail is left for manual matching only when Clio cannot determine the matter. It syncs only mail sent or received after the account is connected (no backfill), and filed mail is visible according to the matter's permissions. Plan coverage is probably wrong. A snippet of Clio's pages says 'The Outlook integration is included with your Clio Manage Essentials, Advanced and Complete subscription in North America and with all EMEA/Australia plans', which suggests it is not on every NA tier (for example EasyStart). I could not tell whether that sentence refers to the add-in or to automated filing. Help pages were blocked, so this rests on snippets.",
+     "source_urls": [
+      "https://help.clio.com/hc/en-us/articles/53167049724315-Automated-Email-Filing",
+      "https://help.clio.com/hc/en-us/articles/9125228224539-Clio-s-Outlook-Add-in",
+      "https://help.clio.com/hc/en-us/articles/9125226343579-Clio-for-Gmail",
+      "https://marketplace.microsoft.com/en-us/product/office/WA200003566?tab=Overview"
+     ]
+    },
+    {
+     "claim": "Play 1 risk: a Gmail add-on on current-message scopes may avoid Gmail's restricted-scope classification and the security assessment that comes with it.",
+     "verdict": "holds",
+     "status": "GA",
+     "current_fact": "This holds. Per search snippets of Google's Gmail API scopes table, 'https://www.googleapis.com/auth/gmail.addons.current.message.readonly' ('View your email messages when the add-on is running') is classified as Sensitive, not Restricted. That means standard OAuth app verification but no CASA assessment. It grants temporary access to the open message and the other messages in its thread. By contrast, gmail.readonly and gmail.metadata are Restricted, and the mailbox-wide auto-filing in play 2 needs them, so CASA would apply there with annual re-certification. From my own knowledge, not verified this session: putting a visible Gmail label on a message goes through messages.modify, which needs gmail.modify (Restricted). developers.google.com was blocked, so this rests on snippets.",
+     "source_urls": [
+      "https://developers.google.com/workspace/gmail/api/auth/scopes",
+      "https://developers.google.com/workspace/add-ons/concepts/workspace-scopes",
+      "https://groups.google.com/g/google-apps-script-community/c/ruRamtj_C0w"
+     ]
+    },
+    {
+     "claim": "Office.js prerequisites for plays 1 and 4. Play 1: item access through 'the current item's REST/Graph token or getAsFileAsync'. Play 4: the WordApi change-tracking requirement set, used for a new insert_with_tracking action.",
+     "verdict": "partly_holds",
+     "status": "GA",
+     "current_fact": "Word: Document.changeTrackingMode is 'API set: WordApi 1.4'. TrackedChange and TrackedChangeCollection (read, accept, reject) are 'WordApi 1.6'. So insert_with_tracking (turn on trackAll, then insert) needs only 1.4, while reviewing redlines needs 1.6 (office-js-docs-reference word_1_6 YAML). Outlook: getAsFileAsync is Mailbox 1.14 with read-item permission, and getAttachmentContentAsync is Mailbox 1.8. For Exchange Online, Microsoft's documented fallback is Microsoft Graph with a token from nested app authentication (NAA), using convertToRestId for the item ID (get-attachments-of-an-outlook-item.md, ms.date 2026-09-01). The 'REST token' route is the obsolete legacy-Exchange-token pattern that Microsoft's NAA sample replaces. LawHand's office-addin/manifests/outlook.xml declares a minimum of Mailbox 1.3, so the new actions need runtime isSetSupported checks or a higher minimum.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/docs-ref-autogen/word_1_6/word/word.document.yml",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/docs-ref-autogen/word_1_6/word/word.trackedchange.yml",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/outlook/get-attachments-of-an-outlook-item.md",
+      "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/develop/enable-nested-app-authentication-in-your-add-in.md"
+     ]
+    },
+    {
+     "claim": "Play 7 assumes LawHand's Workspace MCP can be registered in Gemini Enterprise as a custom MCP connector.",
+     "verdict": "partly_holds",
+     "status": "preview",
+     "current_fact": "It can, but only as a preview feature. Per search snippets of Google Cloud docs, the admin creates a 'Custom MCP Server (Preview)' data store, and it is 'subject to the Pre-GA Offerings Terms' with limited support. It was still preview as of mid-2026, and I found no GA announcement. The admin supplies an OAuth client_id and client_secret. docs.cloud.google.com was blocked, so this rests on snippets.",
+     "source_urls": [
+      "https://docs.cloud.google.com/gemini/enterprise/docs/connectors/custom-mcp-server/set-up-custom-mcp-server?hl=en",
+      "https://docs.cloud.google.com/gemini/enterprise/docs/release-notes"
+     ]
+    },
+    {
+     "claim": "There is no first-party Clio Manage agent or connector in Microsoft 365 Copilot or Gemini Enterprise, so LawHand's first-party, review-first Workspace MCP is a differentiator. A separate unverified report says Clio launched a Vincent plugin for OpenAI Codex ('Astra for Law', 2026-09-17).",
+     "verdict": "partly_holds",
+     "status": "unknown",
+     "current_fact": "The Microsoft 365 side is supported. Microsoft's federated connector gallery (federated-connectors-overview.md, ms.date 2026-09-21) lists these under 'Legal + HR and recruiting': BoardWise, Courtroom5, Descrybe Legal Engine, DirectCase Legal Search, Everlaw, Harvey (plus AU and EU), iManage Work, Lawstronaut, Legal Data Hunter and Relativity. Clio is not among them. Note that 'Relativity (preview)' already offers 'Manage RelativityOne clients, matters, workspaces', so matter-level legal connectors do exist in Copilot. I found no evidence either way on the Codex or 'Astra for Law' item, or on Gemini Enterprise, so treat those as unverifiable.",
+     "source_urls": [
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/federated-connectors-overview.md",
+      "https://raw.githubusercontent.com/MicrosoftDocs/copilot-connectors/public/copilot-connectors/connectors-gallery-microsoft.md"
+     ]
+    }
+   ],
+   "play_adjustments": [
+    {
+     "play_title": "Add one-click 'File to matter' in the Outlook add-in and a new Gmail add-on",
+     "adjustment": "1. Change the Outlook prerequisite from 'REST/Graph token' to: NAA token to Microsoft Graph (Mail.Read, convertToRestId), with getAsFileAsync (Mailbox 1.14) and getAttachmentContentAsync (Mailbox 1.8) behind isSetSupported checks. The manifest currently declares a minimum of Mailbox 1.3. Drop callback-token (legacy Exchange token) approaches.\n2. On Gmail, keep the add-on to gmail.addons.current.message.* and current.action.compose scopes. They are Sensitive, so they need OAuth verification but no CASA.\n3. Do not promise a visible 'Filed to LawHand' Gmail label until someone verifies which scope applying it needs. My understanding, not verified this session, is that it needs gmail.modify, which is Restricted. The safer default is to show filed status inside the add-on card.\n4. Soften the claim that Clio includes this on every plan. Clio's own note says Essentials, Advanced and Complete in North America and all EMEA/AU plans."
+    },
+    {
+     "play_title": "Auto-file on exact contact match, with a suggested-matter review queue",
+     "adjustment": "Clio's rule set is confirmed. Copy three details as well: sync only mail received after the mailbox is connected (no back-catalog ingestion), file whole threads with de-duplication, and make filed mail visible by matter permissions rather than mailbox owner. The Gmail version of this play needs Restricted scopes (gmail.readonly or gmail.metadata), so budget for CASA plus annual re-certification, or ship Microsoft 365 only first. Plan-tier gating at Clio is unverified."
+    },
+    {
+     "play_title": "Publish the LawHand Matter Agent in Microsoft 365 Copilot and as a Copilot Cowork plugin",
+     "adjustment": "1. Correct who pays. Declarative agents add no charge for Copilot-licensed users. Cowork requires the Copilot USL and is also billed per task in Copilot Credits ($0.01 per credit PayGo, or P3 prepurchase), and it is off by default until an admin enables it. Change who_pays_compute for Cowork to 'client Copilot USL + client metered Copilot Credits + LawHand MCP'. Unlicensed users of agents grounded in tenant data are also metered.\n2. Add a first step that is cheaper and reaches more surfaces: submit LawHand's Workspace MCP as a partner federated Copilot connector through Partner Center. It then works in Chat, Agents, Cowork, Researcher, and Copilot in Word, Excel, PowerPoint and Outlook. Microsoft names 'matter management' as a legal use case, and Harvey, iManage Work, Relativity and Everlaw are already listed.\n3. Constraints for that submission: every submitted tool needs readOnlyHint (a read-only tool profile, with propose_* excluded); a public HTTPS endpoint; an OAuth 2.0 client ID and secret registered in the Teams Developer Portal (DCR is not listed for connectors, though it is supported for declarative-agent and Cowork MCP plugins); a reviewer test account; and three or more sample prompts.\n4. propose_* tools can follow once federated write actions roll out (early October 2026). Those require user confirmation, are audited in Purview, and do not run in Researcher."
+    },
+    {
+     "play_title": "Complement Microsoft's Word Legal Agent instead of competing: tracked-change output plus matter and playbook context",
+     "adjustment": "1. Replace the risk 'no evidence it can consume third-party playbooks'. Legal Agent playbooks are plain Word documents in OneDrive or SharePoint, so LawHand can export firm clause and playbook libraries as .docx into the firm's SharePoint or OneDrive (for example, the matter folder) for the Legal Agent to use directly. That is a concrete, low-effort bridge.\n2. Keep the dependency note: still Frontier preview, GA early October 2026 per MC1388706 (updated 2026-08-24); re-check after GA.\n3. Check platform coverage. A secondary source says it ran only in Word for Windows desktop at launch.\n4. Tracked-change insertion needs only WordApi 1.4 (Document.changeTrackingMode = trackAll, then insert). Reading or accepting TrackedChange objects needs WordApi 1.6. State that in the prerequisites.\n5. Federated connectors reaching Copilot in Word is another route for LawHand matter facts."
+    },
+    {
+     "play_title": "Bring Template Studio authoring and 'generate from template' into the Word task pane",
+     "adjustment": "The Clio for Word parity target is confirmed: native tracked changes, and Template Builder moved into Clio for Word for installs after 2026-05-11. But the product is still beta in September 2026, and Clio's enterprise page says the beta is for large firms and in-house teams. I found no primary GA date, so describe the urgency as 'Clio for Word is in beta, GA date unannounced' rather than 'GA later in 2026'."
+    },
+    {
+     "play_title": "Metadata-only Microsoft 365 Copilot connector for matter resolution (optional, enterprise tier)",
+     "adjustment": "Rework this play. The synced 'iManage Cloud connector (preview)' page it models was redirected away in August 2026. It had been a private, allow-listed preview, and iManage now appears as 'iManage Work (preview)', a federated (MCP) connector. Rebuild the play as a federated connector: a read-only matter lookup and resolve tool on the existing Workspace MCP. It needs no indexing into Microsoft Graph, runs as the user with that user's permissions, and requires admin approval. That removes the main risks the play lists: data residency, privilege disclosure, ACL drift and ethical-wall mapping. It also likely drops effort from L to M and can merge with play 3's connector submission. Keep a synced connector only as an option for customers who explicitly want semantic-index recall."
+    },
+    {
+     "play_title": "Register the same Workspace MCP in Gemini Enterprise after the Google add-on ships",
+     "adjustment": "Mark this play as dependent on a preview feature. Gemini Enterprise's 'Custom MCP Server' data store is Public Preview under Google's Pre-GA Offerings Terms, and the admin must enter an OAuth client_id and client_secret. So LawHand needs to support a pre-registered confidential client, not only DCR."
+    },
+    {
+     "play_title": "Earn trust credentials: Marketplace listing plus Microsoft 365 App Certification, with an admin-first consent experience",
+     "adjustment": "1. Microsoft 365 App Certification is still active: NetDocuments Copilot has US, DE and AU records.\n2. Add federated-connector certification through Partner Center, with its own metadata, logo, test-account and sample-prompt requirements, as a separate track.\n3. Agent 365 is now GA: bundled in Microsoft 365 E7 (GA 2026-05-01, $99 per user per month) or $15 per user per month on its own. Admins can bulk-disable third-party federated connectors under Agent 365 'Allowed agent types'. The LawHand admin setup page should link that setting and the Microsoft 365 admin center 'Copilot connectors > Your connections' approval step, rather than treating Agent 365 as unconfirmed."
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,619 @@
+{
+ "area": "Frontend UX/UI of M365 and Google Workspace integrations for end users (attorneys and paralegals)",
+ "summary": "For end users, the M365 and Google Workspace integration is spread across the matter pages, Calendar, Correspondence, Communications, Prepare and the chat draft workspace. No single place shows a user their own connection. A personal Microsoft or Google connection can only be made or repaired from the Calendar page. The OAuth callback always returns there (integrations.py:1750-1754). The button is labelled \"Connect Calendar\" but the grant it requests includes Mail.Read, Mail.Send, Files.ReadWrite.All and full Drive. Profile shows external MCP assistant grants but nothing about the user's own Microsoft or Google account, and a user has no way to disconnect their own mailbox or drive. On the matter page, where files live is shown by a CloudFolderCard hidden inside a collapsed \"Document tools\" section. That card, the header folder links, the per-document storage labels and the File Shares panel only know about OneDrive and Google Drive. So SharePoint-backed matters, which the guide recommends for M365, show as \"not set up\" or \"Local\". The cloud-drive import tab in FileUpload and ConnectedFilesModal is dead code, since no caller turns it on. There is no OneDrive or Google Picker anywhere: uploads are local only, and linking a folder means pasting a URL or a raw ID. \"Open\" uses the stored web URL, not the backend /open resolver. There is no Open-in-Word-desktop link, and preview works for PDFs only, so DOCX template output has to be downloaded to review. Recovery is mostly out of context: several screens link or point non-admins to Admin \u2192 Integrations, which silently sends them back to /matters. The email composer, correspondence scan and inbox scan show no connection state, have no reconnect button and do not say which mailbox sends. The calendar success messages for move and delete, and the \"Cloud context active\" claim, can be untrue. Accessibility gaps are mostly missing live regions on status banners and unlabeled controls.",
+ "capabilities": [
+  {
+   "name": "Sign in with Microsoft / Google",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/LoginPage.jsx:128-144",
+   "notes": "Mapped refusal codes in utils/loginErrors.js:15-35; cancel/consent-denied at provider not handled (see defects)."
+  },
+  {
+   "name": "Self-serve signup with Microsoft 365 / Google",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/SignupPage.jsx:177-191"
+  },
+  {
+   "name": "Personal (intent=user) Microsoft/Google connect + reconnect",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:778-781",
+   "notes": "Only entry point is Calendar; reconnect CTA in banner at CalendarPage.jsx:887-894; OAuth always returns to /calendar (backend/app/routers/integrations.py:1750-1754). No Profile/Settings surface, no per-user disconnect."
+  },
+  {
+   "name": "Calendar: push matter deadlines + pull Outlook/Google events",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:746-776",
+   "notes": "Background 5-min pull at CalendarPage.jsx:610-624 swallows errors; only providers[0] used when both connected (CalendarPage.jsx:530)."
+  },
+  {
+   "name": "Scheduled events with external calendar/Zoom and truthful create messaging",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:294-328",
+   "notes": "Create path truthful (S1.09); move (CalendarPage.jsx:686-687) and delete (CalendarPage.jsx:823) still claim external success unconditionally."
+  },
+  {
+   "name": "Matter cloud folder provision/sync/open (CloudFolderCard)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:94-247",
+   "notes": "OneDrive and Google Drive only; SharePoint key ignored (lines 157-163); card hidden in collapsed 'Document tools' (line 726-767)."
+  },
+  {
+   "name": "Per-document storage label + Open in provider link",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:1278-1305",
+   "notes": "Uses persisted doc.cloud_url; storageLabel lacks 'sharepoint' (lines 68-73) so SharePoint docs read 'Local'."
+  },
+  {
+   "name": "Matter header / Details cloud folder links",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:144-173",
+   "notes": "Only onedrive/google_drive keys; context folders non-onedrive labelled 'Google Drive' (line 161)."
+  },
+  {
+   "name": "Live 'Cloud Files' search panel on matter overview",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:1270-1340",
+   "notes": "Backed by /matters/{id}/cloud-files (backend/app/routers/matters.py:221-280); 'connected' semantics wrong (see defects)."
+  },
+  {
+   "name": "Cloud-drive import tab in FileUpload + ConnectedFilesModal",
+   "provider": "both",
+   "status": "stub",
+   "file_ref": "frontend/src/components/FileUpload.jsx:30-40",
+   "notes": "Only caller ChatRail.jsx:290 never passes showCloudIntegration/onCloudImport, so tab and modal never render; no backend list/import wiring."
+  },
+  {
+   "name": "Native OneDrive/SharePoint or Google Drive file/folder picker",
+   "provider": "both",
+   "status": "planned_only",
+   "file_ref": "frontend/src/components/MatterSmbSharesTab.jsx:470-490",
+   "notes": "Not implemented anywhere (no picker SDK references in frontend); folder linking is by name/URL/raw ID paste."
+  },
+  {
+   "name": "Cloud folder rename/remap + context folders (paste URL/ID)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/components/MatterSmbSharesTab.jsx:52-55",
+   "notes": "CLOUD_PROVIDERS excludes SharePoint; lives under Settings \u203a 'File Shares' (MatterDetailPage.jsx:1849)."
+  },
+  {
+   "name": "Email client via connected Outlook/Gmail mailbox",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/ComposeEmailModal.jsx:51-78",
+   "notes": "Backend send_client_email (backend/app/routers/matters.py:2789-2800); no From/mailbox indicator, no reconnect CTA, no success confirmation."
+  },
+  {
+   "name": "Correspondence capture scan from Outlook/Gmail",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/MatterCorrespondenceTab.jsx:581-596",
+   "notes": "Provider select defaults to microsoft regardless of connection (line 559)."
+  },
+  {
+   "name": "Communications inbox scan (Outlook/Gmail buttons)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/CommunicationsPage.jsx:478-491"
+  },
+  {
+   "name": "Forward-to-matter / firm email intake addresses",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/FirmEmailIntake.jsx:103-179"
+  },
+  {
+   "name": "Storage readiness advisory in Prepare flows",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/prepare/StorageReadinessNotice.jsx:6-33",
+   "notes": "No actionable link; readiness derivation in components/storageReadiness.js:41-94 handles SharePoint."
+  },
+  {
+   "name": "Template output save to matter (DOCX/PDF) with storage backend label",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-476",
+   "notes": "DOCX review requires local download; saved banner offers Download only, no Open in Word/Drive."
+  },
+  {
+   "name": "Tenant-cloud DOCX draft workspace (open cloud copy, refresh edits from cloud)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/src/components/chat/DocumentDraftWorkspace.jsx:168-177",
+   "notes": "Open via backend /open resolver (ActionProposalCard.jsx:584-586); refresh button only on card (ActionProposalCard.jsx:615)."
+  },
+  {
+   "name": "In-app document preview",
+   "provider": "neither",
+   "status": "partial",
+   "file_ref": "frontend/src/components/documents/MatterDocumentPreview.jsx:8-23",
+   "notes": "PDF only; DOCX/cloud files get a Download link."
+  },
+  {
+   "name": "Integration transparency user guide",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "frontend/platform_docs/user-guide/16-integration-transparency.md:22-121",
+   "notes": "Omits send-mail permission; broken related links."
+  },
+  {
+   "name": "Workspace MCP connected-assistant grants on Profile",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "frontend/src/pages/ProfilePage.jsx:276-281",
+   "notes": "Only 'connected accounts' style panel on Profile; lists Claude/ChatGPT/Codex-style MCP clients, nothing for Copilot/Gemini or M365/Google."
+  }
+ ],
+ "defects": [
+  {
+   "title": "SharePoint-backed matters appear unprovisioned or 'Local' across end-user UI",
+   "severity": "high",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:68-73",
+   "detail": "storageLabel() has no 'sharepoint' case, so it returns 'Local' (lines 68-73). CloudFolderCard only reads providers.onedrive and providers.google_drive (lines 157-163), so isProvisioned is false for a SharePoint-only matter. The header and Details links in MatterDetailPage.jsx:144-161 skip SharePoint and label any non-OneDrive context folder 'Google Drive'. MatterSmbSharesTab.jsx:52-55 and :227 omit SharePoint, which gives 'No cloud folder mapped yet'. The backend does write cloud_folder['sharepoint'] (backend/app/services/cloud_init.py:510-588) and sets storage_backend='sharepoint' (backend/app/services/matter_file_store.py:1360-1425).",
+   "user_impact": "At M365 firms using SharePoint (the location the guide recommends, 16-integration-transparency.md:119), users see 'Document folders are not set up', no Open-folder link, 'Open in Local' on each document, a LOCAL chip, and 'Saved to Local. Edits happen in the firm's cloud copy.' after upload (MatterDocumentsTab.jsx:440-445). They may click 'Set up folders' again or distrust where files are."
+  },
+  {
+   "title": "'Connect in Admin \u2192 Integrations' is a silent dead-end for non-admin users",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:1302-1309",
+   "detail": "The empty Cloud Files state calls navigate('/admin'). /admin is a financeOnly ShellRoute (App.jsx:490-491), and ProtectedRoute redirects users without finance access to default_route (App.jsx:210-212). Other non-actionable pointers to admin: CloudFolderCard copy (MatterDocumentsTab.jsx:219-223), StorageReadinessNotice.jsx:30, and the backend send error 'Reconnect ... in Integrations' (backend/app/services/connected_mail.py:233-239).",
+   "user_impact": "An attorney clicks the only recovery CTA and lands back on My Matters with no explanation. There is no path to fix it or request help."
+  },
+  {
+   "title": "'Connect Calendar' requests mailbox read/send and full file access",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:862-871",
+   "detail": "The button reads 'Connect Calendar', with the title 'Connect your calendar to sync events'. It redirects straight away (CalendarPage.jsx:778-781) to intent=user, which requests MICROSOFT_USER_SCOPES 'offline_access User.Read Mail.Read Mail.Send Files.ReadWrite.All Calendars.ReadWrite', or on Google gmail.readonly, gmail.send, calendar and drive (backend/app/routers/integrations.py:256-265). No explainer is shown before consent.",
+   "user_impact": "Users approve mailbox read/send and all-files access thinking they are only syncing a calendar. That is a transparency and trust problem, and firm privacy reviewers may object."
+  },
+  {
+   "title": "No per-user disconnect for personal Microsoft/Google connections",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/integrations.py:2105-2167",
+   "detail": "The Microsoft and Google disconnect endpoints are admin-only. They delete every user's UserOAuthToken for the tenant. Zoom, by contrast, lets each user disconnect their own token (integrations.py:2368-2391). There is no frontend control, and api.js exposes only the Zoom/QBO disconnect helpers (api.js:900-914, 2840).",
+   "user_impact": "An attorney cannot revoke LawHand's delegated Mail.Read, Mail.Send and Files access to their own mailbox and drive. The only lever is an admin action that disconnects the whole firm."
+  },
+  {
+   "title": "Cloud 'connected' is true when any tenant credential exists (e.g. Zoom only)",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/matters.py:227-235",
+   "detail": "_build_matter_cloud_files_response returns connected=True if any active TenantCredential exists, including zoom and zoom_phone rows (integrations.py:978, 1183-1185). The frontend then shows a 'Connected' badge (MatterDetailPage.jsx:1279-1283), a 'Cloud' badge on every conversation (MatterDetailPage.jsx:99-103), and 'Cloud context active \u2014 AI chats here have access to matter files from your connected OneDrive, SharePoint, and Google Drive' (MatterDetailPage.jsx:1809-1815).",
+   "user_impact": "Users are told the AI can see matter files in three providers when no storage provider is connected, or only one is. That misleads both what the AI can see and data-exposure expectations."
+  },
+  {
+   "title": "Cloud-file errors shown as 'no files' or 'not connected'",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:560-567",
+   "detail": "Any fetch error sets {connected:false}, which renders 'No cloud integrations connected'. A backend search exception, such as an expired token, returns {files:[], connected:true} (backend/app/routers/matters.py:259-263), which renders 'No cloud files found matching this matter.' (MatterDetailPage.jsx:1310-1313). MatterDocumentsTab.jsx:407-413 also swallows errors.",
+   "user_impact": "When a token expires, users see an empty but apparently healthy panel, or a false 'not connected' state. Neither shows a reconnect action."
+  },
+  {
+   "title": "Calendar drag-move always claims the connected calendar was updated",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:684-687",
+   "detail": "After updateScheduledEvent, the UI always shows 'Moved \u2026 and updated the connected calendar.' It ignores the returned sync_status, external_calendar_event_id and calendar_provider, which the PATCH does return (backend/app/routers/calendar.py:481-497). It shows the message for local-only events too. syncMessageForScheduledEvent (line 294) exists but is not reused.",
+   "user_impact": "When the Outlook/Google write fails or the token has expired, the attorney believes the external calendar moved. Missed appointments are likely."
+  },
+  {
+   "title": "Calendar delete claims external deletion even when the provider call failed",
+   "severity": "medium",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:819-823",
+   "detail": "The UI always says 'Event deleted from LawHand and its connected calendar.' The backend's delete_external_event discards the boolean from ms_delete_event/google_delete_event, which return False when there is no token (backend/app/services/scheduled_events.py:125-143, backend/app/services/calendar_sync.py:306-320). The route returns 204 regardless (calendar.py:501-521).",
+   "user_impact": "Orphaned events stay in Outlook/Google (e.g. a cancelled client meeting) while the UI says they were removed."
+  },
+  {
+   "title": "Cancelling Microsoft/Google sign-in consent shows raw 422 JSON",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/auth.py:1338-1345",
+   "detail": "microsoft_callback and google_callback (auth.py:1572-1579) declare code: str and state: str as required, with no error parameter. When the provider redirects with ?error=access_denied or consent_required (response_mode=query), FastAPI's validation raises before the @_redirect_refusals_to_login wrapper (auth.py:1128-1142) can run. There is no RequestValidationError handler in main.py. loginErrors.js has no admin-consent message. The integrations connect callbacks do handle error (integrations.py:512-516).",
+   "user_impact": "A user who cancels, or whose Entra/Workspace admin blocks user consent, gets a JSON error page rather than a clear 'your admin must approve LawHand' message on /login."
+  },
+  {
+   "title": "Background calendar pull hides token failures",
+   "severity": "low",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:610-624",
+   "detail": "The 5-minute pullProviderChanges catches every error and does nothing. The comment defers to the explicit sync. No last-synced time is kept.",
+   "user_impact": "If the token expires mid-session, stale Outlook/Google events stay on screen with no warning until the user clicks Sync."
+  },
+  {
+   "title": "Document Open links use stored web URL instead of the backend /open resolver",
+   "severity": "low",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:1140",
+   "detail": "Links at lines 1140, 1280 and 1406 use doc.cloud_url, the persisted storage_path. The backend has /matters/{m}/documents/{d}/open, which 'resolves a fresh tenant-provider editing URL from durable object IDs' (backend/app/routers/matter_documents.py:719-747). ActionProposalCard.jsx:584-586 already uses it.",
+   "user_impact": "After a rename or move in SharePoint/OneDrive, where webUrl is path-based, Open goes to a 404 in the provider."
+  },
+  {
+   "title": "Documents tab repeats the slowest live cloud search",
+   "severity": "low",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:407-413",
+   "detail": "getMatterCloudFiles runs again on tab mount, although MatterDetailPage already ran it after the matter loaded. The comment there calls it 'by far the slowest request' (MatterDetailPage.jsx:569-575). Errors are swallowed.",
+   "user_impact": "Extra Graph/Drive search load and latency every time the Documents tab opens."
+  },
+  {
+   "title": "Transparency guide is inaccurate and links to missing chapters",
+   "severity": "low",
+   "file_ref": "frontend/platform_docs/user-guide/16-integration-transparency.md:39-47",
+   "detail": "The permission lists at lines 39-47 and 63-69 leave out send-mail, although both admin and personal grants request Mail.Send / gmail.send (integrations.py:241-265). Line 119 says documents are 'not copied into a LawHand datastore', but upload falls back to 'Saved locally' (MatterDocumentsTab.jsx:446-449). The related links at lines 125-126 (/guide/documents-and-cloud-files, /guide/calendar-tasks-and-key-dates) match no slug, and GuideViewer silently redirects to chapter 1 (GuideViewer.jsx:95).",
+   "user_impact": "Users and privacy reviewers get an incomplete picture of what LawHand can do in their mailbox, and the cross-links do not work."
+  },
+  {
+   "title": "Correspondence load failure looks like an empty archive",
+   "severity": "low",
+   "file_ref": "frontend/src/components/MatterCorrespondenceTab.jsx:570-573",
+   "detail": "The .catch(() => setItems([])) renders 'No correspondence captured yet. Configure capture rules, then click Scan now' (lines 683-689).",
+   "user_impact": "On an API or permission error, the user rescans or reconfigures rules instead of retrying, which risks duplicate work."
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Matter \u203a Documents tab",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:726-767",
+   "issue": "The main answer to 'where do this matter's files live?' (CloudFolderCard plus Synced Cloud Files) sits inside a collapsed 'Document tools' disclosure next to portal and import tools.",
+   "severity": "high",
+   "suggestion": "Add a persistent location strip above the document list: provider icon + 'Files live in SharePoint \u203a LawHand/Acme-1234' + [Open folder] + a health dot. Keep setup and sync in the disclosure.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter \u203a Documents / Overview (non-admin)",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:1302-1309",
+   "issue": "Recovery CTAs send non-admins to /admin, which redirects them away. The copy at MatterDocumentsTab.jsx:219-223 and StorageReadinessNotice.jsx:30 names admin screens users cannot open.",
+   "severity": "high",
+   "suggestion": "Make the copy role-aware: admins get a deep link to /admin?tab=integrations&integration=cloud; others get 'Ask your administrator to reconnect Microsoft 365' plus a copyable diagnostic. Never navigate to a route the user cannot reach.",
+   "quick_win": true
+  },
+  {
+   "screen": "Profile",
+   "file_ref": "frontend/src/pages/ProfilePage.jsx:276-281",
+   "issue": "Profile has no 'Connected accounts' section for the user's own Microsoft/Google connection. Status, reconnect and 'what LawHand can see' exist only on Calendar, and only for MCP assistants here. The guide tells users to 'ask your administrator' (16-integration-transparency.md:121).",
+   "severity": "high",
+   "suggestion": "Add a card using the existing GET /auth/calendar-providers data (connected, needs_reconnect, reason, missing_scopes). For each provider show the account, a plain-language list of scopes (read mail, send mail, files, calendar), a Reconnect button, and a link to the transparency guide. Disconnect needs a new backend endpoint.",
+   "quick_win": true
+  },
+  {
+   "screen": "Calendar header",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:853-872",
+   "issue": "There is no connection status: which provider or account, last sync time, health. 'Sync Calendar' vs 'Connect Calendar' is the only signal. The Connect label understates the grant (mail read/send, files), and no explainer appears before the redirect.",
+   "severity": "medium",
+   "suggestion": "Show a status pill (e.g. 'Outlook \u00b7 j.doe@firm.com \u00b7 synced 3 min ago'). Before redirecting, open a modal listing the permissions requested and why. Let users choose Microsoft or Google when both are available.",
+   "quick_win": true
+  },
+  {
+   "screen": "Calendar sync banner",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:877-906",
+   "issue": "The success/error banner is a plain div with no role or aria-live, so screen readers don't announce sync results. A 424 failure (lines 763-772) clears the provider but sets no reconnectProvider, so no inline Reconnect button appears.",
+   "severity": "medium",
+   "suggestion": "Add role='status' (success) or role='alert' (error) and set reconnectProvider on 424 so Reconnect appears in the banner.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter \u203a Documents list (desktop table + mobile card)",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:1139-1147",
+   "issue": "Cloud documents offer only a generic 'Open' (mobile) or 'Open in OneDrive' link to the web URL. There is no 'Open in Word' (desktop) or 'Edit in Google Docs' action, and icon-only open/delete links in the table rely on title alone (lines 1406-1419).",
+   "severity": "medium",
+   "suggestion": "Add 'Open in Word' using the ms-word:ofe|u|<url> protocol for .docx/.xlsx on OneDrive/SharePoint, with 'Open in browser' as a secondary action. Route both through /documents/{id}/open. Add aria-labels to the icon links.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter \u203a Documents \u203a Upload / Import",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:774-790",
+   "issue": "Upload takes local files only, and Import accepts only a local folder or ZIP (MatterImportWizard.jsx:121-124). Users can't pick a file already in OneDrive, SharePoint or Drive.",
+   "severity": "high",
+   "suggestion": "Add a 'From OneDrive/SharePoint' button (OneDrive File Picker v8) and a 'From Google Drive' button (Google Picker API) that register or copy the selected items into the matter folder.",
+   "quick_win": false
+  },
+  {
+   "screen": "Matter \u203a Settings \u203a File Shares (cloud folders)",
+   "file_ref": "frontend/src/components/MatterSmbSharesTab.jsx:470-490",
+   "issue": "Linking or remapping a cloud folder requires pasting a provider URL or a raw Folder ID. Cloud folders are managed under a tab named 'File Shares' (MatterDetailPage.jsx:1849), which reads as SMB.",
+   "severity": "medium",
+   "suggestion": "Rename the tab to 'Storage & folders'. Replace the ID/URL fields with a folder picker (OneDrive/SharePoint picker, Google Picker in folder mode) and keep paste as an advanced fallback.",
+   "quick_win": false
+  },
+  {
+   "screen": "Email Client composer",
+   "file_ref": "frontend/src/components/ComposeEmailModal.jsx:84-103",
+   "issue": "No 'From' line, so the user can't tell whether mail goes from their Outlook/Gmail, a firm mailbox or LawHand SMTP. On success the modal just closes (MatterDetailPage.jsx:2407-2414) with no confirmation of provider or mailbox. The error text (line 142) is not role='alert', and the reauthorization error has no Reconnect button.",
+   "severity": "medium",
+   "suggestion": "Show 'Sends from: Outlook (you@firm.com)' based on the user's provider status. After sending, show a toast with result.provider. Make errors role='alert' and add a Reconnect button when the detail indicates reauthorization.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter \u203a Correspondence",
+   "file_ref": "frontend/src/components/MatterCorrespondenceTab.jsx:559",
+   "issue": "The provider select defaults to 'Outlook / 365' whatever is actually connected and has no label (lines 613-621). The panel doesn't show which mailbox will be scanned. Scan failure shows text only (lines 591-593), and toasts and the participant filter (lines 641-653) lack a live region or label.",
+   "severity": "medium",
+   "suggestion": "Default to the user's connected provider (from /auth/calendar-providers) and show 'Scanning j.doe@firm.com (Outlook)'. Add an aria-label or visible label, role='status'/'alert' on toasts, and a Reconnect link on auth failures. Link each captured item to its Outlook/Gmail webLink.",
+   "quick_win": true
+  },
+  {
+   "screen": "Communications page toolbar",
+   "file_ref": "frontend/src/pages/CommunicationsPage.jsx:610-627",
+   "issue": "'Outlook' and 'Gmail' scan buttons always show, even when that provider isn't connected. The error falls back to the raw key ('Failed to sync microsoft email.', line 489).",
+   "severity": "low",
+   "suggestion": "Show only the connected providers, or disable the others with the tooltip 'Connect Google on Profile'. Use human-readable provider names.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter \u203a Chat tab",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:1809-1815",
+   "issue": "'Cloud context active' always names OneDrive, SharePoint and Google Drive, and shows whenever any tenant credential exists.",
+   "severity": "medium",
+   "suggestion": "List only the providers present in matter.cloud_folder, e.g. 'AI can read this matter's SharePoint folder'. Hide the notice when none are bound.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter overview \u203a Cloud Files panel",
+   "file_ref": "frontend/src/pages/MatterDetailPage.jsx:1323-1331",
+   "issue": "Provider shown as a cryptic 2-letter box (f.source.slice(0,2) gives 'DR'/'ON'/'SH'). The Documents tab shows raw 'microsoft / onedrive' (MatterDocumentsTab.jsx:758-760).",
+   "severity": "low",
+   "suggestion": "Use provider icons and names (OneDrive, SharePoint, Google Drive) plus the modified date.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter \u203a Documents \u203a CloudFolderCard",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:226-243",
+   "issue": "The primary 'Set up folders' button and 'Retry your document save after setup completes' always show, even when folders are provisioned. The success/error toast has no live region.",
+   "severity": "medium",
+   "suggestion": "Show setup only when a provider is missing or failed, with 'Repair folders' as a secondary action otherwise. Add role='status' or role='alert' to the toast.",
+   "quick_win": true
+  },
+  {
+   "screen": "Document preview",
+   "file_ref": "frontend/src/components/documents/MatterDocumentPreview.jsx:8-23",
+   "issue": "Preview supports PDF only. For DOCX, and for any cloud-hosted file, users get just a Download link.",
+   "severity": "medium",
+   "suggestion": "For OneDrive/SharePoint items, embed the Graph driveItem preview URL. For Drive, embed /preview. Offer an Open-in-Word/Docs action next to Download.",
+   "quick_win": false
+  },
+  {
+   "screen": "Prepare document (template fill)",
+   "file_ref": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-476",
+   "issue": "DOCX output must be downloaded to review ('Download and open this generated DOCX'). After saving, the banner shows a raw backend name ('in google drive') and only 'Download saved document'.",
+   "severity": "medium",
+   "suggestion": "After saving, link to /matters/{m}/documents/{id}/open as 'Open in Word' / 'Open in Google Docs' with a readable provider label. Longer term, render the DOCX preview via Graph or Drive preview.",
+   "quick_win": true
+  },
+  {
+   "screen": "Chat \u203a Document draft workspace",
+   "file_ref": "frontend/src/components/chat/DocumentDraftWorkspace.jsx:170-174",
+   "issue": "The copy tells users to 'use Refresh edits from cloud', but that button exists only on the proposal card behind the modal (ActionProposalCard.jsx:615). 'Open cloud working copy' doesn't say Word or Google Docs.",
+   "severity": "low",
+   "suggestion": "Add a Refresh edits from cloud button in the workspace aside, and label the open action 'Open in Word online' or 'Open in Google Docs' based on storageBackend.",
+   "quick_win": true
+  },
+  {
+   "screen": "FileUpload (chat source library) / ConnectedFilesModal",
+   "file_ref": "frontend/src/components/FileUpload.jsx:207-221",
+   "issue": "The Cloud Drives tab and modal are dead code: never enabled, with no role='dialog' and an unlabeled close button (ConnectedFilesModal.jsx:48-61). If enabled, cloud import progress would be hidden because the upload list renders only on the local tab (line 176).",
+   "severity": "low",
+   "suggestion": "Delete the tab and modal, or finish them on top of real pickers. Don't keep an unreachable stub that suggests a feature exists.",
+   "quick_win": true
+  },
+  {
+   "screen": "Login",
+   "file_ref": "frontend/src/utils/loginErrors.js:15-35",
+   "issue": "There is no message for 'your organization's Microsoft/Google admin must approve LawHand' or 'you cancelled'. Everything unknown becomes 'Sign in did not complete.'",
+   "severity": "medium",
+   "suggestion": "After the backend maps provider error codes, add consent_required/admin_approval_required and access_denied messages with a 'send this link to your IT admin' helper.",
+   "quick_win": false
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Open in Word desktop / Google Docs everywhere a DOCX appears",
+   "detail": "Add 'Open in Word' (ms-word:ofe|u|<fresh url>) and 'Edit in Google Docs' actions on document rows, prepared-document saves, the draft workspace and previews, resolved through the existing /documents/{id}/open endpoint. The attorney then finishes the draft where their firm's Microsoft 365 Copilot in Word or Gemini in Docs licence already works, and LawHand needs no extra AI spend.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/MatterDocumentsTab.jsx:1139-1147; frontend/src/components/prepare/PrepareDocumentBody.jsx:470-476; backend/app/routers/matter_documents.py:719-747"
+  },
+  {
+   "title": "Draft in my Outlook / Gmail instead of sending from LawHand",
+   "detail": "From ComposeEmailModal and AI email proposals, create a draft in the user's mailbox (Graph POST /me/messages; Gmail users.drafts.create) with matter subject, body and reviewed attachments, then deep-link to it. The user polishes it with Copilot in Outlook or Gemini 'Help me write' and sends natively; capture rules bring the sent copy back. Needs Mail.ReadWrite or gmail.compose.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/ComposeEmailModal.jsx:51-78; frontend/src/components/chat/ActionProposalCard.jsx:26-60"
+  },
+  {
+   "title": "Template and doc prep inside the client's office suite",
+   "detail": "Write Smart Fill DOCX output straight into the matter's OneDrive, SharePoint or Drive folder as a working copy and open it in Word or Docs for review, instead of 'download and open this DOCX'. LawHand keeps the exact-bytes approval via the existing refresh-edits-from-cloud flow. Copilot or Gemini in the editor handles the rewriting and summarising.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/prepare/PrepareDocumentBody.jsx:461-466; frontend/src/components/chat/ActionProposalCard.jsx:547-566"
+  },
+  {
+   "title": "Native OneDrive/SharePoint and Google Drive pickers",
+   "detail": "Use OneDrive File Picker v8 (which covers SharePoint libraries) and Google Picker for three jobs: import a file into a matter, link a context folder, and remap the matter folder. This replaces pasted IDs and URLs and the dead ConnectedFilesModal. The pickers enforce the user's own permissions and need no broad search.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/components/MatterSmbSharesTab.jsx:470-490; frontend/src/components/FileUpload.jsx:207-231; frontend/src/components/MatterImportWizard.jsx:121-124"
+  },
+  {
+   "title": "Personal 'Connected accounts' card with least-privilege, return-to connect",
+   "detail": "A Profile card built on /auth/calendar-providers showing account, health and plain-language scopes, with Reconnect and a new per-user Disconnect. Pass return_to through intent=user OAuth so Reconnect from Compose, Correspondence or Documents lands back in context. Split the grants into calendar, mail and files increments (incremental consent) so 'Connect Calendar' asks only for calendar.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/pages/ProfilePage.jsx:276-281; backend/app/routers/auth.py:2731-2804; backend/app/routers/integrations.py:256-265,1750-1754"
+  },
+  {
+   "title": "Connect Microsoft Copilot and Google Gemini as Workspace MCP clients",
+   "detail": "The workspace MCP already serves Claude, ChatGPT and Codex-type clients from Profile. Add tested setup guides and consent branding for Copilot Studio agents and Gemini Enterprise or Gemini CLI, where they support remote MCP with OAuth. Firm users could then ask their own Copilot or Gemini to search matters or propose tasks, drafts and emails, with LawHand's proposal-only guardrails and audit.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/WorkspaceMcpGrantsPanel.jsx:112-135; frontend/src/pages/ProfilePage.jsx:10-26"
+  },
+  {
+   "title": "Microsoft 365 Copilot connector / declarative agent for LawHand matters",
+   "detail": "Publish a Graph (Copilot) connector that indexes matter metadata such as names, parties, key dates and folder links, ACL'd to matter team members, plus a declarative agent or Teams message extension. Copilot Chat can then answer 'what's due on Acme v. Smith' and link back into LawHand using the client's Copilot licence.",
+   "effort": "L",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "teams-app/; frontend/platform_docs/user-guide/15-teams-and-client-portals.md:14-20"
+  },
+  {
+   "title": "In-app DOCX preview via provider preview endpoints",
+   "detail": "For cloud-stored documents, embed the Graph driveItem preview (POST /drives/{d}/items/{i}/preview) or Drive /preview iframe inside MatterDocumentPreview, so users can review Word files without downloading and without LawHand running a converter.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/components/documents/MatterDocumentPreview.jsx:8-23"
+  },
+  {
+   "title": "Surface the Office add-in, Teams app and a Gmail/Workspace add-on to end users",
+   "detail": "The SPA never tells users that the Word/Outlook add-in or Teams app exists. The only mentions are marketing copy in frontend/src/marketing/requirements.js:50. Add a 'Use LawHand in Word/Outlook/Teams' entry, via centralized deployment status, on Profile and in the Documents and Correspondence empty states. Build an equivalent Gmail/Docs Workspace add-on for 'file this email or document to a matter'.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "office-addin/; frontend/src/marketing/requirements.js:50"
+  },
+  {
+   "title": "Global connection-health banner with in-context recovery",
+   "detail": "Poll /auth/calendar-providers and storage-readiness once per session. If the user's token has needs_reconnect or the firm storage grant is broken, show a dismissible app-shell banner with the right action (Reconnect for the user; 'notify admin' for firm-level problems) instead of silent empty panels.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/pages/CalendarPage.jsx:524-586; frontend/src/components/prepare/StorageReadinessNotice.jsx:6-33"
+  },
+  {
+   "title": "Scheduling with Outlook/Google free-busy in New Event",
+   "detail": "Use Graph findMeetingTimes / getSchedule and Google freebusy.query in the New Event modal to suggest slots for the matter team and client, keeping the existing truthful sync messaging.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "frontend/src/pages/CalendarPage.jsx:783-812"
+  },
+  {
+   "title": "Deep-link captured correspondence back to Outlook/Gmail",
+   "detail": "Store and show the provider webLink (Graph message.webLink / Gmail thread URL) next to the .eml download, so attorneys can reply in their mail client, with Copilot or Gemini thread summaries available there.",
+   "effort": "S",
+   "value": "low",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/components/MatterCorrespondenceTab.jsx:738-747"
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "LawHand \u2192 Microsoft identity / Google OAuth",
+   "endpoint": "GET /api/integrations/{provider}/connect?intent=user",
+   "file_ref": "frontend/src/api.js:2305-2307",
+   "method": "GET (full-page redirect)",
+   "purpose": "Personal connection from the Calendar 'Connect Calendar' / 'Reconnect' button",
+   "scope_needed": "MS: offline_access User.Read Mail.Read Mail.Send Files.ReadWrite.All Calendars.ReadWrite; Google: gmail.readonly gmail.send calendar drive (backend/app/routers/integrations.py:256-265)"
+  },
+  {
+   "provider": "LawHand \u2192 Microsoft identity / Google OAuth",
+   "endpoint": "GET /api/auth/{microsoft|google}/login",
+   "file_ref": "frontend/src/api.js:348-366",
+   "method": "GET (redirect)",
+   "purpose": "Sign-in / signup",
+   "scope_needed": "openid email profile User.Read offline_access (backend/app/routers/auth.py:1373)"
+  },
+  {
+   "provider": "LawHand (token vault)",
+   "endpoint": "GET /api/auth/calendar-providers",
+   "file_ref": "frontend/src/api.js:2302-2303",
+   "method": "GET",
+   "purpose": "Per-user connection status (connected, needs_reconnect, reason, missing_scopes)",
+   "scope_needed": "Calendar scopes checked (CALENDAR_REQUIRED_SCOPES, backend/app/routers/auth.py:2756)"
+  },
+  {
+   "provider": "Microsoft Graph / Google Calendar",
+   "endpoint": "POST /api/calendar/sync",
+   "file_ref": "frontend/src/api.js:2296-2299",
+   "method": "POST",
+   "purpose": "Push deadlines to, and pull events from, Outlook/Google Calendar",
+   "scope_needed": "Calendars.ReadWrite / calendar"
+  },
+  {
+   "provider": "Microsoft Graph / Google Calendar",
+   "endpoint": "PATCH|DELETE /api/calendar/scheduled-events/{id} \u2192 Graph DELETE /me/events/{id}; Google DELETE calendars/primary/events/{id}",
+   "file_ref": "backend/app/services/calendar_sync.py:299-320",
+   "method": "PATCH/DELETE",
+   "purpose": "Move/delete a LawHand event and its external copy",
+   "scope_needed": "Calendars.ReadWrite / calendar"
+  },
+  {
+   "provider": "Microsoft Graph / Gmail API",
+   "endpoint": "POST /api/matters/{id}/email-client",
+   "file_ref": "frontend/src/api.js:2751-2752",
+   "method": "POST",
+   "purpose": "Send a client email from the connected mailbox (falls back to SMTP)",
+   "scope_needed": "Mail.Send / gmail.send"
+  },
+  {
+   "provider": "Microsoft Graph / Gmail API",
+   "endpoint": "POST /api/matters/{id}/correspondence/scan",
+   "file_ref": "backend/app/routers/matters_correspondence.py:383-415",
+   "method": "POST",
+   "purpose": "Scan the signed-in user's recent mail and capture matching messages as .eml",
+   "scope_needed": "Mail.Read / gmail.readonly"
+  },
+  {
+   "provider": "Microsoft Graph search / Drive API",
+   "endpoint": "GET /api/matters/{id}/cloud-files",
+   "file_ref": "backend/app/routers/matters.py:221-280",
+   "method": "GET",
+   "purpose": "Live search of OneDrive, SharePoint and Drive for the matter (Cloud Files panel)",
+   "scope_needed": "Files.ReadWrite.All + Sites.Read.All / drive"
+  },
+  {
+   "provider": "Microsoft Graph / Drive API",
+   "endpoint": "GET|POST /api/matters/{id}/cloud-folder (+ /provision, /sync)",
+   "file_ref": "frontend/src/components/MatterDocumentsTab.jsx:106-143",
+   "method": "GET/POST",
+   "purpose": "Folder status, provisioning and sync for CloudFolderCard",
+   "scope_needed": "Files.ReadWrite.All (+Sites.Read.All for SharePoint) / drive"
+  },
+  {
+   "provider": "Microsoft Graph / Drive API",
+   "endpoint": "GET /api/matters/{m}/documents/{d}/open",
+   "file_ref": "frontend/src/components/chat/ActionProposalCard.jsx:584-586",
+   "method": "GET (307 redirect)",
+   "purpose": "Fresh editing URL for a cloud DOCX (not used by MatterDocumentsTab)",
+   "scope_needed": "Files.ReadWrite.All / drive"
+  },
+  {
+   "provider": "LawHand",
+   "endpoint": "GET /api/integrations/storage-readiness",
+   "file_ref": "frontend/src/api.js:801-802",
+   "method": "GET",
+   "purpose": "Advisory storage check in Prepare flows",
+   "scope_needed": "n/a (reads credential health)"
+  }
+ ],
+ "open_questions": [
+  "What share of M365 tenants in production are SharePoint-bound versus OneDrive? That decides whether the SharePoint labelling and visibility defect hits most Microsoft customers (the guide at 16-integration-transparency.md:119 recommends SharePoint).",
+  "Should the personal 'Connect Calendar' grant be split into least-privilege increments (calendar, mail, files)? Many Entra and Workspace tenants block user consent for Mail.Send or Files.ReadWrite.All, which would break personal connect without clear messaging.",
+  "Is the FileUpload cloud tab / ConnectedFilesModal meant to be revived with real pickers, or removed?",
+  "Is the office-addin (Word/Outlook) deployed to any customers, and through centralized deployment or AppSource? End users currently have no in-app path to it.",
+  "Can Microsoft Copilot Studio agents and Gemini Enterprise act as Workspace MCP OAuth clients under the current client-registration and consent flow? Which client names and redirect URIs would need allow-listing?",
+  "Should non-admin staff be able to request admin action (e.g. 'notify my administrator to reconnect storage') from in-context error states, and where would that request go?"
+ ]
+}
