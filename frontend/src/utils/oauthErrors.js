@@ -7,18 +7,23 @@ const PROVIDER_LABELS = {
   google: 'Google',
 }
 
+// The provider comes from the URL, so inherited keys such as "constructor"
+// must not read as a known provider.
+const knownProvider = (provider) => typeof provider === 'string' && Object.hasOwn(PROVIDER_LABELS, provider)
+
 export function oauthProviderLabel(provider) {
-  return PROVIDER_LABELS[provider] || 'the cloud provider'
+  return knownProvider(provider) ? PROVIDER_LABELS[provider] : 'the cloud provider'
 }
 
 const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1)
 
 export function oauthErrorMessage(code, provider) {
+  const known = knownProvider(provider)
   const name = oauthProviderLabel(provider)
-  const connection = PROVIDER_LABELS[provider] ? `${name} connection` : 'cloud connection'
+  const connection = known ? `${name} connection` : 'cloud connection'
   switch (code) {
     case 'access_denied':
-      return `The ${PROVIDER_LABELS[provider] ? `${name} ` : ''}sign-in was cancelled, so nothing was connected. Try again when you are ready.`
+      return `The ${known ? `${name} ` : ''}sign-in was cancelled, so nothing was connected. Try again when you are ready.`
     case 'consent_required':
       return `${sentence(name)} needs an administrator to approve LawHand before this account can connect. Sign in with an administrator account, or ask your administrator to approve LawHand.`
     case 'interaction_required':

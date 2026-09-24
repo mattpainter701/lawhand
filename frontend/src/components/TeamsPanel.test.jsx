@@ -121,6 +121,61 @@ describe('TeamsPanel', () => {
     expect(await screen.findByRole('button', { name: 'Reconnect to enable Teams' })).toBeInTheDocument()
   })
 
+  it('offers a reconnect when no account type was recorded and sends the admin back to Integrations', async () => {
+    getIntegrationStatus.mockResolvedValue({
+      microsoft: {
+        connected: true,
+        teams_connected: false,
+        teams_missing_scopes: ['ChannelMessage.Send', 'Team.ReadBasic.All'],
+        account_type: null,
+        capabilities: { teams: { available: false, status: 'unavailable', reason: 'Account tier not yet detected.' } },
+      },
+    })
+    const realLocation = window.location
+    delete window.location
+    window.location = { href: 'http://localhost/admin?tab=integrations&integration=teams' }
+    try {
+      const user = userEvent.setup()
+      render(<TeamsPanel />)
+      expect(await screen.findByText('Enable Microsoft Teams')).toBeInTheDocument()
+      expect(screen.queryByText('Teams is not available for this Microsoft account')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Reconnect to enable Teams' }))
+
+      const target = new URL(window.location.href)
+      expect(`${target.origin}${target.pathname}`).toBe('http://api.test/integrations/microsoft/connect')
+      expect(Object.fromEntries(target.searchParams)).toEqual({
+        intent: 'admin',
+        teams: '1',
+        return_to: 'integrations',
+      })
+    } finally {
+      window.location = realLocation
+    }
+    expect(getTeamsTeams).not.toHaveBeenCalled()
+  })
+
+  it('gives a default explanation when a work-account block carries no reason', async () => {
+    getIntegrationStatus.mockResolvedValue({
+      microsoft: {
+        connected: true,
+        teams_connected: false,
+        teams_missing_scopes: ['ChannelMessage.Send'],
+        account_type: 'consumer',
+        capabilities: { teams: { available: false, status: 'unavailable' } },
+      },
+    })
+    render(<TeamsPanel />)
+    expect(await screen.findByText('Teams is not available for this Microsoft account')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Teams collaboration needs a Microsoft 365 work or school account. Reconnecting the same account will not change this; connect a Microsoft 365 business account to use Teams.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reconnect to enable Teams' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
   it('says Teams is switched off when every permission is already granted', async () => {
     getIntegrationStatus.mockResolvedValue({
       microsoft: { connected: true, teams_connected: false, teams_missing_scopes: [], account_type: 'azure_ad' },

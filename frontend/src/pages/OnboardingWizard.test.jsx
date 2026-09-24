@@ -88,6 +88,45 @@ describe('OnboardingWizard', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/selected Google account type did not match/i)
   })
 
+  it.each([
+    [
+      '?error=token_exchange_failed&provider=microsoft',
+      'Microsoft 365 authorization could not be completed. No connection was saved; try again.',
+    ],
+    [
+      '?error=consent_required&provider=microsoft',
+      'Microsoft 365 needs an administrator to approve LawHand before this account can connect. Sign in with an administrator account, or ask your administrator to approve LawHand.',
+    ],
+    [
+      '?error=access_denied&provider=google',
+      'The Google sign-in was cancelled, so nothing was connected. Try again when you are ready.',
+    ],
+    [
+      '?error=identity_verification_failed&provider=google',
+      'Google identity verification failed. No connection was saved; try again or contact LawHand support.',
+    ],
+    [
+      '?error=something_new',
+      'The cloud connection could not be completed. No connection was saved; try again.',
+    ],
+    [
+      '?error=token_exchange_failed&provider=%3Cb%3Eevil%3C%2Fb%3E',
+      'The cloud provider authorization could not be completed. No connection was saved; try again.',
+    ],
+  ])('names the provider in the OAuth failure for %s', async (query, message) => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT))
+    render(<MemoryRouter initialEntries={[`/onboarding${query}`]}><OnboardingWizard /></MemoryRouter>)
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(screen.queryByText(/evil/)).not.toBeInTheDocument()
+  })
+
+  it('shows no OAuth error when the callback returned none', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT))
+    render(<MemoryRouter initialEntries={['/onboarding?provider=microsoft']}><OnboardingWizard /></MemoryRouter>)
+    expect(await screen.findByText('Connect Your Firm')).toBeInTheDocument()
+    expect(screen.queryByText(/could not be completed/)).not.toBeInTheDocument()
+  })
+
   it('treats a tenant completed before the storage step existed as complete', () => {
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 4 })).toBe(STEP.COMPLETE)
     expect(normalizeStep({ onboarding_completed: true, onboarding_step: 5 })).toBe(STEP.COMPLETE)
