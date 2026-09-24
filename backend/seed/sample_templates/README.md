@@ -18,10 +18,27 @@ source of truth for what is in a form.
 | `sha256` | yes | Digest of the shipped bytes; the seeder refuses a mismatch. |
 | `size_bytes` | yes | Size of the shipped bytes. |
 | `field_count` | yes | AcroForm fields the studio can render. |
-| `bindings` | no | `{field name: platform variable path}` for authored forms. |
+| `bindings` | no | `{field name: platform variable path}` for authored forms and curated imports. `"manual"` marks a field a person must type, so it never fills from a same-named client value. |
+| `option_labels` | no | `{field name: {export value: label}}` for radio/choice options the PDF names only by export value ("Choice 1"). Filling still writes the export value. |
 | `origin` | no | `"authored"` marks a form written in-repo rather than imported; `"court_form"` marks a court packet shipped whole by `backend/scripts/build_nd_probate_guidebook.py`. Both survive a scraped-library rebuild. |
 | `page_ranges` | no | `{"<form number>": [first, last]}` for a packet that holds several court forms in one PDF. Read from the PDF's own page headers at build time and re-checked by `tests/test_nd_probate_forms.py`; the Probate tab uses it to tell staff which pages to print. |
 | `provenance` | no | Where the form came from — see below. |
+
+## Curated imports
+
+Imported forms arrive with only their PDF field names, so Smart Fill can only
+match a field whose name happens to equal a platform variable. That makes
+caption boxes such as "Judge Name" stay blank, and generic signature-block
+names such as "Address", "Phone Number" and "Email" match the *client's*
+details when the block belongs to the filing attorney. A curated form declares
+`bindings` (and `option_labels`) to say what each field means; the seeder
+rejects a binding or label that names a field or option the PDF does not have.
+
+`scripts/build_sample_template_library.py` carries both keys over to the
+rebuilt entry with the same `sha256`, and drops them when the file changed.
+
+Curated so far: the three Ohio divorce complaints (`ohio-divorce-no-children`,
+`ohio-divorce-with-children`, `ohio-divorce-with-children-2`).
 
 ## `provenance`
 

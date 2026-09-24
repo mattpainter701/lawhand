@@ -54,6 +54,13 @@ SEED_DIR = REPO_ROOT / "backend" / "seed" / "sample_templates"
 #: paperwork and the court packets shipped by ``backend/scripts/build_nd_probate_guidebook.py``.
 _PRESERVED_ORIGINS = {"authored", "court_form"}
 
+# Hand-curated keys an imported form may carry: where a field's value comes
+# from, and readable labels for options the PDF only names "Choice 1". The
+# scraped catalog cannot regenerate them, so a rebuild carries them over to the
+# entry with the same digest -- the same bytes, hence the same field names --
+# and drops them when the file itself changed.
+_CURATED_KEYS = ("bindings", "option_labels")
+
 # "Fillable" is not enough: the template studio also rejects PDFs with active
 # content (embedded files, /URI links, /OpenAction, /AA, XFA, etc.). Use the
 # app's own discovery path as the single source of truth for what is renderable.
@@ -779,6 +786,23 @@ def _authored_forms(out: Path) -> list[dict]:
     return [form for form in forms if form.get("origin") in _PRESERVED_ORIGINS]
 
 
+def _curation_by_digest(out: Path) -> dict[str, dict]:
+    """Return the curated keys of the current manifest, keyed by file digest."""
+
+    manifest = out / "manifest.json"
+    if not manifest.is_file():
+        return {}
+    forms = json.loads(manifest.read_text(encoding="utf-8")).get("forms") or []
+    curated: dict[str, dict] = {}
+    for form in forms:
+        if form.get("origin") in _PRESERVED_ORIGINS:
+            continue
+        kept = {key: form[key] for key in _CURATED_KEYS if form.get(key)}
+        if kept:
+            curated[form["sha256"]] = kept
+    return curated
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
@@ -795,6 +819,9 @@ def main() -> int:
     # (backend/scripts/build_library_intake_forms.py), and they live in the same
     # tree. Rebuilding the scraped catalog keeps them and their files rather
     # than deleting content this script cannot regenerate.
+    curated = _curation_by_digest(out)
+    for form in manifest["forms"]:
+        form.update(curated.get(form["sha256"], {}))
     authored = _authored_forms(out)
     manifest["forms"].extend(authored)
     manifest["forms"].sort(key=lambda form: (form["category"], form["title"].lower()))

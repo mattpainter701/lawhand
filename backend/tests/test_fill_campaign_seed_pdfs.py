@@ -1,6 +1,6 @@
 """Smart Fill over the shipped sample forms that carry bindings.
 
-The manifest ships five authored forms with a ``bindings`` map. Each is
+The manifest ships authored and curated forms with a ``bindings`` map. Each is
 discovered exactly as template creation discovers it, bound from the manifest,
 resolved against a campaign scenario, rendered, and read back. Every bound
 field whose record the scenario carries must come back with a value; the
@@ -46,7 +46,13 @@ async def test_every_bound_field_fills_from_the_scenario(form):
     )
     assert result.errors == []
     bound = [o for o in result.outcomes if o.coverage_state == "bound"]
-    assert len(bound) == len(form["bindings"])
+    # ``manual`` is a binding that deliberately names no record: the field is
+    # typed by a person rather than filled by name from an unrelated one.
+    manual = {name for name, path in form["bindings"].items() if path == "manual"}
+    assert len(bound) == len(form["bindings"]) - len(manual)
+    by_name = {o.name: o for o in result.outcomes}
+    for name in manual:
+        assert by_name[name].state == BLANK, name
     blank = {o.name for o in bound if o.state != FILLED}
     assert blank == EXPECTED_BOUND_BLANK.get(form["slug"], set())
     for outcome in bound:

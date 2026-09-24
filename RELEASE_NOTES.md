@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.24.03 — Ohio divorce forms fill from the right records
+
+Released September 24, 2026.
+
+The shared Ohio divorce complaints now fill the judge, case number, parties and signature block from the matter and firm, and the pregnancy question shows plain answers.
+
+- **Signature block uses the attorney.** Printed name and email come from the matter's attorney and the phone from the firm profile, not the client. The address lines stay for you to type.
+- **Caption fills from the matter.** Plaintiff, defendant, case number and judge fill from the matter when it records them.
+- **Readable choices.** The pregnancy question reads Neither party is pregnant or A party is pregnant, in the order the form shows them.
+
 ## 2026.09.24.02 — Clearer Microsoft 365 and Google connections
 
 Released September 24, 2026.
