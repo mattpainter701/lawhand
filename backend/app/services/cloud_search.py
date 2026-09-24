@@ -642,9 +642,7 @@ class CloudSearchService:
             return []
         # The platform service account belongs to every tenant's Shared Drive;
         # with its token, search only this tenant's drive.
-        drive_scope = await google_service_account.service_account_drive_scope(
-            db, tenant_id, token
-        )
+        drive_scope = google_service_account.service_account_drive_scope(token)
         if drive_scope == google_service_account.NO_TENANT_DRIVE:
             return []
 
@@ -1133,9 +1131,7 @@ class CloudSearchService:
         token = await self._get_google_token(db, tenant_id, user_id)
         if not token:
             return hit.snippet or None
-        drive_scope = await google_service_account.service_account_drive_scope(
-            db, tenant_id, token
-        )
+        drive_scope = google_service_account.service_account_drive_scope(token)
         if drive_scope == google_service_account.NO_TENANT_DRIVE:
             return hit.snippet or None
 

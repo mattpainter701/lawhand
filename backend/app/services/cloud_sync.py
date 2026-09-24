@@ -332,9 +332,7 @@ class CloudSyncService:
             return 0
         # The platform service account belongs to every tenant's Shared Drive,
         # so a listing with its token must be pinned to this tenant's drive.
-        drive_scope = await google_service_account.service_account_drive_scope(
-            db, tenant_id, token
-        )
+        drive_scope = google_service_account.service_account_drive_scope(token)
         if drive_scope == google_service_account.NO_TENANT_DRIVE:
             return 0
 

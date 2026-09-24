@@ -44,6 +44,10 @@ DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 _TOKEN_REFRESH_SKEW_SECONDS = 60
 
 _token_cache: dict[str, tuple[str, float]] = {}
+# Every token minted as the service account itself (no impersonated subject),
+# kept until it expires so a bare token can still be recognised as the
+# platform identity after the cache has rotated to a newer one.
+_ISSUED_SERVICE_TOKENS: dict[str, float] = {}
 
 
 def load_service_account() -> dict | None:
@@ -88,6 +92,7 @@ def _cache_key(scopes: list[str], subject: str | None) -> str:
 
 def _clear_cache() -> None:
     _token_cache.clear()
+    _ISSUED_SERVICE_TOKENS.clear()
 
 
 def _build_assertion(
@@ -155,6 +160,11 @@ async def get_access_token(
         return None
     expires_in = int(data.get("expires_in", 3600))
     _token_cache[key] = (token, now + expires_in)
+    if subject is None:
+        for issued, expiry in list(_ISSUED_SERVICE_TOKENS.items()):
+            if expiry <= now:
+                del _ISSUED_SERVICE_TOKENS[issued]
+        _ISSUED_SERVICE_TOKENS[token] = now + expires_in
     return token
 
 
@@ -210,39 +220,49 @@ def _clear_drive_access_cache() -> None:
     _DRIVE_ACCESS_CACHE.clear()
 
 
+class ServiceAccountDriveToken(str):
+    """The service-account bearer token, chosen for one tenant's Shared Drive.
+
+    It is used exactly like the plain token, and carries the drive it was
+    chosen for so Drive requests can be pinned to that tenant. The drive
+    travels with the token because the token's origin cannot be re-derived
+    later: the cached service-account token can rotate at any moment.
+    """
+
+    drive_id: str
+
+    def __new__(cls, token: str, drive_id: str):
+        value = super().__new__(cls, token)
+        value.drive_id = drive_id
+        return value
+
+    def __getnewargs__(self):
+        return (str(self), self.drive_id)
+
+
 # Returned by :func:`service_account_drive_scope` when the platform service
-# account token is in use but the tenant has no org Shared Drive to pin to.
+# account token is in use but the tenant drive it may reach is not known.
 NO_TENANT_DRIVE = ""
 
 
-async def service_account_drive_scope(
-    db,
-    tenant_id: object | None,
-    token: str | None,
-    *,
-    cloud_root: object | None = None,
-) -> str | None:
-    """Pin Drive listings made with the platform service account to one tenant.
+def service_account_drive_scope(token: str | None) -> str | None:
+    """Pin Drive requests made with the platform service account to one tenant.
 
     One service account is a member of every tenant's org Shared Drive, so a
     ``corpora=allDrives`` search or an ``includeItemsFromAllDrives`` listing
     made with its token spans every customer's drive. Callers must restrict
     such requests to ``corpora=drive&driveId=<this tenant's drive>``.
 
-    Returns ``None`` for a delegated (per-account) token, the tenant's drive id
-    for the service-account token, or :data:`NO_TENANT_DRIVE` when the
-    service-account token is in use without a bound drive, in which case the
-    caller must not list or read anything.
+    Returns ``None`` for a delegated (per-account) token and the tenant's
+    drive id for a token from :func:`prefer_service_account`. A bare
+    service-account token, whose tenant cannot be known, returns
+    :data:`NO_TENANT_DRIVE`: the caller must not list or read anything.
     """
-    if not token or not is_configured():
-        return None
-    service_token = await get_access_token(DRIVE_SCOPES)
-    if not service_token or token != service_token:
-        return None
-    if cloud_root is None:
-        cloud_root = await _load_tenant_cloud_root(db, tenant_id)
-    binding = _org_shared_drive_binding(cloud_root) or {}
-    return str(binding.get("drive_id") or "").strip() or NO_TENANT_DRIVE
+    if isinstance(token, ServiceAccountDriveToken):
+        return token.drive_id or NO_TENANT_DRIVE
+    if token and token in _ISSUED_SERVICE_TOKENS:
+        return NO_TENANT_DRIVE
+    return None
 
 
 async def prefer_service_account(
@@ -280,10 +300,10 @@ async def prefer_service_account(
     cache_key = (str(tenant_id), drive_id)
     now = time.time()
     if _DRIVE_ACCESS_CACHE.get(cache_key, 0) > now:
-        return service_token
+        return ServiceAccountDriveToken(service_token, drive_id)
     if await _service_account_can_access_drive(service_token, drive_id):
         _DRIVE_ACCESS_CACHE[cache_key] = now + DRIVE_ACCESS_CACHE_SECONDS
-        return service_token
+        return ServiceAccountDriveToken(service_token, drive_id)
     logger.warning(
         "Service account cannot reach Google Shared Drive %s for tenant %s; "
         "using the delegated token",
