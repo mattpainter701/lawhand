@@ -53,7 +53,7 @@ The renderer turns these into in-app links. Link to addresses a reader can open 
 `coverage.json` maps every authenticated route (`user_modules`), Administration tab (`admin_tabs`), Integrations section (`admin_integration_sections`), and other administrator screen (`admin_routes`) to the chapter, and optionally the `anchor`, that documents it, with the `label` shown in the product. It drives three things:
 
 - the **Guide** button in the top bar (`AppShell`), which opens the section for the current screen; a page can narrow it to the panel in view with `usePageGuideTopic(audience, chapter, anchor, label)`, as the matter sections do;
-- the **Open in LawHand** buttons at the end of each chapter; and
+- the **Open in LawHand** buttons at the start of each chapter; and
 - the Integrations hub's per-section guide links.
 
 For a link inside a panel, use `GuideLink` from `src/components/GuideLink.jsx`:

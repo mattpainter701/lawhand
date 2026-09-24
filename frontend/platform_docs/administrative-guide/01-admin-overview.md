@@ -32,7 +32,7 @@ A firm on the intake-only plan sees a shorter list, and your plan may hide featu
 
 - The **Guide** button in the top bar opens the chapter for the screen you are on. On an Administration tab, it opens this guide at that tab's chapter.
 - In the **Admin Guide** tab, **Search this guide** finds any chapter by its text.
-- Most chapters end with **Open in LawHand** buttons that take you straight to the screens they describe, and **Still stuck?** points to [Support and escalation](/admin?tab=guide&chapter=support-and-escalation).
+- Most chapters start with **Open in LawHand** buttons that take you straight to the screens they describe, and **Still stuck?** points to [Support and escalation](/admin?tab=guide&chapter=support-and-escalation).
 
 ## Set up a new firm
 

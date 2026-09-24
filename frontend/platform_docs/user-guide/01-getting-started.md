@@ -41,7 +41,7 @@ Work through these once, in order. Each step links to the screen it describes.
 ## Get help on any screen
 
 - Select **Guide** in the top bar. The guide opens at the section for the screen or panel you are using.
-- Every chapter starts with **Open in LawHand** buttons that take you straight to the screens it describes, so you can read a step and then do it.
+- Most chapters start with **Open in LawHand** buttons that take you straight to the screens it describes, so you can read a step and then do it.
 - Use **Search this guide** at the top of the chapter list. Search matches words anywhere in a chapter, so try the label you see on screen, such as `Needs review` or `Close matter`.
 - If you are still stuck, see [How to get help](/guide/account-safety-and-support#get-useful-help) for what to include in a request.
 

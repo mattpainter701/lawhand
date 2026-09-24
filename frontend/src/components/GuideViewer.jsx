@@ -179,7 +179,13 @@ export default function GuideViewer({
     const slug = selected?.slug
     const changedChapter = shownSlug.current !== null && shownSlug.current !== slug
     shownSlug.current = slug
-    const section = decodeURIComponent(location.hash.replace(/^#/, ''))
+    let section = location.hash.replace(/^#/, '')
+    try {
+      section = decodeURIComponent(section)
+    } catch {
+      // A malformed hash (for example a stray %) is not fatal: fall back to
+      // the raw value, which simply will not match a heading.
+    }
     const frame = window.requestAnimationFrame(() => {
       if (section) {
         document.getElementById(section)?.scrollIntoView?.({ block: 'start' })
