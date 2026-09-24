@@ -425,6 +425,57 @@ export const CONFLICT_CHECKS = [
   },
 ]
 
+// ── Client intake ───────────────────────────────────────────────────────────
+function lead(id, name, fields) {
+  return { id: `lead-${id}`, contact_id: `c-l${id}`, contact: { display_name: name }, matter_id: null, estimated_value: null, declined_reason: null, ...fields }
+}
+
+export const LEADS = [
+  lead('01', 'Marisol Duarte', { status: 'new', practice_area: 'Family Law', source: 'website', created_at: isoAt(0, '08:12'), description: 'Asking about modifying a parenting schedule after a job relocation.' }),
+  lead('02', 'Owen Patel', { status: 'contacted', practice_area: 'Employment', source: 'referral', created_at: isoAt(-1, '16:40'), estimated_value: 12000, description: 'Terminated after reporting a safety issue; has the separation letter.' }),
+  lead('03', 'Greenway Bakery LLC', { status: 'qualified', practice_area: 'Commercial Litigation', source: 'existing_client', created_at: isoAt(-3, '10:05'), estimated_value: 45000, description: 'Supplier breach of a two-year flour contract; wants to preserve the relationship if possible.' }),
+  lead('04', 'Harriet Cole', { status: 'conflict_checked', practice_area: 'Estate Planning & Probate', source: 'bar_referral', created_at: isoAt(-6, '09:30'), description: 'Needs a will and powers of attorney before surgery next month.' }),
+  lead('05', 'Tomas Reyes', { status: 'engaged', practice_area: 'Personal Injury', source: 'referral', created_at: isoAt(-9, '13:15'), estimated_value: 80000, description: 'Rear-end collision; fee agreement signed.' }),
+  lead('06', 'Priscilla Moss', { status: 'declined', practice_area: 'Immigration', source: 'cold_call', created_at: isoAt(-14, '11:00'), declined_reason: 'Outside the firm\'s practice areas; referred to bar referral service.' }),
+]
+
+// ── Template Studio ─────────────────────────────────────────────────────────
+function template(id, title, fields) {
+  return {
+    id: `tpl-${id}`, title, description: '', category: 'general', format: 'docx', body: '',
+    source_filename: `${title}.docx`, source_sha256: `sha-${id}`, source_ready: true,
+    is_active: false, status: 'draft', published_version_no: null, current_version_no: 1, tested_version_no: null,
+    variable_schema: { fields: [] }, updated_at: isoAt(-2, '10:00'), ...fields,
+  }
+}
+
+const TEMPLATES = [
+  template('01', 'Engagement letter — hourly litigation', { category: 'engagement', is_active: true, status: 'published', published_version_no: 3, current_version_no: 3, tested_version_no: 3, fill_coverage: { fills: 14, total: 16 }, description: 'Hourly engagement for commercial litigation, with the firm\'s standard billing terms.' }),
+  template('02', 'Notice of appearance', { category: 'litigation', is_active: true, status: 'published', published_version_no: 2, current_version_no: 2, tested_version_no: 2, fill_coverage: { fills: 9, total: 9 }, description: 'Caption, court, case number, and appearing attorney.' }),
+  template('03', 'Parenting plan — Wisconsin', { category: 'family', format: 'pdf', status: 'ready_to_publish', current_version_no: 4, tested_version_no: 4, fill_coverage: { fills: 21, total: 30 }, description: 'Court form with placement schedule and holiday rotation.' }),
+  template('04', 'Estate inventory', { category: 'probate', status: 'draft', current_version_no: 2, fill_coverage: { fills: 6, total: 18 }, description: 'Inventory of probate assets for the personal representative.' }),
+  template('05', 'Demand letter — personal injury', { category: 'personal_injury', status: 'test_failed', current_version_no: 5, tested_version_no: 4, fill_coverage: { fills: 11, total: 13 }, description: 'Liability summary, damages, and settlement demand.' }),
+  template('06', 'Lease renewal addendum', { category: 'real_estate', format: 'pdf', source_ready: false, status: 'draft', description: 'Original sample file is no longer retained.' }),
+]
+
+const SAMPLE_FORMS = [
+  { id: 'smp-1', title: 'Health care power of attorney', category: 'advance_directive', jurisdictions: ['WI'], provenance: { source_name: 'State forms collection', edition: '2024' } },
+  { id: 'smp-2', title: 'Residential lease', category: 'contract', jurisdictions: [], provenance: { source_name: 'Practice forms collection' } },
+  { id: 'smp-3', title: 'Petition for summary assignment', category: 'court_form', jurisdictions: ['WI'], provenance: { source_name: 'State court forms', edition: '2025' } },
+  { id: 'smp-4', title: 'Motor vehicle bill of sale', category: 'bill_of_sale', jurisdictions: ['IL'], provenance: { source_name: 'State forms collection' } },
+]
+
+function queue(items) {
+  return { total: items.length, items: items.slice(0, 3) }
+}
+
+export const TEMPLATE_QUEUES = {
+  continue_setup: queue(TEMPLATES.filter((item) => !item.is_active && item.source_ready && ['draft', 'test_failed'].includes(item.status))),
+  needs_attention: queue(TEMPLATES.filter((item) => !item.source_ready)),
+  awaiting_publish: queue(TEMPLATES.filter((item) => item.status === 'ready_to_publish')),
+  published: queue(TEMPLATES.filter((item) => item.is_active)),
+}
+
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -472,7 +523,16 @@ const BASE_ROUTES = [
   ['GET', '/api/billing/time-entries', () => ({ items: TIME_ENTRIES, total: TIME_ENTRIES.length, total_hours: 12.9, total_amount: 4102.5 })],
   ['GET', '/api/billing/time-entries/timer', () => ({ id: 'te-timer', matter_id: 'm-0006', timer_started_at: isoAt(0, '09:18'), description: '' })],
   ['GET', '/api/billing/invoices', () => ({ items: INVOICES, total: INVOICES.length })],
+  ['GET', '/api/templates/queues', () => TEMPLATE_QUEUES],
+  ['GET', '/api/templates/library', () => ({ items: SAMPLE_FORMS, total: SAMPLE_FORMS.length })],
+  ['GET', '/api/templates', () => ({
+    items: TEMPLATES, total: TEMPLATES.length,
+    summary: { total: TEMPLATES.length, active: 2, inactive: 4, ready: 2, source_missing: 1 },
+  })],
   ['GET', '/api/conflict-checks', () => ({ items: CONFLICT_CHECKS, total: CONFLICT_CHECKS.length })],
+  ['GET', '/api/sms/review', () => []],
+  ['GET', '/api/sms/reconciliation', () => []],
+  ['GET', '/api/intake', ({ query }) => (query.get('status') ? LEADS.filter((item) => item.status === query.get('status')) : LEADS)],
   ['GET', '/api/conversations', () => CONVERSATIONS],
   ['GET', '/api/documents', () => []],
   ['GET', '/api/mcp/source-health', () => ({ available: false, sources: [] })],

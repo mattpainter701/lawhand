@@ -1,67 +1,147 @@
 ---
 slug: intake-and-call-reception
 title: Intake & call reception
-description: Capture new requests, qualify leads, route calls, and convert accepted work without losing history.
+description: Capture new inquiries, move leads through qualification and conflict checks, open the matter, send the client paperwork, and route incoming calls.
 order: 80
-read_time: 8 min
+read_time: 12 min
 icon: checklist
 ---
 
 # Intake & call reception
 
-LawHand separates structured [Client Intake](/intake) from the live [Call Intake dashboard](/intake/dashboard). The first tracks a lead toward engagement; the second helps a reception team capture, match, route, and follow up on calls.
+LawHand has two intake screens:
 
-## Create an intake record
+- [Client Intake](/intake) tracks each prospective client, or lead, from first contact to an engaged matter.
+- [Call Intake](/intake/dashboard) is the reception desk: it matches callers to existing records, captures calls, routes them to the right attorney, and keeps the partner log.
 
-Search existing contacts and matters before creating a new lead. Record the caller's words accurately, distinguish known facts from allegations, and capture the jurisdiction, adverse parties, urgency, referral source, and requested help when available.
+Whichever you use, capture facts neutrally, keep a prospective client separate from an existing client, and never promise representation or an outcome.
 
-The standard intake stages are:
+## Track a lead
 
-1. **New** — captured but not yet contacted or assessed.
-2. **Contacted** — the firm has made substantive contact.
-3. **Qualified** — basic fit and required information have been reviewed.
-4. **Conflict Checked** — the firm's approved conflict process is complete.
-5. **Engaged** — representation has been accepted through the firm's engagement process.
+Open [Client Intake](/intake). The counters show how many leads are at each stage; select one to show only that stage, and select it again to show every active lead.
 
-A status is evidence of a completed step, not a shortcut around it.
+![The Client Intake page with the New Lead button, stage counters, and five leads each at a different stage, with Advance and Convert to Matter buttons](/guide-assets/intake-pipeline.webp "Leads moving through the intake stages")
 
-## Qualify and convert
+1. **New Lead** records a new inquiry.
+2. **Advance** moves a lead to the next stage.
+3. **Convert to Matter** opens the matter once a lead is engaged.
 
-Qualification tasks can collect missing information and document the decision. Do not give legal advice, promise representation, or mark a lead conflict-cleared unless the responsible person completed the required review.
+The stages are:
 
-Use **Convert to Matter** only after the firm authorizes opening the file. Confirm the client identity, matter name, practice area, responsible attorney, and source intake. Conversion should preserve the intake history rather than retyping a disconnected summary.
+1. **New**: captured, not yet contacted or assessed.
+2. **Contacted**: the firm has spoken with the person.
+3. **Qualified**: the fit and the information needed have been reviewed.
+4. **Conflict Checked**: the firm's conflict process is complete.
+5. **Engaged**: the firm has accepted the representation.
 
-## Send the standard client paperwork
+A stage records that a step is done; it is not a shortcut around the step. Leads that became matters or were declined move to **Closed**, with the reason a lead was declined.
 
-Matter initiation offers the same three pieces of paperwork for every client: the fee agreement, the case-specific questionnaire, and the client intake form. A firm may send any subset — the fee agreement is optional.
+### Record a new inquiry
 
-In **Template Studio**, *Add the standard client paperwork* puts a standard fee agreement and client intake form in the firm library. Both arrive as drafts. Fee, trust-account, and contingency terms are regulated differently in every jurisdiction, so an attorney reviews and approves them for the firm before either is sent, and the placeholders left for jurisdiction-specific language are filled in. A template of the same name that the firm already has is left untouched.
+1. Search [Contacts](/contacts) first, so a returning client is not entered twice.
+2. On [Client Intake](/intake), select **New Lead**.
+3. Enter the **First Name**, **Last Name**, **Email**, and **Phone**.
+4. Enter the **Practice Area**, such as "litigation", and choose the **Source**: referral, website, cold call, existing client, bar referral, or other.
+5. In **Description**, record what the person needs in their own words. Separate what they know from what they allege, and note the jurisdiction, the other parties, and any urgency.
+6. Select **Create Lead**.
 
-In **Start this case**, the fee agreement, the client questionnaire, and the client intake form are listed together. The questionnaire opens with the standard questions and requested uploads for the matter type or practice area — family, criminal, personal injury, estate, employment, business, real estate, immigration, bankruptcy, litigation, mediation, or general — and *Reset to standard questions* restores them after edits. The same questions can be loaded from the matter intake panel with *Use the standard questions for this matter type*.
+### Qualify and check conflicts
 
-When a fee agreement is included, signing it opens the portal and starts the 24-hour follow-up clock; the packet still requires an attorney-reviewed fee agreement chosen from the matter's documents or uploaded as a PDF. With no fee agreement, the portal is open on the first message and the follow-up still runs.
+Work each lead through the stages, selecting **Advance** only when the step is actually complete:
 
-The Send step previews the client message before anything goes out. *Message the client will receive* shows the branded email, with the firm's name and contact details and an **Open Secure Client Portal** button, and a **Text** tab shows the shorter SMS copy. Email and text are separate messages. The preview link is a sample because the real portal token is created only when the packet is sent; signing the fee agreement opens the rest of the portal on that same link rather than sending a second one.
+- Contact the person and gather what is missing before **Contacted** and **Qualified**.
+- Run a [conflict search](/guide/contacts-and-client-relationships#run-a-conflict-search) on the person, the other parties, and related organizations, and have an attorney record the decision, before **Conflict Checked**.
+- Move to **Engaged** only after the firm has accepted the representation under its engagement process.
 
-## Capture a call
+Do not give legal advice or mark a lead conflict-checked unless the responsible person completed the review.
 
-The Call Intake dashboard supports recent caller matching, call capture, partner routing, the partner log, call-record exports, and administrator-managed rotation rules. When Zoom Phone is configured, a live call feed may provide call metadata.
+### Open the matter
 
-During capture:
+1. On an engaged lead, select **Convert to Matter**.
+2. Check the **Matter Name**, which starts as the client's name followed by "Matter".
+3. Choose or type the **Matter Type**, **Our Role**, the **Jurisdiction**, and the **Counterparty**. Each list offers values your firm already uses; type a new one to add it.
+4. Select **Create Matter**.
 
-- confirm the caller and callback number;
-- select a matching contact or matter only when the match is reliable;
-- write a concise, neutral summary;
-- record the requested recipient and urgency;
-- create the appropriate follow-up task; and
-- tell the caller only what your role and firm policy permit.
+The lead moves to **Closed**, and the new matter keeps the intake history.
 
-## Partner routing and rotation
+## Send the client paperwork
 
-Partner routing should make ownership visible. The partner log records handoffs and outcomes. Rotation rules help distribute eligible calls but do not override conflicts, existing attorney relationships, subject-matter fit, availability, or emergency procedures.
+A new matter's Overview shows a **Start this case** card for the engagement paperwork: an optional fee agreement, a client questionnaire, a client intake form, and any records you want the client to send.
 
-## Exports and sensitive calls
+1. On the matter's Overview, select **Send client paperwork**.
+2. Under **Documents**, choose what to send:
+   - **Fee agreement**: an attorney-reviewed agreement from the matter's documents, or an uploaded PDF. Signing it opens the client portal and starts the follow-up clock. Leave it out when the matter already records its engagement.
+   - **Additional forms**: the **Client questionnaire** and **Client intake form**. Each form gets its own signature request and status.
+   - **Requested records**: one record per line, such as "Copies of any existing court orders".
+3. Select **Next**. Under **Deadlines**, set when each item is due, enter the **Client email**, and choose the **Responsible staff** (or **Assign to me**).
+4. Select **Next** again.
+5. Under **Send**, read **Message the client will receive**. The **Email** tab shows the branded email with the firm's details and the portal button; the **Text** tab shows the shorter text message. The link in the preview is a sample; the real one is created when you send.
+6. Select **Send paperwork**.
 
-Export call records only for an approved business purpose and store the file in an authorized location. Call metadata and notes may contain personal or privileged information.
+Someone must follow up with the client within 24 hours: after the fee agreement is signed, or, with no fee agreement, after the packet is sent. If the client already signed an engagement letter outside LawHand, use **Already engaged — record it** instead, and **Add signed copy** to attach it.
 
-Escalate threats, emergencies, imminent deadlines, complaints, subpoenas, law-enforcement contacts, and suspected conflicts according to firm policy. If the live feed or caller matching exposes unrelated data, stop and notify an administrator.
+The standard questionnaire comes from the matter type: family, criminal, personal injury, estate, employment, business, real estate, immigration, bankruptcy, litigation, mediation, or general. On the matter's intake panel, **Use the standard questions for this matter type** loads them so you can edit them.
+
+> [!NOTE]
+> An administrator can add a standard fee agreement and client intake form to the firm library with **Add the standard client paperwork** in [Template Studio](/templates). Both arrive as drafts. Fee, trust-account, and contingency terms differ by jurisdiction, so an attorney must review and approve them, and fill in the jurisdiction-specific placeholders, before either is sent.
+
+## Answer and capture a call
+
+Open [Call Intake](/intake/dashboard). When your firm has connected Zoom Phone, incoming calls appear in the live call feed with the caller's number and any prior attorney. Otherwise, capture calls by hand.
+
+### Find the caller
+
+1. Under **History Matches**, search by caller name, matter, or case number (the most reliable), and add any phone context.
+2. Select **Search**. Results are labeled **Current contact**, **Active lead**, **Matter history**, **Call log**, or **Legacy call**.
+3. Select a result only when you are sure it is the same person. "Recent caller selected. Verify identity before relying on phone-only history."
+
+### Capture the call
+
+1. Under **Call Capture**, confirm the **Caller** and the callback number.
+2. Choose the **Practice Area**.
+3. In **Purpose**, write a concise, neutral summary, such as "Needs divorce attorney; no prior history". Keep anything only staff should see in **Internal Notes**.
+4. Choose the outcome: **Log only** for an existing client or a call that needs no lead, or **Create lead** for a new inquiry.
+5. Under **Task / Routing**, choose:
+   - **Assign partner / prior attorney** to route the lead through the firm's rotation, or to the attorney who handled the caller before;
+   - **General task to staff** to assign follow-up to a colleague, then choose **Assign To** and the **Task** (**Call back caller**, **Schedule consultation**, **Conflict check**, **Route to service provider**, or **Custom task**); or
+   - **No task, log only**.
+6. Select the button, which names what will happen: **Create Lead + Log Call**, **Create Lead + Staff Task**, **Log Call + Staff Task**, or **Log Call Only**.
+
+Tell the caller only what your role and firm policy permit. Tasks created from a call offer **Qualify lead** and **Open matter** on the [Tasks](/tasks) page.
+
+### Route calls fairly
+
+**Partner Log** lists each routed lead, who it went to, and the outcome, and can be exported with **Export CSV**. Administrators set the rotation under **Rotation**: choose a practice area, choose the attorneys who share it, and save. Rotation never overrides a conflict, an existing attorney relationship, subject-matter fit, availability, or emergency procedures.
+
+### Export call records
+
+Under **Call records**, **Export CSV** downloads the call log. Export only for an approved business purpose and store the file in an authorized location: call notes can contain personal or privileged information.
+
+## Route incoming text messages
+
+Text messages that LawHand cannot match to a client appear on [Client Intake](/intake) under **Inbound SMS routing review**. They are not on any client or matter timeline until someone routes them.
+
+1. Choose the contact and the matter the message belongs to. Suggested matches are listed.
+2. Select **Resolve route**, or **Reject** a message that does not belong in the firm's records.
+
+**SMS delivery reconciliation** lists outgoing messages whose delivery LawHand could not confirm. Check the provider's record for the exact message; never resend from this list.
+
+## Sensitive calls
+
+Escalate threats, emergencies, imminent deadlines, complaints, subpoenas, law-enforcement contacts, and suspected conflicts according to firm policy. If the live feed or caller matching shows unrelated or unexpected data, stop and tell an administrator.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| **Convert to Matter** is missing | The lead is not yet **Engaged** | Complete the remaining stages and select **Advance**. |
+| "The lead stage could not be updated" | A brief connection problem or a permission change | Try again; if it repeats, ask your administrator. |
+| The live call feed is empty | Zoom Phone is not connected | Capture calls by hand, and ask your administrator to finish the Zoom Phone setup. |
+| **Send paperwork** is disabled | No form or requested record is chosen, or the client email is missing | Add at least one item and the client's email. |
+| An inbound text is not on the matter | It is waiting in **Inbound SMS routing review** | Choose the contact and matter, then **Resolve route**. |
+
+## Related chapters
+
+- [Contacts & client relationships](/guide/contacts-and-client-relationships)
+- [Matters & documents](/guide/matters-and-documents)
+- [Teams & client portals](/guide/teams-and-client-portals)

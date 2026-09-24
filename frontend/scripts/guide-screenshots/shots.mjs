@@ -260,4 +260,43 @@ export const SHOTS = [
       { target: byRole('button', 'Close and lock record'), label: '3' },
     ],
   },
+
+  // ── User guide: intake ──────────────────────────────────────────────────
+  {
+    name: 'intake-pipeline',
+    path: '/intake',
+    user: 'attorney',
+    viewport: { width: 1440, height: 1200 },
+    waitFor: 'Marisol Duarte',
+    clip: (page) => regionAround(page, [
+      (p) => p.getByRole('heading', { name: 'Client Intake' }).last(),
+      (p) => p.getByText('Tomas Reyes').locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]'),
+    ], { pad: 24 }),
+    annotate: [
+      { target: byRole('button', 'New Lead'), label: '1' },
+      { target: (page) => page.getByRole('button', { name: /Advance/ }).first(), label: '2' },
+      { target: (page) => page.getByRole('button', { name: 'Convert to Matter' }).first(), label: '3' },
+    ],
+  },
+
+  // ── User guide: templates ───────────────────────────────────────────────
+  {
+    name: 'template-studio-home',
+    path: '/templates',
+    user: 'admin',
+    viewport: { width: 1440, height: 1300 },
+    waitFor: 'Studio home',
+    // The page column, from the Studio banner down to the library tabs.
+    clip: async (page) => {
+      const column = await page.locator('main').first().boundingBox()
+      const tabs = await page.getByRole('tab', { name: 'Generate / Smart Fill' }).first().boundingBox()
+      return { x: column.x, y: column.y, width: column.width, height: tabs.y + tabs.height + 24 - column.y }
+    },
+    annotate: [
+      { target: (page) => page.getByRole('button', { name: /Upload Sample/ }).first(), label: '1' },
+      { target: (page) => page.getByText('Continue setup', { exact: true }).first(), label: '2' },
+      { target: (page) => page.getByText('Published', { exact: true }).first(), label: '3' },
+      { target: byRole('tab', 'Generate / Smart Fill'), label: '4' },
+    ],
+  },
 ]
