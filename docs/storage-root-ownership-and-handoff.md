@@ -100,12 +100,35 @@ owning identity, current grantor, per-matter folder name/id/path/URL,
 subfolders, status, last-verified timestamp. It fits the existing evidence-only
 offboarding skeleton, which performs no deletion.
 
+## Migrating an existing Google root (My Drive to Shared Drive)
+
+Tenants onboarded before the org Shared Drive path existed keep a My Drive
+root. Google preserves file and folder IDs across a cross-drive **move**, so
+the root can be relocated without breaking a single matter or subfolder
+binding; only the tenant root's `owner_type`/`drive_id` metadata changes.
+
+`app/services/google_root_migration.py` performs it:
+
+- refuses unless the Google credential is a Workspace organisation and a
+  service account is configured; never runs for personal accounts;
+- creates or reuses the org Shared Drive and adds LawHand's service account;
+- moves `lawhand-records` into the drive with `files.update addParents` and
+  verifies the resulting `driveId` before writing anything;
+- updates `Tenant.cloud_root_folder` and records an
+  `OnboardingRootAudit(action="google_shared_drive_cutover")`;
+- is idempotent, dry-runnable, and fails closed — the binding is left unchanged
+  if the move cannot be verified.
+
+Operators run it via `POST /api/platform/tenants/{id}/google-shared-drive/migrate`
+(`dry_run` defaults to true) or
+`python scripts/migrate_google_root_to_shared_drive.py <tenant-uuid> [--dry-run]`.
+
 ## Follow-ups
 
 - **Auth model**: Microsoft app-only (`Sites.Selected`) and a firm-level
   decision to forbid creating business roots in `/me/drive`.
-- **Migration**: move existing My Drive / OneDrive roots into Shared Drive /
-  SharePoint via the existing non-copying storage-migration framework.
+- **OneDrive/SharePoint migration**: the equivalent non-copying move for
+  Microsoft roots (Google is implemented above).
 - **Manifest builder + endpoint** and its tests.
 - **Health surfacing** in the admin UI when `root_ownership.status` is
   `at_risk`.
