@@ -794,9 +794,13 @@ def validate_platform_secret_key(settings: Settings) -> None:
             raise ValueError("The legacy platform bootstrap bridge has expired")
 
 
+# Must match app.services.platform_auth.PLATFORM_SCOPES (a test enforces it;
+# importing it here would be circular). Without platform:debug in this list no
+# bootstrap credential could carry the scope the troubleshooting routes need.
 _PLATFORM_SCOPES = {
     "platform:read",
     "platform:write",
+    "platform:debug",
     "platform:llm:read",
     "platform:llm:write",
 }
