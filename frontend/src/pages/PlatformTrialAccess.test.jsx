@@ -1,13 +1,21 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ConfirmProvider } from '../components/dialog/ConfirmProvider'
 import { PendingTrialApproval, ProvisionTrialTenantForm, TrialAccessControls } from './PlatformPage'
 
 const tenant = {
   id: 'tenant-1',
+  name: 'Northwind Legal',
   expires_at: '2026-10-15T23:59:59.000Z',
   premium_ai_trial_enabled: false,
 }
+
+const renderControls = (props) => render(
+  <ConfirmProvider>
+    <TrialAccessControls {...props} />
+  </ConfirmProvider>,
+)
 
 afterEach(cleanup)
 
@@ -15,7 +23,7 @@ describe('Platform trial access controls', () => {
   it('extends a trial and surfaces successful customer email delivery', async () => {
     const user = userEvent.setup()
     const onPatch = vi.fn().mockResolvedValue({ trial_email_status: 'sent' })
-    render(<TrialAccessControls tenant={tenant} onPatch={onPatch} />)
+    renderControls({ tenant, onPatch })
 
     await user.click(screen.getByRole('button', { name: 'Extend 6 months' }))
 
@@ -27,17 +35,24 @@ describe('Platform trial access controls', () => {
   it('makes the premium cost override explicit and reversible', async () => {
     const user = userEvent.setup()
     const onPatch = vi.fn().mockResolvedValue({ trial_email_status: null })
-    const { rerender } = render(<TrialAccessControls tenant={tenant} onPatch={onPatch} />)
+    const { rerender } = renderControls({ tenant, onPatch })
 
     await user.click(screen.getByRole('button', { name: 'Enable Premium AI' }))
+    // Sponsoring Premium AI spends LawHand's money, so it asks first.
+    expect(screen.getByRole('alertdialog')).toHaveTextContent("at LawHand's cost")
+    expect(onPatch).not.toHaveBeenCalled()
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Enable Premium AI' }))
     expect(onPatch).toHaveBeenLastCalledWith({ premium_ai_trial_enabled: true })
 
     rerender(
-      <TrialAccessControls
-        tenant={{ ...tenant, premium_ai_trial_enabled: true }}
-        onPatch={onPatch}
-      />,
+      <ConfirmProvider>
+        <TrialAccessControls
+          tenant={{ ...tenant, premium_ai_trial_enabled: true }}
+          onPatch={onPatch}
+        />
+      </ConfirmProvider>,
     )
+    // Turning the sponsorship off needs no confirmation.
     await user.click(screen.getByRole('button', { name: 'Disable Premium AI' }))
     expect(onPatch).toHaveBeenLastCalledWith({ premium_ai_trial_enabled: false })
   })
@@ -45,11 +60,27 @@ describe('Platform trial access controls', () => {
   it('uses an explicit past expiration for immediate revocation', async () => {
     const user = userEvent.setup()
     const onPatch = vi.fn().mockResolvedValue({ trial_email_status: null })
-    render(<TrialAccessControls tenant={tenant} onPatch={onPatch} />)
+    renderControls({ tenant, onPatch })
 
-    await user.click(screen.getByRole('button', { name: 'Revoke trial now' }))
+    await user.click(screen.getByRole('button', { name: 'End access now' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Northwind Legal loses workspace access immediately')
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'End access now' }))
     const sent = new Date(onPatch.mock.calls[0][0].trial_ends_at)
     expect(sent.getTime()).toBeLessThanOrEqual(Date.now())
+  })
+
+  it('does nothing when the operator cancels ending access or removing the expiry', async () => {
+    const user = userEvent.setup()
+    const onPatch = vi.fn()
+    renderControls({ tenant, onPatch })
+
+    await user.click(screen.getByRole('button', { name: 'End access now' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Convert to active' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('no longer treated as a trial')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(onPatch).not.toHaveBeenCalled()
   })
 })
 

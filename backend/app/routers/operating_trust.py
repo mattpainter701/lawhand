@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db, set_tenant_context
+from app.database import clear_tenant_context, get_db, set_tenant_context
 from app.middleware.tenant import require_admin
 from app.models.compliance import RetentionPolicy, TenantAgreementAcceptance
 from app.models.external_import import ExternalImportRun
@@ -24,6 +24,7 @@ from app.models.operating_trust import (
     PublicIncidentUpdate,
     SupportRequest,
 )
+from app.models.tenant import Tenant
 from app.services.compliance import agreement_status, retention_inventory
 from app.services.operating_contract import CONTRACT_VERSION, support_severity
 from app.services.operating_trust import (
@@ -44,6 +45,7 @@ from app.services.operating_trust import (
 )
 from app.services.operator_audit import record_operator_audit
 from app.services.platform_auth import require_platform_token
+from app.services.support_alerts import notify_operator_support_requested
 
 router = APIRouter(tags=["operating-trust"])
 REQUIRED_BACKUP_CLASSES = {"application-database", "tenant-file-store"}
@@ -301,6 +303,17 @@ async def create_support_request(
     )
     db.add(row)
     await db.commit()
+    tenant_name = await db.scalar(select(Tenant.name).where(Tenant.id == row.tenant_id))
+    await notify_operator_support_requested(
+        tenant_name=tenant_name or str(row.tenant_id),
+        tenant_id=row.tenant_id,
+        request_id=row.id,
+        severity=row.severity,
+        subject=row.subject,
+        safe_summary=row.safe_summary,
+        requested_by_email=row.requested_by_email,
+        acknowledgement_due_at=row.acknowledgement_due_at,
+    )
     return _support_payload(row)
 
 
@@ -370,6 +383,152 @@ async def update_support_request(
     )
     await db.commit()
     return _support_payload(row)
+
+
+SUPPORT_STATUSES = ("open", "acknowledged", "mitigated", "resolved")
+_SEVERITY_RANK = {"S1": 0, "S2": 1, "S3": 2, "S4": 3}
+
+
+def _support_is_overdue(row: SupportRequest, now: datetime) -> bool:
+    """Only an unacknowledged request can miss its acknowledgement objective."""
+
+    return row.status == "open" and row.acknowledgement_due_at <= now
+
+
+@router.get("/api/platform/operating-trust/support")
+async def list_platform_support_requests(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    status: Annotated[
+        Literal["active", "all", "open", "acknowledged", "mitigated", "resolved"],
+        Query(),
+    ] = "active",
+    severity: Annotated[Literal["S1", "S2", "S3", "S4"] | None, Query()] = None,
+    tenant_id: Annotated[uuid.UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+):
+    """The operator support queue: every tenant's requests in one list.
+
+    Tenant admins file requests and only a platform PATCH can move them, but
+    that PATCH needs the tenant and request ids up front. Without a queue the
+    only way to learn a request existed was a database shell, so SLA clocks
+    ran out unseen.
+
+    ``support_requests`` is FORCE RLS, so the registry is walked and each
+    tenant's scope entered in turn, as the platform router does, rather than
+    reading across tenants under a bypass.
+    """
+
+    require_platform_token(request, scopes={"platform:read"})
+    now = utcnow()
+
+    tenant_query = select(Tenant.id, Tenant.name).order_by(Tenant.name)
+    if tenant_id is not None:
+        tenant_query = tenant_query.where(Tenant.id == tenant_id)
+    tenants = (await db.execute(tenant_query)).all()
+    if tenant_id is not None and not tenants:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if status == "active":
+        wanted = {"open", "acknowledged", "mitigated"}
+    elif status == "all":
+        wanted = set(SUPPORT_STATUSES)
+    else:
+        wanted = {status}
+
+    # Each tenant's rows are cut to ``limit`` before the merge, so every scope
+    # must be read in the same order as the merged list or the cut can drop
+    # an overdue S1 in favour of a newer S4.
+    if wanted == {"resolved"}:
+        order_by = [
+            func.coalesce(SupportRequest.resolved_at, SupportRequest.updated_at).desc()
+        ]
+
+        def sort_key(row: SupportRequest):
+            return -(row.resolved_at or row.updated_at).timestamp()
+
+    else:
+        # Work the queue in the order the published policy obliges: anything
+        # unresolved before anything resolved, then severity (S1 sorts first),
+        # then the acknowledgement clock.
+        order_by = [
+            case((SupportRequest.status == "resolved", 1), else_=0),
+            SupportRequest.severity,
+            SupportRequest.acknowledgement_due_at,
+        ]
+
+        def sort_key(row: SupportRequest):
+            return (
+                row.status == "resolved",
+                _SEVERITY_RANK.get(row.severity, 9),
+                row.acknowledgement_due_at,
+            )
+
+    counts = {name: 0 for name in SUPPORT_STATUSES}
+    counts["overdue"] = 0
+    rows: list[tuple[SupportRequest, str]] = []
+    try:
+        for scoped_id, tenant_name in tenants:
+            await set_tenant_context(db, str(scoped_id))
+            filters = [SupportRequest.tenant_id == scoped_id]
+            if severity:
+                filters.append(SupportRequest.severity == severity)
+
+            grouped = await db.execute(
+                select(
+                    SupportRequest.status,
+                    func.count(SupportRequest.id),
+                    func.count(SupportRequest.id).filter(
+                        SupportRequest.acknowledgement_due_at <= now
+                    ),
+                )
+                .where(*filters)
+                .group_by(SupportRequest.status)
+            )
+            for row_status, count, past_due in grouped.all():
+                counts[row_status] = counts.get(row_status, 0) + int(count)
+                if row_status == "open":
+                    counts["overdue"] += int(past_due)
+
+            found = (
+                await db.scalars(
+                    select(SupportRequest)
+                    .where(*filters, SupportRequest.status.in_(wanted))
+                    .order_by(*order_by)
+                    .limit(limit)
+                )
+            ).all()
+            rows.extend((row, tenant_name) for row in found)
+    except BaseException:
+        # A failed statement can leave the transaction aborted, and a cleanup
+        # SELECT would then mask the real error. The GUCs are transaction-local
+        # and the request rolls back, so keep the original exception.
+        try:
+            await clear_tenant_context(db)
+        except Exception:
+            pass
+        raise
+    await clear_tenant_context(db)
+
+    rows.sort(key=lambda item: sort_key(item[0]))
+
+    return {
+        "items": [
+            {
+                **_support_payload(row),
+                "tenant_id": str(row.tenant_id),
+                "tenant_name": tenant_name,
+                "requested_by_email": row.requested_by_email,
+                "operator_actor_id": row.operator_actor_id,
+                "overdue": _support_is_overdue(row, now),
+            }
+            for row, tenant_name in rows[:limit]
+        ],
+        "total": sum(counts[name] for name in wanted),
+        "counts": counts,
+        "status": status,
+        "checked_at": now,
+    }
 
 
 @router.post("/api/compliance/operating/receipts")

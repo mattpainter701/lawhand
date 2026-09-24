@@ -34,7 +34,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import AsyncIterator, Optional
+from typing import Annotated, AsyncIterator, Literal, Optional, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -427,6 +427,9 @@ class PlatformUsage(BaseModel):
     cost_usd_30d: float
     period_start: datetime
     period_end: datetime
+    # The busiest firms across every tenant. The console used to rank only the
+    # page of tenants it happened to have loaded.
+    top_tenants: list[dict] = Field(default_factory=list)
 
 
 class PlatformMCPOverview(BaseModel):
@@ -576,24 +579,152 @@ async def create_platform_session(
     }
 
 
+TenantListView = Literal[
+    "all",
+    "platform",
+    "pending",
+    "active",
+    "trial",
+    "expiring",
+    "expired",
+    "inactive",
+    "demo",
+]
+TENANT_LIST_VIEWS: tuple[str, ...] = get_args(TenantListView)
+# How far ahead "expiring" looks: long enough to reach out before access ends.
+TENANT_EXPIRING_WINDOW = timedelta(days=14)
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
+
+
+def _tenant_search_clause(q: str | None):
+    """Match a firm by name, domain or company name, or a pasted tenant id."""
+
+    needle = (q or "").strip().lower()
+    if not needle:
+        return None
+    escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+    clauses = [
+        func.lower(Tenant.name).like(pattern, escape="\\"),
+        func.lower(Tenant.domain).like(pattern, escape="\\"),
+        func.lower(func.coalesce(Tenant.company_name, "")).like(pattern, escape="\\"),
+    ]
+    try:
+        clauses.append(Tenant.id == uuid.UUID(needle))
+    except ValueError:
+        pass
+    return or_(*clauses)
+
+
+def _tenant_needs_settings(tenant: Tenant, now: datetime) -> bool:
+    """Whether the registry alone cannot place a tenant in its list views.
+
+    An inactive tenant is either a pending registration or a deactivated firm,
+    and an unexpired one is either a trial or a paid firm with a contract end;
+    only the RLS-protected settings row tells those apart.
+    """
+
+    if tenant.billing_tier == "demo":
+        return False
+    expires_at = _as_utc(tenant.expires_at)
+    return not tenant.is_active or (expires_at is not None and expires_at > now)
+
+
+def _tenant_list_views(tenant: Tenant, config: object, now: datetime) -> set[str]:
+    """Every operator list view a tenant appears in; views may overlap."""
+
+    if tenant.billing_tier == "demo":
+        return {"all", "demo"}
+    views = {"all", "platform"}
+    expires_at = _as_utc(tenant.expires_at)
+    unexpired = expires_at is None or expires_at > now
+    if not tenant.is_active:
+        pending = (
+            isinstance(config, dict) and config.get(SIGNUP_STATUS_KEY) == SIGNUP_PENDING
+        )
+        views.add("pending" if pending else "inactive")
+        return views
+    if unexpired:
+        views.add("active")
+        if expires_at is not None and config_marks_trial(config):
+            views.add("trial")
+        if expires_at is not None and expires_at <= now + TENANT_EXPIRING_WINDOW:
+            views.add("expiring")
+    else:
+        # Lapsed but still switched on: extend, convert or revoke it.
+        views.add("expired")
+    return views
+
+
+def _tenant_view_sort_key(view: str):
+    """Order each view the way an operator works it."""
+
+    far_future = datetime.max.replace(tzinfo=timezone.utc)
+    if view == "pending":
+        return lambda t: _as_utc(t.created_at), False
+    if view == "expiring":
+        return lambda t: _as_utc(t.expires_at) or far_future, False
+    if view == "expired":
+        return lambda t: _as_utc(t.expires_at) or far_future, True
+    return lambda t: _as_utc(t.created_at), True
+
+
 @router.get("/tenants")
 async def list_tenants(
     request: Request,
     db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
+    q: Annotated[Optional[str], Query(max_length=200)] = None,
+    status: Annotated[TenantListView, Query()] = "all",
 ):
+    """List firms for the operator console, searched and filtered server-side.
+
+    ``q`` matches name, domain, company name or an exact tenant id. ``status``
+    selects one lifecycle view; ``counts`` reports every view for the same
+    search so the console can show its queues without a second request.
+    """
+
     _require_platform_key(request)
 
-    period_start = datetime.now(timezone.utc) - timedelta(days=30)
+    now = datetime.now(timezone.utc)
+    period_start = now - timedelta(days=30)
 
-    tenants_result = await db.execute(
-        select(Tenant)
-        .order_by(Tenant.created_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
-    )
-    tenants = tenants_result.scalars().all()
+    registry_query = select(Tenant).order_by(Tenant.created_at.desc(), Tenant.id)
+    search = _tenant_search_clause(q)
+    if search is not None:
+        registry_query = registry_query.where(search)
+    candidates = list((await db.execute(registry_query)).scalars().all())
+
+    configs: dict[str, object] = {}
+    for tenant in candidates:
+        if _tenant_needs_settings(tenant, now):
+            async with _platform_tenant_scope(db, tenant.id):
+                configs[str(tenant.id)] = await db.scalar(
+                    select(TenantSettings.custom_config).where(
+                        TenantSettings.tenant_id == tenant.id
+                    )
+                )
+
+    counts = {view: 0 for view in TENANT_LIST_VIEWS}
+    matching: list[Tenant] = []
+    for tenant in candidates:
+        views = _tenant_list_views(tenant, configs.get(str(tenant.id)), now)
+        for view in views:
+            counts[view] += 1
+        if status in views:
+            matching.append(tenant)
+
+    sort_key, descending = _tenant_view_sort_key(status)
+    matching.sort(key=sort_key, reverse=descending)
+    total = len(matching)
+    tenants = matching[(page - 1) * limit : page * limit]
+
     user_counts: dict[str, int] = {}
     usage: dict[str, tuple[int, float]] = {}
     on_trial: dict[str, bool] = {}
@@ -608,11 +739,14 @@ async def list_tenants(
                 )
                 or 0
             )
-            tenant_config = await db.scalar(
-                select(TenantSettings.custom_config).where(
-                    TenantSettings.tenant_id == tenant.id
+            if str(tenant.id) in configs:
+                tenant_config = configs[str(tenant.id)]
+            else:
+                tenant_config = await db.scalar(
+                    select(TenantSettings.custom_config).where(
+                        TenantSettings.tenant_id == tenant.id
+                    )
                 )
-            )
             on_trial[str(tenant.id)] = config_marks_trial(tenant_config)
             signup_status[str(tenant.id)] = (
                 tenant_config.get(SIGNUP_STATUS_KEY, "active")
@@ -641,9 +775,6 @@ async def list_tenants(
                 int(usage_row.requests or 0),
                 float(usage_row.cost or 0),
             )
-
-    total_result = await db.execute(select(func.count(Tenant.id)))
-    total = total_result.scalar_one()
 
     return {
         "tenants": [
@@ -677,6 +808,8 @@ async def list_tenants(
         "total": total,
         "page": page,
         "limit": limit,
+        "status": status,
+        "counts": counts,
     }
 
 
@@ -1807,11 +1940,18 @@ async def platform_usage(
     )
     tc = tenant_counts.one()
 
-    tenant_ids = list((await db.scalars(select(Tenant.id).order_by(Tenant.id))).all())
+    registry = (
+        await db.execute(
+            select(Tenant.id, Tenant.name, Tenant.domain, Tenant.billing_tier).order_by(
+                Tenant.id
+            )
+        )
+    ).all()
     total_users = 0
     total_requests = 0
     total_cost = 0.0
-    for tenant_id in tenant_ids:
+    per_tenant: list[dict] = []
+    for tenant_id, tenant_name, tenant_domain, tenant_tier in registry:
         async with _platform_tenant_scope(db, tenant_id):
             total_users += int(
                 await db.scalar(
@@ -1832,7 +1972,19 @@ async def platform_usage(
             ).one()
             total_requests += int(usage_row.requests or 0)
             total_cost += float(usage_row.cost or 0)
+            if usage_row.requests:
+                per_tenant.append(
+                    {
+                        "id": str(tenant_id),
+                        "name": tenant_name,
+                        "domain": tenant_domain,
+                        "billing_tier": tenant_tier,
+                        "requests_30d": int(usage_row.requests),
+                        "cost_usd_30d": float(usage_row.cost or 0),
+                    }
+                )
 
+    per_tenant.sort(key=lambda item: item["requests_30d"], reverse=True)
     return PlatformUsage(
         total_tenants=int(tc.total),
         active_tenants=int(tc.active),
@@ -1841,6 +1993,7 @@ async def platform_usage(
         cost_usd_30d=total_cost,
         period_start=period_start,
         period_end=period_end,
+        top_tenants=per_tenant[:10],
     )
 
 
@@ -2444,6 +2597,10 @@ class PlatformErrorSummary(BaseModel):
     total_errors: int
     unresolved: int
     by_severity: dict[str, int]
+    # Every 4xx a client triggers is logged as a warning, so the plain
+    # unresolved total is mostly noise; this lets triage count only the
+    # unresolved errors and criticals.
+    unresolved_by_severity: dict[str, int] = Field(default_factory=dict)
     by_type: dict[str, int]
     by_tenant: list[dict]
     trend: list[dict]
@@ -2554,6 +2711,7 @@ async def platform_error_summary(
     total_errors = 0
     unresolved = 0
     by_severity: dict[str, int] = {}
+    unresolved_by_severity: dict[str, int] = {}
     by_type: dict[str, int] = {}
     counts_by_tenant: dict[uuid.UUID | None, int] = {}
     trend_map: dict[str, dict[str, int]] = {}
@@ -2581,12 +2739,18 @@ async def platform_error_summary(
             select(
                 ErrorLog.severity,
                 func.count(ErrorLog.id).label("cnt"),
+                func.count(ErrorLog.id)
+                .filter(ErrorLog.is_resolved.is_(False))
+                .label("open_cnt"),
             )
             .where(*scoped_filters)
             .group_by(ErrorLog.severity)
         )
         for row in severity_rows.all():
             by_severity[row.severity] = by_severity.get(row.severity, 0) + int(row.cnt)
+            unresolved_by_severity[row.severity] = unresolved_by_severity.get(
+                row.severity, 0
+            ) + int(row.open_cnt or 0)
 
         type_rows = await db.execute(
             select(
@@ -2661,6 +2825,7 @@ async def platform_error_summary(
         total_errors=total_errors,
         unresolved=unresolved,
         by_severity=by_severity,
+        unresolved_by_severity=unresolved_by_severity,
         by_type=by_type,
         by_tenant=by_tenant,
         trend=trend,
@@ -3187,7 +3352,7 @@ async def revoke_api_key(
     return {"status": "revoked", **_api_key_summary(row).model_dump(mode="json")}
 
 
-# â”€â”€ Tenant troubleshooting (platform:debug) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Tenant troubleshooting (platform:debug) ───────────────────────────────────
 
 
 @asynccontextmanager
@@ -3239,7 +3404,7 @@ class ResolveErrorRequest(BaseModel):
 def _tenant_label(names: dict[str, str], tenant_id) -> str:
     if tenant_id is None:
         return "System"
-    return names.get(str(tenant_id), "â€”")
+    return names.get(str(tenant_id), "—")
 
 
 def _error_detail(row: ErrorLog, tenant_name: str | None) -> ErrorDetail:
@@ -3324,7 +3489,7 @@ async def resolve_error(
     """Close out an error from the operator side.
 
     Tenant admins could already resolve their own errors, but the operator who
-    actually diagnosed the fault had no way to record that it was handled â€” so
+    actually diagnosed the fault had no way to record that it was handled — so
     the same error resurfaced in every triage pass.
     """
 
@@ -3392,8 +3557,8 @@ async def trace_request(
 ):
     """Assemble everything recorded about one request.
 
-    request_id is the identifier the customer can actually see â€” it comes back
-    in the X-Request-ID header and in every error body â€” which makes it the
+    request_id is the identifier the customer can actually see — it comes back
+    in the X-Request-ID header and in every error body — which makes it the
     only handle support can rely on a caller already having.
     """
 
@@ -3582,7 +3747,7 @@ async def tenant_diagnostics(
         ).all()
 
         # "Stuck" covers both terminal failures and work that keeps being
-        # retried without completing â€” both look like a hung feature to a user.
+        # retried without completing — both look like a hung feature to a user.
         job_rows = (
             await db.scalars(
                 select(DurableJob)
@@ -3675,14 +3840,22 @@ async def list_operator_audit(
     actor_id: Optional[str] = Query(None),
     resource_id: Optional[str] = Query(None),
     days: int = Query(7, ge=1, le=365),
+    tenant_id: Annotated[Optional[uuid.UUID], Query()] = None,
+    exclude_requests: Annotated[bool, Query()] = False,
 ):
     """Read the operator action trail.
 
     Every platform request has been written to operator_audit_logs since the
-    audit middleware landed, but nothing could read it back â€” so the question
+    audit middleware landed, but nothing could read it back — so the question
     "what did we touch in this tenant, and when" had no answer through the API.
     These rows are operator-owned and carry no tenant_id, so no RLS scope
     applies.
+
+    ``tenant_id`` answers that question in one call: actions on the tenant
+    itself carry it as ``resource_id``, while support-request and error
+    actions name their own resource and record the tenant in metadata.
+    ``exclude_requests`` drops the ``platform.request`` row the middleware
+    writes for every call, leaving only deliberate operator actions.
     """
 
     _require_platform_debug(request)
@@ -3695,6 +3868,16 @@ async def list_operator_audit(
         filters.append(OperatorAuditLog.actor_id == actor_id)
     if resource_id:
         filters.append(OperatorAuditLog.resource_id == resource_id)
+    if tenant_id is not None:
+        filters.append(
+            or_(
+                OperatorAuditLog.resource_id == str(tenant_id),
+                OperatorAuditLog.metadata_json["tenant_id"].as_string()
+                == str(tenant_id),
+            )
+        )
+    if exclude_requests:
+        filters.append(OperatorAuditLog.action != "platform.request")
 
     total = int(
         await db.scalar(select(func.count(OperatorAuditLog.id)).where(*filters)) or 0

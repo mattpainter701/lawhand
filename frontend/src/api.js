@@ -1509,14 +1509,51 @@ export const getRetentionInventory = () => api.get('/compliance/retention').then
 export const updateRetentionPolicy = (data) => api.put('/compliance/retention', data).then((r) => r.data)
 export const executeRetention = (dryRun = true) => api.post('/compliance/retention/execute', {}, { params: { dry_run: dryRun } }).then((r) => r.data)
 
-export const getPlatformTenants = (key, page = 1) =>
-  platformApi(key).get(`/platform/tenants?page=${page}`).then((r) => r.data)
+// `params` carries the server-side search (`q`), lifecycle view (`status`) and
+// page size (`limit`); the response reports `counts` for every view.
+export const getPlatformTenants = (key, page = 1, params = {}) =>
+  platformApi(key).get('/platform/tenants', { params: { page, ...params } }).then((r) => r.data)
 
 export const provisionPlatformTenant = (key, data) =>
   platformApi(key).post('/platform/tenants', data).then((r) => r.data)
 
 export const approvePlatformTenantTrial = (key, id, data) =>
   platformApi(key).post(`/platform/tenants/${id}/approve-trial`, data).then((r) => r.data)
+
+export const revokePlatformTenantTrial = (key, id, data) =>
+  platformApi(key).post(`/platform/tenants/${id}/revoke`, data).then((r) => r.data)
+
+// Troubleshooting routes below require the platform:debug scope.
+export const getPlatformTenantDiagnostics = (key, id, hours = 24) =>
+  platformApi(key).get(`/platform/tenants/${id}/diagnostics`, { params: { hours } }).then((r) => r.data)
+
+export const findPlatformUsers = (key, email) =>
+  platformApi(key).get('/platform/users', { params: { email } }).then((r) => r.data)
+
+export const getPlatformErrorDetail = (key, errorId, tenantId) =>
+  platformApi(key).get(`/platform/logs/${encodeURIComponent(errorId)}`, {
+    params: tenantId ? { tenant_id: tenantId } : {},
+  }).then((r) => r.data)
+
+export const resolvePlatformError = (key, errorId, data, tenantId) =>
+  platformApi(key).patch(`/platform/logs/${encodeURIComponent(errorId)}/resolve`, data, {
+    params: tenantId ? { tenant_id: tenantId } : {},
+  }).then((r) => r.data)
+
+export const tracePlatformRequest = (key, requestId) =>
+  platformApi(key).get(`/platform/trace/${encodeURIComponent(requestId)}`).then((r) => r.data)
+
+export const getPlatformOperatorAudit = (key, params = {}) =>
+  platformApi(key).get('/platform/audit', { params }).then((r) => r.data)
+
+// Customer support requests filed from tenant Admin > Support.
+export const getPlatformSupportQueue = (key, params = {}) =>
+  platformApi(key).get('/platform/operating-trust/support', { params }).then((r) => r.data)
+
+export const updatePlatformSupportRequest = (key, tenantId, requestId, data) =>
+  platformApi(key)
+    .patch(`/platform/operating-trust/tenants/${tenantId}/support/${requestId}`, data)
+    .then((r) => r.data)
 
 export const getPlatformTenant = (key, id) =>
   platformApi(key).get(`/platform/tenants/${id}`).then((r) => r.data)
