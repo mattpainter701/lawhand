@@ -65,3 +65,21 @@ export function readListScroll(url) {
     return null
   }
 }
+
+// Signing out does not reload the page or close the tab, so the next person to
+// sign in here would otherwise be sent back to the last user's view, search
+// text included, which can name a client. Forget every list key on sign-out.
+export function clearMatterListMemory() {
+  const store = storage()
+  if (!store) return
+  try {
+    const keys = []
+    for (let i = 0; i < store.length; i += 1) {
+      const key = store.key(i)
+      if (key === LAST_URL_KEY || key?.startsWith(scrollKey(''))) keys.push(key)
+    }
+    keys.forEach((key) => store.removeItem(key))
+  } catch {
+    // Same: best-effort working state.
+  }
+}
