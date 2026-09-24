@@ -210,6 +210,41 @@ def _clear_drive_access_cache() -> None:
     _DRIVE_ACCESS_CACHE.clear()
 
 
+# Returned by :func:`service_account_drive_scope` when the platform service
+# account token is in use but the tenant has no org Shared Drive to pin to.
+NO_TENANT_DRIVE = ""
+
+
+async def service_account_drive_scope(
+    db,
+    tenant_id: object | None,
+    token: str | None,
+    *,
+    cloud_root: object | None = None,
+) -> str | None:
+    """Pin Drive listings made with the platform service account to one tenant.
+
+    One service account is a member of every tenant's org Shared Drive, so a
+    ``corpora=allDrives`` search or an ``includeItemsFromAllDrives`` listing
+    made with its token spans every customer's drive. Callers must restrict
+    such requests to ``corpora=drive&driveId=<this tenant's drive>``.
+
+    Returns ``None`` for a delegated (per-account) token, the tenant's drive id
+    for the service-account token, or :data:`NO_TENANT_DRIVE` when the
+    service-account token is in use without a bound drive, in which case the
+    caller must not list or read anything.
+    """
+    if not token or not is_configured():
+        return None
+    service_token = await get_access_token(DRIVE_SCOPES)
+    if not service_token or token != service_token:
+        return None
+    if cloud_root is None:
+        cloud_root = await _load_tenant_cloud_root(db, tenant_id)
+    binding = _org_shared_drive_binding(cloud_root) or {}
+    return str(binding.get("drive_id") or "").strip() or NO_TENANT_DRIVE
+
+
 async def prefer_service_account(
     db,
     tenant_id: object | None,
