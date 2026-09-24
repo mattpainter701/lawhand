@@ -338,6 +338,27 @@ export const INBOUND_EMAIL = [
   },
 ]
 
+// ── Time and invoices ───────────────────────────────────────────────────────
+function timeEntry(id, fields) {
+  return { id: `te-${id}`, user_name: PEOPLE.priya.full_name, hourly_rate: 325, is_billable: true, status: 'draft', invoice_id: null, ...fields }
+}
+
+export const TIME_ENTRIES = [
+  timeEntry('01', { matter_id: 'm-0001', date: isoDay(0), hours: 1.2, amount: 390, description: 'Draft response to motion to compel; review scheduling order' }),
+  timeEntry('02', { matter_id: 'm-0003', date: isoDay(-1), hours: 0.5, amount: 162.5, description: 'Call with client re temporary custody hearing logistics' }),
+  timeEntry('03', { matter_id: 'm-0002', date: isoDay(-1), hours: 2.4, amount: 780, description: 'Prepare inventory schedule from verified asset list' }),
+  timeEntry('04', { matter_id: 'm-0006', date: isoDay(-2), hours: 3.1, amount: 1007.5, description: 'Review settlement agreement draft; redline indemnity terms', status: 'approved' }),
+  timeEntry('05', { matter_id: 'm-0005', date: isoDay(-3), hours: 0.8, amount: 0, description: 'Internal knowledge-sharing meeting', is_billable: false }),
+  timeEntry('06', { matter_id: 'm-0001', date: isoDay(-9), hours: 4.9, amount: 1592.5, description: 'Draft interrogatory answers and document requests', status: 'invoiced', invoice_id: 'inv-2' }),
+]
+
+export const INVOICES = [
+  { id: 'inv-1', invoice_number: 'INV-2026-0142', matter_name: 'Harlow Manufacturing — supply contract dispute', matter_id: 'm-0001', status: 'draft', issue_date: isoDay(0), due_date: isoDay(30), total: 3240, balance_due: 3240, qbo_sync_status: null },
+  { id: 'inv-2', invoice_number: 'INV-2026-0137', matter_name: 'Harlow Manufacturing — supply contract dispute', matter_id: 'm-0001', status: 'sent', issue_date: isoDay(-9), due_date: isoDay(21), total: 1592.5, balance_due: 1592.5, qbo_sync_status: 'synced', qbo_invoice_id: '1187' },
+  { id: 'inv-3', invoice_number: 'INV-2026-0129', matter_name: 'Keller v. Northgate Properties', matter_id: 'm-0006', status: 'sent', issue_date: isoDay(-45), due_date: isoDay(-15), total: 6810, balance_due: 2810, is_overdue: true, qbo_sync_status: 'synced', qbo_invoice_id: '1172' },
+  { id: 'inv-4', invoice_number: 'INV-2026-0118', matter_name: 'Estate of Eleanor Voss', matter_id: 'm-0002', status: 'paid', issue_date: isoDay(-60), due_date: isoDay(-30), total: 2275, balance_due: 0, qbo_sync_status: 'synced', qbo_invoice_id: '1160' },
+]
+
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
@@ -382,7 +403,19 @@ const BASE_ROUTES = [
     expires_at: isoAt(69, '14:02'),
     last_used_at: isoAt(0, '09:12'),
   }] })],
-  ['GET', '/api/billing/time-entries', () => ({ items: [] })],
+  ['GET', '/api/billing/time-entries', () => ({ items: TIME_ENTRIES, total: TIME_ENTRIES.length, total_hours: 12.9, total_amount: 4102.5 })],
+  ['GET', '/api/billing/time-entries/timer', () => ({ id: 'te-timer', matter_id: 'm-0006', timer_started_at: isoAt(0, '09:18'), description: '' })],
+  ['GET', '/api/billing/invoices', () => ({ items: INVOICES, total: INVOICES.length })],
+  ['GET', '/api/billing/ready-to-bill', () => ({
+    items: [
+      { matter_id: 'm-0006', matter_name: 'Keller v. Northgate Properties', count: 4, oldest: isoDay(-12), amount: '1007.50', closed: false },
+      { matter_id: 'm-0002', matter_name: 'Estate of Eleanor Voss', count: 3, oldest: isoDay(-6), amount: '780.00', closed: false },
+      { matter_id: 'm-0003', matter_name: 'Ortiz — dissolution of marriage', count: 2, oldest: isoDay(-4), amount: '325.00', closed: false },
+    ],
+    total: 3,
+    total_amount: '2112.50',
+  })],
+  ['GET', '/api/billing/time-entry-settings', () => ({ time_rounding_minutes: 6 })],
   ['GET', '/api/matters/:id/correspondence', () => ({ items: CORRESPONDENCE })],
   ['GET', '/api/matters/:id/inbound-email/alias', () => ({ enabled: true, alias: { address: 'harl0001-8c2d4f@matters.maplebirch.example' } })],
   ['GET', '/api/matters/:id/inbound-email', () => ({ items: INBOUND_EMAIL })],

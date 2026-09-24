@@ -186,4 +186,36 @@ export const SHOTS = [
       { target: byRole('button', 'Revoke'), label: '3' },
     ],
   },
+
+  // ── User guide: time and billing ────────────────────────────────────────
+  {
+    name: 'time-tracking',
+    path: '/time-tracking',
+    user: 'attorney',
+    viewport: { width: 1440, height: 1250 },
+    waitFor: 'Timer running',
+    clip: (page) => regionAround(page, [
+      byRole('heading', 'Time tracking', { level: 1 }),
+      (p) => p.locator('table').first(),
+    ], { pad: 24 }),
+    annotate: [
+      { target: byRole('button', 'Add entry'), label: '1' },
+      { target: (page) => page.getByRole('region', { name: 'Running timer' }).or(page.locator('section[aria-label="Running timer"]')), label: '2' },
+      { target: (page) => page.getByRole('button', { name: /Stop & log/ }), label: '3' },
+    ],
+  },
+  {
+    name: 'invoices-list',
+    path: '/invoices',
+    user: 'admin',
+    viewport: { width: 1440, height: 1500 },
+    waitFor: 'INV-2026-0142',
+    clip: (page) => regionAround(page, [
+      (p) => p.getByRole('heading', { level: 1 }).first(),
+      (p) => p.locator('tr', { hasText: 'INV-2026-0118' }),
+    ], { pad: 24 }),
+    annotate: [
+      { target: byRole('button', 'Generate invoice'), label: '1' },
+    ],
+  },
 ]

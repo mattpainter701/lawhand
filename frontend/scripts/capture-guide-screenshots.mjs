@@ -126,7 +126,8 @@ async function capture(browser, encoder, baseURL, shot, unhandled) {
   }))
 
   await page.goto(shot.path, { waitUntil: 'domcontentloaded' })
-  if (shot.waitFor) await page.getByText(shot.waitFor, { exact: false }).first().waitFor({ timeout: 20_000 })
+  // Responsive pages render a hidden mobile copy too, so wait for a visible match.
+  if (shot.waitFor) await page.getByText(shot.waitFor, { exact: false }).filter({ visible: true }).first().waitFor({ timeout: 20_000 })
   await page.waitForLoadState('networkidle').catch(() => {})
   if (shot.setup) await shot.setup(page)
   await page.waitForLoadState('networkidle').catch(() => {})
