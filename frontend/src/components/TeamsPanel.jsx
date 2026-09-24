@@ -16,6 +16,8 @@ import TeamsNotificationsTab from './teams/TeamsNotificationsTab'
 import TeamsVoiceTab from './teams/TeamsVoiceTab'
 import { errorText } from './teams/teamsErrors'
 
+const CLOUD_SECTION_HREF = '/admin?tab=integrations&integration=cloud'
+
 const TABS = [
   { key: 'channels', label: 'Channels', icon: MessageSquare },
   { key: 'notifications', label: 'Notifications', icon: Bell },
@@ -130,7 +132,36 @@ export default function TeamsPanel() {
     return (
       <GateCard
         title="Connect Microsoft 365 first"
-        body="Teams collaboration builds on your Microsoft 365 connection. Connect Microsoft in the Integrations tab, then come back here."
+        body="Teams collaboration builds on your Microsoft 365 connection. Connect Microsoft 365 under Cloud accounts & storage, then come back here."
+        link={{ label: 'Open Cloud accounts & storage', href: CLOUD_SECTION_HREF }}
+      />
+    )
+  }
+
+  // Reconnecting cannot change the account type, so a personal Microsoft
+  // account gets an explanation instead of a reconnect loop. An unconfirmed
+  // tier ('unknown'/null) still falls through to the scope check below.
+  const teamsCapability = ms?.capabilities?.teams
+  if (
+    teamsCapability?.status === 'unavailable' &&
+    ms?.account_type &&
+    ms.account_type !== 'unknown'
+  ) {
+    return (
+      <GateCard
+        title="Teams is not available for this Microsoft account"
+        body={`${teamsCapability.reason || 'Teams collaboration needs a Microsoft 365 work or school account.'} Reconnecting the same account will not change this; connect a Microsoft 365 business account to use Teams.`}
+      />
+    )
+  }
+
+  // Every Teams permission is granted but the feature is still off: the
+  // deployment has Teams disabled, which a reconnect cannot fix either.
+  if (!ms?.teams_connected && Array.isArray(ms?.teams_missing_scopes) && ms.teams_missing_scopes.length === 0) {
+    return (
+      <GateCard
+        title="Teams is not enabled for this workspace"
+        body="Your Microsoft 365 connection already includes the Teams permissions, but Teams collaboration is switched off for this LawHand workspace. Contact LawHand support to enable it."
       />
     )
   }
@@ -259,7 +290,7 @@ function Pill({ tone, children }) {
   )
 }
 
-function GateCard({ title, body, action, missing }) {
+function GateCard({ title, body, action, link, missing }) {
   return (
     <div className="max-w-2xl rounded-xl border border-brand-line bg-brand-surface p-6">
       <h3 className="mb-1 font-sans text-base font-bold text-brand-ink">{title}</h3>
@@ -277,6 +308,14 @@ function GateCard({ title, body, action, missing }) {
         >
           {action.label}
         </button>
+      )}
+      {link && (
+        <a
+          href={link.href}
+          className="inline-block rounded-lg bg-brand-ink px-4 py-2 font-sans text-xs font-medium text-white transition-colors hover:bg-brand-ink/90"
+        >
+          {link.label}
+        </a>
       )}
     </div>
   )

@@ -13,9 +13,14 @@ import IntegrationsPanel, {
   CloudRetryStatus,
   PrimaryCloudSelector,
   ProviderCard,
+  describeProviderError,
+  readConnectReturn,
   relTime,
+  syncJobLabel,
 } from './IntegrationsPanel'
+import { ConfirmProvider } from './dialog/ConfirmProvider'
 import {
+  disconnectCloudProvider,
   getAdminPermissions,
   getAdminSettings,
   getSharePointBinding,
@@ -27,7 +32,10 @@ import {
 
 afterEach(cleanup)
 
+const renderPanel = () => render(<ConfirmProvider><IntegrationsPanel /></ConfirmProvider>)
+
 vi.mock('../api', () => ({
+  disconnectCloudProvider: vi.fn(),
   getAdminPermissions: vi.fn(),
   triggerUserSync: vi.fn(),
   retryCloudInit: vi.fn(),
@@ -112,12 +120,30 @@ const cardProps = {
 }
 
 describe('ProviderCard states', () => {
-  it('renders a disconnected provider with a Connect action and no granted count', () => {
-    render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={disconnected('google')} />)
-    expect(screen.getByText('Disconnected')).toBeInTheDocument()
+  it('renders a never-connected provider as a starting point, not a wall of failures', () => {
+    const labels = {
+      'https://www.googleapis.com/auth/drive': 'Read and write Drive',
+      'https://www.googleapis.com/auth/gmail.readonly': 'Read Gmail',
+    }
+    render(<ProviderCard {...cardProps} scopeLabels={labels} name="Google Workspace" provider="google" info={disconnected('google')} />)
+    expect(screen.getByText('Not connected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull()
-    expect(screen.getByTestId('scope-tally-granted')).toHaveTextContent('0')
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull()
+    // No red scope tally: the card explains what will be asked and who signs in.
+    expect(screen.queryByTestId('scope-tally-missing')).toBeNull()
+    expect(screen.queryByText('Missing')).toBeNull()
+    expect(screen.getByText(/Google Workspace administrator account/)).toBeInTheDocument()
+    const asks = screen.getByTestId('connect-asks-google')
+    expect(within(asks).getByText('Read and write Drive')).toBeInTheDocument()
+    // Sign-in plumbing is not presented as a feature to weigh.
+    expect(within(asks).queryByText('openid')).toBeNull()
+  })
+
+  it('keeps the unused suite compact when the firm already runs on the other one', () => {
+    render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={disconnected('google')} otherConnected />)
+    expect(screen.getByText('Only needed if your firm also uses Google Workspace.')).toBeInTheDocument()
+    expect(screen.getByText(/What Google Workspace will be asked to allow/).closest('details')).not.toHaveAttribute('open')
   })
 
   it('renders a healthy provider with granted scopes, extra scopes and sync actions', () => {
@@ -141,16 +167,39 @@ describe('ProviderCard states', () => {
       granted_scopes: GOOGLE_REQUIRED.slice(0, -1),
     }
     render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={info} scopeLabels={{ 'https://www.googleapis.com/auth/drive': 'Read & write Google Drive' }} />)
-    expect(screen.getByText('Missing Scopes')).toBeInTheDocument()
+    expect(screen.getByText('Missing permissions')).toBeInTheDocument()
     expect(screen.getByTestId('scope-tally-missing')).toHaveTextContent('1')
     expect(screen.getByText('Read & write Google Drive')).toBeInTheDocument()
     expect(screen.getByTestId('scope-tally-granted')).toHaveTextContent('4')
+  })
+
+  it('names the declined permission, leads with Re-authorize and downgrades the feature it powers', () => {
+    const info = {
+      ...healthyGoogle,
+      health: 'missing_scopes',
+      missing_required: ['https://www.googleapis.com/auth/drive'],
+      granted_scopes: GOOGLE_REQUIRED.slice(0, -1),
+    }
+    render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={info} scopeLabels={{ 'https://www.googleapis.com/auth/drive': 'Read & write Google Drive' }} />)
+    const banner = screen.getByTestId('missing-scopes-google')
+    expect(banner).toHaveTextContent('Some permissions were not granted')
+    expect(banner).toHaveTextContent('Not granted: Read & write Google Drive.')
+    expect(screen.getByRole('button', { name: 'Re-authorize' }).className).toContain('bg-brand-ink')
+    // The backend still reports storage as available; the declined Drive scope wins.
+    const storage = screen.getByTestId('capability-cloud_storage')
+    expect(within(storage).getByText('Reconnect needed')).toBeInTheDocument()
+    expect(within(storage).getByText('Not granted: Read & write Google Drive.')).toBeInTheDocument()
+    expect(within(screen.getByTestId('capability-directory_sync')).getByText('Available')).toBeInTheDocument()
   })
 
   it('leads with the remedy and hides the scope tally when the grant is revoked', () => {
     render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={revokedGoogle} />)
     expect(screen.getByText('Reconnect Required')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(/re-authorize as an administrator/i)
+    // Plain language first; the raw provider text stays available for support.
+    const refreshError = screen.getByTestId('refresh-error-google')
+    expect(refreshError).toHaveTextContent(/no longer accepts the saved sign-in/)
+    expect(refreshError).not.toHaveAttribute('open')
     expect(screen.getByText('400 invalid_grant Token has been expired or revoked.')).toBeInTheDocument()
     expect(screen.getByText(/Last token refresh attempt 62d ago failed/)).toBeInTheDocument()
     // The scope tally is behind a disclosure and never claims a full green grant.
@@ -169,12 +218,26 @@ describe('ProviderCard states', () => {
     expect(screen.getByTestId('scope-tally-granted')).toHaveTextContent('0')
   })
 
-  it('separates the firm-wide connection from per-user connections', () => {
+  it('separates the firm connection from per-user connections and says whose account it acts as', () => {
     render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={healthyGoogle} />)
-    expect(screen.getByText('Firm-wide connection')).toBeInTheDocument()
+    expect(screen.getByText('Firm connection')).toBeInTheDocument()
+    expect(screen.getByText(/features that use this connection act as admin@firm\.test/)).toBeInTheDocument()
     const users = screen.getByTestId('user-tokens-google')
     expect(within(users).getByText(/2 of 3 connected/)).toBeInTheDocument()
-    expect(within(users).getByText(/1 need to open Calendar and choose Connect Calendar/)).toBeInTheDocument()
+    expect(within(users).getByText(/1 need to reconnect from Profile → Connected accounts/)).toBeInTheDocument()
+  })
+
+  it('labels sync runs in plain language', () => {
+    const info = {
+      ...healthyGoogle,
+      recent_sync_runs: [
+        { job_type: 'correspondence-capture', status: 'failed', started_at: new Date().toISOString(), items_ok: 0, items_failed: 1 },
+      ],
+    }
+    render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={info} />)
+    expect(screen.getByText('Email filing')).toBeInTheDocument()
+    expect(screen.getByText(/Failed · just now/)).toBeInTheDocument()
+    expect(screen.queryByText('correspondence-capture')).toBeNull()
   })
 
   it('renders directory sync as a tier statement, not a failure, and hides Sync now', () => {
@@ -204,7 +267,7 @@ describe('IntegrationsPanel actions', () => {
   })
 
   it('shows provider status first and keeps storage settings collapsed', async () => {
-    render(<IntegrationsPanel />)
+    renderPanel()
     expect(await screen.findByText('Integrations: Healthy')).toBeInTheDocument()
     const cards = screen.getAllByTestId(/provider-card-/)
     expect(cards.map((el) => el.dataset.testid)).toEqual(['provider-card-microsoft', 'provider-card-google'])
@@ -225,7 +288,7 @@ describe('IntegrationsPanel actions', () => {
     window.location = { href: 'http://localhost/admin' }
     try {
       const user = userEvent.setup()
-      render(<IntegrationsPanel />)
+      renderPanel()
       await screen.findByText('Integrations: Healthy')
 
       await user.click(screen.getByRole('button', { name: 'Re-authorize' }))
@@ -242,7 +305,7 @@ describe('IntegrationsPanel actions', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     triggerUserSync.mockResolvedValue({ status: 'ok' })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    render(<IntegrationsPanel />)
+    renderPanel()
     await screen.findByText('Integrations: Healthy')
 
     await user.click(screen.getByRole('button', { name: 'Sync now' }))
@@ -256,7 +319,7 @@ describe('IntegrationsPanel actions', () => {
   it('runs the cloud file and email sync and reports the count', async () => {
     triggerCloudSync.mockResolvedValue({ total: 700 })
     const user = userEvent.setup()
-    render(<IntegrationsPanel />)
+    renderPanel()
     await screen.findByText('Integrations: Healthy')
 
     await user.click(screen.getByRole('button', { name: /Sync files \+ email/ }))
@@ -267,7 +330,7 @@ describe('IntegrationsPanel actions', () => {
   it('retries cloud folder setup from inside document storage', async () => {
     retryCloudInit.mockResolvedValue({ matters_initialized: 2, matters_failed: 0, status: 'ready' })
     const user = userEvent.setup()
-    render(<IntegrationsPanel />)
+    renderPanel()
     await screen.findByText('Integrations: Healthy')
 
     await user.click(screen.getByText('Document storage'))
@@ -279,7 +342,7 @@ describe('IntegrationsPanel actions', () => {
   it('requires confirmation before repointing the primary provider', async () => {
     updateAdminSettings.mockResolvedValue({})
     const user = userEvent.setup()
-    render(<IntegrationsPanel />)
+    renderPanel()
     await screen.findByText('Integrations: Healthy')
 
     await user.click(screen.getByText('Document storage'))
@@ -300,13 +363,13 @@ describe('IntegrationsPanel actions', () => {
 
   it('shows the load error instead of an empty page when permissions fail', async () => {
     getAdminPermissions.mockRejectedValue(new Error('boom'))
-    render(<IntegrationsPanel />)
+    renderPanel()
     expect(await screen.findByText('Failed to load permissions.')).toBeInTheDocument()
   })
 
   it('reports attention needed and the revoked remedy when the tenant grant is dead', async () => {
     getAdminPermissions.mockResolvedValue(permissions({ overall_health: 'attention_needed', google: revokedGoogle }))
-    render(<IntegrationsPanel />)
+    renderPanel()
     expect(await screen.findByText('Integrations: Needs Attention')).toBeInTheDocument()
     expect(screen.getByText('Reconnect Required')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(/re-authorize/i)
@@ -322,10 +385,116 @@ describe('IntegrationsPanel actions', () => {
       },
     }))
     getAdminSettings.mockResolvedValue({ primary_cloud_provider: 'onedrive' })
-    render(<IntegrationsPanel />)
+    renderPanel()
     expect((await screen.findAllByText(/Reconnect Microsoft 365 before saving matter documents to Microsoft OneDrive/)).length).toBe(2)
     await userEvent.setup().click(screen.getByText('Document storage'))
     expect(screen.getByText('Matter document storage is not ready.')).toBeInTheDocument()
+  })
+})
+
+describe('IntegrationsPanel account modes and disconnect', () => {
+  let realLocation
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getAdminSettings.mockResolvedValue({ primary_cloud_provider: null })
+    getSharePointBinding.mockResolvedValue({ binding: null })
+    realLocation = window.location
+    delete window.location
+    window.location = { href: 'http://localhost/admin' }
+  })
+  afterEach(() => {
+    window.location = realLocation
+  })
+
+  it('re-authorizes a personal Gmail firm in personal mode so the callback accepts it', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      google: { ...healthyGoogle, account_type: 'personal', account_label: 'Personal Google (Gmail)' },
+    }))
+    const user = userEvent.setup()
+    renderPanel()
+    expect(await screen.findByText('Google (personal Gmail)')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Re-authorize' }))
+    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&account_mode=personal')
+  })
+
+  it('offers a personal Gmail connect for a solo practice that has not connected Google yet', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      overall_health: 'disconnected',
+      google: disconnected('google'),
+    }))
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(await screen.findByRole('button', { name: /Solo practice on personal Gmail/ }))
+    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&account_mode=personal')
+  })
+
+  it('disconnects only after the administrator confirms the firm-wide consequences', async () => {
+    getAdminPermissions.mockResolvedValueOnce(permissions())
+      .mockResolvedValueOnce(permissions({ overall_health: 'disconnected', google: disconnected('google') }))
+    disconnectCloudProvider.mockResolvedValue({ status: 'disconnected', provider: 'google' })
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByText('Integrations: Healthy')
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }))
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog).toHaveTextContent(/personal Google connection is removed too/)
+    expect(dialog).toHaveTextContent(/Files already in Google Drive stay where they are/)
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(disconnectCloudProvider).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }))
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Disconnect Google' }))
+    expect(disconnectCloudProvider).toHaveBeenCalledWith('google')
+    expect(await screen.findByText('Integrations: No integrations connected')).toBeInTheDocument()
+  })
+
+  it('opens document storage on its own when a connected firm cannot save yet', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      microsoft: { ...disconnected('microsoft'), connected: true, health: 'refresh_failed', missing_required: [] },
+      google: disconnected('google'),
+      overall_health: 'attention_needed',
+    }))
+    getAdminSettings.mockResolvedValue({ primary_cloud_provider: 'onedrive' })
+    renderPanel()
+    await screen.findByText('Integrations: Needs Attention')
+    expect(screen.getByTestId('document-storage')).toHaveAttribute('open')
+  })
+})
+
+describe('readConnectReturn', () => {
+  it('confirms a completed connect and explains a failed one with the right provider', () => {
+    expect(readConnectReturn('?tab=integrations&integration=cloud&connected=microsoft')).toEqual({
+      tone: 'ok',
+      text: 'Microsoft 365 connected. Check the card below: anything that was not granted is listed there.',
+    })
+    expect(readConnectReturn('?error=access_denied&provider=google')).toEqual({
+      tone: 'error',
+      text: 'The Google sign-in was cancelled, so nothing was connected. Try again when you are ready.',
+    })
+  })
+
+  it('ignores other integrations and missing parameters', () => {
+    expect(readConnectReturn('?connected=zoom')).toBeNull()
+    expect(readConnectReturn('')).toBeNull()
+    expect(readConnectReturn(undefined)).toBeNull()
+  })
+})
+
+describe('plain-language helpers', () => {
+  it('names sync jobs for people, whatever separator the backend uses', () => {
+    expect(syncJobLabel('user-sync')).toBe('Directory sync')
+    expect(syncJobLabel('cloud_sync')).toBe('File & email index')
+    expect(syncJobLabel('correspondence-capture')).toBe('Email filing')
+    expect(syncJobLabel('calendar-push')).toBe('Calendar push')
+    expect(syncJobLabel(null)).toBe('Sync')
+  })
+
+  it('explains common provider errors before showing raw text', () => {
+    expect(describeProviderError('400 invalid_grant Token has been expired or revoked.')).toMatch(/no longer accepts the saved sign-in/)
+    expect(describeProviderError('503 upstream')).toMatch(/did not respond/)
+    expect(describeProviderError('403 Forbidden')).toMatch(/refused access/)
+    expect(describeProviderError('something odd')).toBe('The provider returned an error.')
   })
 })
 

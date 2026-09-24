@@ -1,0 +1,513 @@
+{
+ "area": "AI stack and the client's own Microsoft 365 Copilot / Google Gemini (inbound via the Workspace MCP; outbound via BYOK or the Copilot APIs)",
+ "summary": "(1) Routes and who pays. All LawHand model traffic goes through one LiteLLM gateway client (llm.py:193-223) on four tiers: Standard, Premium, Background and tenant/profile aliases (llm_routing.py:459-644). The platform pays for this traffic. It is priced from a static model-name table with a 10x PAYG markup (billing.py:12-73), except the Background broker, which prices through a price card and reservations (ai_request_broker.py:335-373). There is a narrow BYOK path that skips LiteLLM and calls the tenant's own key directly. \"gemini\" means a Google AI Studio API key on a fixed global endpoint. \"copilot\" is really an Azure OpenAI resource key, not Microsoft 365 Copilot (byok_security.py:10-73, llm_routing.py:529-571). BYOK usage is recorded at $0. It can only be set up through the admin API; there is no UI, and chat treats the BYOK route as not approved for matter data (llm_routing.py:390-402). The team's own plan calls this code \"migration material, not a customer launch surface\". (2) Inbound. The Workspace MCP (stateless streamable HTTP) is production-published behind WORKSPACE_MCP_ENABLED. It exposes 28 tools: 17 read and 11 propose-only, all human-reviewed. They are gated by OAuth 2.1 scopes plus live RBAC, tenant and user switches, Privacy Mode, per-grant budgets and audit. The authorization server supports discovery, PKCE S256, rotating refresh tokens, JWKS and revocation. DCR is behind a flag and supports public clients only. This setup works for Claude, ChatGPT/Codex and OpenCode. It is not yet ready for Microsoft 365 Copilot declarative agents or Gemini Enterprise. Both of those need a confidential client with a client_secret, which LawHand never issues (workspace_mcp_oauth router:297,350-363). Client registrations also hard-expire after 30 days, and every host must send `resource`. Consent is all-or-nothing, so one missing permission blocks the whole connection. Other gaps: no host-context matter resolver, relative deep links, no agent package (the Teams manifest is v1.17 tabs only; the Office add-in uses XML manifests), no Copilot or Gemini evals, and no per-tenant client allowlist. Those items are tracked only as ECO-09 to ECO-13 and ECO-19 to ECO-21. (3) Outbound. There is no code calling the Microsoft 365 Copilot Retrieval or Chat APIs, and no Vertex AI support. Cloud retrieval uses the keyword Microsoft Search API on the user's delegated token (cloud_search.py:888-1000). Governance gaps: MCP reads are visible across the whole tenant (no ethical walls). The Office planner sends Word and Outlook text to the Standard route with no data-class check. BYOK silently falls back to platform providers.",
+ "capabilities": [
+  {
+   "name": "LiteLLM gateway as the single inference boundary (Standard/Premium; platform-paid)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/llm.py:193-223",
+   "notes": "Default aliases lawhand-standard/lawhand-premium (config.py:267-268). Provider fallback chains live in LiteLLM, not the app. Platform presets: OpenCode Zen/Go, OpenRouter, DeepSeek and Anthropic. No Azure OpenAI or Vertex preset (platform_llm.py:115-172)."
+  },
+  {
+   "name": "Route resolution: background > explicit alias > BYOK > routing profile > tenant override > platform default",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/llm_routing.py:459-644",
+   "notes": "Background is platform-owned and never goes to BYOK (487-508). Results are cached per process for 30s."
+  },
+  {
+   "name": "Route data-class gate (Standard is public-general unless the operator enables matter context; BYOK/explicit/tenant-override routes fail closed)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/llm_routing.py:354-430",
+   "notes": "Applied in chat (chat.py:2421-2430) and in the broker. Not applied in office_assistant or template AI."
+  },
+  {
+   "name": "BYOK 'gemini' = Google AI Studio API key via OpenAI-compatible endpoint",
+   "provider": "google",
+   "status": "partial",
+   "file_ref": "backend/app/services/byok_security.py:10-32",
+   "notes": "Admin API only (admin.py:1515-1577). Client function exists but has no UI caller (frontend/src/api.js:916-920). Fixed global endpoint; no Vertex AI, region, service-account or WIF. Hardcoded default model gemini-2.0-flash (llm_routing.py:551-559)."
+  },
+  {
+   "name": "BYOK 'copilot' = customer Azure OpenAI resource key + deployment (not Microsoft 365 Copilot)",
+   "provider": "microsoft",
+   "status": "partial",
+   "file_ref": "backend/app/services/byok_security.py:33-86",
+   "notes": "HTTPS-only Azure-domain allowlist (SSRF-hardened). Bypasses LiteLLM (llm.py:255-275). Same deployment serves both tiers. Chat blocks matter context on this route."
+  },
+  {
+   "name": "AI usage costing: static price table, 10x PAYG markup, BYOK recorded at $0",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/billing.py:12-73",
+   "notes": "The BYOK plan says to remove the static model-name pricing and the fixed 10x multiplier (docs/standard-premium-byok-billing-plan-2026-08-16.md:234-235). Chat zeroes BYOK cost (chat.py:2971-2982)."
+  },
+  {
+   "name": "Background AI broker with price card, quota reservation and settlement",
+   "provider": "neither",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/ai_request_broker.py:301-373",
+   "notes": "Gated by VIRTUAL_ASSISTANT_ENABLED/BACKGROUND_ASSISTANT_ENABLED and a per-tenant opt-in (198-253)."
+  },
+  {
+   "name": "Template AI field mapping (Premium, platform-paid OpenRouter claude-opus-5; never inherits BYOK)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/template_ai_profile.py:21-85",
+   "notes": "Needs explicit consent and operator profile activation (template_ai_service.py:152-167)."
+  },
+  {
+   "name": "Office add-in action planner (Word replace_selection, Excel values/formulas, Outlook subject)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/office_assistant.py:105-224",
+   "notes": "OFFICE_ASSISTANT_ENABLED=false plus a pilot tenant list (config.py:112-122). Always uses the Standard route (line 117). One bounded action, bound to a fingerprint, with metadata-only audit."
+  },
+  {
+   "name": "Workspace MCP server (streamable HTTP, stateless JSON) with 28 tools: 17 read / 11 propose",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/workspace_mcp_protocol.py:202-258",
+   "notes": "Read: get_workflow_run, search_clients, get_client, search_intakes, get_intake, search_matters, search_tasks, search_firm_memory, get_task, find_matter, list_matter_tasks, list_matter_recipients, get_matter_context, list_matter_documents, get_matter_document_text, list_document_templates, get_document_template_text. Propose: propose_workflow_run, resume_workflow_run, propose_task, propose_task_update, propose_client_email, propose_client_sms, propose_matter_document, propose_document_from_template, propose_matter_document_file, propose_matter_file, propose_document_template (automation_capabilities.py:246-636). Gated by WORKSPACE_MCP_ENABLED (config.py:423). Model-neutral: the client's assistant pays for inference (docs/byo-harness-channel-contract.md:14-20)."
+  },
+  {
+   "name": "MCP tool hints: readOnlyHint for reads, non-destructive; scope + live RBAC filter on tools/list",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/automation_capabilities.py:217-243",
+   "notes": "Tool-to-RBAC map at workspace_mcp_protocol.py:101-130. Tool listing is filtered per identity (222-258)."
+  },
+  {
+   "name": "Workspace OAuth 2.1 AS: PRM + RFC 8414 metadata, PKCE S256, rotating refresh, JWKS, revocation",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:253-304",
+   "notes": "token_endpoint_auth_methods_supported=['none']. Registration endpoint is only advertised when WORKSPACE_MCP_DYNAMIC_REGISTRATION_ENABLED (default false, config.py:463)."
+  },
+  {
+   "name": "Dynamic client registration (public clients only; 30-day registration expiry)",
+   "provider": "both",
+   "status": "flagged_off",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:313-404",
+   "notes": "Rejects any token_endpoint_auth_method other than 'none' and never issues client_secret (350-363). Model docstring says 'public desktop-client registration' (models/workspace_mcp_client.py:15-21)."
+  },
+  {
+   "name": "Governance: tenant/user kill switches, Privacy Mode pause, grant-bound tokens, per-grant call/byte budgets, audit without query text",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/workspace_mcp_protocol.py:330-496",
+   "notes": "Tenant switch fails open when there is no settings row (workspace_mcp_access.py:31-43). Budgets are infrastructure limits, not value metering (workspace_mcp_budgets.py:21-59)."
+  },
+  {
+   "name": "Inbound template/doc-prep tools usable by an external assistant (read template text, render approved template to cloud DOCX, propose Markdown template, push authored DOCX)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/automation_capabilities.py:564-635",
+   "notes": "Markdown templates only for propose_document_template. PDF is fail-closed (docs/workspace_mcp_adapter.md:590-592). Only propose_document_from_template returns absolute task/document URLs (handlers.py:1877-1894)."
+  },
+  {
+   "name": "Research MCP (19 public-authority tools; API key header or OAuth; metered)",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/mcp_product.py:25-48",
+   "notes": "Accepts an X-MCP-API-Key or Bearer lhrk_ key (mcp_protocol.py:505-540), which is compatible with API-key auth in hosted agent builders."
+  },
+  {
+   "name": "Legacy product-key platform tools (list_matters/list_matter_documents/create_document)",
+   "provider": "neither",
+   "status": "stub",
+   "file_ref": "backend/app/services/mcp_platform_tools.py:1-34",
+   "notes": "Not imported anywhere except its own tests. Superseded by the Workspace MCP."
+  },
+  {
+   "name": "Delegated Microsoft Search API keyword retrieval over the user's M365 files/mail",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_search.py:888-1000",
+   "notes": "Uses POST /search/query, not the Microsoft 365 Copilot Retrieval API. No semantic index and no use of the client's Copilot license."
+  },
+  {
+   "name": "Office NAA/Entra token exchange (tid/oid to LawHand user)",
+   "provider": "microsoft",
+   "status": "flagged_off",
+   "file_ref": "backend/app/routers/auth.py:1715-1760",
+   "notes": "Reusable foundation for Entra-backed agent auth. Behind the Office feature flag."
+  },
+  {
+   "name": "Microsoft 365 Copilot declarative agent / Copilot Studio agent package (LawHand Matter Agent)",
+   "provider": "microsoft",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:440-454",
+   "notes": "ECO-09 (certify Copilot Studio), ECO-10 (matter resolver), ECO-12 (package), ECO-13 (evals). Teams manifest v1.17 has tabs only, with no copilotAgents or bots (teams-app/manifest.json:1-52). The Office add-in uses XML add-in-only manifests (office-addin/manifests/word-excel.xml:1-6)."
+  },
+  {
+   "name": "Gemini Enterprise custom MCP / A2A agent; Google Workspace add-on",
+   "provider": "google",
+   "status": "planned_only",
+   "file_ref": "TASKS.md:476-484",
+   "notes": "ECO-19 add-on, ECO-20 Gemini API behind LiteLLM, ECO-21 Gemini Enterprise pilot after the Microsoft agent gates pass."
+  },
+  {
+   "name": "Outbound use of client's Microsoft 365 Copilot (Retrieval/Chat API) or client's Vertex AI project",
+   "provider": "both",
+   "status": "planned_only",
+   "file_ref": "docs/standard-premium-byok-billing-plan-2026-08-16.md:203-218",
+   "notes": "Not in any plan. The plan only lists direct-provider BYOK adapters (OpenAI, Azure OpenAI, Anthropic). No code calls the Copilot APIs or Vertex."
+  }
+ ],
+ "defects": [
+  {
+   "title": "Workspace MCP OAuth cannot serve confidential clients, so Copilot declarative agents and Gemini Enterprise cannot register",
+   "severity": "high",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:297",
+   "detail": "AS metadata advertises token_endpoint_auth_methods_supported=['none']. DCR rejects any other method and never returns a client_secret (313-404, esp. 350-363). No operator or admin path creates a static client with a secret (WorkspaceMCPClient is only created in the DCR handlers). Microsoft 365 Copilot MCP plugins require DCR that issues a client_secret, and Gemini Enterprise custom MCP requires a client_id and client_secret. The ecosystem plan still lists 'OAuth 2.1 Workspace MCP with dynamic client registration' as existing leverage for the Microsoft agent (docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:63).",
+   "user_impact": "A firm cannot add LawHand as an action in its Microsoft 365 Copilot agent or its Gemini Enterprise app today. ECO-09, ECO-12 and ECO-21 are blocked on auth before any product work."
+  },
+  {
+   "title": "OAuth client registrations hard-expire after 30 days regardless of use",
+   "severity": "medium",
+   "file_ref": "backend/app/models/workspace_mcp_client.py:73-79",
+   "detail": "WORKSPACE_MCP_CLIENT_REGISTRATION_DAYS=30 (config.py:444) and is_active requires expires_at > now. The token endpoint calls _active_client before a refresh (router:704-705) and only updates last_used_at (router:806), never extending the expiry. Grants last 90 days (config.py:443).",
+   "user_impact": "An actively used hosted connector (Copilot Studio, Claude.ai and so on) gets invalid_client on day 31. Every user must reconnect, or the host must re-register silently, and firms see an unexplained outage."
+  },
+  {
+   "title": "RFC 8707 `resource` is mandatory at authorize and at token/refresh",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:407-418",
+   "detail": "`resource: str = Query(...)` (417) makes a missing resource a FastAPI 422 JSON error instead of an OAuth redirect error. The token endpoint returns invalid_target when resource is absent for every grant type, including refresh_token (706-708). MCP-spec clients send it; generic OAuth brokers (Teams Developer Portal token store, Power Platform connectors, Gemini Enterprise OAuth) may not.",
+   "user_impact": "A non-MCP-native host can fail sign-in with an opaque error, or break at the first token refresh."
+  },
+  {
+   "title": "All-or-nothing consent: one scope the user's role lacks blocks the whole connection",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:487-495",
+   "detail": "The consent request is refused (403) unless every requested scope is in _allowed_user_scopes (184-190, mapping 73-84). The protected-resource challenge asks for all known scopes (workspace_mcp_protocol.py:144-150). A hosted agent configured once by an admin therefore requests intakes:read and templates:propose for every user.",
+   "user_impact": "Users without manage_intake or manage_documents (for example a paralegal role) cannot connect a firm-wide Copilot or Gemini agent at all. The error does not say which permission is missing."
+  },
+  {
+   "title": "Office planner sends Word selection / Outlook body to the Standard route with no data-class check",
+   "severity": "medium",
+   "file_ref": "backend/app/services/office_assistant.py:115-150",
+   "detail": "create_plan always resolves use_premium=False and sends up to 50k characters of selection or email body (schemas/office_assistant.py:44-67) without calling route_matter_context_allowed. Standard is public-general by default (llm_routing.py:354-370). Chat enforces this gate (chat.py:2421-2430). Currently behind OFFICE_ASSISTANT_ENABLED plus the pilot list.",
+   "user_impact": "In a pilot tenant, confidential document and email text can reach a low-cost Standard provider the firm never cleared for client data."
+  },
+  {
+   "title": "BYOK silently falls back to platform providers; reconfiguring without the key erases it",
+   "severity": "medium",
+   "file_ref": "backend/app/services/llm_routing.py:540-573",
+   "detail": "If decrypt fails or no key is stored (bare except at 545-546), resolution continues to profile and platform routes. configure_customer_llm replaces customer_llm_config and keeps encrypted_api_key only when api_key is resent (admin.py:1557-1577), yet returns status ok with use_customer_llm=true. The plan requires 'no platform fallback unless the firm explicitly authorizes one' (docs/standard-premium-byok-billing-plan-2026-08-16.md:212-213).",
+   "user_impact": "A firm that believes its prompts go only to its own Azure or Gemini account can have them processed and billed by LawHand's platform providers with no warning. That breaks the firm's data-residency promise."
+  },
+  {
+   "title": "BYOK Azure endpoint accepted without the /openai/v1 path and never tested",
+   "severity": "medium",
+   "file_ref": "backend/app/services/byok_security.py:67-73",
+   "detail": "The normalizer keeps whatever path the admin supplied, and LLMService points the plain OpenAI client at it (llm.py:272-275). The Azure portal's resource URL (https://x.openai.azure.com/) is accepted, but OpenAI-SDK chat calls need the /openai/v1/ base path (or deployment-scoped classic URLs). There is no connection test at save time (admin.py:1536-1571). The llm_availability probes only test gateway aliases (llm_availability.py:40-130).",
+   "user_impact": "An admin can save a 'working' BYOK configuration where every AI call then fails with a gateway error."
+  },
+  {
+   "title": "BYOK Gemini uses an AI Studio key with no paid-tier, region or Vertex controls",
+   "severity": "medium",
+   "file_ref": "backend/app/services/byok_security.py:10-32",
+   "detail": "The only Gemini option is the fixed global generativelanguage.googleapis.com endpoint with an API key. Nothing checks that the key belongs to a paid Cloud-Billing project, where Google does not use content to improve products. There is no regional or Vertex AI option. The default model is hardcoded to gemini-2.0-flash (llm_routing.py:555).",
+   "user_impact": "A firm could connect a free-tier key and expose client content to provider training or review. Firms needing EU or US residency cannot use their own Gemini."
+  },
+  {
+   "title": "Office plan usage recorded at $0 because costing matches the gateway alias name",
+   "severity": "medium",
+   "file_ref": "backend/app/services/office_assistant.py:75-85",
+   "detail": "_usage_record prices route.model, which is a LiteLLM alias such as 'lawhand-standard' (config.py:267). calculate_cost only matches substrings like claude/gemini/deepseek and otherwise logs a warning and returns 0 (billing.py:60-66). Chat avoids this by using the provider-reported model (chat.py:2916).",
+   "user_impact": "AI spend from the Office planner is invisible in tenant usage and billing, which undercounts cost and margin."
+  },
+  {
+   "title": "Consent screen trusts a self-asserted client_name; admins cannot allowlist assistant clients",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:496-504",
+   "detail": "Any DCR client chooses its own client_name (365-372). The consent API returns only id and name, with no redirect host, publisher or verification status, and the page renders that name (WorkspaceMcpAuthorizePage.jsx:70). There is no tenant-level allowlist of approved clients. The only controls are tenant and user on/off (workspace_mcp_access.py:31-43). The channel contract says 'The firm decides which external accounts and vendors it permits' (docs/byo-harness-channel-contract.md:78-83).",
+   "user_impact": "A malicious registration named 'Microsoft 365 Copilot' can phish consent to firm data. A firm cannot restrict connections to its sanctioned Copilot or Gemini tenant."
+  },
+  {
+   "title": "propose_workflow_run / resume_workflow_run schemas use nested $ref models, which Copilot Studio filters out",
+   "severity": "low",
+   "file_ref": "backend/app/services/workflow_run_contract.py:85-94",
+   "detail": "WorkflowRunInput nests RunStepInput and SourceBinding lists. The tool schema is emitted directly from model_json_schema() (workspace_mcp_protocol.py:230-236), which produces $defs/$ref. Copilot Studio documents that tools with reference-type inputs are dropped. Many optional fields also emit anyOf-null unions, which are untested on Microsoft and Google hosts.",
+   "user_impact": "Multi-step workflow tools may silently not appear in a Copilot Studio agent."
+  },
+  {
+   "title": "Tool results carry relative links and internal file-server paths",
+   "severity": "low",
+   "file_ref": "backend/app/services/chat_tools/handlers.py:246-261",
+   "detail": "search_firm_memory returns unc_path, share_id and owner, and returns lawhand_url as a relative '/firm-memory?...' path. Source chips use a relative '/api/documents/{id}/download' (396). The adapter doc says raw storage identifiers are not exposed to models (docs/workspace_mcp_adapter.md:395).",
+   "user_impact": "Copilot and Gemini cannot render usable deep links. Internal SMB topology and owner names leave the firm inside a third-party assistant's history."
+  },
+  {
+   "title": "Consent label understates communications:propose (email only, but it also authorizes SMS drafts)",
+   "severity": "low",
+   "file_ref": "backend/app/services/workspace_mcp_oauth.py:46",
+   "detail": "The label reads 'Draft client email proposals without sending', but propose_client_sms requires the same scope (automation_capabilities.py:532-547).",
+   "user_impact": "Users consent to SMS drafting without being told."
+  },
+  {
+   "title": "Broker checks the data class before resolving the route, so the BYOK fail-closed rule is skipped",
+   "severity": "low",
+   "file_ref": "backend/app/services/ai_request_broker.py:255-272",
+   "detail": "_enforce_policy calls route_matter_context_allowed without a route (259-268), then resolve_llm_route (317-321) may return the 'customer' BYOK route. llm_routing.py:383-402 says BYOK must fail closed for confidential data. Affects prospect-confidential after-call preparation (after_call_preparation.py:204-219), which is behind a flag.",
+   "user_impact": "Policy differs between chat (blocked) and background preparation (allowed) for the same BYOK tenant. That makes privilege and data-flow promises hard to state."
+  },
+  {
+   "title": "'copilot' BYOK naming and dead Azure/Gemini settings contradict product policy",
+   "severity": "low",
+   "file_ref": "backend/app/models/tenant.py:221-226",
+   "detail": "Code comments and the API describe 'use their own Gemini/Copilot subscription' (admin.py:1509,1521), but the provider is Azure OpenAI. The plan states a Copilot end-user subscription is never LawHand inference capacity (docs/workspace-ecosystem-trials-onboarding-plan-2026-08-27.md:55-57). AZURE_OPENAI_* and GEMINI_API_KEY are unused (config.py:156-161).",
+   "user_impact": "Sales, support or admins may believe LawHand already uses the client's Microsoft 365 Copilot license. It does not."
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Make the Workspace MCP registerable as a Copilot declarative-agent action, a Copilot Studio tool and a Gemini Enterprise custom MCP",
+   "detail": "Keep the current review-first design; the client's Copilot or Gemini pays for the reasoning. Changes: add confidential clients (DCR that issues client_secret with client_secret_post/basic), plus tenant-admin static client registration. Use sliding or non-expiring registrations for verified hosted clients. Make `resource` optional, defaulting to the canonical resource. Pre-approve host redirect URIs (for example https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect and the Copilot Studio and Gemini Enterprise callbacks). Certify each host with a recorded transcript test (ECO-09).",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/routers/workspace_mcp_oauth.py:297,313-418,697-708; backend/app/models/workspace_mcp_client.py:15-79; backend/app/config.py:444,463"
+  },
+  {
+   "title": "Ship the LawHand Matter Agent package (unified manifest, declarative agent, MCP plugin)",
+   "detail": "Move Teams and Office to a unified app manifest with copilotAgents.declarativeAgents. Add an MCP plugin that uses dynamic tool discovery against /api/mcp/workspace. Write instructions and conversation starters for 'brief this matter', 'analyze this message/document' and 'prepare next event'. Ship it next to the existing Word/Outlook task pane so it installs through the M365 admin center.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "teams-app/manifest.json:1-52; office-addin/manifests/word-excel.xml:1-6; TASKS.md:449-451"
+  },
+  {
+   "title": "Host-context matter resolver and absolute deep links in every tool result",
+   "detail": "Add resolve_matter_from_artifact. Inputs: Outlook internetMessageId/conversationId and participant addresses, Teams meeting attendees, SharePoint/OneDrive driveItem or webUrl, Gmail messageId, Drive fileId. It returns ranked candidates with match evidence and refuses to propose when the match is ambiguous. Return absolute FRONTEND_URL task, matter and document links from every read and proposal tool.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/schemas/chat_action.py:87-88; backend/app/services/chat_tools/handlers.py:764-808,246-261,396,1877-1894; TASKS.md:443-445"
+  },
+  {
+   "title": "Adopt the document the user has open in Word or Google Docs as matter work, without base64",
+   "detail": "Add propose_matter_document_from_cloud_item(matter_id, driveItem/fileId or URL). LawHand fetches the exact bytes with its own Graph or Drive grant, checks the item is inside the firm's tenant, reuses the existing exact-byte DOCX safety checks and staged review, and returns the Word Online edit link. Copilot in Word or Gemini in Docs does the drafting; LawHand owns review and filing.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/automation_capabilities.py:584-600; docs/workspace_mcp_adapter.md:476-486"
+  },
+  {
+   "title": "Template work and doc prep with the client's Copilot or Gemini",
+   "detail": "Extend get_document_template_text to return DOCX structure (field map, content controls, clause slots). Allow propose_document_template to accept DOCX, not only Markdown. Document an agent flow: pick an approved template, let Copilot or Gemini draft the narrative clauses from the user's M365 or Workspace context, render deterministically with propose_document_from_template, and return an editable DOCX in the matter's SharePoint or Drive folder for staff-then-attorney review.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/automation_capabilities.py:458-483,564-635; backend/app/schemas/workspace_mcp.py:156-167"
+  },
+  {
+   "title": "Offer the Research MCP to Copilot Studio and Gemini Enterprise now, with API-key auth",
+   "detail": "Public-authority tools carry the lowest privilege risk, already accept an X-MCP-API-Key header and are already metered per call. Publish setup cards and a tested connector definition. The client's Copilot or Gemini pays for inference; LawHand bills per tool call.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/mcp_protocol.py:505-540; backend/app/services/mcp_product.py:25-48"
+  },
+  {
+   "title": "Outbound: use the Microsoft 365 Copilot Retrieval API for Copilot-licensed users",
+   "detail": "Add a retrieval backend next to the keyword /search/query call. The Retrieval API returns permission-trimmed semantic extracts from SharePoint, OneDrive and Copilot connectors using the tenant's semantic index and the user's delegated token. It needs Files.Read.All and Sites.Read.All, which are covered by the scopes LawHand already requests (admin.py:1605-1613). Pay-as-you-go excludes OneDrive. Retrieved text must still pass the route data-class gate before reaching a LawHand model.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_search.py:888-1000; backend/app/routers/admin.py:1605-1613"
+  },
+  {
+   "title": "Outbound: enterprise BYOK adapters for the client's own Azure OpenAI / AI Foundry and Vertex AI projects",
+   "detail": "Replace the gemini/copilot BYOK stub with explicit providers. Azure OpenAI v1: key or Entra workload identity, resource region shown. Vertex AI: Workload Identity Federation, regional endpoint, CMEK/VPC-SC attestations. Add a key test on save, rotation, a paid-tier/DPA attestation, no platform fallback, and a per-route confidential-data qualification so BYOK can carry matter context. Rename 'copilot' to 'azure_openai'.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/byok_security.py:10-86; backend/app/services/llm_routing.py:529-571,383-402; backend/app/routers/admin.py:1504-1599; docs/standard-premium-byok-billing-plan-2026-08-16.md:203-218"
+  },
+  {
+   "title": "Tenant admin 'AI & external assistants' control plane",
+   "detail": "Put four things in one firm-admin page: (a) which route, provider and region processes firm data, (b) the BYOK connect/test flow, (c) an allowlist of approved assistant clients with verified publisher, redirect host and pre-approved scope set, (d) per-client usage and audit. Move the MCP card out of the operator-only area.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "frontend/src/pages/AdminPage.jsx:1343-1370; frontend/src/components/IntegrationsHub.jsx:218-236; backend/app/services/workspace_mcp_access.py:31-43"
+  },
+  {
+   "title": "Downscoped consent instead of refusal",
+   "detail": "Grant the intersection of the requested scopes and the user's allowed scopes, and show the excluded ones with the reason. tools/list already filters per identity, so a partial grant works.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/routers/workspace_mcp_oauth.py:487-495; backend/app/services/workspace_mcp_protocol.py:249-258"
+  },
+  {
+   "title": "Host-compatibility schema lint and a Copilot/Gemini eval suite",
+   "detail": "In CI, flatten or inline $ref and reject multi-type unions for workspace_mcp tool schemas. Build the 50+ case eval (ECO-13) covering wrong matter, injection, revoked consent, proposal truthfulness and latency against recorded Copilot Studio and Gemini Enterprise sessions.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/workspace_mcp_protocol.py:230-236; backend/app/services/workflow_run_contract.py:85-94; TASKS.md:452-454"
+  },
+  {
+   "title": "Entra-federated agent identity",
+   "detail": "Reuse the Office NAA verifier (tid/oid mapping) so the Microsoft agent's LawHand authorization can piggyback on the firm's Entra sign-in and Conditional Access. LawHand would still issue its own grant-bound token and keep consent and audit.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/routers/auth.py:1715-1760"
+  },
+  {
+   "title": "Value metering for the inbound agent channel",
+   "detail": "Record accepted proposals, tool calls and documents produced per client and grant as value units. The channel can then be priced (ECO-22) without charging for tokens LawHand did not buy.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/workspace_mcp_budgets.py:21-59; docs/byo-harness-channel-contract.md:14-27"
+  },
+  {
+   "title": "Stream Workspace MCP audit to the firm's compliance tooling",
+   "detail": "Export tool_called/refused, grant and revocation events (metadata only) to Microsoft Purview/Sentinel or Google Chronicle. Agent actions then sit beside Copilot and Gemini interaction audit for privilege and eDiscovery review.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/workspace_mcp_protocol.py:455-527"
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Integrations > MCP servers (Platform MCP setup)",
+   "file_ref": "frontend/src/pages/MCPPage.jsx:144",
+   "issue": "Setup guidance covers only Codex/ChatGPT, Claude and OpenCode (205-216). Microsoft 365 Copilot, Copilot Studio and Gemini Enterprise are not mentioned, not even as 'not yet supported'.",
+   "severity": "medium",
+   "suggestion": "Add Microsoft Copilot and Gemini Enterprise cards with status 'Pilot, not yet certified', the requirements (Copilot license, admin approval), and a contact-us CTA. Swap in real steps after certification.",
+   "quick_win": true
+  },
+  {
+   "screen": "Integrations hub > MCP card",
+   "file_ref": "frontend/src/components/IntegrationsHub.jsx:218-236",
+   "issue": "The card promises 'Approved external assistants' and 'Approve the exact assistant client', but admins have no client approval control; that is per-user consent. It is also audience 'operator', so the firm-admin channel for Copilot/Gemini is buried under Advanced.",
+   "severity": "medium",
+   "suggestion": "Change the copy to 'Each user approves the assistant at sign-in; admins control tenant and per-user access'. Show the card to firm admins.",
+   "quick_win": true
+  },
+  {
+   "screen": "Workspace MCP consent page",
+   "file_ref": "frontend/src/pages/WorkspaceMcpAuthorizePage.jsx:70",
+   "issue": "Only the self-asserted application name is shown. There is no publisher, redirect domain, verification badge, or first-time-client warning.",
+   "severity": "medium",
+   "suggestion": "Show the redirect host, registration date and 'Unverified app' unless the client is on a verified list, and add an admin-approved badge. Needs the backend consent payload extended (workspace_mcp_oauth router:496-504).",
+   "quick_win": false
+  },
+  {
+   "screen": "Workspace MCP consent page (error state)",
+   "file_ref": "backend/app/routers/workspace_mcp_oauth.py:491-495",
+   "issue": "'Your current LawHand permissions do not allow the requested access' does not say which scope or role is missing or what to do.",
+   "severity": "medium",
+   "suggestion": "List the blocked scopes and the missing role, and offer 'Continue with reduced access' (downscoped consent).",
+   "quick_win": false
+  },
+  {
+   "screen": "Admin > Settings > Advanced (AI)",
+   "file_ref": "frontend/src/pages/AdminPage.jsx:1343-1370",
+   "issue": "Firm admins see only a jargon 'LiteLLM Gateway / Standard alias override' free-text field. There is no view of which provider or region processes firm data, and no UI for the existing BYOK API (api.js:916-920 has no callers).",
+   "severity": "medium",
+   "suggestion": "Replace it with an 'AI processing' card: route, provider, region, retention and data class allowed, plus a guided 'Use your own Azure OpenAI / Vertex' flow with a live test.",
+   "quick_win": false
+  },
+  {
+   "screen": "Copilot/Gemini chat rendering LawHand tool results",
+   "file_ref": "backend/app/services/chat_tools/handlers.py:260",
+   "issue": "Links are relative ('/firm-memory?...', '/api/documents/{id}/download'), so they are dead or unclickable inside external assistants.",
+   "severity": "medium",
+   "suggestion": "Return absolute LawHand URLs (FRONTEND_URL) for matter, task, review and document views in every tool result.",
+   "quick_win": false
+  },
+  {
+   "screen": "Workspace MCP consent page (scope list)",
+   "file_ref": "backend/app/services/workspace_mcp_oauth.py:46",
+   "issue": "The 'Draft client email proposals without sending' label also covers SMS drafts.",
+   "severity": "low",
+   "suggestion": "Relabel it 'Draft client email and SMS proposals for review (never sent automatically)'.",
+   "quick_win": false
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "LiteLLM gateway (platform)",
+   "endpoint": "POST {LITELLM_BASE_URL}/chat/completions",
+   "method": "POST",
+   "file_ref": "backend/app/services/llm.py:200-204",
+   "purpose": "All platform Standard/Premium/Background inference",
+   "scope_needed": "LITELLM_API_KEY (platform virtual key)"
+  },
+  {
+   "provider": "Google AI Studio (tenant BYOK)",
+   "endpoint": "POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+   "method": "POST",
+   "file_ref": "backend/app/services/byok_security.py:10",
+   "purpose": "Tenant BYOK 'gemini' route; skips LiteLLM",
+   "scope_needed": "Tenant Gemini API key (no OAuth scope; the paid tier is not verified)"
+  },
+  {
+   "provider": "Azure OpenAI (tenant BYOK, labelled 'copilot')",
+   "endpoint": "POST https://<resource>.openai.azure.com|services.ai.azure.com|cognitiveservices.azure.com/<path>/chat/completions",
+   "method": "POST",
+   "file_ref": "backend/app/services/llm.py:272-275",
+   "purpose": "Tenant BYOK Azure OpenAI deployment",
+   "scope_needed": "Tenant Azure OpenAI resource key and deployment name"
+  },
+  {
+   "provider": "Microsoft Graph",
+   "endpoint": "POST https://graph.microsoft.com/v1.0/search/query",
+   "method": "POST",
+   "file_ref": "backend/app/services/cloud_search.py:968-976",
+   "purpose": "Keyword search of the user's M365 files/messages for chat grounding (not the Copilot Retrieval API)",
+   "scope_needed": "Delegated Files.Read(Write).All, Sites.Read.All, Mail.Read"
+  },
+  {
+   "provider": "Microsoft Entra ID",
+   "endpoint": "Entra access-token verification (JWKS) for Office NAA exchange",
+   "method": "GET",
+   "file_ref": "backend/app/routers/auth.py:1737-1743",
+   "purpose": "Map Entra tid/oid to a LawHand user for the Office add-in",
+   "scope_needed": "OFFICE_ENTRA_API_AUDIENCE with scope office.access"
+  },
+  {
+   "provider": "OpenRouter via LiteLLM (template AI profile)",
+   "endpoint": "LiteLLM alias lawhand-template-premium-r<rev> -> openrouter anthropic/claude-opus-5",
+   "method": "POST",
+   "file_ref": "backend/app/services/template_ai_profile.py:21-35",
+   "purpose": "Premium template field-mapping suggestions",
+   "scope_needed": "Platform OpenRouter key (ZDR provider preferences at platform_llm.py:91-94)"
+  }
+ ],
+ "open_questions": [
+  "Does Copilot Studio's 'Dynamic discovery' DCR accept a public client (token_endpoint_auth_method=none), and does it send `resource` on token and refresh? ECO-09 must record this; M365 Copilot declarative-agent DCR requires a client_secret.",
+  "Is WORKSPACE_MCP_DYNAMIC_REGISTRATION_ENABLED true in production? The docs sample says false, yet external assistant connections appear live.",
+  "Product decision: should a qualified tenant BYOK route carry matter-confidential context? The plan's data-class table says yes (plan doc:28-29), but chat fails closed (llm_routing.py:383-402).",
+  "Is any tenant currently configured with use_customer_llm (the gemini or 'copilot' provider)? That affects rename, migration and the silent-fallback risk.",
+  "MCP reads are visible across the whole tenant with no matter-level access checks or ethical walls (matter_workspace_capabilities.py:95-105; docs/workspace_mcp_adapter.md:596). Is the firm comfortable with that content landing in Copilot/Gemini interaction history before ethical walls exist?",
+  "What is the GA status and per-user licensing of the Microsoft 365 Copilot Chat API for delegated calls from a third-party app? The Retrieval API pay-as-you-go preview excludes OneDrive.",
+  "Which Gemini Enterprise connection model should be piloted first: custom MCP data store (client compute, static OAuth client with secret) or an A2A agent (LawHand compute)?",
+  "Should Workspace MCP expose MCP resources or prompts (for example matter brief templates) for hosts that support them, or stay tools-only?"
+ ]
+}

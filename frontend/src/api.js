@@ -833,6 +833,10 @@ export const triggerUserSync = () =>
   api.post('/scheduler/agents/user-sync/run').then((r) => r.data)
 export const retryCloudInit = () =>
   api.post('/integrations/cloud-init/retry').then((r) => r.data)
+// Removes the firm connection and every staff member's personal connection
+// for the provider (admin only). Files already in the firm's cloud stay there.
+export const disconnectCloudProvider = (provider) =>
+  api.post(`/integrations/${provider === 'google' ? 'google' : 'microsoft'}/disconnect`).then((r) => r.data)
 
 // External imports
 export const uploadTabs3ImportBundle = ({ file, passphrase, accountingMode = 'tabs3_reference' }) => {

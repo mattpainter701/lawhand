@@ -1,0 +1,433 @@
+{
+ "topic": "Using the client's office suite (Microsoft 365 / Google Workspace) for template work and document prep, as of 2026-09-23",
+ "findings": [
+  {
+   "claim": "Graph can convert a file in the tenant to PDF with GET /drives/{id}/items/{id}/content?format=pdf. It returns 302 to a pre-authenticated URL that works for a few minutes. Sources that convert to PDF: doc, docx, dot, dotx, dotm, dsn, dwg, eml, epub, fluidframework, form, htm, html, loop, loot, markdown, md, msg, note, odp, ods, odt, page, pps, ppsx, ppt, pptx, pulse, rtf, task, tif, tiff, wbtx, whiteboard, xls, xlsm, xlsx. HTML output is only for loop/fluid/wbtx/whiteboard. Least-privileged permissions are Files.Read (delegated) or Files.ReadWrite.All (application). It also works on SharePoint Embedded (SPE) with FileStorageContainer.Selected. The reference gives no size limit. Microsoft Q&A threads report timeouts around 45s, 406 notSupported on large Word files, and a 250-page limit for Excel.",
+   "status": "GA",
+   "as_of": "2026-09 (v1.0 doc source)",
+   "licensing_or_cost": "No metered charge; the file must already be in OneDrive/SharePoint/SPE",
+   "relevance_to_lawhand": "LawHand makes PDFs today with headless LibreOffice (backend/app/services/docx_to_pdf.py). For M365 firms whose working copy is already in their tenant (cloud_artifact_materialization.py), this gives Word-fidelity PDFs rendered by the tenant. Keep LibreOffice as the fallback and keep the existing pypdf output validation.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/driveitem-get-content-format.md",
+    "https://learn.microsoft.com/en-us/graph/api/driveitem-get-content-format?view=graph-rest-1.0",
+    "https://learn.microsoft.com/en-us/answers/questions/5679108/microsoft-graph-pdf-conversion-timing-out-at-45-se",
+    "https://learn.microsoft.com/en-us/answers/questions/2101338/graph-api-convert-word-document-to-pdf-and-downloa"
+   ]
+  },
+  {
+   "claim": "POST /drives/{d}/items/{i}/preview returns short-lived embeddable getUrl/postUrl for iframes. It works on SharePoint and OneDrive for Business only; personal accounts are not supported. v1.0 options are page and zoom only. Microsoft warns that the preview renders as the calling identity, so anyone holding the URL acts with the caller's permissions, which is a particular risk with application permissions. Adding nb=true hides the banner. SPE's native PDF viewer gained search, sticky notes and print in March 2026.",
+   "status": "GA",
+   "as_of": "2026-03 / 2026-09",
+   "licensing_or_cost": "Included",
+   "relevance_to_lawhand": "Lets LawHand show documents stored in the tenant inline in MatterDocumentsTab, which today only has a generic 'Open in OneDrive' link. LawHand holds tenant-wide app permissions (Files.ReadWrite.All), so preview URLs must be minted with the user's delegated token or a read-only identity, never the app token.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/driveitem-preview.md",
+    "https://learn.microsoft.com/en-us/graph/api/driveitem-preview?view=graph-rest-1.0",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/preview-files.md"
+   ]
+  },
+  {
+   "claim": "Office for the web cannot be put in an iframe. Editing opens in a new tab through the DriveItem webUrl (action=view|edit|default) or in the desktop app, with AutoSave, version history and real-time co-authoring. Microsoft's guidance is to launch Office for editing and embed the read-only preview for inline viewing.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Editing SharePoint/OneDrive files requires the user's M365 license; SPE is the exception (see below)",
+   "relevance_to_lawhand": "Rules out an 'edit inside LawHand' UX. The right pattern is 'Open in Word (web)' or 'Open in Word (desktop)', then a return-to-LawHand/sync-back step into the existing cloud_docx_snapshot review gate.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/plan/office-collaboration-instead-of-building.md",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/open-office-files.md",
+    "https://learn.microsoft.com/en-us/sharepoint/dev/embedded/build/open-office-files"
+   ]
+  },
+  {
+   "claim": "Office URI schemes open desktop apps directly. ms-word:ofe|u|<url> opens for edit, ofv opens for view, and nft|u|<template-url>|s|<save-location> creates a new document from a template and saves it to a location. Supported from Office 2010 SP2 onward. Only http/https document URIs work, with a 256-character path limit (216 for Excel). For SPE and SharePoint, Microsoft recommends building the URI from the parent folder's webUrl plus the file name.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Needs desktop Office",
+   "relevance_to_lawhand": "Enables a cheap 'Open in Word desktop' button, and 'New from firm template \u2192 save into this matter's folder' (nft with |s|) straight from a LawHand matter page.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/office-developer-client-docs/main/docs/office-uri-schemes.md",
+    "https://learn.microsoft.com/en-us/office/client-developer/office-uri-schemes",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/open-office-files.md"
+   ]
+  },
+  {
+   "claim": "Hosting Office for the web over LawHand's own storage (a WOPI host) requires the Microsoft 365 Cloud Storage Partner Program (CSPP). The program is aimed at ISVs whose business is cloud storage, requires Microsoft partner-program membership and an eligibility review, and every end user still needs a Microsoft 365 license. CSPP Plus adds co-authoring and chunked transfer. Microsoft's SPE docs tell existing WOPI hosts they can move files to SPE and use the built-in Office launch instead.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Program membership; end-user M365 licenses",
+   "relevance_to_lawhand": "Poor fit: LawHand is practice management, not a storage vendor. Storing working copies in the customer's OneDrive/SharePoint (already built) or SPE gets the same editing without WOPI.",
+   "source_urls": [
+    "https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/online/apply-for-cspp-program",
+    "https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/online/wopi-requirements",
+    "https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/plus/overview",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/plan/office-collaboration-instead-of-building.md"
+   ]
+  },
+  {
+   "claim": "SharePoint Embedded is API-only file storage in containers that live in the customer's tenant. The ISV owns one container type per owning app. Content falls under the customer's Purview policies (DLP, retention, eDiscovery). It does not count against M365 storage and is not browsable in the SharePoint UI, so users cannot bypass the app. Office co-authoring works for Entra members and guests without an Office license (except @mentions). isOfficeRestricted (beta) can block Office launch. urlTemplate went GA in June 2026 and routes non-Office files back to the app. Available in commercial, GCC and 21Vianet clouds, not GCC High or DoD.",
+   "status": "GA",
+   "as_of": "2026-09 (whats-new through July 2026)",
+   "licensing_or_cost": "Azure pay-as-you-go meters: storage $/GB, archived storage, API transactions (each explicit Graph call), and egress (downloads to Office desktop/web are exempt). Pass-through billing charges the customer's Azure subscription (their Billing Admin sets it up); standard billing charges the ISV. The billing model cannot be changed after the container type is created.",
+   "relevance_to_lawhand": "A candidate 'governed, in-tenant DMS' backend: matter files stay in the firm's tenant under its compliance controls, with Office editing for staff and client guests who lack M365 licenses, and LawHand remains the only UI. The trade-off against the planned SharePoint Matter Hub is metered cost and an API-only experience.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/overview.md",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/plan/choose-billing-model.md",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/reference/billing-meters.md",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/create-container-type.md",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/plan/when-to-choose-sharepoint-embedded.md",
+    "https://learn.microsoft.com/en-us/sharepoint/dev/embedded/overview"
+   ]
+  },
+  {
+   "claim": "Copilot and SPE: whether Copilot can see a container's content is a container-type setting controlled by tenant governance; nothing is exposed by default. The Copilot Retrieval API is GA. Its sharePointEmbedded data source has been in preview since July 2026 and bills on the Copilot Studio message meter, so querying users don't each need a Copilot license, but one Copilot-licensed user must exist to initialize the semantic index. The SPE agent SDK (ChatEmbedded) was deprecated in March 2026 in favor of a Foundry SharePoint knowledge source (preview).",
+   "status": "preview",
+   "as_of": "2026-07",
+   "licensing_or_cost": "Copilot Studio message meter; each agent interaction counts as 12 messages",
+   "relevance_to_lawhand": "If LawHand adopts SPE, Copilot and firm-memory grounding over matter files could be billed to the customer (pass-through) rather than LawHand's LiteLLM spend. It is still preview, so treat it as optional.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/whats-new.md",
+    "https://raw.githubusercontent.com/SharePoint/sp-dev-docs/main/docs/embedded/build/agent-experiences.md",
+    "https://learn.microsoft.com/en-us/sharepoint/dev/embedded/build/agent-experiences"
+   ]
+  },
+  {
+   "claim": "SharePoint content assembly ('modern templates', formerly Syntex / SharePoint Premium; docs now under 'document processing for Microsoft 365') takes .docx/.doc templates only. Fields are Word content controls mapped to SharePoint list columns or the term store. Templates can't contain comments or track changes, are bound to one library, and generated documents keep no link to the template. Power Automate's 'Generate document using Syntex' action can automate generation and output PDF. The docs show no Graph API for it, only the UI and Power Automate.",
+   "status": "GA",
+   "as_of": "docs ms.date 2025-08-01 (public branch); free trial capacity ran through June 2026",
+   "licensing_or_cost": "PAYG $0.15 per generated document. Manual generation is not charged for users with an existing per-user license; automated generation through Power Automate is charged. The trial of 50 documents/month ended June 2026.",
+   "relevance_to_lawhand": "It does not replace LawHand's docx template engine: it is tenant-bound, UI/Power-Automate only and single-library. Useful only as a firm-side option if LawHand writes matter metadata into SharePoint list columns that firm templates can read.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/content-assembly.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/automate-document-generation.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/syntex-pay-as-you-go-services.md",
+    "https://learn.microsoft.com/en-us/microsoft-365/documentprocessing/content-assembly?view=o365-worldwide"
+   ]
+  },
+  {
+   "claim": "Autofill columns use an LLM to extract, classify or summarize a file's contents into library columns. Microsoft recommends at most 10 columns per library and files up to 65 pages. They don't support Person, Location, Image or Lookup columns or encrypted files, and changed documents are only reprocessed manually. PAYG price is $0.005 per page. 'Copilot in SharePoint' (including suggesting and creating autofill columns and building Word/Excel/PowerPoint files from site content) began rolling out as an opt-out preview in mid-June 2026 for Copilot-licensed users, where autofill is covered by the Copilot license.",
+   "status": "preview",
+   "as_of": "2026-06/07",
+   "licensing_or_cost": "PAYG $0.005/page, or included for Microsoft 365 Copilot licensees in the Copilot in SharePoint preview",
+   "relevance_to_lawhand": "Firms with Copilot could classify documents in their Matter Hub libraries (document type, dates, parties) at their own cost. LawHand could read those columns as hints, but must still verify them through its own review flow.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/autofill-overview.md",
+    "https://learn.microsoft.com/en-us/sharepoint/copilot-in-sharepoint-create-autofill-columns",
+    "https://mc.merill.net/message/MC1311968"
+   ]
+  },
+  {
+   "claim": "Microsoft 365 eSignature signs PDFs and Word documents in SharePoint. It is available worldwide except Indonesia. It produces simple electronic signatures (in the eIDAS sense) at $2 per request, up to 10 recipients each. External signers need Entra B2B guest integration. Activity is logged to the Purview audit log, and it can route requests to Adobe Acrobat Sign or Docusign. The docs show no programmatic API.",
+   "status": "GA",
+   "as_of": "docs 2025-08; trial ended June 2026",
+   "licensing_or_cost": "Customer's Azure PAYG, $2/request",
+   "relevance_to_lawhand": "A low-cost signature option for M365 firms: LawHand can deep-link a finished PDF in the firm's library to it, but cannot orchestrate or track the signing through an API.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/esignature-overview.md",
+    "https://raw.githubusercontent.com/MicrosoftDocs/microsoft-365-docs/public/microsoft-365/documentprocessing/syntex-pay-as-you-go-services.md"
+   ]
+  },
+  {
+   "claim": "Graph v1.0 contentType supports documentTemplate (a Word/Excel/PowerPoint template attached to a content type), documentSet default content, and copyToDefaultContentLocation. Together they let an app provision a library's 'New' menu templates and per-Document-Set starter files.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Included with SharePoint",
+   "relevance_to_lawhand": "Fits the planned SharePoint Matter Hub (BK28): LawHand can publish firm templates as content types, so 'New > Engagement letter' works natively in SharePoint and Word, and new matter Document Sets arrive pre-populated.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/resources/contenttype.md",
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/contenttype-copytodefaultcontentlocation.md"
+   ]
+  },
+  {
+   "claim": "Graph 'Selected' scopes grant access to specific resources instead of the whole tenant: Sites.Selected, Lists.SelectedOperations.Selected, ListItems.SelectedOperations.Selected and Files.SelectedOperations.Selected. They work in both delegated and application mode. Access starts at nothing until someone makes an explicit POST .../permissions grant with a read, write, owner or fullcontrol role. Grants below site level break permission inheritance.",
+   "status": "GA",
+   "as_of": "doc 2024-11",
+   "licensing_or_cost": "Included",
+   "relevance_to_lawhand": "LawHand requests tenant-wide Files.ReadWrite.All and Sites.Read.All (backend/app/routers/integrations.py, admin.py), which is a hard sell to law-firm IT. Scoping to the Matter Hub site and template library can be granted and revoked per resource.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/concepts/permissions-selected-overview.md"
+   ]
+  },
+  {
+   "claim": "OneDrive/SharePoint File Picker v8 is a Microsoft-hosted page (POST {baseUrl}/_layouts/15/FilePicker.aspx) that runs in an iframe or popup and talks to the host through postMessage. It always uses delegated permissions, so users see only what they can already access. Reads need SharePoint MyFiles.Read or Graph Files.Read; AllSites.Read or Write covers sites; channels need ChannelSettings.Read.All. Upload and create-folder need write scopes. OneDrive consumer is supported.",
+   "status": "GA",
+   "as_of": "2026-09 (doc source)",
+   "licensing_or_cost": "Included",
+   "relevance_to_lawhand": "A native 'Attach from OneDrive/SharePoint', 'Choose template' and 'Link matter folder' experience. The SPA needs SharePoint-resource tokens in addition to Graph.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/OneDrive/onedrive-api-docs/live/docs/controls/file-pickers/index.md"
+   ]
+  },
+  {
+   "claim": "Graph change notifications on OneDrive for Business and SharePoint drives can only subscribe to the drive root folder (application permission Files.Read.All); individual files can't be subscribed. A Prefer: includesecuritywebhooks header adds permission-change events. Delta queries catch up on missed changes.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Included",
+   "relevance_to_lawhand": "Detecting 'edits synced back' from Word needs a root subscription plus delta, filtered to the matter's folders and eTags, not per-file webhooks.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/microsoftgraph/microsoft-graph-docs-contrib/main/api-reference/v1.0/api/subscription-post-subscriptions.md"
+   ]
+  },
+  {
+   "claim": "Word JavaScript API for template fields: WordApi 1.9 (web and desktop) adds ComboBox and DropDownList content controls. WordApiDesktop 1.3 (Windows Version 2507, not Word on the web) adds CustomXmlPart, XmlMapping for data-bound content controls, DatePicker, Picture, Group, RepeatingSection and BuildingBlockGallery content controls, BuildingBlocks and Template. WordApiDesktop 1.4 (Version 2508) adds Bookmarks, Revisions, TableOfAuthorities and Coauthoring locks. WordApiDesktop 1.5 is Version 2603.",
+   "status": "GA",
+   "as_of": "requirement-set page ms.date 2026-09-10",
+   "licensing_or_cost": "Included; the desktop sets need a current M365 Apps build",
+   "relevance_to_lawhand": "The LawHand Word add-in only checks WordApi 1.1/1.4 (office-addin/src/hosts/wordAdapter.ts). Content controls plus custom XML binding would give robust, re-fillable template fields, and TableOfAuthorities is directly useful for briefs. All of it needs isSetSupported gating because Word on the web lacks the desktop sets.",
+   "source_urls": [
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/requirement-sets/word/word-api-requirement-sets.md",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-desktop-1-3.md",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-desktop-1-4.md",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-reference/main/docs/includes/word-1-9.md"
+   ]
+  },
+  {
+   "claim": "Copilot in Word: agentic, multi-step editing became GA on 2026-04-22 for Microsoft 365 Copilot, M365 Premium, and Personal/Family subscriptions. The announcement names no third-party extensibility. The office-js docs table of contents no longer lists the 'Combine Copilot agents with Office add-ins (preview)' pages. What it does list is 'Copilot skills for Excel (preview)' (ms.date 2026-08-13): SKILL.md files plus Office.js scripts, Insider Beta/Current Channel Preview only, not for production. I found no Word equivalent; a PowerPoint 'organization skills' support page exists.",
+   "status": "preview",
+   "as_of": "2026-04 / 2026-08",
+   "licensing_or_cost": "Client's Microsoft 365 Copilot license",
+   "relevance_to_lawhand": "There is no supported API for LawHand to call 'Word Copilot' programmatically. The practical routes are declarative agents or Copilot Cowork plugins (skills plus MCP connector), where the attorney drives Copilot inside Word and LawHand supplies the data.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/copilot/blog/2026/04/22/copilots-agentic-capabilities-in-word-excel-and-powerpoint-are-generally-available/",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/toc.yml",
+    "https://raw.githubusercontent.com/OfficeDev/office-js-docs-pr/main/docs/excel/excel-skills.md",
+    "https://support.microsoft.com/en-us/powerpoint/copilot/deploy-organization-skills-for-copilot-in-powerpoint"
+   ]
+  },
+  {
+   "claim": "Copilot Cowork plugins bundle skills (the Agent Skills SKILL.md standard) with connectors (MCP servers) in an M365 app package, and the Agents Toolkit CLI can import existing Claude Code or Cursor plugins. Built-in skills include Word, Excel, PowerPoint and PDF creation. Cowork was in the Frontier program as of 2026-05-05. Whether it is GA now is unconfirmed.",
+   "status": "unknown",
+   "as_of": "2026-05",
+   "licensing_or_cost": "Client's Microsoft 365 Copilot license",
+   "relevance_to_lawhand": "This is the most direct way to put document drafting on the client's Copilot compute: a LawHand plugin with skills like 'draft engagement letter from firm template' calls LawHand's Workspace MCP for matter facts, and the output lands in the user's OneDrive.",
+   "source_urls": [
+    "https://www.microsoft.com/en-us/copilot/blog/2026/05/05/copilot-cowork-from-conversation-to-action-across-skills-integrations-and-devices/",
+    "https://learn.microsoft.com/en-us/microsoft-365/copilot/cowork/cowork-plugin-development"
+   ]
+  },
+  {
+   "claim": "The Google Docs API documents.batchUpdate (discovery rev 20260916) supports: replaceAllText, with tabsCriteria to target tabs; createNamedRange and replaceNamedRangeContent (for a discontinuous range only the first part is replaced and the rest is deleted); insertTable, TableRow and TableColumn; insertInlineImage and replaceImage (public URI \u22642 KB, image <50 MB, \u226425 MP, PNG/JPEG/GIF only); smart chips via insertDate, insertPerson and insertRichLink; and addDocumentTab. The API has no schema for variable chips, placeholder chips or building blocks. batchUpdate works with the non-sensitive drive.file scope.",
+   "status": "GA",
+   "as_of": "2026-09-16",
+   "licensing_or_cost": "Free API quota",
+   "relevance_to_lawhand": "Supports a Google-native merge: copy a template, fill tokens or named ranges, add tables and chips. Firm templates must use text tokens or named ranges, because the API cannot fill Docs 'variable chips'.",
+   "source_urls": [
+    "https://docs.googleapis.com/$discovery/rest?version=v1",
+    "https://developers.google.com/workspace/docs/api/reference/rest"
+   ]
+  },
+  {
+   "claim": "The Docs API only works on native Google Docs. A .docx must first be converted by files.copy or files.create with mimeType application/vnd.google-apps.document. Converted documents can be up to about 50 MB (per community sources). files.export is capped at 10 MB of exported content. The exportLinks field and the newer files.download method (returns a long-running operation valid 24h) are the alternatives; whether files.download lifts the size cap is unconfirmed. about.exportFormats and about.importFormats list the supported conversions.",
+   "status": "GA",
+   "as_of": "2026-09-16",
+   "licensing_or_cost": "Free API quota",
+   "relevance_to_lawhand": "Google does not keep .docx byte-for-byte: going DOCX \u2192 Google Doc \u2192 DOCX/PDF can lose formatting. For Word-first legal templates on Google tenants, keep generating DOCX in LawHand and use Docs only for firms that author natively in Docs.",
+   "source_urls": [
+    "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+    "https://developers.google.com/workspace/drive/api/reference/rest/v3/files/export",
+    "https://github.com/googleapis/google-api-python-client/issues/1837",
+    "https://justin.poehnelt.com/posts/apps-script-docx-documentapp/"
+   ]
+  },
+  {
+   "claim": "drive.file is a non-sensitive, recommended scope that gives per-file access to files the app creates or the user picks in the Google Picker (setAppId set to the Cloud project number). Restricted scopes such as full drive and drive.readonly require OAuth verification plus an annual CASA security assessment. An open-source Picker web component (@googleworkspace/drive-picker-element, plus a React wrapper) has been in developer preview since Dec 2024. Picking folders under drive.file has uncertain semantics.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Avoiding restricted scopes removes the recurring CASA cost",
+   "relevance_to_lawhand": "LawHand requests the restricted auth/drive and drive.readonly scopes (backend/app/routers/integrations.py, plugins.py; google_service_account.py). Moving to Picker plus drive.file for user flows cuts the verification burden the BK28 plan flags, and every Docs, Drive copy, export and approvals call LawHand needs accepts drive.file.",
+   "source_urls": [
+    "https://developers.google.com/workspace/drive/api/guides/api-specific-auth",
+    "https://developers.google.com/workspace/drive/picker/guides/overview?hl=en",
+    "https://developers.google.com/workspace/drive/picker/guides/web-component",
+    "https://discuss.google.dev/t/drive-picker-api-custom-web-component-preview/176176",
+    "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+   ]
+  },
+  {
+   "claim": "The Drive Labels API v2 (discovery rev 20260916) creates, publishes and manages labels; files.modifyLabels and listLabels set and read label fields on a file. Classification labels are available on Business Standard/Plus, Enterprise, Frontline, Education and Essentials editions. A file can carry at most 20 labels, and labels cannot be applied to folders, shortcuts or files owned by another organization.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Included in eligible Workspace editions; admin-managed labels need the Manage Labels privilege",
+   "relevance_to_lawhand": "Lets LawHand stamp a 'LawHand Matter' label (matter ID, category, confidentiality) on Drive files so they are searchable and policy-enforceable in the firm's Drive. This mirrors SharePoint columns/content types.",
+   "source_urls": [
+    "https://drivelabels.googleapis.com/$discovery/rest?version=v2",
+    "https://developers.google.com/workspace/drive/api/guides/set-label",
+    "https://support.google.com/a/answer/9292382?hl=en"
+   ]
+  },
+  {
+   "claim": "The Drive API v3 approvals resource can start, approve, decline, cancel, reassign, comment on, get and list approvals, and the write methods accept drive.file. Reading approvals went GA on 2025-12-17; approval events are in developer preview. files.watch gives per-file push notifications, also under drive.file.",
+   "status": "GA",
+   "as_of": "2025-12 / 2026-09",
+   "licensing_or_cost": "Included",
+   "relevance_to_lawhand": "A Google-side counterpart to LawHand's review-first model: 'request partner approval' on a draft in Drive, then mirror the approval result back to the LawHand task. Per-file watch makes Google sync-back easier than Graph's root-only subscriptions.",
+   "source_urls": [
+    "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
+    "https://developers.google.com/workspace/drive/api/guides/approvals",
+    "https://developers.google.com/workspace/release-notes"
+   ]
+  },
+  {
+   "claim": "Google Workspace add-ons can run on HTTP endpoints in any language, returning JSON cards. For Docs, the add-on asks for per-file access with requestFileScopeForActiveDocument plus an onFileScopeGranted trigger and the drive.file scope, then edits the document through the Docs REST API. Add-ons can also provide smart-chip link previews and create third-party resources from the Docs @ menu (available since Aug 2024). The add-on UI moved to Material 3.",
+   "status": "GA",
+   "as_of": "release notes updated 2026-09-03",
+   "licensing_or_cost": "Free; publishing to the Workspace Marketplace requires review",
+   "relevance_to_lawhand": "'LawHand for Google Docs' could reuse the Office add-in's backend and Workspace MCP: a side panel with matter context and approved clauses, a @LawHand matter chip, and previews of pasted LawHand links. No Apps Script is needed.",
+   "source_urls": [
+    "https://developers.google.com/workspace/add-ons/guides/alternate-runtimes",
+    "https://developers.google.com/workspace/add-ons/editors/gsao/editor-actions",
+    "https://developers.google.com/workspace/add-ons/guides/create-insert-resource-smart-chip",
+    "https://developers.google.com/workspace/add-ons/release-notes"
+   ]
+  },
+  {
+   "claim": "The Google Docs editor cannot be embedded in a third-party app because of X-Frame-Options; only publicly 'Published to the web' documents can be embedded (embedded=true). I found no official embed-the-editor option.",
+   "status": "unknown",
+   "as_of": "2026-09",
+   "licensing_or_cost": "n/a",
+   "relevance_to_lawhand": "Same conclusion as for Office: open Docs in a new tab. Never publish privileged documents to the web to get an embed.",
+   "source_urls": [
+    "https://support.google.com/docs/thread/24486495?hl=en",
+    "https://developer.mozilla.org/en-US/docs/The_X-FRAME-OPTIONS_response_header"
+   ]
+  },
+  {
+   "claim": "Google Docs/Drive eSignature is available in the UI for Business Standard/Plus, Enterprise Standard/Plus, Essentials, Education Plus and Workspace Individual. There is no public API to create signature requests; the public feature request (issuetracker 239527000) could not be checked.",
+   "status": "unknown",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Included in eligible plans",
+   "relevance_to_lawhand": "LawHand can only send users to Docs to sign manually; it cannot orchestrate or audit the signing. Keep a dedicated e-signature provider for workflows LawHand tracks.",
+   "source_urls": [
+    "https://workspace.google.com/resources/esignature/",
+    "https://support.google.com/docs/answer/12315692?hl=en",
+    "https://issuetracker.google.com/issues/239527000"
+   ]
+  },
+  {
+   "claim": "Gemini in Docs can generate first drafts from Drive files and emails (March 2026 update). Since September 2026 the Gemini side panel in Docs, Sheets, Slides and Chat can call a curated set of third-party MCP connectors (Asana, Atlassian Rovo, HubSpot, Mailchimp, QuickBooks, Monday, Salesforce); admins manage them under Admin console > Gemini for Workspace > Third-Party Connectors, and they are on by default. Custom MCP servers are supported in Gemini Enterprise \u2013 Business edition.",
+   "status": "GA",
+   "as_of": "2026-09",
+   "licensing_or_cost": "Client's Gemini for Workspace / Gemini Enterprise licensing",
+   "relevance_to_lawhand": "LawHand's MCP cannot be added to the Docs side panel unless it becomes a curated partner. The custom-MCP path runs through Gemini Enterprise. Either way, the client's Gemini would draft in Docs using LawHand matter data.",
+   "source_urls": [
+    "https://workspaceupdates.googleblog.com/2026/09/connect-to-more-tools-with-gemini-in-Google-Workspace.html",
+    "https://blog.google/products-and-platforms/products/workspace/gemini-workspace-updates-march-2026/",
+    "https://support.google.com/g/answer/17106276?hl=en"
+   ]
+  },
+  {
+   "claim": "Repo grounding, not an external fact: LawHand already puts generated DOCX working copies in the tenant's cloud (onedrive, sharepoint, google_drive) through cloud_artifact_materialization.py and snapshots edited copies through a safe DOCX gate (cloud_docx_snapshot.py). The frontend only offers a generic 'Open in OneDrive/Google Drive' link to cloud_url (MatterDocumentsTab.jsx). There is no file picker, no desktop Word launch, and no inline preview.",
+   "status": "GA",
+   "as_of": "2026-09-23 (repo HEAD)",
+   "licensing_or_cost": "n/a",
+   "relevance_to_lawhand": "Most of the plays below extend existing plumbing rather than add a new subsystem.",
+   "source_urls": [
+    "file:///home/user/lawhand/backend/app/services/cloud_artifact_materialization.py",
+    "file:///home/user/lawhand/backend/app/services/cloud_docx_snapshot.py",
+    "file:///home/user/lawhand/frontend/src/components/MatterDocumentsTab.jsx"
+   ]
+  }
+ ],
+ "recommended_plays": [
+  {
+   "title": "Open draft in Word (web or desktop); edits sync back",
+   "detail": "For working copies already stored in OneDrive/SharePoint (and SPE later), replace the single 'Open in OneDrive' link with three actions. (1) Edit in Word for the web: open webUrl with action=edit in a new tab. (2) Edit in Word desktop: ms-word:ofe|u|{parent.webUrl}/{name}. (3) Inline read-only view: driveItem/preview in an iframe, minted with the user's delegated token and nb=true. For sync-back, add a root-drive Graph subscription plus a delta cursor filtered to bound matter folders. When the eTag/cTag changes, run the existing cloud_docx_snapshot gate and show 'Updated in Word by X, review changes' on the matter. For Google, open webViewLink and use files.watch per file. Show a 'Return to LawHand' banner/deep link, and explain in the UI that the editor opens in a new tab because Office and Docs block iframes.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "Delegated Files.Read for preview; Graph subscription endpoint plus renewal job; existing cloud_url/storage bindings",
+   "risks": "Preview URLs minted with the app token would leak app-level access. Graph subscriptions are root-only and expire. ms-word URIs fail if desktop Office is missing or blocked by browser policy.",
+   "who_pays_compute": "n/a (editing runs on the client's M365/Workspace licenses)"
+  },
+  {
+   "title": "Tenant-side PDF conversion with LibreOffice fallback",
+   "detail": "When the source DOCX already lives in the firm's OneDrive/SharePoint/SPE, get the PDF from GET /drives/{d}/items/{i}/content?format=pdf and follow the 302. Pass the result through the same pypdf validation that docx_to_pdf.py applies, and store it as a derived artifact. Fall back to the LibreOffice converter on 406 notSupported, timeouts (about 45s reported), or when the tenant is Google or storage is local. Google Docs-native files can use files.export to PDF under 10 MB, with exportLinks or files.download for larger files. Do not round-trip DOCX through Google Docs just to get a PDF.",
+   "effort": "S",
+   "value": "medium",
+   "prerequisites": "The file must already be in tenant storage. Application least-privilege is Files.ReadWrite.All, so test whether Sites.Selected is enough.",
+   "risks": "No documented size or SLA. The pre-authenticated URL lives only minutes. Output may differ from LibreOffice, so snapshot tests must accept both.",
+   "who_pays_compute": "n/a (no metered charge; runs on the client's M365 service)"
+  },
+  {
+   "title": "Firm template library in SharePoint/Drive, published back as native 'New' templates",
+   "detail": "Let an admin bind one template library (a SharePoint library through Sites.Selected / Lists.SelectedOperations.Selected, or a Drive folder through the Picker). LawHand ingests and version-tracks those DOCX files into its existing template engine (docx_placeholder_authoring, template_fill_engine), so the firm keeps authoring in Word. In the other direction, LawHand provisions its approved templates as SharePoint content types with documentTemplate, plus Document Set default content for new matter folders (Graph v1.0 contentType, copyToDefaultContentLocation). Add a 'New from template in Word' action using ms-word:nft|u|{template}|s|{matter folder}. This fits the BK28 Matter Hub site template.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "Matter Hub library; admin consent for Selected scopes; template versioning (document_template_versions exists)",
+   "risks": "Content-type sprawl; firms editing library templates outside LawHand's review, so version pinning is needed; the 256-character URI limit on deep folder paths",
+   "who_pays_compute": "LawHand platform (ingest/merge); client M365 (storage/editing)"
+  },
+  {
+   "title": "Native file pickers and least-privilege scopes",
+   "detail": "Replace free-text or ID binding and full-drive scopes with the pickers. Microsoft: File Picker v8 in iframe/popup (delegated; SharePoint MyFiles.Read/AllSites.Read or Graph Files.Read; add write scopes only for upload). Google: the Picker (setAppId set to the project number) with drive.file, optionally through the drive-picker-element React component (developer preview). Use them for 'Attach from cloud', 'Choose template', 'Link existing matter folder' and 'Pick client-supplied files'. At the same time, move Google user flows off the restricted auth/drive and drive.readonly scopes, and move M365 off tenant-wide Files.ReadWrite.All toward Sites.Selected where the Matter Hub is used.",
+   "effort": "M",
+   "value": "high",
+   "prerequisites": "SPA MSAL configuration for SharePoint-resource tokens; Google API key and project number; a migration plan for existing drive-scope connections",
+   "risks": "Folder selection under drive.file is uncertain (may need drive.metadata.readonly). Selected-scope grants need a provisioning step and admin cooperation. Background cloud_sync of whole folders may still need broader scopes for firms that opt in.",
+   "who_pays_compute": "n/a"
+  },
+  {
+   "title": "Content-control template fields in the LawHand Word add-in",
+   "detail": "Upgrade the Word add-in from WordApi 1.1/1.4 to author and fill LawHand fields as tagged content controls. Use plain/rich text controls cross-platform, ComboBox and DropDownList from WordApi 1.9, and on desktop gated by isSetSupported('WordApiDesktop','1.3') the DatePicker, RepeatingSection (party lists), CustomXmlPart and XmlMapping to data-bind a matter XML part so re-filling is deterministic. Also add bookmarks, revision review and TableOfAuthorities generation for briefs (WordApiDesktop 1.4). Tags should mirror template_field_library IDs so the server-side fill engine and the add-in share one field model.",
+   "effort": "L",
+   "value": "high",
+   "prerequisites": "Field-ID convention shared with backend/app/services/template_* ; test matrix across Word web, Windows 2507+ and Mac",
+   "risks": "Desktop-only APIs are missing in Word on the web, so a fallback is needed. Content assembly and legacy templates may already contain content controls, so tag namespacing is needed.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Google Docs template merge path for Google-first firms",
+   "detail": "For firms that author in Google Docs: keep templates as native Google Docs with {{tokens}} and named ranges. Merge with files.copy, then documents.batchUpdate (replaceAllText, replaceNamedRangeContent, insertTable, insertDate/insertPerson/insertRichLink chips, addDocumentTab for multi-part filings), using drive.file only. Stamp a 'LawHand Matter' Drive label through files.modifyLabels. Optionally start a Drive approval for partner sign-off and mirror its status to the LawHand task. Export to PDF (\u226410 MB via files.export, larger via exportLinks or files.download). Keep DOCX generation in LawHand as the default for Word-centric firms.",
+   "effort": "M",
+   "value": "medium",
+   "prerequisites": "drive.file flows (Picker play); Workspace edition with labels (Business Standard+) for labeling",
+   "risks": "Docs 'variable chips' and building blocks cannot be filled through the API. Images must be at a public URI, so use short-lived signed URLs. Fidelity is lost if firms expect DOCX output.",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "LawHand for Google Docs (HTTP Workspace add-on)",
+   "detail": "Build a Workspace add-on on the HTTP runtime that reuses the Workspace MCP and review-first APIs. It would provide a Docs side panel with matter context, approved clauses and 'insert field' actions; per-document access through requestFileScopeForActiveDocument plus drive.file, with edits applied through the Docs API; link previews for pasted LawHand matter URLs; and a @-menu 'LawHand matter' smart chip. It would be the Google counterpart to the existing Office add-in.",
+   "effort": "L",
+   "value": "medium",
+   "prerequisites": "Google Cloud project; Marketplace listing and review; ID-token validation on the endpoint",
+   "risks": "Marketplace review timelines; card UI is less flexible than an Office task pane; admin allow-listing is needed per firm",
+   "who_pays_compute": "LawHand platform"
+  },
+  {
+   "title": "Put drafting on the client's Copilot/Gemini with LawHand as the data and skills provider",
+   "detail": "Package LawHand skills (e.g. 'draft engagement letter from firm template', 'prepare pleading caption') with the existing Workspace MCP as a Microsoft 365 Copilot declarative agent or Cowork plugin. The attorney runs it inside Word or Copilot, it reads matter facts through MCP, and the output lands in their OneDrive, where the 'edits sync back' flow snapshots it into LawHand review. On Google, pursue the Gemini Enterprise custom-MCP path, since the Docs side-panel connectors are a curated list. LawHand stays review-first; the MCP only reads and proposes.",
+   "effort": "L",
+   "value": "medium",
+   "prerequisites": "Certified MCP connection; Copilot- or Gemini Enterprise-licensed pilot firm; Cowork GA status confirmed",
+   "risks": "Cowork/Excel-skills extensibility is preview or Frontier and the Word add-in + agent path looks withdrawn, so the platform may shift. Output quality is outside LawHand's control, which is why review stays mandatory.",
+   "who_pays_compute": "client Copilot license / client Gemini license"
+  },
+  {
+   "title": "Evaluate SharePoint Embedded as a 'LawHand-managed, in-tenant' storage tier (pilot only)",
+   "detail": "Create a LawHand container type with pass-through billing, so the firm's Azure subscription pays and its Billing Admin activates it. Then run a pilot with one container per matter or client. Gains: files stay in the firm's tenant under Purview; Office co-authoring for staff and client guests without Office licenses; no SharePoint UI for users to bypass LawHand; urlTemplate routes back into LawHand; Copilot discoverability stays off unless tenant governance enables it. Compare it with the planned Matter Hub on cost (storage/transactions/egress), GCC High needs (not supported), and the admin onboarding burden.",
+   "effort": "XL",
+   "value": "medium",
+   "prerequisites": "Owning app registration (one owning app per container type); billing model chosen up front (it can't be changed); customer Azure subscription; migration path from current storage",
+   "risks": "Metered costs are hard to forecast; not available in GCC High/DoD; isOfficeRestricted is beta only; it duplicates the Matter Hub investment",
+   "who_pays_compute": "client GCP billing n/a; client Azure PAYG (pass-through) or LawHand platform (standard billing)"
+  },
+  {
+   "title": "Decision: do not build a WOPI host; point firm-side document automation at the firm's own PAYG",
+   "detail": "Record that WOPI/CSPP is out of scope: it targets cloud-storage ISVs, needs partner eligibility review, and every end user needs an M365 license anyway. Using tenant or SPE storage gives the same editing. Separately, document optional firm-funded M365 services LawHand can interoperate with rather than rebuild: content assembly ($0.15/doc, UI and Power Automate only), autofill columns ($0.005/page, or included with Copilot in SharePoint), and M365 eSignature ($2/request, simple e-signatures, no API). LawHand's part is to write matter metadata to SharePoint columns and deep-link finished PDFs.",
+   "effort": "S",
+   "value": "medium",
+   "prerequisites": "Matter Hub columns/content types",
+   "risks": "The Syntex pricing docs on the public branch date from 2025-08 and the free capacity ended June 2026, so confirm current prices with the customer's tenant",
+   "who_pays_compute": "client M365 PAYG (Azure) for any document-processing services"
+  }
+ ],
+ "caveats": [
+  "The egress proxy blocked learn.microsoft.com, developers.google.com, support.google.com, workspaceupdates.googleblog.com and blog.google. Microsoft facts were checked against the official doc source repos on raw.githubusercontent.com (microsoftgraph/microsoft-graph-docs-contrib, SharePoint/sp-dev-docs, OfficeDev/office-js-docs-*, MicrosoftDocs/*); these can differ slightly from the live site. Google API facts come from the live discovery documents (Drive v3, Docs v1, Drive Labels v2; revision 20260916). Google product and plan facts rely on search-result snippets.",
+  "The Microsoft 365 document-processing docs (content assembly, autofill, eSignature, PAYG prices) come from the public branch with ms.date 2025-08-01. Prices and names may have changed since (Syntex \u2192 SharePoint Premium \u2192 'document processing for Microsoft 365'), and the no-cost trial capacity ended June 2026.",
+  "Graph ?format=pdf has no size limit in the reference docs. The ~45s timeout, 406 notSupported and Excel 250-page figures come from Microsoft Q&A, not official limits.",
+  "The office-js docs table of contents no longer lists the 'Combine Copilot agents with Office add-ins (preview)' pages, and only Excel has documented Copilot skills (preview). That the Word add-in + agent path was withdrawn is an inference, not a Microsoft statement.",
+  "Copilot Cowork was Frontier-only in the 2026-05-05 Microsoft blog. One search snippet suggested GA, but I could not confirm it.",
+  "It is uncertain how drive.file behaves when a user picks a folder in the Google Picker; a third-party source says folder browsing may need drive.metadata.readonly. Test before committing the scope migration.",
+  "Graph lists Files.ReadWrite.All as the least-privileged application permission for content?format=pdf. Whether Sites.Selected or Files.SelectedOperations.Selected is enough needs a test in a dev tenant.",
+  "The SPE statement that 'Office for the web isn't iframeable today' is in SPE docs but describes Office for the web generally. The Google Docs non-embeddability claim rests on X-Frame-Options behaviour and community sources, not an official Google statement.",
+  "Repo context was read-only: the scope lists and UI references come from grep of backend/app/routers/integrations.py, plugins.py, admin.py, office-addin/src/hosts/wordAdapter.ts and frontend/src/components/MatterDocumentsTab.jsx at the current HEAD."
+ ]
+}

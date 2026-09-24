@@ -1,0 +1,725 @@
+{
+ "area": "Sync and eventing mechanics across Microsoft 365 and Google Workspace: mail capture, calendar, drive/document sync, cloud search, directory sync",
+ "summary": "Every M365 and Google data flow is driven by polling or a user click. The only push subscription in the codebase is the Teams callRecords Graph subscription (teams_voice.py). Nothing uses Gmail users.watch, the Drive changes feed, Graph delta, or calendar syncTokens. Mail capture re-reads a fixed window (the last 7 days, top 50 messages) for each connected user every 30 minutes. That scheduled job is behind CORRESPONDENCE_CAPTURE_ENABLED, which defaults to False, so only the manual \"Scan now\" is live. Cloud metadata sync re-lists about 200 emails and 500 files per tenant every 15 minutes, using the tenant credential. That credential is a delegated refresh token belonging to whichever admin connected, so \"/me\" means that admin's own mailbox and drive. After any storage migration, every sync also re-walks the whole target tree. Calendar sync is one-way push. Tasks upsert idempotently through a stamped extended property, but matter key-date pushes are deduplicated only by subject plus date read back from the provider, so moved deadlines leave stale events and some cases create duplicates. Directory sync enumerates all of /users every night, never deprovisions anyone, and re-activates users an admin has deactivated. Mail idempotency uses CommunicationLog.external_ref=\"provider:id\". Outbound sends store no provider id, and two separate ingestion paths (email_agent and correspondence_capture) collide on the same key. Only mail read/send goes through provider_http (handles 429 and Retry-After, 2 retries, 30s cap). Calendar, cloud sync, directory, discovery and search use raw httpx, and many listing failures break out of the loop and get recorded as \"completed, 0 items\". Per-user tokens are preferred, but calendar pushes, live search and content fetch silently fall back to the admin's tenant token. Revocation is detected (invalid_grant sets health=revoked), but revoked user tokens stay in the scan list and the fallbacks hide the revocation. Calendar writes handle timezones correctly (IANA zone plus wall-clock time). Task pushes, however, use the matter's intake (client) timezone or UTC, while the LawHand UI shows browser-local time.",
+ "capabilities": [
+  {
+   "name": "Scheduled correspondence capture (poll every 30 min, per-user delegated /me, last 7 days, top 50, .eml archive)",
+   "provider": "both",
+   "status": "flagged_off",
+   "file_ref": "backend/app/services/scheduler.py:817-830",
+   "notes": "CORRESPONDENCE_CAPTURE_ENABLED defaults to False (backend/app/config.py:586) and .env.prod.example does not set it. Polling only; no push or delta."
+  },
+  {
+   "name": "Manual matter 'Scan now' correspondence capture",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/routers/matters_correspondence.py:383-416",
+   "notes": "Reads the signed-in user's mailbox; matches party addresses or case numbers (correspondence_capture.py:186-214); fetches the raw .eml per match."
+  },
+  {
+   "name": "Inbox triage scan with LLM classification and drafts (Communications page)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/email_agent.py:332-416",
+   "notes": "Matches on sender only; writes CommunicationLog plus MatterNote without an .eml; re-classifies on every run."
+  },
+  {
+   "name": "Send client email from the connected mailbox (Graph sendMail / Gmail send), per-user first, then tenant, SMTP only if opted in",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/connected_mail.py:303-467",
+   "notes": "max_retries=0 by design (no idempotency key); delivery_certainty is tracked."
+  },
+  {
+   "name": "File the sent email as an .eml on the matter",
+   "provider": "neither",
+   "status": "shipped",
+   "file_ref": "backend/app/services/correspondence_capture.py:494-612",
+   "notes": "The .eml is built locally from what was sent; the provider message id is not stored."
+  },
+  {
+   "name": "Inbound matter forwarding alias (Cloudflare Email Worker, signed)",
+   "provider": "neither",
+   "status": "flagged_off",
+   "file_ref": "backend/app/routers/matters_correspondence.py:161-190",
+   "notes": "INBOUND_EMAIL_ENABLED=False (backend/app/config.py:594). This is the only push-style mail ingestion."
+  },
+  {
+   "name": "Task to calendar upsert/delete with a stamped clarity_task_id extended property (idempotent)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/task_notifications.py:270-337",
+   "notes": "Fire-and-forget asyncio tasks to both providers (microsoft_calendar.py:107-198, google_calendar.py:64-166); no retry and no durable queue."
+  },
+  {
+   "name": "Push matter key dates to the user's calendar (manual)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/services/calendar_sync.py:550-636",
+   "notes": "Deduplicated by (subject, start date) read back from the provider; no stored event mapping; no update or delete."
+  },
+  {
+   "name": "Read provider calendar events into the LawHand calendar",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/calendar_sync.py:78-174",
+   "notes": "Covers now to +30 days only, top 100 events. The browser polls every 5 minutes while the page is open (frontend/src/pages/CalendarPage.jsx:610-624)."
+  },
+  {
+   "name": "Scheduled events with Teams online meeting or Zoom",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/services/scheduled_events.py:35-122",
+   "notes": "Teams via isOnlineMeeting; no Google Meet conferenceData; Google inserts send no invitations; edits are delete plus recreate."
+  },
+  {
+   "name": "Cloud metadata index sync (Drive, Gmail, OneDrive, SharePoint, Outlook) every 15 min",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_sync.py:68-165",
+   "notes": "CLOUD_SEARCH_ENABLED defaults to True. Uses the tenant token (the admin's /me). Upsert only; no deletion reconciliation. historyId is stored but unused (cloud_sync.py:558)."
+  },
+  {
+   "name": "Per-matter folder sync",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_sync.py:167-268",
+   "notes": "Lists children of provisioned and document parent folders; errors are swallowed."
+  },
+  {
+   "name": "Live cloud search fan-out (Graph /search/query, Drive fullText, Gmail q) plus local index",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_search.py:124-348",
+   "notes": "Wall-clock budget, concurrent; tokens fall back to the tenant credential."
+  },
+  {
+   "name": "Cloud document sync and RAG ingestion (durable job, content-addressed)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/durable_job_worker.py:173-300",
+   "notes": "Downloads every listed file on each run, then deduplicates by sha256; no eTag or modifiedTime pre-check."
+  },
+  {
+   "name": "Post-migration target reindex (full recursive inventory)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/storage_migration_reindex.py:56-148",
+   "notes": "Triggered with force=True on every cloud-sync run (cloud_sync.py:80-111)."
+  },
+  {
+   "name": "Nightly directory user sync (Graph /users, Admin SDK users.list)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/user_sync.py:114-370",
+   "notes": "Runs daily at 2:00 AM ET (scheduler.py:793-800); full enumeration; never deprovisions."
+  },
+  {
+   "name": "Graph change-notification subscription lifecycle (create, renew, clientState)",
+   "provider": "microsoft",
+   "status": "shipped",
+   "file_ref": "backend/app/services/teams_voice.py:1049-1144",
+   "notes": "Used only for Teams callRecords (renewed every 6h, scheduler.py:623-642). No equivalent for mail, calendar or drive."
+  },
+  {
+   "name": "OAuth refresh with revocation detection (invalid_grant sets health=revoked)",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/token_vault.py:77-89",
+   "notes": "The tenant credential is deactivated; the user token row is only flagged and is still selected by callers."
+  },
+  {
+   "name": "Shared provider HTTP layer (timeouts, 429/5xx retry, Retry-After)",
+   "provider": "both",
+   "status": "partial",
+   "file_ref": "backend/app/services/provider_http.py:104-145",
+   "notes": "Used only by microsoft_mail, google_mail and connected_mail. Calendar, cloud sync, directory, discovery and search use raw httpx."
+  },
+  {
+   "name": "Reconciling uncertain cloud writes by byte verification",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/workflow_run_reconciliation.py:27-128",
+   "notes": "Good idempotency model for writes."
+  },
+  {
+   "name": "Cloud working copy of generated drafts, read back on demand",
+   "provider": "both",
+   "status": "shipped",
+   "file_ref": "backend/app/services/cloud_artifact_materialization.py:351-368",
+   "notes": "Pull only; nothing notifies LawHand when the lawyer edits the working copy in Word or Docs."
+  }
+ ],
+ "defects": [
+  {
+   "title": "Any user can scan another user's mailbox via /api/email/scan user_id",
+   "severity": "high",
+   "file_ref": "backend/app/routers/email_agent.py:31-65",
+   "detail": "user_id = str(user.id) if not body.user_id else body.user_id has no admin or ownership check. process_emails then loads that user's delegated token (email_agent.py:348-364).",
+   "user_impact": "A paralegal can POST {user_id: partnerId} and receive the partner's inbox subjects, senders, AI summaries and drafted replies. The scan also writes notes and tasks attributed to the partner."
+  },
+  {
+   "title": "Tenant-token fallback exposes the connecting admin's mailbox and OneDrive to every user's chat retrieval",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_search.py:1529-1540",
+   "detail": "_get_microsoft_token and _get_google_token (1515-1527) fall back to get_fresh_token when the user has no personal token. That tenant credential is a delegated refresh token for the admin who connected, so /search/query message hits and /me/messages/{id}/$value (1329-1359) read the admin's mailbox. RAG calls this for any user (backend/app/services/rag.py:1891-1906). Separately, cloud-sync indexes the admin's /me/messages into a tenant-wide index (cloud_sync.py:725-829) that search_index returns to everyone (cloud_search.py:472-507).",
+   "user_impact": "Any staff member who has not connected their own account can ask chat about a topic and get content from the admin's private email and files."
+  },
+  {
+   "title": "Deactivated users are silently re-activated nightly and their mailboxes keep being captured",
+   "severity": "high",
+   "file_ref": "backend/app/services/user_sync.py:175-181",
+   "detail": "Every directory match sets user_row.is_active = True (also at 321-327). Admin deactivation (backend/app/routers/admin.py:300-306) does not delete or revoke UserOAuthToken rows. run_correspondence_capture iterates all token rows with no User.is_active or health filter (backend/app/services/scheduler.py:1894-1916).",
+   "user_impact": "A user an admin deactivated is back in at the 2:00 AM directory sync, and their mailbox is still archived into matters every 30 minutes."
+  },
+  {
+   "title": "Directory sync never deprovisions and licenses guests and resource accounts",
+   "severity": "high",
+   "file_ref": "backend/app/services/user_sync.py:130-202",
+   "detail": "/users $select has no userType and no filter. accountEnabled=false only skips creating new users and never deactivates existing ones. Deleted users are ignored. New rows get license_active=True (Google path is the same at 305-351).",
+   "user_impact": "Departed staff stay active and licensed. External guests in the firm's Entra tenant (clients or co-counsel invited to Teams) and room or shared mailboxes become licensed LawHand users."
+  },
+  {
+   "title": "Moved or renamed matter deadlines leave stale events on Outlook and Google calendars",
+   "severity": "high",
+   "file_ref": "backend/app/services/calendar_sync.py:519-628",
+   "detail": "Key-date pushes store no provider event id. Deduplication is (subject, start date) read from the provider. When a key date moves or the matter is renamed, a new event is created and the old one is never updated or deleted.",
+   "user_impact": "Lawyers see the old court date alongside the new one, which is a missed-deadline risk."
+  },
+  {
+   "title": "Date-only task events are sent to Google with an empty time range",
+   "severity": "high",
+   "file_ref": "backend/app/services/google_calendar.py:52-53",
+   "detail": "All-day events send end.date == start.date. Google's end.date is exclusive, so the range is empty. The Graph path correctly adds one day (backend/app/services/microsoft_calendar.py:83-96). The failure is only logged (google_calendar.py:159-166) inside fire-and-forget code (task_notifications.py:36-50). Should be confirmed against the live API, because the unit test encodes end == start.",
+   "user_impact": "Tasks without a due time, which covers most deadlines, never appear on Google Calendar, and nothing tells the user."
+  },
+  {
+   "title": "After any storage migration, every 15-minute sync re-walks the entire cloud tree and wipes and rewrites the index",
+   "severity": "high",
+   "file_ref": "backend/app/services/cloud_sync.py:80-111",
+   "detail": "sync_all and sync_matter_folders call storage_migration_reindex.run(force=True) on every run. That does a BFS with one Graph or Drive call per folder plus marker downloads and no 429 handling (backend/app/services/storage_discovery.py:233-298), then deletes and re-upserts all file rows (storage_migration_reindex.py:130-143). Any failure raises RuntimeError before mail sync runs (cloud_sync.py:85-88).",
+   "user_impact": "A firm with thousands of matter folders makes thousands of API calls every 15 minutes, gets throttled, and cloud sync (including mail metadata) then fails continuously."
+  },
+  {
+   "title": "Cloud sync provider failures are recorded as successful syncs with 0 items",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:361-372",
+   "detail": "On non-200 responses the loop breaks or returns 0 instead of raising: Drive (361-372), Gmail (493-501), Outlook (763-771), Graph files (1058-1064), SharePoint (641-661), and a missing token (330-332). The scheduler then records status='completed' (backend/app/services/scheduler.py:1779-1790). This contradicts the sync_all docstring (cloud_sync.py:75-77).",
+   "user_impact": "Revoked consent or a missing Sites.Read.All shows as a green 'completed, 0 ok' tile while the index goes stale."
+  },
+  {
+   "title": "Task calendar pushes fall back to the admin's calendar",
+   "severity": "medium",
+   "file_ref": "backend/app/services/microsoft_calendar.py:23-43",
+   "detail": "_get_token returns the tenant token when the assignee has no personal token or refresh fails (Google is the same at google_calendar.py:18-38). The event is then written to /me/events of the admin who connected. Every task change also pushes to both providers (task_notifications.py:308-317).",
+   "user_impact": "Tasks (with client names and descriptions) for unconnected or revoked users fill one admin's personal calendar. Revocation is hidden instead of surfaced."
+  },
+  {
+   "title": "Timed tasks land at the wrong hour on Outlook and Google",
+   "severity": "medium",
+   "file_ref": "backend/app/services/task_notifications.py:252-267",
+   "detail": "due_time is sent in the matter's intake timezone (the client's) or UTC when there is no intake (backend/app/services/matter_followups.py:29-44). The LawHand calendar renders the same due_time as browser-local wall time (backend/app/routers/calendar.py:38-48). There is no firm or user timezone.",
+   "user_impact": "A 2:00 PM deadline on a matter without intake shows 2:00 PM in LawHand but 9:00 AM CDT in Outlook."
+  },
+  {
+   "title": "Key-date deduplication misses and duplicates events east of UTC+9 and past 100 events",
+   "severity": "medium",
+   "file_ref": "backend/app/services/calendar_sync.py:100-122",
+   "detail": "Graph reads are normalized to UTC ('Prefer: outlook.timezone=\"UTC\"') and keyed on the UTC date [:10] (542-547), while events are created at 09:00 local (594). calendarView is $top 100 with no @odata.nextLink. Google uses maxResults 100 with no pageToken (344-350), even though the dedupe window is 90 days.",
+   "user_impact": "Sydney or NZ firms, and anyone with more than 100 events in 90 days, get another '[LawHand] ...' duplicate on every sync."
+  },
+  {
+   "title": "Email where the party is only on CC is never captured",
+   "severity": "medium",
+   "file_ref": "backend/app/services/microsoft_mail.py:43-48",
+   "detail": "The Graph $select omits ccRecipients, and the Gmail metadataHeaders are From/To/Subject/Date only (backend/app/services/google_mail.py:187-194). correspondence_capture._email_addresses reads 'cc' (correspondence_capture.py:87-94), which is always empty.",
+   "user_impact": "Messages where the client or opposing counsel is copied are missed, even though the rules UI promises 'emails involving the matter's parties'."
+  },
+  {
+   "title": "Fixed 50-message window silently drops mail",
+   "severity": "medium",
+   "file_ref": "backend/app/services/correspondence_capture.py:406-419",
+   "detail": "Each run reads the top CORRESPONDENCE_CAPTURE_MAX_EMAILS=50 messages from the last 7 days with no pagination (microsoft_mail.py:38-50, google_mail.py:169-180) and keeps no cursor.",
+   "user_impact": "More than 50 messages in one 30-minute interval, or an outage longer than 7 days, leaves permanent gaps in the matter file."
+  },
+  {
+   "title": "The two mail ingestion paths block each other's dedupe and re-spend LLM calls",
+   "severity": "medium",
+   "file_ref": "backend/app/services/email_agent.py:57-91",
+   "detail": "The email agent writes CommunicationLog(matter_id, external_ref='provider:id') with no document. The capture path's _already_captured (correspondence_capture.py:217-233, 263-269) then skips it, so no .eml is ever archived. In the other order, capture blocks note and task-tag creation (email_agent.py:64-77). process_emails also classifies and drafts before any dedupe (email_agent.py:366-394).",
+   "user_impact": "Matters lack the archived .eml, and every Communications-page scan re-bills LLM classification and premium drafts for mail already logged."
+  },
+  {
+   "title": "Outbound emails get filed twice",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/matters.py:2807-2818",
+   "detail": "The compose log stores no external_ref. Graph sendMail returns 202 with no id (connected_mail.py:128-138), and the Gmail id is returned but discarded (connected_mail.py:192-199). A later scan captures the Sent Items copy under 'provider:id' (correspondence_capture.py:258-269).",
+   "user_impact": "Each client email appears twice on the matter, as two log rows and two .eml files."
+  },
+  {
+   "title": "A staff alias counts as a matter party, so the alias owner's mail is filed into all of their matters",
+   "severity": "medium",
+   "file_ref": "backend/app/services/correspondence_capture.py:160-173",
+   "detail": "Verified aliases of every assigned user are added to party_addresses, and any address overlap triggers capture (200-207).",
+   "user_impact": "Every message to or from an attorney's verified alias is copied into each matter they are assigned to, putting privileged mail on other clients' files."
+  },
+  {
+   "title": "Google 403 rate limits are treated as auth failures (no backoff, 'Reconnect' shown)",
+   "severity": "medium",
+   "file_ref": "backend/app/services/provider_http.py:95-100",
+   "detail": "All 401 and 403 responses become ProviderAuthError without checking the reason. Google returns 403 rateLimitExceeded and userRateLimitExceeded. connected_mail maps this to REAUTHORIZATION_REQUIRED (connected_mail.py:267-280).",
+   "user_impact": "Users are told to reconnect Google when they are only throttled, and nothing is retried."
+  },
+  {
+   "title": "No 429 or Retry-After handling outside mail read/send; calendar pushes are lost for good",
+   "severity": "medium",
+   "file_ref": "backend/app/services/microsoft_calendar.py:165-198",
+   "detail": "Calendar (calendar_sync.py:124-141, google_calendar.py:100-166), cloud sync (cloud_sync.py:343-372), directory (user_sync.py:130-145) and discovery (storage_discovery.py:214-250) all use raw httpx with no retry. Task pushes are fire-and-forget with no durable retry.",
+   "user_impact": "Under Graph or Google throttling, calendar copies go stale permanently and syncs fail for the whole cycle."
+  },
+  {
+   "title": "Tenant row is locked across hundreds of provider HTTP calls",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:884-889",
+   "detail": "Every _upsert runs SELECT tenants FOR UPDATE plus a migration lookup. Commit happens only after the whole provider loop (for example, Gmail at 509-562 does about 200 sequential HTTP calls), which also means about 3 DB statements per item.",
+   "user_impact": "Other writes to the tenant row (settings, onboarding, cutover) block or time out during every 15-minute sync."
+  },
+  {
+   "title": "Gmail metadata sync uses a Drive-only service-account token on Shared Drive tenants",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:854-864",
+   "detail": "prefer_service_account is applied to every Google token, including Gmail. The service token has only DRIVE_SCOPES and no subject (backend/app/services/google_service_account.py:213-243). Gmail returns 403, which is then recorded as 0 items.",
+   "user_impact": "Firms on an org Shared Drive never get Gmail in the index, and nothing reports an error."
+  },
+  {
+   "title": "Editing or deleting a scheduled event cancels and re-sends invites, or leaves orphans",
+   "severity": "medium",
+   "file_ref": "backend/app/routers/calendar.py:482-495",
+   "detail": "Every PATCH deletes and recreates the event using the editor's token, not the creator's. The delete result is ignored (backend/app/services/scheduled_events.py:125-142). There is no creator or role check.",
+   "user_impact": "Clients get a cancellation plus a new invite on every edit, and the Teams join link changes. When another user edits or deletes the event, the original stays in the creator's calendar with the client still invited."
+  },
+  {
+   "title": "Google scheduled events never send invitations",
+   "severity": "medium",
+   "file_ref": "backend/app/services/calendar_sync.py:485-493",
+   "detail": "events.insert (and delete at 512-516) is called without sendUpdates, which Google treats as 'none'. Graph sends invites by default.",
+   "user_impact": "Clients added as attendees on Google-backed meetings never receive an invite or a cancellation."
+  },
+  {
+   "title": "Tenant OneDrive and SharePoint sync lists only root-level items",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:584-594",
+   "detail": "sync_onedrive uses /me/drive/root/children and sync_sharepoint uses /drives/{id}/root/children (663-680), with no recursion or delta.",
+   "user_impact": "Matter files in subfolders (nearly all of them) are missing from firm-wide search unless someone runs the per-matter sync."
+  },
+  {
+   "title": "Native Google Docs and Sheets are excluded from the index and from ingestion",
+   "severity": "medium",
+   "file_ref": "backend/app/services/cloud_sync.py:48-55",
+   "detail": "LEGAL_MIME_TYPES has no application/vnd.google-apps.* types. The Drive query (334-339) and document_sync (document_sync.py:281-292, which also ANDs the mime and extension clauses) filter them out.",
+   "user_impact": "Google Workspace firms' own drafts in Google Docs never show up in index search or RAG ingestion."
+  },
+  {
+   "title": "Manual directory sync failures are invisible",
+   "severity": "low",
+   "file_ref": "backend/app/services/durable_job_worker.py:405-434",
+   "detail": "The durable user_sync job raises without calling record_sync_failure, and Google is skipped if Microsoft raises. The UI waits 4 seconds and re-reads credential status.",
+   "user_impact": "The card keeps showing the last 'ok' sync after a failed manual run."
+  },
+  {
+   "title": "Per-matter 'Sync folder' reports 'synced' when providers failed",
+   "severity": "low",
+   "file_ref": "backend/app/services/cloud_sync.py:222-266",
+   "detail": "Provider exceptions are only logged, and the router returns status 'synced' with the counts (backend/app/routers/matters.py:3407-3425).",
+   "user_impact": "Users think the matter's cloud files are current when the listing failed."
+  },
+  {
+   "title": "Revoked user tokens stay in the scan roster and are refreshed again on every use",
+   "severity": "low",
+   "file_ref": "backend/app/services/token_vault.py:213-231",
+   "detail": "_locked_user_token does not filter health='revoked'. Each correspondence cycle, search and push attempts a refresh and logs a failure (scheduler.py:1896-1952).",
+   "user_impact": "Error noise and wasted refresh calls every 30 minutes per revoked user; the admin sees repeated failures instead of one 'user must reconnect' state."
+  },
+  {
+   "title": "ms_read_mail_tenant is dead and broken",
+   "severity": "low",
+   "file_ref": "backend/app/services/microsoft_mail.py:101-134",
+   "detail": "It passes the Graph user id as the LawHand user_id to get_fresh_user_token, so every user is skipped. There are no callers.",
+   "user_impact": "None today; it is a trap for anyone who builds tenant-wide capture on top of it."
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Graph change notifications plus delta for per-user mail capture",
+   "detail": "Subscribe to /me/mailFolders('inbox')/messages and sentitems (created). On each notification run /messages/delta with a stored deltaLink, and enqueue a DurableJob per message. Reuse the Teams voice subscription lifecycle (create, renew, clientState, URL-move handling) and the 6-hourly renewal job. Removes the 7-day/top-50 blind spot and the 30-minute latency.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "microsoft",
+   "refs": "backend/app/services/teams_voice.py:1049-1144; backend/app/routers/teams.py:595-640; backend/app/services/scheduler.py:623-642; backend/app/services/correspondence_capture.py:388-491"
+  },
+  {
+   "title": "Gmail users.watch through Pub/Sub plus history.list",
+   "detail": "Call users.watch (labelIds INBOX and SENT) per connected user, push to a signed endpoint, and fetch changes with users.history.list(startHistoryId). historyId is already stored as sync_cursor but never read. This takes about 2,450 Gmail calls per user per day (51 every 30 min) down to roughly one per new message.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "google",
+   "refs": "backend/app/services/cloud_sync.py:558; backend/app/services/google_mail.py:169-202"
+  },
+  {
+   "title": "Drive changes feed and Graph driveItem delta instead of root listing and full re-walks",
+   "detail": "Persist a Drive changes.getStartPageToken, plus changes.watch, and a Graph /drives/{id}/root/delta deltaLink for each bound root. Apply adds, moves and deletes to cloud_metadata_index incrementally, including deletions. Retire the force=True reindex on every run and the root/children-only listing.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/cloud_sync.py:80-111,584-594; backend/app/services/storage_discovery.py:233-298"
+  },
+  {
+   "title": "Two-way calendar sync with a stored event mapping",
+   "detail": "Stamp key-date events with an extended property (matter_id plus key) like tasks already do, and store provider event ids. Read changes through Graph /me/calendarView/delta or event subscriptions and Google events.list syncToken or events.watch, so moved or deleted deadlines update rather than duplicate, and attendee responses flow back to ScheduledEvent.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/calendar_sync.py:519-636; backend/app/services/microsoft_calendar.py:17-68"
+  },
+  {
+   "title": "Directory sync using delta or SCIM, with deprovisioning",
+   "detail": "Use Graph /users/delta filtered to userType eq 'Member' and deactivate on accountEnabled=false or @removed. For Google, use Admin SDK users.watch or a suspended check. Alternatively, offer Entra and Google Workspace SCIM provisioning so the client's IdP drives joiners and leavers. Stop re-setting is_active=True.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/user_sync.py:114-370"
+  },
+  {
+   "title": "Tenant-wide capture without an admin /me or per-user OAuth",
+   "detail": "Use app-only Mail.Read scoped by Exchange RBAC for Applications to a mail-enabled 'LawHand capture' group (get_app_only_token already exists for Teams voice). For Google, use domain-wide delegation with a subject (supported in google_service_account). This replaces the admin-token fallback that currently leaks the admin's mailbox.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/teams_voice.py:1081; backend/app/services/google_service_account.py:12,103-104; backend/app/services/cloud_search.py:1515-1540"
+  },
+  {
+   "title": "Correlate outbound mail by internetMessageId",
+   "detail": "For Graph, create a draft with POST /me/messages (which returns id and internetMessageId), then /send, stamping an X-LawHand-Comm-Id internetMessageHeader. For Gmail, keep the id returned by send. Store it as external_ref and dedupe capture on internetMessageId across all ingestion paths.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/connected_mail.py:81-199; backend/app/routers/matters.py:2791-2840"
+  },
+  {
+   "title": "Batch APIs for metadata reads",
+   "detail": "Use Graph $batch (20 requests per call) and the Gmail batch endpoint for format=metadata lookups. This cuts about 200 sequential calls per tenant cycle to about 10, and shortens the tenant-row lock window.",
+   "effort": "S",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/cloud_sync.py:509-562; backend/app/services/google_mail.py:184-202"
+  },
+  {
+   "title": "One mail ingestion pipeline with cached classification",
+   "detail": "Merge email_agent scan, correspondence capture and the inbound alias into a single pipeline keyed by internetMessageId. It writes one CommunicationLog plus the .eml, reuses classification instead of re-running the LLM, and applies the same matching rules including cc.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/email_agent.py:332-416; backend/app/services/correspondence_capture.py:186-491"
+  },
+  {
+   "title": "'File to matter' from Outlook through Copilot or an add-in action",
+   "detail": "Expose capture_email_for_matter(message_id) as an API plugin or declarative agent action for Microsoft 365 Copilot and an Outlook add-in command. Filing becomes event-driven and user-intended instead of polled, and the firm's Copilot license handles summarizing and matter suggestion before it calls LawHand.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/correspondence_capture.py:236-385"
+  },
+  {
+   "title": "Gmail Workspace add-on with a Gemini-assisted 'File to matter'",
+   "detail": "A Gmail contextual add-on that sends the open message id to LawHand for capture and lets Gemini in Gmail draft the matter note or summary on the client's license. It also offers 'Add deadline to matter' from Calendar.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "google",
+   "refs": "backend/app/services/correspondence_capture.py:236-385; backend/app/services/google_mail.py:231-256"
+  },
+  {
+   "title": "Microsoft 365 Copilot connector (Graph connector) for LawHand matters",
+   "detail": "Push matter metadata, deadlines and correspondence summaries into the tenant's Microsoft Search and Copilot index, ACL'd to assigned users. The firm's Copilot can then answer matter questions on its own compute, which offloads LawHand's live fan-out search and LLM cost.",
+   "effort": "L",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "microsoft",
+   "refs": "backend/app/services/cloud_search.py:124-348"
+  },
+  {
+   "title": "Meeting recaps and transcripts filed to the matter",
+   "detail": "For Teams events LawHand creates, subscribe to callTranscript and recording notifications and file the transcript and Copilot intelligent recap to the matter. For Google, add conferenceData (Meet) to events and pull Meet transcripts or Gemini 'take notes' Docs via the Meet REST API.",
+   "effort": "M",
+   "value": "high",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/scheduled_events.py:66-111; backend/app/services/calendar_sync.py:235-297"
+  },
+  {
+   "title": "Notify LawHand when working-copy drafts change",
+   "detail": "Subscribe to driveItem changes (Graph subscription on the drive root, or delta) and Drive files.watch on materialized draft working copies. When a lawyer edits with Copilot in Word or Gemini in Docs, reviewers are notified and a new revision is snapshotted, instead of relying on on-demand read_current_cloud_bytes.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/cloud_artifact_materialization.py:351-368"
+  },
+  {
+   "title": "Sensitivity labels and Drive labels on filed matter content",
+   "detail": "Apply a Purview sensitivity or retention label (driveItem assignSensitivityLabel) and Google Drive Labels (matter number, privileged) to files and .eml LawHand stores. The client's Copilot, Gemini and DLP then respect privilege and can scope by matter.",
+   "effort": "M",
+   "value": "medium",
+   "leverages_client_ai": true,
+   "provider": "both",
+   "refs": "backend/app/services/correspondence_capture.py:310-321"
+  },
+  {
+   "title": "Adopt provider_http everywhere and move calendar pushes onto the durable queue",
+   "detail": "Route calendar, cloud sync, directory, discovery and search through provider_http, parse Google 403 reason codes as throttling, and turn fire-and-forget task pushes into DurableJob kinds with attempts and backoff. Treat a revoked user token as an explicit 'reconnect' state instead of falling back to the tenant token.",
+   "effort": "S",
+   "value": "high",
+   "leverages_client_ai": false,
+   "provider": "both",
+   "refs": "backend/app/services/provider_http.py:81-145; backend/app/services/task_notifications.py:36-50; backend/app/services/durable_job_worker.py:716-866"
+  }
+ ],
+ "ux_findings": [
+  {
+   "screen": "Matter > Correspondence > Rules",
+   "file_ref": "frontend/src/components/MatterCorrespondenceTab.jsx:161-168",
+   "issue": "The 'Enable automatic background capture for this matter' checkbox does nothing when CORRESPONDENCE_CAPTURE_ENABLED is off, which is the default (backend/app/config.py:586, scheduler.py:818).",
+   "severity": "high",
+   "suggestion": "Return the platform flag and last run time with the rules payload. Disable the checkbox with an explanation when capture is off, and show 'last captured X min ago' when it is on.",
+   "quick_win": false
+  },
+  {
+   "screen": "Matter > Correspondence",
+   "file_ref": "frontend/src/components/MatterCorrespondenceTab.jsx:559",
+   "issue": "The provider picker always defaults to 'Outlook / 365', so Google-only users hit 'Connect or reconnect Microsoft 365' on their first scan.",
+   "severity": "medium",
+   "suggestion": "Default to the user's connected provider (CalendarPage already reads provider_status) and hide providers that are not connected.",
+   "quick_win": true
+  },
+  {
+   "screen": "Matter > Correspondence > Scan now",
+   "file_ref": "frontend/src/components/MatterCorrespondenceTab.jsx:586-589",
+   "issue": "The scan result does not say that it covers only the last 7 days and the 50 most recent messages, so users assume older mail was checked.",
+   "severity": "low",
+   "suggestion": "Add a line such as 'Checked your 50 most recent messages from the last 7 days' with a link to the forwarding alias for older mail.",
+   "quick_win": true
+  },
+  {
+   "screen": "Admin > Integrations > provider card",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:780-793",
+   "issue": "The per-user connection remedy says 'open Calendar and choose Connect Calendar', but the per-user grant also powers mail capture, sending from own mailbox, drive and search.",
+   "severity": "medium",
+   "suggestion": "Rename it to 'Connect my Microsoft 365 / Google account', list what it enables, and add the connect entry to the user's profile or integrations page as well as Calendar.",
+   "quick_win": true
+  },
+  {
+   "screen": "Admin > Integrations > Sync now",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:114-126",
+   "issue": "Sync now ignores the returned job_id (backend/app/routers/scheduler.py:158-171), waits a fixed 4 seconds, and shares one 'syncing' state across both provider cards. Failures never show.",
+   "severity": "medium",
+   "suggestion": "Poll the existing tenant job endpoint (/api/sync/documents/jobs/{id}, backend/app/routers/document_sync.py:152-165) until done, then show created, updated and skipped counts or the error on the correct card.",
+   "quick_win": true
+  },
+  {
+   "screen": "Admin > Integrations > recent sync runs",
+   "file_ref": "frontend/src/components/IntegrationsPanel.jsx:796-810",
+   "issue": "Tiles show raw slugs ('cloud-sync', 'correspondence-capture') and a green 'completed, 0 ok' even when the provider silently failed (cloud_sync.py:361-372). Only 3 runs are shown.",
+   "severity": "medium",
+   "suggestion": "Humanize job names, show a warning style when a completed run has 0 items after earlier non-zero runs, and link to a full run history.",
+   "quick_win": true
+  },
+  {
+   "screen": "Calendar",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:610-624",
+   "issue": "Outlook and Google events load only from now to +30 days (backend/app/services/calendar_sync.py:83,101-102), so past weeks and later months show no external events. The 5-minute browser poll re-reads the same window.",
+   "severity": "medium",
+   "suggestion": "Pass the visible range to /calendar/sync (or a read-only events endpoint) and fetch per view.",
+   "quick_win": false
+  },
+  {
+   "screen": "Calendar > Sync deadlines",
+   "file_ref": "frontend/src/pages/CalendarPage.jsx:759-762",
+   "issue": "The success toast counts only created deadlines. Events that failed to push are dropped silently (calendar_sync.py:626-634), so a total failure reads 'Synced 0 deadline(s)' as success.",
+   "severity": "medium",
+   "suggestion": "Return a failed count with reasons from sync_deadlines_to_calendar and show a partial-failure state.",
+   "quick_win": false
+  },
+  {
+   "screen": "Communications vs Matter Correspondence",
+   "file_ref": "frontend/src/pages/CommunicationsPage.jsx:478-493",
+   "issue": "There are two different 'sync email' actions. The Communications scan matches on sender only, stores no .eml and runs an LLM. The matter 'Scan now' (MatterCorrespondenceTab.jsx:581-597) matches parties and case numbers and archives the .eml. They also block each other's deduplication.",
+   "severity": "medium",
+   "suggestion": "Offer one 'Capture mail' flow with a single result model, and present triage and classification as a view on captured mail.",
+   "quick_win": false
+  },
+  {
+   "screen": "Calendar > Sync deadlines scope",
+   "file_ref": "backend/app/services/calendar_sync.py:561-567",
+   "issue": "Deadline sync pushes every open matter's key dates in the firm into the user's personal Outlook or Google calendar, with no option to limit it to the user's own matters.",
+   "severity": "low",
+   "suggestion": "Add a 'My matters only' default scope (matter_access_predicate exists) and a firm-wide option for docketing staff.",
+   "quick_win": false
+  }
+ ],
+ "api_surface": [
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /me/messages ($filter receivedDateTime, $top 50/100)",
+   "method": "GET",
+   "purpose": "Mail capture and triage; cloud metadata sync",
+   "scope_needed": "Mail.Read (delegated)",
+   "file_ref": "backend/app/services/microsoft_mail.py:43-50"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /me/messages/{id}/$value",
+   "method": "GET",
+   "purpose": "Raw .eml for archive and search content",
+   "scope_needed": "Mail.Read",
+   "file_ref": "backend/app/services/microsoft_mail.py:97"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST /me/sendMail",
+   "method": "POST",
+   "purpose": "Send client email from the connected mailbox (no retry)",
+   "scope_needed": "Mail.Send",
+   "file_ref": "backend/app/services/connected_mail.py:90-127"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /me/calendarview (+$expand singleValueExtendedProperties)",
+   "method": "GET",
+   "purpose": "Read provider events for the next 30 days; dedupe key dates",
+   "scope_needed": "Calendars.ReadWrite",
+   "file_ref": "backend/app/services/calendar_sync.py:100-137"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST/PATCH/DELETE /me/events; GET /me/events?$filter=singleValueExtendedProperties/Any(...)",
+   "method": "POST",
+   "purpose": "Task, deadline and scheduled-event push (Teams online meeting)",
+   "scope_needed": "Calendars.ReadWrite",
+   "file_ref": "backend/app/services/microsoft_calendar.py:46-198"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /me/drive/root/children, /me/drive/items/{id}/children",
+   "method": "GET",
+   "purpose": "OneDrive metadata sync (root only, or matter folders)",
+   "scope_needed": "Files.ReadWrite.All",
+   "file_ref": "backend/app/services/cloud_sync.py:584-620"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /sites/root, /sites/{id}/drives, /drives/{id}/root/children",
+   "method": "GET",
+   "purpose": "SharePoint metadata sync",
+   "scope_needed": "Sites.Read.All",
+   "file_ref": "backend/app/services/cloud_sync.py:641-680"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST /search/query (driveItem, listItem | message)",
+   "method": "POST",
+   "purpose": "Live cloud search for chat/RAG",
+   "scope_needed": "Files.Read.All, Sites.Read.All, Mail.Read",
+   "file_ref": "backend/app/services/cloud_search.py:950-976"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /drives/{id}/items/{id}/children (recursive BFS, $top 999) + /content for markers",
+   "method": "GET",
+   "purpose": "Storage migration discovery and reindex",
+   "scope_needed": "Files.ReadWrite.All / Sites.Read.All",
+   "file_ref": "backend/app/services/storage_discovery.py:207-298"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "GET /users ($top 200, nextLink)",
+   "method": "GET",
+   "purpose": "Nightly directory sync",
+   "scope_needed": "User.Read.All",
+   "file_ref": "backend/app/services/user_sync.py:130-149"
+  },
+  {
+   "provider": "microsoft",
+   "endpoint": "POST/PATCH/DELETE /subscriptions (communications/callRecords)",
+   "method": "POST",
+   "purpose": "The only Graph change-notification subscription (Teams voice)",
+   "scope_needed": "CallRecords.Read.All (application)",
+   "file_ref": "backend/app/services/teams_voice.py:1049-1144"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET gmail/v1/users/me/messages?q=after: + messages/{id}?format=metadata",
+   "method": "GET",
+   "purpose": "Mail capture and triage (1 + N calls); metadata sync (1 + up to 200)",
+   "scope_needed": "gmail.readonly",
+   "file_ref": "backend/app/services/google_mail.py:169-202"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET gmail/v1/users/me/messages/{id}?format=raw",
+   "method": "GET",
+   "purpose": "Raw .eml for archive",
+   "scope_needed": "gmail.readonly",
+   "file_ref": "backend/app/services/google_mail.py:247-256"
+  },
+  {
+   "provider": "google",
+   "endpoint": "POST gmail/v1/users/me/messages/send",
+   "method": "POST",
+   "purpose": "Send client email (id returned but not persisted)",
+   "scope_needed": "gmail.send",
+   "file_ref": "backend/app/services/connected_mail.py:176-199"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET/POST/PATCH/DELETE calendar/v3/calendars/primary/events (privateExtendedProperty lookup)",
+   "method": "POST",
+   "purpose": "Task, deadline and scheduled-event push; provider event read",
+   "scope_needed": "calendar",
+   "file_ref": "backend/app/services/google_calendar.py:100-166"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET drive/v3/files (q mime/ext, corpora=user) and files/{id}?alt=media",
+   "method": "GET",
+   "purpose": "Drive metadata sync, document listing and download for RAG",
+   "scope_needed": "drive",
+   "file_ref": "backend/app/services/cloud_sync.py:343-372"
+  },
+  {
+   "provider": "google",
+   "endpoint": "GET admin/directory/v1/users?customer=my_customer",
+   "method": "GET",
+   "purpose": "Nightly directory sync",
+   "scope_needed": "admin.directory.user.readonly",
+   "file_ref": "backend/app/services/user_sync.py:242-299"
+  }
+ ],
+ "open_questions": [
+  "Is CORRESPONDENCE_CAPTURE_ENABLED turned on in any production deployment? It defaults to False and .env.prod.example does not set it, so background capture may never have run for customers.",
+  "Is the TenantCredential meant to be a dedicated firm or shared mailbox, or the connecting admin's personal account? The /me fallbacks for search, calendar and send depend on this, and the UI calls it a 'firm mailbox'.",
+  "Is the tenant-wide visibility of email correspondence and key dates (matter_access_predicate is applied only to SMS) an intentional product policy, or should the capture, index and calendar paths respect matter assignments?",
+  "Is BACKEND_URL publicly reachable in every deployment (required for Graph notifications, as Teams voice already assumes), and is there a GCP project available for Gmail and Drive Pub/Sub push?",
+  "Please confirm the Google all-day behaviour against the live API. tests/test_task_calendar_due_time.py asserts end.date == start.date, which Google's exclusive end semantics reject.",
+  "How many tenants and connected users does production have? Scheduler jobs run tenants sequentially under one advisory lock (scheduler.py:195-233), so 15- and 30-minute polling cycles may already overlap and get skipped."
+ ]
+}

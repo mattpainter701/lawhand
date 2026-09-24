@@ -157,6 +157,8 @@ export const INTEGRATION_SECTIONS = [
       const teams = ms.capabilities?.teams
       if (teams?.status === 'ok') return { tone: 'ok', label: 'Connected' }
       if (teams?.status === 'needs_reauth') return { tone: 'warn', label: 'Reconnect with Teams enabled' }
+      // An unconfirmed account type is not the same as an unsupported one.
+      if (!ms.account_type || ms.account_type === 'unknown') return { tone: 'warn', label: 'Account type not confirmed' }
       return { tone: 'off', label: 'Not available on this account' }
     },
     render: () => <TeamsPanel />,
@@ -425,7 +427,7 @@ function Overview({ sections, operatorSections, summary, onSelect }) {
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div className="max-w-2xl">
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">Tenant connections</p>
-            <h2 className="font-serif text-2xl font-bold tracking-tight md:text-3xl">Every external connection, in one place.</h2>
+            <h2 className="font-serif text-2xl font-bold tracking-tight text-white md:text-3xl">Every external connection, in one place.</h2>
             <p className="mt-3 text-sm leading-6 text-white/70">Each card shows whether the connection is working. Open one to connect it, review its permissions, or fix what needs attention.</p>
           </div>
           <Link to="/guide/integration-data-visibility" className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">
@@ -465,7 +467,7 @@ function Overview({ sections, operatorSections, summary, onSelect }) {
 
 function NavButton({ active, onClick, icon: Icon, children }) {
   return (
-    <button type="button" onClick={onClick} className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${active ? 'border-brand-ink bg-brand-ink text-white' : 'border-brand-line bg-brand-surface text-brand-ink hover:border-brand-line-2'}`}>
+    <button type="button" onClick={onClick} aria-current={active ? 'page' : undefined} className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition ${active ? 'border-brand-ink bg-brand-ink text-white' : 'border-brand-line bg-brand-surface text-brand-ink hover:border-brand-line-2'}`}>
       <Icon size={15} /> {children}
     </button>
   )

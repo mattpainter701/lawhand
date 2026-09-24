@@ -167,6 +167,35 @@ describe('IntegrationsHub', () => {
     expect(screen.queryByTestId('integrations-advanced')).toBeNull()
   })
 
+  it('tells an unconfirmed Microsoft account type apart from an unsupported one', async () => {
+    const teamsUnavailable = { teams: { available: false, status: 'unavailable', reason: 'x' } }
+    getAdminPermissions.mockResolvedValueOnce({
+      overall_health: 'healthy',
+      microsoft: { connected: true, health: 'healthy', account_type: 'unknown', capabilities: teamsUnavailable },
+      google: { connected: false, health: 'disconnected' },
+    })
+    renderHub()
+    const teams = screen.getByTestId('integration-card-teams')
+    expect(await within(teams).findByText('Account type not confirmed')).toBeInTheDocument()
+    cleanup()
+
+    getAdminPermissions.mockResolvedValueOnce({
+      overall_health: 'healthy',
+      microsoft: { connected: true, health: 'healthy', account_type: 'consumer', capabilities: teamsUnavailable },
+      google: { connected: false, health: 'disconnected' },
+    })
+    renderHub()
+    const personal = screen.getByTestId('integration-card-teams')
+    expect(await within(personal).findByText('Not available on this account')).toBeInTheDocument()
+  })
+
+  it('marks the active section in the navigation for assistive technology', () => {
+    renderHub({ section: 'cloud' })
+    const nav = screen.getByRole('navigation', { name: 'Integration sections' })
+    expect(within(nav).getByRole('button', { name: /Cloud/ })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('button', { name: /Overview/ })).not.toHaveAttribute('aria-current')
+  })
+
   it('shows the selected section status in its header', async () => {
     renderHub({ section: 'cloud' })
     expect(await screen.findByText('Cloud configuration')).toBeInTheDocument()
