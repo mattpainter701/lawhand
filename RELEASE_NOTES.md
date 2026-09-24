@@ -5,6 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.24.01 — Clearer Microsoft 365 and Google connections
+
+Released September 24, 2026.
+
+Cloud setup now shows what each connection asks for and whose account it uses, names permissions that were not granted, and confirms each connect. Everyone can check and reconnect their own account from Profile.
+
+- **Connect with a clear picture.** Administration, Integrations, Cloud now lists what Microsoft 365 or Google will be asked to allow and who must sign in. A suite your firm does not use stays out of the way.
+- **See and fix missing permissions.** Declined permissions are named, the features they turn off are marked, and Re-authorize comes first. Personal Gmail firms can re-authorize; admins can disconnect.
+- **Your own connected accounts.** Profile, Connected accounts shows whether your own Microsoft 365 or Google account is connected, what that consent allows, and lets you connect or reconnect it.
+- **Microsoft account type and Teams.** Reconnecting Microsoft 365 now records the account type and who granted it. Teams no longer offers a reconnect that cannot help a personal Microsoft account.
+
 ## 2026.09.23.02 — Clearer recovery for matter storage
 
 Released September 23, 2026.

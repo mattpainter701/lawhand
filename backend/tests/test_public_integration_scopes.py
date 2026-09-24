@@ -19,6 +19,7 @@ from app.routers.integrations import (
     GOOGLE_USER_SCOPES,
     MICROSOFT_ADMIN_SCOPES,
     MICROSOFT_USER_SCOPES,
+    _admin_request_scopes,
     GOOGLE_SOLO_SCOPES,
     _google_account_mode_matches,
     _google_scopes_for_mode,
@@ -41,7 +42,8 @@ def _published() -> dict:
 @pytest.mark.parametrize(
     ("provider", "intent", "actual"),
     [
-        ("microsoft", "admin", MICROSOFT_ADMIN_SCOPES),
+        # The admin consent also carries the OpenID Connect sign-in scopes.
+        ("microsoft", "admin", _admin_request_scopes(False)),
         ("microsoft", "user", MICROSOFT_USER_SCOPES),
         ("microsoft", "teamsOptIn", TEAMS_CONNECT_SCOPES),
         ("google", "admin", GOOGLE_ADMIN_SCOPES),

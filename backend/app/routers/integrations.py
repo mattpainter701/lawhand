@@ -243,6 +243,11 @@ MICROSOFT_ADMIN_SCOPES = (
     f"offline_access User.Read.All Mail.Read {MICROSOFT_MAIL_SEND_SCOPE} "
     "Files.ReadWrite.All Sites.Read.All Calendars.ReadWrite"
 )
+# OpenID Connect scopes on the admin connect. Without them Entra returns no
+# id_token, so the account tier (work/school vs personal) and the granting
+# account were never recorded and every tenant stayed "tier unknown". They are
+# sign-in scopes, not Graph permissions, so the scope audit ignores them.
+MICROSOFT_IDENTITY_SCOPES = "openid email profile"
 GOOGLE_ADMIN_SCOPES = (
     "openid email profile "
     "https://www.googleapis.com/auth/admin.directory.user.readonly "
@@ -364,6 +369,12 @@ def _admin_scopes(teams: bool) -> str:
     return MICROSOFT_ADMIN_SCOPES
 
 
+def _admin_request_scopes(teams: bool) -> str:
+    """Scopes sent on the admin authorize and token requests: the audited
+    Graph permissions plus the OpenID Connect scopes that return an id_token."""
+    return f"{_admin_scopes(teams)} {MICROSOFT_IDENTITY_SCOPES}"
+
+
 def _zoom_redirect_uri() -> str:
     return (
         settings.ZOOM_REDIRECT_URI
@@ -482,7 +493,9 @@ async def microsoft_connect(
 
     ms_tenant = settings.MICROSOFT_TENANT_ID
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/microsoft/callback"
-    scopes = _admin_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
+    scopes = (
+        _admin_request_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
+    )
 
     authorize_url = (
         f"https://login.microsoftonline.com/{ms_tenant}/oauth2/v2.0/authorize"
@@ -533,13 +546,16 @@ async def microsoft_callback(
     expected_scopes = (
         _admin_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
     )
+    requested_scopes = (
+        _admin_request_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
+    )
     token_payload = {
         "client_id": settings.MICROSOFT_CLIENT_ID,
         "client_secret": settings.MICROSOFT_CLIENT_SECRET,
         "code": code,
         "redirect_uri": redirect_uri,
         "grant_type": "authorization_code",
-        "scope": expected_scopes,
+        "scope": requested_scopes,
     }
     if code_verifier:
         token_payload["code_verifier"] = code_verifier
@@ -619,8 +635,12 @@ async def microsoft_callback(
                 scope_str=scope_str,
             )
             apply_scope_audit(cred_row, "microsoft", expected_scopes, _scope_is_granted)
-            account_type, account_domain = account_detect.detect_microsoft(claims)
-            account_detect.apply_detection(cred_row, account_type, account_domain)
+            # Only a real id_token decides the tier. Stamping "unknown" here
+            # also stamped account_detected_at, which made the backfill skip
+            # the credential forever; without claims, leave it to the backfill.
+            if claims is not None:
+                account_type, account_domain = account_detect.detect_microsoft(claims)
+                account_detect.apply_detection(cred_row, account_type, account_domain)
         else:
             user_id, tenant_id = _require_state_user(meta, "user")
             await set_tenant_context(db, tenant_id)

@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.24.01",
+      "version": "2026.09.24.01",
+      "title": "Clearer Microsoft 365 and Google connections",
+      "published_at": "2026-09-24",
+      "summary": "Cloud setup now shows what each connection asks for and whose account it uses, names permissions that were not granted, and confirms each connect. Everyone can check and reconnect their own account from Profile.",
+      "highlights": [
+        {
+          "title": "Connect with a clear picture",
+          "description": "Administration, Integrations, Cloud now lists what Microsoft 365 or Google will be asked to allow and who must sign in. A suite your firm does not use stays out of the way."
+        },
+        {
+          "title": "See and fix missing permissions",
+          "description": "Declined permissions are named, the features they turn off are marked, and Re-authorize comes first. Personal Gmail firms can re-authorize; admins can disconnect."
+        },
+        {
+          "title": "Your own connected accounts",
+          "description": "Profile, Connected accounts shows whether your own Microsoft 365 or Google account is connected, what that consent allows, and lets you connect or reconnect it."
+        },
+        {
+          "title": "Microsoft account type and Teams",
+          "description": "Reconnecting Microsoft 365 now records the account type and who granted it. Teams no longer offers a reconnect that cannot help a personal Microsoft account."
+        }
+      ]
+    },
+    {
       "id": "2026.09.23.02",
       "version": "2026.09.23.02",
       "title": "Clearer recovery for matter storage",
