@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useConfirm } from './dialog/ConfirmProvider'
+import GuideLink from './GuideLink'
 import { useToast } from './toast/useToast'
 import {
   createExpense,
@@ -430,6 +431,9 @@ export default function MatterExpensesPanel({ matterId, onOpenInbox, onExpensesC
             )}
           </div>
           <p className="mt-1 text-xs text-brand-muted">Billable external expenses consume the matter budget; internal expenses never do.</p>
+          <GuideLink chapter="time-billing-and-reports" anchor="record-matter-expenses" className="mt-1.5">
+            How expenses and receipts work
+          </GuideLink>
         </div>
         <button type="button" onClick={beginAdd} className="btn-secondary inline-flex items-center gap-2 self-start">
           <Plus size={15} /> Add expense

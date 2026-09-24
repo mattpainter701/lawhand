@@ -54,13 +54,13 @@ Do not rely on what the customer says they pay for. Product names change and sev
 
 A custom domain purchased through Google One is an outgoing mail alias attached to a personal account. The account identity stays `@gmail.com`.
 
-LawHand keeps the provider sign-in address as the user's primary address. An administrator can add a secondary address under Administration → Users, but the address remains pending until the recipient completes the one-time verification link. Only a verified alias can identify that user for OAuth sign-in or match an internal assigned user during correspondence capture. An unverified alias never grants access or creates a matter match.
+LawHand keeps the provider sign-in address as the user's primary address. An administrator can add a secondary address with **Manage aliases** on [Users](/admin?tab=users), but the address remains pending until the recipient completes the one-time verification link. Only a verified alias can identify that user for OAuth sign-in or match an internal assigned user during correspondence capture. An unverified alias never grants access or creates a matter match.
 
 ## Directory sync on personal accounts
 
 Directory sync requires an administrative directory that personal accounts do not have. On a personal Google account the capability is reported as `not_applicable`, rather than as a connection failure. Mail, calendar, storage, and search continue to work normally.
 
-Review [Integrations → Cloud](/admin?tab=integrations&integration=cloud) for connection state, and treat a directory sync error on a known personal-tier tenant as expected rather than actionable.
+Review [Integrations > Cloud](/admin?tab=integrations&integration=cloud) for connection state, and treat a directory sync error on a known personal-tier tenant as expected rather than actionable.
 
 ## Sending matter email
 
@@ -79,25 +79,21 @@ Before a firm connects a provider, confirm:
 - for Google Workspace, no Google Cloud setup is required from the customer: LawHand creates the organisation-owned Shared Drive, adds its own service account, and places the root inside it when the administrator connects, so file custody survives staff turnover. If Workspace policy blocks that, the root falls back to the admin's My Drive and is reported `at_risk`; and
 - the seat count is compatible with the tier, since personal accounts require each user to be invited individually.
 
-Record the business owner, technical owner, granted scopes, and disconnect procedure as described in [Integrations](/admin?tab=integrations).
+Record the business owner, technical owner, granted scopes, and disconnect procedure as described in [Connection lifecycle](/admin?tab=guide&chapter=integrations#connection-lifecycle).
 
 ## Matter folders and correspondence
 
 Matter folders retain the tenant's root folder (`lawhand-records` for new tenants; existing tenants keep their `claritylegal-records` root until an operator renames it) and use one canonical matter folder name that includes the matter identifier. Captured `.eml` messages are stored in the provisioned `correspondence` subfolder. New captures retain the provider file and library identity so LawHand can reopen the archived message. Older captures missing that identity may need administrator reconciliation. Folder setup is tenant-owned cloud storage; LawHand does not silently create a second slug-only tree when provisioning is pending.
 
-For a read-only audit of realized matter bindings, an operator can run the repository maintenance report:
+If matter folders seem out of step with the provider, ask [LawHand support](/admin?tab=support) for a read-only audit of your matter folder bindings. It lists matters with missing, still-provisioning, or duplicate bindings, and explains a bound-but-unusable provider without touching your files:
 
-```text
-python scripts/audit_matter_cloud_folders.py <tenant-id>
-```
+| Result | Meaning | What to do |
+| --- | --- | --- |
+| `needs_reauth` | The firm is bound to a provider with no working credential. Signing and intake uploads fail rather than go elsewhere. | Reconnect the provider under [Integrations > Cloud](/admin?tab=integrations&integration=cloud) and retry. |
+| `folders_unbound` | The provider is connected, but some matters have no folder for it. | Select **Create missing matter folders** under **Document storage**. |
+| `ok` | The provider is connected and every matter folder is bound. | Nothing. |
 
-The report identifies matters with missing, provisioning, or duplicate provider bindings. It also includes a `storage_policy` section that explains a bound-but-unusable provider without performing provider I/O:
-
-- `needs_reauth` — the firm is bound to a provider but has no active credential for it. A signing or intake upload fails closed with a generic 503; reconnect the provider under [Integrations → Cloud](/admin?tab=integrations&integration=cloud) and retry.
-- `folders_unbound` — the provider is connected but one or more matters have no folder binding for it. The `unbound_matters` list names them; reprovision those folders in File Shares.
-- `ok` — the configured provider is connected and every matter folder is bound.
-
-The report never merges, deletes, or repairs folders, and it does not expose provider error text to clients.
+The audit never merges, deletes, or repairs folders, and never exposes provider error text to clients.
 
 ## Retrieval and calendar checks
 
@@ -111,6 +107,21 @@ New scheduled events preserve the browser’s local time as an explicit instant 
 
 A firm that migrates between providers keeps its matters, documents, and history. The cloud binding is repointed rather than rebuilt, per matter and per provider.
 
-Migration is a supported, administrator-directed operation. Open Administration → Integrations → Cloud storage migration, choose a connected target root, run reconciliation, and review every matched, missing, and ambiguous matter or document. The server records the discovery evidence and matching rung. Cutover remains unavailable while any item is unresolved and requires explicit administrator confirmation.
+Migration is a supported, administrator-directed operation. Open [Storage migration](/admin?tab=integrations&integration=storage-migration) under **Advanced** on the Integrations overview, choose a connected target root, run reconciliation, and review every matched, missing, and ambiguous matter or document. See [Move existing matters to another provider](/admin?tab=guide&chapter=storage-imports-and-readiness#move-existing-matters-to-another-provider). The server records the discovery evidence and matching rung. Cutover remains unavailable while any item is unresolved and requires explicit administrator confirmation.
 
 The migration flow rebinds pointers to files the firm has already placed in the target provider; it does not copy or delete provider content. The existing cloud root remains recorded when setup is re-entered, so rerunning onboarding does not discard the prior root. Do not change the primary provider setting directly while a migration is active.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| Directory sync reports `not_applicable` | The account is a personal Google account with no directory | Expected; invite each person individually. |
+| Consent fails for a personal Microsoft account | Personal Microsoft accounts cannot grant the required permissions | Use a Microsoft 365 business tenant. |
+| Matter files sit in one person's Drive or OneDrive | The account is personal, or SharePoint was not chosen | Move to Workspace or bind a SharePoint library for firm custody. |
+| Email Client says delivery is unconfirmed | The provider may have accepted the message | Check the sender's Sent Items before sending again. |
+
+## Related chapters
+
+- [Integrations](/admin?tab=guide&chapter=integrations)
+- [Storage, imports & readiness](/admin?tab=guide&chapter=storage-imports-and-readiness)
+- [Onboarding & storage setup](/admin?tab=guide&chapter=onboarding-and-storage-setup)

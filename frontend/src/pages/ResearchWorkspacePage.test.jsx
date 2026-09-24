@@ -23,6 +23,7 @@ it('states the evidence classes and creates a matter-scoped workspace', async ()
   expect(await screen.findByRole('heading', { name: 'Research Workspace' })).toBeInTheDocument()
   expect(screen.getByLabelText('Workspace title')).toBeInTheDocument()
   expect(screen.getByText(/Create a workspace for this matter/i)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Back to matter' })).toHaveAttribute('href', '/matters/m-1')
 })
 
 it('reuses an attempt key after a failed create and makes a distinct snapshot key', async () => {

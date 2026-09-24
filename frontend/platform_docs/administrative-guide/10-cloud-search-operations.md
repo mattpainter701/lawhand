@@ -1,45 +1,78 @@
 ---
 slug: cloud-search-operations
 title: Cloud Search operations
-description: Bind approved sources, test retrieval, monitor metadata, synchronize deliberately, and clear caches safely.
+description: Check Cloud Search's connection, test what it can find, synchronize metadata, and clear its cache safely.
 order: 100
-read_time: 8 min
-icon: network
+read_time: 9 min
+icon: search
 ---
 
 # Cloud Search operations
 
-[Integrations → Cloud Search](/admin?tab=integrations&integration=cloud-search) exposes connection status, test search, synchronization, indexed metadata, and cache controls for approved cloud sources.
+Cloud Search lets people and the assistant find authorized Gmail, Outlook, Google Drive, OneDrive, and SharePoint content. It uses the connected provider's permissions; it does not create a separate permission boundary, so broad access at the provider becomes broad search unless you bind it narrowly.
 
-## Establish the source boundary
+Open [Integrations > Cloud Search](/admin?tab=integrations&integration=cloud-search). It has four tabs: **Status**, **Test Search**, **Sync**, and **Metadata**.
 
-Complete provider authorization and the intended storage binding under [Integrations](/admin?tab=integrations) first. Confirm the site, drive, or source boundary with the information owner. Broad access at the provider should not become broad search scope by accident.
+## Before you start
 
-## Test retrieval
+1. Connect the provider in [Integrations > Cloud](/admin?tab=integrations&integration=cloud) and choose the storage binding. See [Integrations](/admin?tab=guide&chapter=integrations).
+2. Agree the source boundary (which sites, drives, and mailboxes) with the information owner.
+3. Pick a distinctive, non-sensitive document you can search for as a known answer.
 
-Use a distinctive, non-sensitive query with a known document. Check that the result comes from the expected source and that accounts with different permissions see only what they should.
+## Check the status
 
-For PDF and Word files, ask about a fact inside the file, not just its title. Supported cloud downloads use format-aware text extraction with a 10 MiB download limit and bounded output. Unsupported, oversized, or textless files may provide only metadata snippets; a listed search hit alone does not prove that its contents were read.
+The **Status** tab shows, for **Microsoft** and **Google**, whether each is **Connected**, the granted **Scopes**, and when the token expires (**Token expires**). If it says "No admin token. Connect in Settings → Integrations.", connect the provider first.
 
-Retained `.eml` files and Outlook messages use decoded email headers and body text. HTML-only email excludes styles and scripts; attached files and nested attached messages are not included in the email body excerpt. Verify attachment contents separately. Preserving the original email bytes and retrieving readable email text are separate checks.
+## Test what search can find
 
-Connected-source planning uses the selected chat route and checks its confidential-context policy before sending the question or matter context to a model. Premium chat therefore also uses Premium for this planning step. A standalone planner must resolve an approved route; it does not silently fall back to an unapproved model. Blank manual queries and planner output without meaningful keywords are rejected rather than expanded into a mailbox-wide search.
+1. Open **Test Search**.
+2. Under **Search sources**, tick the sources to test: **Gmail**, **Outlook**, **Google Drive**, **OneDrive**, or **SharePoint**. At least one is required.
+3. Type a query, such as "Find the latest renewal discussion with Acme and the attached SOW", and set **Max hits**.
+4. Select **Run Search** and open **Search details** to see where each result came from.
 
-Test both positive and negative cases:
+For PDF and Word files, ask about a fact inside the file, not just its title. Supported downloads are read up to 10 MiB with format-aware text extraction; unsupported, oversized, or textless files provide only their metadata, so a listed result does not prove its contents were read. Email uses decoded headers and body text; attachments and attached messages are not part of the body excerpt, so check them separately.
 
-- an authorized user finds an expected document;
-- an unauthorized user cannot find it;
-- similarly named documents retain correct source metadata; and
-- deleted or moved content behaves according to synchronization and retention expectations.
+Test both sides:
 
-## Synchronization and metadata
+- an authorized person finds the expected document;
+- an unauthorized person cannot;
+- similarly named documents keep their correct source; and
+- deleted or moved content behaves as your synchronization and retention settings expect.
 
-Review indexed metadata before forcing a synchronization. A sync can increase provider load and search churn. Capture the reason and baseline counts, then verify completion, errors, and representative results.
+When Cloud Search plans a query for the assistant, it uses the person's chosen chat route and that route's policy for confidential context, so a Premium chat plans with Premium. Empty queries, and plans without meaningful keywords, are rejected rather than widened into a mailbox-wide search.
 
-Metadata views help diagnose stale paths, unexpected sources, missing titles, and indexing gaps. They are operational signals, not a substitute for source-system permission review.
+## Synchronize metadata
 
-## Clear cache
+**Sync** keeps LawHand's lightweight index of titles, paths, owners, and dates current.
 
-Clear search cache only for a defined reason such as verified stale results after a permission or binding change. Expect temporary performance or availability effects and run post-clear tests.
+1. Check the **Metadata** tab first and note the current counts.
+2. On **Sync**, select **Sync Metadata Now**. **Sync Results** reports what changed.
+3. Check for errors and spot-check a few results.
 
-Unexpected cross-tenant, cross-site, or unauthorized results are a stop-work security issue. Preserve the query, user, time, result metadata, and request ID; restrict affected access and follow the incident process.
+A sync adds load at the provider and churn in search, so run it for a reason (such as a new binding) rather than routinely.
+
+## Browse indexed metadata
+
+The **Metadata** tab lists what is indexed, filterable by provider and type (**Files**, **Emails**, **Folders**) and searchable by title, with each item's size and modified date. Use it to diagnose stale paths, unexpected sources, missing titles, and gaps. It is an operational signal, not a replacement for reviewing permissions at the source.
+
+## Clear the cache
+
+On **Sync**, **Invalidate Cache** clears cached search results. Use it only for a specific reason, such as stale results after a permission or binding change. Expect slower searches for a while afterwards, and test again.
+
+> [!CAUTION]
+> A result from another firm, another site, or a source someone is not authorized to see is a security incident. Stop, keep the query, person, time, result details, and request ID, restrict the affected access, and follow your incident process.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| "No admin token" on Status | The provider's firm-wide connection is missing | Connect it in Integrations > Cloud. |
+| A known document is not found | It is outside the binding, unsupported, over 10 MiB, or not yet synchronized | Check the binding and the file, then **Sync Metadata Now**. |
+| Results show stale titles or paths | The metadata index is behind | Run **Sync Metadata Now**; clear the cache only if results stay stale. |
+| "Select at least one source to run a search." | No source is ticked | Tick at least one source. |
+
+## Related chapters
+
+- [Integrations](/admin?tab=guide&chapter=integrations)
+- [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility)
+- [File Share operations](/admin?tab=guide&chapter=file-share-operations)

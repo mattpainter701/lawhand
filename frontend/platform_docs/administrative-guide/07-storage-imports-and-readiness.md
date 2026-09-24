@@ -1,91 +1,116 @@
 ---
 slug: storage-imports-and-readiness
 title: Storage, imports & readiness
-description: Connect cloud storage, bind approved SharePoint locations, assess capability readiness, and control legacy imports.
+description: Choose and bind document storage, move existing matters to another provider, import Tabs3 data, and check provider app readiness.
 order: 70
-read_time: 8 min
-icon: plug
+read_time: 15 min
+icon: cloud
 ---
 
 # Storage, imports & readiness
 
-The [Integrations](/admin?tab=integrations) tab combines provider authorization with storage selection, readiness checks, and approved import paths. A green provider connection is only one part of a usable integration.
+Matter documents live in your firm's own Microsoft or Google storage, not in a LawHand datastore. This chapter covers where that storage is set, how to move existing matters between providers, how to import data from Tabs3, and how to check that the provider apps are registered correctly.
 
 ![How tasks and customer-owned document storage are separated](/guide-assets/customer-data-task-lifecycle.svg)
 
 ## Where these controls live
 
-Storage settings sit under **Document storage** on [Integrations → Cloud](/admin?tab=integrations&integration=cloud), collapsed beneath the provider cards. Operator tooling — [Storage migration](/admin?tab=integrations&integration=storage-migration), [Data import](/admin?tab=integrations&integration=data-import) (Tabs3) and [Provider app readiness](/admin?tab=integrations&integration=readiness) — lives under **Advanced** on the Integrations overview and is only rendered for administrators holding the `manage_integrations` capability. New firms choose the provider and create the root during setup; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup).
+- **Document storage** is on [Integrations > Cloud](/admin?tab=integrations&integration=cloud), collapsed below the provider cards. See [Choose where matter documents live](/admin?tab=guide&chapter=integrations#choose-where-matter-documents-live).
+- [Storage migration](/admin?tab=integrations&integration=storage-migration), [Data import](/admin?tab=integrations&integration=data-import), and [Provider app readiness](/admin?tab=integrations&integration=readiness) are under **Advanced** on the Integrations overview, for administrators who hold the `manage_integrations` capability.
+- New firms choose their provider and create the root folder in [Onboarding](/onboarding); see [Onboarding & storage setup](/admin?tab=guide&chapter=onboarding-and-storage-setup).
 
 ## Cloud document storage
 
-Select the tenant's intended primary storage provider only after confirming ownership, account tier, granted scopes, and supported capabilities. Changing the provider asks for confirmation: it repoints new writes and does not move existing folders. Microsoft and Google account types can expose different directory, mail, drive, and shared-storage features.
-
-The storage selector is authoritative:
+Choose the primary provider only after confirming who owns the account, its tier, the granted permissions, and which features it supports. The selector is authoritative:
 
 - **Auto** uses OneDrive when Microsoft 365 is connected, otherwise Google Drive when Google is connected.
-- **OneDrive**, **SharePoint**, or **Google Drive** is an exclusive administrator override.
-- A cloud-bound write does not spill into another provider or durable local LawHand storage. If the selected provider is unavailable, the request fails with a retryable storage error.
+- **OneDrive**, **SharePoint**, or **Google Drive** is an explicit override.
+- A write never spills into another provider or into LawHand's own storage. If the chosen provider is unavailable, the request fails with an error people can retry.
 
-Configure and test storage before enabling portal uploads, inbound filing, document generation, or e-sign. An unbound legacy/demo tenant can still contain local compatibility files and does not meet the customer-owned-content target until those files are inventoried and migrated.
+Set up and test storage before turning on portal uploads, inbound filing, document generation, or e-signature. In the readiness matrix, treat **not applicable** differently from **failed**: the first means the provider or tier does not offer the feature; the second means an expected feature needs attention.
 
-Review the readiness matrix for each capability. Treat **not applicable** differently from **failed**: one means the provider or account tier does not offer the feature; the other means an expected feature needs attention.
+### Microsoft 365 notes
 
-### Microsoft 365 permission and use notes
+The firm grant requests directory read, mail read, file read and write, SharePoint site read, calendar read and write, and offline access. Personal grants omit directory read but still authorize that person's mail, files, and calendar. These are delegated permissions: what LawHand can reach follows the connected identity's access.
 
-The Microsoft tenant grant requests directory read, mail read, file read/write, SharePoint site read, calendar read/write, and offline access. Per-user grants omit organization-wide directory read but still authorize that signed-in user's mail, accessible files, and calendar. These are delegated permissions: Microsoft visibility follows the connected identity's effective access, but file read/write remains broader than a single configured matter folder.
+LawHand uses them to list directory users; search Outlook message details and previews; capture a selected full message; list, search, download, and index supported OneDrive or SharePoint files; write matter folders and files in enabled workflows; and maintain calendar events for tasks and key dates.
 
-LawHand currently uses that access to enumerate permitted directory users; list and search Outlook message metadata and previews; retrieve a selected full message for capture; list, search, download, and index supported OneDrive or configured SharePoint files; write files and matter folders through enabled workflows; and create or update calendar events tied to tasks and key dates.
+The file permission (`Files.ReadWrite.All`) is broader than the LawHand records folder. Bind the root to a SharePoint site library rather than a personal OneDrive, so the firm keeps custody, and prefer an organization-owned identity with only the access it needs. Verify create, read, update, and delete with a non-sensitive file. If the administrator who connected Microsoft leaves, reconnect another administrator from Integrations > Cloud.
 
-The current Microsoft file grant is delegated `Files.ReadWrite.All`. It is sufficient for the implemented folders but broader than `lawhand-records`. Prefer an organization-owned service identity with only the required business access, or an approved SharePoint binding. Verify create/read/update/delete using a non-sensitive file; do not rely only on the consent screen. Bind the root to a SharePoint site library rather than a personal OneDrive so the firm keeps custody; while access still uses the connecting administrator's delegated token, a removed administrator requires reconnecting another administrator from Integrations → Cloud.
+### Google Workspace notes
 
-### Google Workspace permission and use notes
+The administrator grant requests identity and profile, read-only directory users, read-only Gmail, Drive read and write, Calendar read and write, and offline access. Directory access does not authorize every person's Gmail; mail, Drive, and Calendar act as the account that connected.
 
-The Google administrator grant requests identity/profile, organization directory user read-only, Gmail read-only, Drive read/write, Calendar read/write, and offline access. Per-user grants omit directory administration. Directory access does not itself authorize every user's Gmail; mail, Drive, and Calendar operate as the account that completed the applicable connection.
+On Google Workspace, LawHand creates an organization-owned Shared Drive named `LawHand Firm Records`, adds its own service account as a member, and keeps the firm's root inside it. That service account performs storage operations, so deactivating the connecting administrator does not interrupt access. You configure nothing in Google Cloud.
 
-On a Google Workspace connection LawHand also creates an organisation-owned Shared Drive (`LawHand Firm Records`), adds its own service account as a member, and stores the tenant root inside it. LawHand uses that service account for the tenant's storage operations — matter-folder creation, uploads, reads, search, sharing, and repair — not only the initial root, so deactivating the connecting administrator does not interrupt access. The customer configures nothing in Google Cloud. If Workspace policy blocks Shared Drive creation or the service-account membership, LawHand rolls back the unused drive, falls back to that administrator's My Drive, and onboarding reports `root_ownership.status = at_risk`; treat that as a retention risk, not a normal end state.
+If your Workspace policy blocks Shared Drive creation or the service-account membership, LawHand removes the unused drive and falls back to the administrator's My Drive, and onboarding reports the root ownership as at risk. Treat that as a retention risk to fix, not a normal end state.
 
-LawHand currently uses Gmail read access for headers, labels, snippets, search, and selected full-message capture. It uses Drive access for file metadata, search, configured synchronization, document download/indexing, and supported folder/file writes. Calendar access creates and maintains LawHand-linked events.
+For every field LawHand reads and keeps, see [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
 
-For a complete field and retention matrix, see [Integration permissions and data visibility](/guide/integration-data-visibility).
+## Bind a SharePoint library
 
-## SharePoint storage binding
+A SharePoint binding limits everyday LawHand workflows to an approved site and library. It does not narrow the Microsoft permission itself.
 
-A SharePoint binding narrows normal LawHand workflows to an approved site and drive. It does not narrow the Microsoft OAuth scope itself. Search for the intended site, verify its organization and purpose, choose the correct drive, save the binding, and test with a non-sensitive document.
+1. Under **Document storage**, open **SharePoint library**.
+2. Search for the site, and confirm its organization and purpose.
+3. Choose the correct library (drive) and save the binding.
+4. Upload a non-sensitive test document to a test matter and confirm where it lands.
 
-Before rebinding, identify workflows that depend on the current location. Changing a binding may alter what users can find, upload, or retrieve. Verify tenant permissions and Microsoft permissions with representative accounts after the change.
+Before rebinding, list the workflows that depend on the current location; changing it can change what people find, upload, or retrieve.
 
 ## Portal upload folder
 
-Cloud setup creates `client_uploads` under each matter. Portal originals stay in this folder to preserve stable provider IDs and intake history. Staff-reviewed or revised work product should be saved as a new document in the appropriate matter folder; do not move the original as a classification side effect.
+Cloud setup creates a `client_uploads` folder in each matter. Portal originals stay there so their provider IDs and intake history stay stable. Save reviewed or revised work as a new document in the right matter folder rather than moving the original.
 
-For matters created before this folder existed, use **Create missing matter folders** under Document storage, verify the new folder, then test a portal upload. SharePoint uploads fail closed when the approved drive/folder metadata is missing rather than substituting a general documents folder.
+For matters created before this folder existed, select **Create missing matter folders** under **Document storage**, check the new folder, and test a portal upload. SharePoint uploads fail rather than use a general documents folder when the approved library details are missing.
 
-## Tabs3 import
+## Move existing matters to another provider
 
-The Tabs3 import workflow accepts a prepared export bundle. Before import:
+[Storage migration](/admin?tab=integrations&integration=storage-migration) rebinds existing matter folders and files to another connected provider. LawHand discovers and verifies what is already there; it does not copy files. Copy the files with your provider's own tools first.
 
-1. run the approved export and schema checks;
-2. confirm the destination tenant;
-3. use a rehearsal or redacted bundle first;
-4. review warnings and counts;
-5. preserve the source export and import evidence; and
-6. reconcile contacts, matters, time, billing, and identifiers after completion.
+1. Make sure both providers are connected and a primary provider is chosen. Migration needs an explicit provider; **Auto** does not identify a source.
+2. **Choose provider** for the destination, and identify the **Target connected root**: its root folder ID, and for SharePoint the drive ID and root item ID.
+3. Select **Start migration**. LawHand discovers each matter's folders at the destination and marks each one **Matched**, **Ambiguous**, or **Missing**.
+4. Resolve the **Unresolved items**, then select **Reconcile connected root** to verify again.
+5. When everything matches, select **Confirm cutover**. LawHand reports **Cutover complete. Reindex is pending.** while search is rebuilt; use **Retry reindex** if reindexing stalls.
 
-Do not upload an unencrypted production export through an unapproved channel. A technically successful import still requires business reconciliation.
+Use **Refresh status** to see progress, and **Abandon** to stop a migration you started by mistake. Plan the cutover for a quiet period and tell staff in advance.
 
-## Troubleshooting readiness
+## Import from Tabs3
 
-When a capability is unavailable, check provider identity, account tier, admin consent, scopes, credential health, selected storage, site/drive binding, and the last synchronization result. Reconnect only when renewal is necessary; repeated consent attempts can obscure the original fault.
+[Data import](/admin?tab=integrations&integration=data-import) loads a Tabs3 export bundle.
 
-Production acceptance also checks document-automation integrity. It fails when a staged generated file has an unresolved database/storage reconciliation record, or when an active PDF/DOCX template lacks its retained source path, filename, size, or SHA-256 evidence. Resolve the provider object and preview evidence deliberately; do not clear a reconciliation marker merely to make the check green. Recreate an invalid active template from the original source and complete its representative preview before reactivation.
+1. Run the approved Tabs3 export, and have the bundle and its **Passphrase** ready.
+2. Choose the **Accounting mode**: **LawHand native**, or **QuickBooks Online** if QuickBooks remains your ledger.
+3. Select the **Export bundle** and **Upload**. LawHand lists each table with its rows, checksum, and any warnings.
+4. Review the counts and warnings. Rehearse with a redacted or test bundle first.
+5. Select **Run** to import.
+6. Afterwards, reconcile contacts, matters, time, billing, and identifiers against the source, and keep the export and import evidence.
 
-Record provider identifiers and diagnostic timestamps in the restricted operations record, not in this client-delivered guide.
+Never upload an unencrypted production export through an unapproved channel. A technically successful import still needs business reconciliation.
 
-## Retention and revocation
+## Check provider app readiness
 
-Provider access and refresh tokens are encrypted. For cloud-bound matter files, durable source bytes live in the customer datastore. LawHand retains the control-plane records needed to operate the service: tenant/client/matter metadata, tasks, provider object identifiers, hashes/sizes, audit history, and—when enabled—captured email or extracted/indexed text. This is not a zero-customer-data architecture; it is a customer-owned document-content architecture.
+[Provider app readiness](/admin?tab=integrations&integration=readiness) shows **Cloud Integration Readiness** for the deployment: the **Environment** and the **Expected Redirect URIs**. Compare those URIs with your Google and Microsoft app registrations; anything marked **Missing** must be fixed in the provider's console before consent will work.
 
-Disconnecting or revoking the provider stops future successful API calls after revocation takes effect. It does not automatically delete already imported LawHand records. Confirm the tenant retention decision before disconnecting, and use the supported deletion process where removal is required.
+## Troubleshoot readiness
 
-LawHand never deletes or destructively renames a customer's cloud folders — not on disconnect, matter close, provider change, or tenant exit. Because the root and matter folders live in the customer's own account, a tenant that leaves keeps them. An XLSX handoff manifest of roots and matter folders is planned; until it ships, inventory the folders from **Document storage** before any LawHand-side cleanup. See [Cloud root ownership and tenant handoff](https://github.com/mattpainter701/lawhand/blob/main/docs/storage-root-ownership-and-handoff.md).
+When a feature is unavailable, check in order: the provider identity, the account tier, administrator consent, granted permissions, credential health, the selected storage, the site or library binding, and the last synchronization result. Reconnect only when renewal is actually needed; repeated consent attempts can hide the original fault.
+
+Production checks also cover document automation. They fail when a generated file has an unresolved storage record, or when an active PDF or Word template is missing its retained source file or its fingerprint. Resolve the underlying file deliberately; never clear a marker just to make a check pass. Recreate an invalid template from its original source and test it before publishing it again.
+
+Record provider identifiers and diagnostic timestamps in your restricted operations system, not in this guide.
+
+## Retention and disconnecting
+
+Provider tokens are stored encrypted. For cloud-bound matter files, the file contents live in your storage. LawHand keeps the records it needs to run: firm, client, and matter details, tasks, provider object identifiers, file hashes and sizes, audit history, and, when enabled, captured email and extracted or indexed text. It is a customer-owned document architecture, not a zero-data one.
+
+Disconnecting a provider stops future access; it does not delete records already imported. Confirm your retention decision before disconnecting, and use the supported deletion process when removal is required.
+
+LawHand never deletes or destructively renames your cloud folders: not on disconnect, matter close, provider change, or when your firm leaves. The folders stay in your account. Before any cleanup, inventory the root and matter folders from **Document storage**, and ask [LawHand support](/admin?tab=support) for the handoff procedure.
+
+## Related chapters
+
+- [Integrations](/admin?tab=guide&chapter=integrations)
+- [Onboarding & storage setup](/admin?tab=guide&chapter=onboarding-and-storage-setup)
+- [Cloud provider support](/admin?tab=guide&chapter=cloud-provider-support)

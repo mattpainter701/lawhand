@@ -1,113 +1,213 @@
 ---
 slug: document-automation-and-esignature
 title: Template Studio & e-signature
-description: Build controlled templates in Template Studio, generate reviewable drafts, and manage signature requests from the matter.
+description: Turn trusted documents into tested templates, prepare reviewed drafts into a matter, and send documents for signature from the matter.
 order: 90
-read_time: 9 min
+read_time: 16 min
 icon: sparkles
 ---
 
 # Template Studio & e-signature
 
-[Template Studio](/templates) turns approved Word or PDF source files into reusable templates and generated drafts. Matter-level signature tools then track requests and the signature queue. Existing `/templates` links remain supported.
+[Template Studio](/templates) turns the Word and PDF documents your firm already trusts into reusable templates. A template is built from a sample, tested with real matter data, and published; after that, anyone can prepare a reviewed copy straight into a matter and send it for signature.
 
-## Studio home and workspaces
+Every step keeps a person in control: detected fields are suggestions, Smart Fill values are reviewed before saving, and nothing is sent for signature until you confirm it.
 
-Studio home groups the templates returned by the current library response into **Continue setup**, **Needs attention**, **Ready to generate**, and **Recent templates**. The count badges use the library summary returned by the server; a short visible list is not a promise that every matching template is on the current page.
+## Studio home
 
-Choose **Open in Studio** to use the persistent `/templates/{template-id}/studio` workspace. Starting at `/templates/new` opens the source-upload workflow, while `/templates/new?mode=manual` opens the existing manual template form. A successful creation opens the new template's persistent workspace when the server returns its ID. Closing an unfinished creation returns to Studio home, so a copied `/templates/new` link remains recoverable.
+Open [Template Studio](/templates).
 
-The **Test**, **Versions**, and **Activity** workspace URLs are reserved route shells in this phase. They accurately state that their server records and controls are not yet available; they do not create simulated history, tests, or versions. Draft, proposal, and snapshot focus links likewise return to the template workspace with a status message until those server contracts ship.
+![Template Studio home with the Upload Sample button, the library summary, the standard client paperwork and sample form library cards, and the Continue setup, Needs attention, Awaiting publish, and Published queues above the library tabs](/guide-assets/template-studio-home.webp "Template Studio home")
 
-## Template library
+1. **Upload Sample** starts a template from a Word or PDF sample. **New Template** starts one by hand.
+2. **Continue setup** lists drafts still being set up or tested. **Needs attention** lists templates whose source file is missing.
+3. **Published** lists templates your team can use. **Awaiting publish** lists tested drafts waiting to be published.
+4. The tabs switch between the **Templates** library, the shared **Field Library**, and **Generate / Smart Fill**.
 
-The **Templates** tab lists available templates and their readiness. Search by title or description, narrow the library by status or category, and move through the paged results instead of loading the entire firm library at once. The health cards distinguish templates that are ready, still in draft, or missing a retained source file. A **Needs source** template must be recreated from the original document before it can generate anything.
+The cards across the top count the whole library: **Library** (every template), **Ready** (available to generate), **Drafts** (to test and publish), and **Attention** (missing source files). The queue counts also cover the whole library, even when a queue shows only its first few templates.
 
-Before activation, verify the name, practice context, source file, detected fields, variable schema, branding, warnings, and preview. Keep inactive templates out of production generation until a responsible reviewer approves them.
+In the **Templates** tab, search by title or description, filter by status or category, and page through results. Select **Open in Studio** on a template to open its workspace at `/templates/{template-id}/studio`. **Template sets** opens the sets described [below](#template-sets).
 
-Use clear variable names and stable field meanings. A field such as `client_name` should not alternate between an individual, organization, and billing contact. For PDFs, confirm field placement and appearance on every affected page.
+### What a template's status means
 
-LawHand supports ordinary PDFs, AcroForm controls, scans/images converted to a safe PDF, and supported DOCX sources. It is a controlled template and field-placement workflow, not a general PDF authoring tool. Password-protected files, dynamic XFA forms, PDF scripts/actions, embedded attachments, and other active content are rejected. Export those files to a standard static PDF or DOCX before creating a template.
+| Status | Meaning |
+| --- | --- |
+| **Draft** | Being set up; not available to your team. |
+| **Test failed** | The latest test found a problem. Fix it and test again. |
+| **Tested · awaiting publish** | The current version passed its test and is ready to publish. |
+| **Published v3** (for example) | Version 3 is available to your team. |
+| **Paused** | Taken out of use by the firm. |
+| **Needs source** | The original sample file is no longer available; recreate the template from the original document. |
 
-### Plaintiff and defendant field methodology
+## Build a template from a sample
 
-Caption variables come from contacts assigned the exact **Plaintiff** or **Defendant** role on the matter's **Parties** tab:
+### Upload the sample
 
-| Canonical variable | Meaning |
+1. Select **Upload Sample** (or go to `/templates/new`).
+2. Drop the file on **Sample document**, or browse for it. You can upload one PDF, DOCX, TXT, PNG, JPEG, TIFF, BMP, or WebP file of up to 50 MB.
+3. Wait while LawHand renders the document and detects fields.
+
+For reliable detection, use PDFs with real form fields where you can. For scans, use upright, high-contrast pages and include a filled sample when possible.
+
+> [!WARNING]
+> Password-protected files, dynamic XFA forms, PDF scripts or actions, and embedded attachments are rejected. Export the file as a standard static PDF or DOCX first. LawHand is a controlled template and field-placement tool, not a general PDF editor.
+
+To write a template from scratch instead, select **New Template** (`/templates/new?mode=manual`). Closing an unfinished template returns you to Studio home.
+
+### Review the fields
+
+Under **Review your document and fields**, LawHand highlights what it detected. Detection is a starting point: a high field count does not prove that the sample's own names and amounts are gone.
+
+1. Work through **Next field to review**. Each field shows whether it still **Needs review**, was **Reviewed against source**, or is **Excluded**. An **AI proposal · verify** label marks a suggestion to check with extra care.
+2. To add a field, highlight the exact words on the document and select **Make selection a field**. Every matching occurrence of that exact text uses the same value.
+3. For each field, give it a label your team understands, such as "Client name" or "Monthly payment", and choose what it **Fills from**.
+4. Use **When to use this template** to describe the scenario, such as "divorce with children".
+5. Check every page for blanks you have not mapped and for names or amounts that belong only to the sample.
+
+**Help with setup** in the workspace repeats these steps.
+
+### Mark fields in a Word document
+
+You can prepare a Word file before uploading it. The **Field Library** tab lists shared fields and what each fills from.
+
+- Use a meaningful placeholder, such as `{{client_name}}` or `{{retainer_amount}}`, then choose its **Fills from** source in Studio.
+- Repeat the exact same placeholder for the same fact, and give different facts different names, such as `{{retainer_amount}}` and `{{hourly_rate}}`.
+- Uppercase brackets such as `[CLIENT NAME]` also work. Repeated generic brackets such as `[AMOUNT]` are reviewed one by one. Bold text, underlining, and blank lines are hints only.
+- Keep each placeholder in one paragraph with consistent formatting.
+
+Keep a field's meaning stable: `client_name` should not be an individual in one template and a company's billing contact in another. Custom client and matter fields appear in the library when they are active; fields your firm marks sensitive are not available in Studio.
+
+### Test the draft
+
+1. Open the **Test** view of the template's workspace.
+2. Select **Open test values and preview**, choose a matter for Smart Fill, and review any missing details and their source evidence.
+3. Inspect every page of the output: names, dates, amounts, conditional sections, tables, page breaks, headers, footers, and signature blocks.
+
+The **Test** view shows the result: **Version 4 passed** (for example), **Latest test failed**, or **Not tested since the latest edit**. A passing test belongs to one exact version; any later field, wording, or logic edit needs a new test.
+
+### Publish
+
+When the tested version is right, select **Publish tested version**. Your team can then use it with **Use on a matter**. If you edit a published template later, the published version stays available to your team until you test and publish the new one.
+
+**Versions** lists every saved draft and published state, newest first, and can restore an earlier one without retyping it. **Activity** shows what changed and when. Record why you changed a template, and never replace a source file in a way that makes earlier documents impossible to explain.
+
+### Plaintiff and defendant fields
+
+Caption fields come from contacts given the exact **Plaintiff** or **Defendant** role in the matter's **Parties** panel:
+
+| Variable | Meaning |
 | --- | --- |
 | `{{plaintiff_name}}` / `{{defendant_name}}` | The primary contact for that role, or the first listed contact when no primary is marked |
-| `{{plaintiff_names}}` / `{{defendant_names}}` | Every contact for that role, with the primary first and remaining contacts in listed order, separated by semicolons |
-| `{{plaintiff_email}}`, `{{plaintiff_phone}}` and address fields | Contact details for the singular plaintiff selected above |
-| `{{defendant_email}}`, `{{defendant_phone}}` and address fields | Contact details for the singular defendant selected above |
+| `{{plaintiff_names}}` / `{{defendant_names}}` | Every contact for that role, primary first, separated by semicolons |
+| `{{plaintiff_email}}`, `{{plaintiff_phone}}` and address fields | Details for the single plaintiff chosen above |
+| `{{defendant_email}}`, `{{defendant_phone}}` and address fields | Details for the single defendant chosen above |
 
-The address suffixes are `street`, `city`, `state`, `zip`, and `country`. For example, use `{{defendant_city}}`. The shorter `{{plaintiff}}` and `{{defendant}}` aliases are accepted, but new templates should use the explicit `_name` variables.
+The address suffixes are `street`, `city`, `state`, `zip`, and `country`, as in `{{defendant_city}}`. The shorter `{{plaintiff}}` and `{{defendant}}` still work, but new templates should use the `_name` forms.
 
-`client_name` always means the matter's client contact; it does not mean plaintiff. `counterparty` is the matter's general counterparty summary and does not mean defendant. For an older matter with no structured caption parties, Smart Fill may infer a plaintiff/defendant pair only when **Represented Side / Our Role** explicitly identifies one side. Those inferred values have reduced confidence, require review, and should be replaced by structured Parties data.
+`client_name` always means the matter's client, not the plaintiff, and `counterparty` is the matter's general counterparty summary, not the defendant. For an older matter without caption parties, Smart Fill may infer a plaintiff and defendant only when **Represented Side / Our Role** names one side; those values are marked for review and should be replaced by adding the parties. See [Define caption parties](/guide/matters-and-documents#define-caption-parties).
 
-## Generate and Smart Fill
+## Standard client paperwork
 
-The **Generate / Smart Fill** tab gathers values and prepares a draft. Select the correct template and matter, review proposed values, resolve missing required fields, and inspect the generated preview.
+**Add the standard client paperwork** on Studio home adds a standard fee agreement and client intake form to the firm library as drafts. Fee, trust-account, and contingency terms differ by jurisdiction, so an attorney must review, complete, and approve them before they are sent. A template of the same name that your firm already has is left untouched. See [Send the client paperwork](/guide/intake-and-call-reception#send-the-client-paperwork).
 
-Before saving:
+## Prepare a document into a matter
 
-1. compare names, pronouns, entities, dates, amounts, and addresses with source records;
-2. verify that conditional sections appeared correctly;
+1. Open a published template and select **Use on a matter**, or start from the matter or from [Prepare](/templates/prepare).
+2. Choose the matter. LawHand fills the fields it can find from the matter.
+3. Review each value, fill in anything missing, and mark values as verified.
+4. Inspect the exact preview.
+5. Save. The document is saved to the matter's documents, in the folder named in the link when there is one.
+
+After saving, the same page can create an e-signature request for the new document. See [Send a document for signature](#send-a-document-for-signature).
+
+Before saving any generated document:
+
+1. compare names, pronouns, entities, dates, amounts, and addresses with the source records;
+2. check that conditional sections appeared correctly;
 3. inspect page breaks, tables, signatures, headers, and footers;
 4. remove placeholders and drafting notes; and
-5. confirm the destination matter and filename.
+5. confirm the destination matter and file name.
 
-Smart Fill and AI analysis accelerate assembly; they do not approve legal content.
+Smart Fill and AI analysis speed up assembly; they do not approve legal content. The **Generate / Smart Fill** tab in Studio offers the same review for a template and matter you choose there.
 
-## Prepare a document from Studio into a matter
+### Documents in progress
 
-[Prepare](/templates/prepare) takes a published template from Template Studio, the library, or a matter straight to a chosen matter: select the matter, review the filled fields and the exact preview, and save the generated document into that matter's documents. Opening the route preselects the template, matter, and destination folder named in the link; the shortcut links elsewhere in the app use the same [Prepare](/templates/prepare) address.
+What you type on the Prepare page is kept for fourteen days, encrypted, with the fields you marked verified. Only the person who started it can open it.
 
-After the save, the same page can create and send an e-signature request for the new document. Recipients, roles, and dates come from the same signature form used on the matter, so check every signer and the placement plan before sending. A request is only sent when you confirm it.
-
-## Documents in progress
-
-What you type on the [Prepare](/templates/prepare) page is kept for fourteen days, encrypted, together with the fields you marked verified. The matter's Documents tab lists your documents in progress with **Resume** and **Discard**; a previewed packet can be saved in the background and each document reports Saved or why not. Only the person who prepared a session can open it.
-
-Saving a single document closes its draft and removes it from the in-progress list. If the file saves but the draft cannot close, keep the page open and choose **Retry closing this draft**. That retry keeps the existing file and finishes closing the draft without generating another copy.
-
-Wait for **Answers saved** before closing the browser. If saving or restoring fails, keep the page open and use **Retry**. The Prepare address keeps the draft reference so refreshing the page can restore the same answers.
-
-## Fill a sample form
-
-In the sample form library, choose **Fill**, then **Fill from a matter**. Search by client name, matter name or number. LawHand fills the values it can find; use **Missing** to focus on unanswered fields, or **All** to review everything. Changing to a different matter clears the previous matter's answers.
-
-Keep the source PDF beside the questions when a label needs context. Choose **Preview filled PDF**, review every page, then **Download filled PDF**. Changing an answer clears that preview so the downloaded copy matches the values you reviewed. A sample download does not create a firm template or save a document to the matter.
-
-Samples with missing source details or ambiguous labels still need source review. A numbered field label identifies a location, not a verified legal meaning. Check the form's issuing authority, edition and suitability before using it.
-
-## Read details from a completed form
-
-On the matter's Documents tab, open **Read details from a document** and choose the saved source. **Find details** looks for supported information in the document. If the document was generated from a known template, choose its **Printed form** and **Read against the printed form** to compare the answers with the original field locations.
-
-Reading a scan can take several minutes. Keep the page open while it reads; if a timeout or connection error appears, retry when the connection is available. Review each proposed value against its source before accepting it. Reading alone does not change the matter's details.
+- Wait for **Answers saved** before closing the browser. If saving or restoring fails, keep the page open and use **Retry**. Refreshing the page restores the same answers.
+- The matter's **Documents** section lists **Documents in progress** with **Resume** and **Discard**.
+- Saving a document closes its draft. If the file saves but the draft cannot close, keep the page open and choose **Retry closing this draft**; it finishes closing without creating another copy.
 
 ## Documents from a workflow
 
-A workflow template can list documents to prepare beside its checklist. When someone approves a workflow run on a matter, each listed document is pre-filled from the matter and handed to its assignee as a **Prepare** task that opens the session under Documents in progress. Nothing is generated, saved or sent by the workflow itself: the assignee reviews, verifies and saves the document as usual, and rolling the run back cancels the task and discards an unsaved session.
+A workflow template can list documents to prepare alongside its checklist. When someone approves a workflow run on a matter, each listed document is pre-filled from the matter and given to its assignee as a **Prepare** task that opens the draft under **Documents in progress**. The workflow itself generates, saves, and sends nothing: the assignee reviews, verifies, and saves the document as usual. Rolling the run back cancels the task and discards an unsaved draft.
 
 ## Template sets
 
-A [template set](/templates/sets) groups the templates one matter's packet needs, such as a fee agreement, an engagement letter, and an intake form, so a single interview fills them all. Preparing a set runs the same fill, review, preview, and save steps as a single template, once per member; each member is saved to the matter on its own and can be sent for signature from the set. Nothing is generated or sent without a person reviewing and confirming each document.
+A [template set](/templates/sets) groups the templates one matter's packet needs, such as a fee agreement, an engagement letter, and an intake form, so one interview fills them all. Preparing a set runs the same fill, review, preview, and save steps for each member; each member is saved to the matter separately and can be sent for signature from the set.
 
-Dropdown suggestions must match an available option. Recognized state names and abbreviations are matched automatically; an unmatched suggestion stays missing until you choose an answer.
+A suggested dropdown answer must match one of the options. Recognized state names and abbreviations are matched automatically; an unmatched suggestion stays missing until you choose an answer.
 
-## Version and activation discipline
+## Fill a sample form
 
-When source language changes, create or update the controlled template through the supported workflow. Record what changed and re-test representative scenarios. Do not replace a template file in a way that makes prior generated documents impossible to explain.
+The **Sample form library** on Studio home holds reference forms, such as powers of attorney, leases, and court forms. They are reference material, not legal advice.
 
-## E-signature from a matter
+1. Filter by **Type** or **Jurisdiction**, or search by form title. **Preview** shows the source form.
+2. Choose **Fill**, then **Fill from a matter**, and search by client name, matter name, or number. Changing to another matter clears the previous matter's answers.
+3. Use **Missing** to focus on required answers that are still empty, **Optional** or **Filled** to narrow the list, or **All** to review everything. Keep the source PDF beside the questions when a label needs context.
+4. Choose **Preview filled PDF** and review every page, then **Download filled PDF**. Changing an answer clears the preview, so the download always matches what you reviewed.
 
-Open [My Matters](/matters), choose the matter, and use its document/signature area to create a request. Select the final approved document, recipients, signing order if supported, message, and completion expectations.
+A sample download does not create a firm template or save anything to the matter. A numbered field label identifies a location on the form, not a verified legal meaning: check the form's issuing authority, edition, and suitability before using it. When you pick a template from a matter, **Add to firm** turns a sample into a firm template that you then set up and test.
 
-Verify recipient email addresses and authority before sending. A signature queue can show pending and completed work, but the responsible professional must still confirm execution requirements, identity, attachments, and any notarization or witness rules.
+## Read details from a completed form
 
-## Failed or revised requests
+1. On the matter's **Documents** section, open **Read details from a document** and choose the saved file.
+2. Select **Find details**. If the document came from a known template, choose its **Printed form** and select **Read against the printed form** to compare the answers with the original field positions.
+3. Review each proposed value against the document before accepting it.
 
-If a document changes after sending, do not ask a recipient to sign a superseded version. Cancel or supersede the request through the approved process, preserve the history, generate the corrected document, and send a new request with a clear explanation.
+Reading a scan can take several minutes; keep the page open, and retry if a timeout or connection error appears. Reading alone never changes the matter's details.
 
-Treat downloaded signed documents and audit evidence according to the matter's retention and filing policy.
+## Send a document for signature
+
+Clients sign in their client portal, inside the document. Requests are managed from the **E-Signature** panel on the matter's **Overview**.
+
+1. Under **Document to sign**, choose a final document from **Select document…**, or **Upload a prepared PDF**.
+2. Select **Review and send**.
+3. Select **Add signer** for each person: enter the **Signer email** and choose the role (**Client**, **Co-client**, **Attorney countersigner**, **Witness**, or **Signer**).
+4. Tick **Require signers to complete in listed order** if the order matters.
+5. Under **Review PDF signing positions**, check **Where each signer will sign**. Fields in the PDF and printed signature lines are detected automatically; place a signature, initials, or date block for a signer only when the form has neither.
+6. Tick **I have checked where each signer will sign**.
+7. Set when the request **Expires**, the **Reminders** (days before expiry, such as `7,1`), and optionally **Due from client**, which creates a follow-up task.
+8. Select **Send for signature**.
+
+Verify every signer's email address and authority before sending. The software records the signing; the responsible professional still confirms execution requirements, identity, attachments, and any notarization or witness rules.
+
+### Track requests
+
+The **Signature queue** shows each request as **Awaiting**, **Partial**, or **Done**, and flags overdue requests.
+
+- **Resend** sends the invitation again to the signers who can act now.
+- **Void** cancels a request.
+- When a client uploads a signed paper copy instead, it appears as **Signed copy uploaded — review**. Open the copy, then **Accept** it to file it to the matter, or **Reject** it with a reason that tells the client what to redo.
+
+### Correct a request
+
+If a document changes after you send it, never ask anyone to sign the superseded version. **Void** the request, keep its history, prepare the corrected document, and send a new request with a clear explanation. Keep signed documents and signing evidence under the matter's retention and filing policy.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| **Use on a matter** is disabled | The template has no published version, its source is missing, or you have unsaved changes | Save, test, and select **Publish tested version**. |
+| **Publish tested version** is missing | The current version has not passed a test, or it is already published | Open **Test** and run **Open test values and preview**. |
+| A template shows **Needs source** | The original sample file is no longer retained | Recreate the template from the original document. |
+| An upload is rejected | The file is protected, dynamic, scripted, has attachments, or is over 50 MB | Export a standard static PDF or DOCX and upload that. |
+| A Smart Fill value is wrong | The matter record is incomplete or the field fills from the wrong source | Correct the matter record, or change the field's **Fills from**, then test again. |
+| A plaintiff or defendant field is blank | No contact has that exact role on the matter | Add the party in **Matter settings** > **People**. |
+| A signer never received the request | The email is wrong, or the invitation was filtered | Check the address, then **Resend**. |
+
+## Related chapters
+
+- [Matters & documents](/guide/matters-and-documents)
+- [Intake & call reception](/guide/intake-and-call-reception)
+- [Teams & client portals](/guide/teams-and-client-portals)

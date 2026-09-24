@@ -24,6 +24,7 @@ describe('firm email intake', () => {
     show()
     expect(await screen.findByText('f-firm@intake.example.com')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Needs review (1)' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'How email tasks work' })).toHaveAttribute('href', '/guide/email-intake')
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss tip' }))
     expect(screen.queryByText('f-firm@intake.example.com')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show forwarding tip' }))
@@ -80,6 +81,8 @@ describe('firm email intake', () => {
     api.get.mockResolvedValue({ data: { ...settings, alias: null } })
     show({ admin: true })
     await userEvent.click(await screen.findByRole('button', { name: 'Enable firm address' }))
+    // Administrators reach their own chapter from the Integrations section header instead.
+    expect(screen.queryByRole('link', { name: 'How email tasks work' })).not.toBeInTheDocument()
     expect(api.post.mock.calls[0][1].action).toBe('enable')
     await userEvent.click(await screen.findByRole('button', { name: 'Replace address' }))
     expect(api.post).toHaveBeenCalledTimes(1)
