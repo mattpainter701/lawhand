@@ -268,9 +268,23 @@ export default function IntegrationsPanel() {
   const handleDisconnect = async (provider) => {
     const label = provider === 'google' ? 'Google' : 'Microsoft 365'
     const storage = provider === 'google' ? 'Google Drive' : 'OneDrive or SharePoint'
+    const staff = data?.[provider]?.user_tokens?.total || 0
+    // Disconnect is firm-wide and removes every personal connection, so it
+    // needs a typed acknowledgement rather than a single click.
     const confirmed = await confirmAction({
-      title: `Disconnect ${label}?`,
-      message: `LawHand stops using ${label} for the whole firm. Saving matter documents to ${storage}, email filing, sending from connected mailboxes and calendar updates stop working until someone reconnects, and every staff member's personal ${label} connection is removed too. Files already in ${storage} stay where they are.`,
+      title: `Disconnect ${label} for the whole firm?`,
+      message: `This removes LawHand's ${label} access for everyone at the firm. Reconnecting later needs an administrator to connect again and each person to reconnect their own account.`,
+      details: [
+        `Saving matter documents to ${storage} stops. Files already there stay where they are.`,
+        'Email filing, sending from connected mailboxes and calendar updates stop.',
+        staff > 0
+          ? `${staff} staff ${staff === 1 ? 'member’s' : 'members’'} personal ${label} ${staff === 1 ? 'connection is' : 'connections are'} removed as well.`
+          : `Any staff member's personal ${label} connection is removed as well.`,
+        provider === 'google'
+          ? 'LawHand also revokes its access at Google.'
+          : 'LawHand deletes its Microsoft sign-ins. To remove LawHand completely, also remove it under Enterprise applications in Microsoft Entra.',
+      ],
+      requireText: `disconnect ${label}`,
       confirmLabel: `Disconnect ${label}`,
       destructive: true,
     })

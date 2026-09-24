@@ -428,7 +428,7 @@ describe('IntegrationsPanel account modes and disconnect', () => {
     expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations&account_mode=personal')
   })
 
-  it('disconnects only after the administrator confirms the firm-wide consequences', async () => {
+  it('disconnects only after the administrator types the firm-wide acknowledgement', async () => {
     getAdminPermissions.mockResolvedValueOnce(permissions())
       .mockResolvedValueOnce(permissions({ overall_health: 'disconnected', google: disconnected('google') }))
     disconnectCloudProvider.mockResolvedValue({ status: 'disconnected', provider: 'google' })
@@ -437,14 +437,25 @@ describe('IntegrationsPanel account modes and disconnect', () => {
     await screen.findByText('Integrations: Healthy')
 
     await user.click(screen.getByRole('button', { name: 'Disconnect' }))
-    const dialog = screen.getByRole('alertdialog')
-    expect(dialog).toHaveTextContent(/personal Google connection is removed too/)
-    expect(dialog).toHaveTextContent(/Files already in Google Drive stay where they are/)
+    let dialog = screen.getByRole('alertdialog', { name: 'Disconnect Google for the whole firm?' })
+    const details = within(dialog).getByTestId('confirm-details')
+    expect(details).toHaveTextContent(/Files already there stay where they are/)
+    // healthyGoogle has three personal connections; the dialog names the count.
+    expect(details).toHaveTextContent(/3 staff members’ personal Google connections are removed as well/)
+    expect(details).toHaveTextContent(/revokes its access at Google/)
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(disconnectCloudProvider).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Disconnect' }))
-    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Disconnect Google' }))
+    dialog = screen.getByRole('alertdialog')
+    const confirmButton = within(dialog).getByRole('button', { name: 'Disconnect Google' })
+    expect(confirmButton).toBeDisabled()
+    const phrase = within(dialog).getByLabelText(/to confirm/)
+    await user.type(phrase, 'disconnect')
+    expect(confirmButton).toBeDisabled()
+    await user.type(phrase, ' GOOGLE ')
+    expect(confirmButton).toBeEnabled()
+    await user.click(confirmButton)
     expect(disconnectCloudProvider).toHaveBeenCalledWith('google')
     expect(await screen.findByText('Integrations: No integrations connected')).toBeInTheDocument()
   })
