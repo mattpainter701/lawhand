@@ -102,6 +102,21 @@ const revokedGoogle = {
   last_refresh_error: '400 invalid_grant Token has been expired or revoked.',
 }
 
+// A connected Microsoft tenant the panel reports without per-user counts.
+const connectedMicrosoft = {
+  connected: true,
+  health: 'healthy',
+  account_type: 'business',
+  service_account_email: 'admin@firm.test',
+  required_scopes: ['User.Read.All', 'Mail.Read'],
+  granted_scopes: ['User.Read.All', 'Mail.Read'],
+  missing_required: [],
+  extra_scopes: [],
+  user_count: 4,
+  last_sync_status: 'ok',
+  capabilities: {},
+}
+
 function permissions(overrides = {}) {
   return {
     overall_health: 'healthy',
@@ -144,6 +159,29 @@ describe('ProviderCard states', () => {
     render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={disconnected('google')} otherConnected />)
     expect(screen.getByText('Only needed if your firm also uses Google Workspace.')).toBeInTheDocument()
     expect(screen.getByText(/What Google Workspace will be asked to allow/).closest('details')).not.toHaveAttribute('open')
+  })
+
+  it('lists what will be asked from the missing list when no required list is sent', () => {
+    const info = {
+      ...disconnected('google'),
+      required_scopes: [],
+      missing_required: ['openid', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/tasks'],
+    }
+    render(<ProviderCard {...cardProps} scopeLabels={{ 'https://www.googleapis.com/auth/drive': 'Read and write Drive' }} name="Google Workspace" provider="google" info={info} />)
+    const asks = screen.getByTestId('connect-asks-google')
+    expect(within(asks).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(asks).getByText('Read and write Drive')).toBeInTheDocument()
+    expect(within(asks).getByText('https://www.googleapis.com/auth/tasks')).toBeInTheDocument()
+    expect(within(asks).queryByText('openid')).toBeNull()
+  })
+
+  it('still offers Connect, without an empty permission list, when no scopes are sent at all', () => {
+    const { required_scopes: _required, missing_required: _missing, ...info } = disconnected('google')
+    render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={info} />)
+    expect(screen.getByText('Not connected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument()
+    expect(screen.queryByTestId('connect-asks-google')).toBeNull()
+    expect(screen.queryByText(/will be asked to allow/)).toBeNull()
   })
 
   it('renders a healthy provider with granted scopes, extra scopes and sync actions', () => {
@@ -190,6 +228,21 @@ describe('ProviderCard states', () => {
     expect(within(storage).getByText('Reconnect needed')).toBeInTheDocument()
     expect(within(storage).getByText('Not granted: Read & write Google Drive.')).toBeInTheDocument()
     expect(within(screen.getByTestId('capability-directory_sync')).getByText('Available')).toBeInTheDocument()
+  })
+
+  it('names a declined permission it has no label for by its scope', () => {
+    const drive = 'https://www.googleapis.com/auth/drive'
+    const info = {
+      ...healthyGoogle,
+      health: 'missing_scopes',
+      missing_required: [drive],
+      granted_scopes: GOOGLE_REQUIRED.slice(0, -1),
+    }
+    render(<ProviderCard {...cardProps} name="Google Workspace" provider="google" info={info} />)
+    expect(screen.getByTestId('missing-scopes-google')).toHaveTextContent(`Not granted: ${drive}.`)
+    const storage = screen.getByTestId('capability-cloud_storage')
+    expect(within(storage).getByText('Reconnect needed')).toBeInTheDocument()
+    expect(within(storage).getByText(`Not granted: ${drive}.`)).toBeInTheDocument()
   })
 
   it('leads with the remedy and hides the scope tally when the grant is revoked', () => {
@@ -424,7 +477,29 @@ describe('IntegrationsPanel account modes and disconnect', () => {
     }))
     const user = userEvent.setup()
     renderPanel()
-    await user.click(await screen.findByRole('button', { name: /Solo practice on personal Gmail/ }))
+    const google = await screen.findByTestId('provider-card-google')
+    // The plain Connect stays in Workspace mode; only the solo link asks for personal.
+    await user.click(within(google).getByRole('button', { name: 'Connect' }))
+    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations')
+    await user.click(within(google).getByRole('button', { name: /Solo practice on personal Gmail/ }))
+    expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations&account_mode=personal')
+  })
+
+  it('names a personal Microsoft account and never adds the Gmail account mode to its link', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      microsoft: { ...connectedMicrosoft, account_type: 'consumer' },
+      google: { ...healthyGoogle, account_type: 'personal', account_label: 'Personal Google (Gmail)' },
+    }))
+    const user = userEvent.setup()
+    renderPanel()
+    const microsoft = await screen.findByTestId('provider-card-microsoft')
+    expect(within(microsoft).getByRole('heading', { name: 'Microsoft (personal account)' })).toBeInTheDocument()
+    expect(within(microsoft).queryByRole('heading', { name: 'Microsoft 365' })).toBeNull()
+
+    await user.click(within(microsoft).getByRole('button', { name: 'Re-authorize' }))
+    expect(window.location.href).toBe('https://api.test/api/integrations/microsoft/connect?intent=admin&return_to=integrations')
+
+    await user.click(within(screen.getByTestId('provider-card-google')).getByRole('button', { name: 'Re-authorize' }))
     expect(window.location.href).toBe('https://api.test/api/integrations/google/connect?intent=admin&return_to=integrations&account_mode=personal')
   })
 
@@ -456,8 +531,110 @@ describe('IntegrationsPanel account modes and disconnect', () => {
     await user.type(phrase, ' GOOGLE ')
     expect(confirmButton).toBeEnabled()
     await user.click(confirmButton)
+    expect(disconnectCloudProvider).toHaveBeenCalledOnce()
     expect(disconnectCloudProvider).toHaveBeenCalledWith('google')
     expect(await screen.findByText('Integrations: No integrations connected')).toBeInTheDocument()
+  })
+
+  it('disconnects Microsoft 365 with its own phrase and consequences, and never on Escape or a wrong phrase', async () => {
+    getAdminPermissions.mockResolvedValueOnce(permissions({ microsoft: connectedMicrosoft, google: disconnected('google') }))
+      .mockResolvedValueOnce(permissions({ overall_health: 'disconnected', google: disconnected('google') }))
+    disconnectCloudProvider.mockResolvedValue({ status: 'disconnected', provider: 'microsoft' })
+    const user = userEvent.setup()
+    renderPanel()
+    const microsoft = await screen.findByTestId('provider-card-microsoft')
+    expect(within(microsoft).getByRole('heading', { name: 'Microsoft 365' })).toBeInTheDocument()
+
+    await user.click(within(microsoft).getByRole('button', { name: 'Disconnect' }))
+    expect(screen.getByRole('alertdialog', { name: 'Disconnect Microsoft 365 for the whole firm?' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(disconnectCloudProvider).not.toHaveBeenCalled()
+
+    await user.click(within(microsoft).getByRole('button', { name: 'Disconnect' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Disconnect Microsoft 365 for the whole firm?' })
+    const details = within(dialog).getByTestId('confirm-details')
+    expect(details).toHaveTextContent('Saving matter documents to OneDrive or SharePoint stops. Files already there stay where they are.')
+    // No per-user counts reported, so the dialog does not invent a number.
+    expect(details).toHaveTextContent("Any staff member's personal Microsoft 365 connection is removed as well.")
+    expect(details).toHaveTextContent(/remove it under Enterprise applications in Microsoft Entra/)
+    expect(details).not.toHaveTextContent(/revokes its access at Google/)
+
+    const phrase = within(dialog).getByLabelText('Type disconnect Microsoft 365 to confirm')
+    const confirmButton = within(dialog).getByRole('button', { name: 'Disconnect Microsoft 365' })
+    // The other provider's phrase does not unlock this one, by click or by Enter.
+    await user.type(phrase, 'disconnect Google{Enter}')
+    expect(confirmButton).toBeDisabled()
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(disconnectCloudProvider).not.toHaveBeenCalled()
+
+    await user.clear(phrase)
+    await user.type(phrase, 'disconnect microsoft 365')
+    expect(confirmButton).toBeEnabled()
+    await user.click(confirmButton)
+    expect(disconnectCloudProvider).toHaveBeenCalledOnce()
+    expect(disconnectCloudProvider).toHaveBeenCalledWith('microsoft')
+    expect(await screen.findByText('Integrations: No integrations connected')).toBeInTheDocument()
+    expect(getAdminPermissions).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the card and says what to do when the disconnect request fails', async () => {
+    getAdminPermissions.mockResolvedValue(permissions({
+      google: { ...healthyGoogle, user_tokens: { total: 1, healthy: 1, needs_reauth: 0 } },
+    }))
+    let failDisconnect
+    disconnectCloudProvider.mockReturnValue(new Promise((_resolve, reject) => { failDisconnect = reject }))
+    const user = userEvent.setup()
+    renderPanel()
+    await screen.findByText('Integrations: Healthy')
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Disconnect Google for the whole firm?' })
+    expect(within(dialog).getByTestId('confirm-details')).toHaveTextContent('1 staff member’s personal Google connection is removed as well.')
+    await user.type(within(dialog).getByLabelText(/to confirm/), 'disconnect google')
+    await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }))
+
+    expect(disconnectCloudProvider).toHaveBeenCalledOnce()
+    expect(disconnectCloudProvider).toHaveBeenCalledWith('google')
+    expect(screen.getByRole('button', { name: 'Disconnecting…' })).toBeDisabled()
+
+    failDisconnect(new Error('boom'))
+    expect(await screen.findByText('Failed to disconnect Google. Reload this page to check its status, then try again.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled()
+    expect(screen.getByText('Integrations: Healthy')).toBeInTheDocument()
+    expect(getAdminPermissions).toHaveBeenCalledOnce()
+  })
+
+  it('confirms a completed connect above the cards and lets the administrator dismiss it', async () => {
+    window.location.search = '?tab=integrations&integration=cloud&connected=google'
+    getAdminPermissions.mockResolvedValue(permissions())
+    const user = userEvent.setup()
+    renderPanel()
+    const notice = await screen.findByTestId('connect-return')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('Google connected. Check the card below: anything that was not granted is listed there.')
+
+    await user.click(within(notice).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByTestId('connect-return')).toBeNull()
+    expect(screen.getByText('Integrations: Healthy')).toBeInTheDocument()
+  })
+
+  it('reports a failed connect as an alert for the provider the callback named', async () => {
+    window.location.search = '?error=consent_required&provider=microsoft'
+    getAdminPermissions.mockResolvedValue(permissions())
+    renderPanel()
+    const notice = await screen.findByRole('alert')
+    expect(notice).toHaveAttribute('data-testid', 'connect-return')
+    expect(notice).toHaveTextContent('Microsoft 365 needs an administrator to approve LawHand before this account can connect.')
+  })
+
+  it('falls back to a generic failure message for an error code it does not know', async () => {
+    window.location.search = '?error=server_error&provider=google'
+    getAdminPermissions.mockResolvedValue(permissions())
+    renderPanel()
+    const notice = await screen.findByRole('alert')
+    expect(notice).toHaveTextContent('The Google connection could not be completed. No connection was saved; try again.')
+    expect(notice).not.toHaveTextContent('server_error')
   })
 
   it('opens document storage on its own when a connected firm cannot save yet', async () => {
@@ -490,6 +667,19 @@ describe('readConnectReturn', () => {
     expect(readConnectReturn('')).toBeNull()
     expect(readConnectReturn(undefined)).toBeNull()
   })
+
+  it('uses a generic message for unknown codes and never echoes the code from the URL', () => {
+    expect(readConnectReturn('?error=Call%20support%20at%20555&provider=microsoft')).toEqual({
+      tone: 'error',
+      text: 'The Microsoft 365 connection could not be completed. No connection was saved; try again.',
+    })
+  })
+
+  it('never reports success when the callback carried an error without a known provider', () => {
+    expect(readConnectReturn('?error=access_denied&connected=google')).toBeNull()
+    expect(readConnectReturn('?error=access_denied&provider=zoom')).toBeNull()
+    expect(readConnectReturn('?error=access_denied')).toBeNull()
+  })
 })
 
 describe('plain-language helpers', () => {
@@ -506,6 +696,12 @@ describe('plain-language helpers', () => {
     expect(describeProviderError('503 upstream')).toMatch(/did not respond/)
     expect(describeProviderError('403 Forbidden')).toMatch(/refused access/)
     expect(describeProviderError('something odd')).toBe('The provider returned an error.')
+  })
+
+  it('falls back to the generic line when the provider sent no error text', () => {
+    expect(describeProviderError(null)).toBe('The provider returned an error.')
+    expect(describeProviderError(undefined)).toBe('The provider returned an error.')
+    expect(describeProviderError('')).toBe('The provider returned an error.')
   })
 })
 

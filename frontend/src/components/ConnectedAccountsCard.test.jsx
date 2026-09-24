@@ -87,6 +87,21 @@ describe('ConnectedAccountsCard', () => {
     expect(within(microsoft).queryByText('Connected')).toBeNull()
   })
 
+  it('names a missing feature it has no label for by its code rather than dropping it', async () => {
+    getCalendarProviders.mockResolvedValue({
+      tenant_providers: ['google'],
+      provider_status: {
+        microsoft: notConnected,
+        google: { connected: true, needs_reconnect: false, missing_features: ['calendar', 'contacts'] },
+      },
+    })
+    render(<ConnectedAccountsCard />)
+    const google = await screen.findByTestId('connected-account-google')
+    expect(within(google).getByText('Limited access')).toBeInTheDocument()
+    expect(within(google).getByText(/Permissions missing for calendar updates, contacts\. Reconnect/)).toBeInTheDocument()
+    expect(within(google).getByRole('button', { name: 'Reconnect Google' })).toBeInTheDocument()
+  })
+
   it('tells people when the firm has not connected a suite yet', async () => {
     getCalendarProviders.mockResolvedValue({
       providers: [],
