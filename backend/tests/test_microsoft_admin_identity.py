@@ -77,12 +77,16 @@ def _patch_callback(monkeypatch, token_payload, sent):
 
     monkeypatch.setattr(integrations, "_consume_state", consume)
     monkeypatch.setattr(
-        integrations.httpx, "AsyncClient", lambda **_kwargs: _Client(token_payload, sent)
+        integrations.httpx,
+        "AsyncClient",
+        lambda **_kwargs: _Client(token_payload, sent),
     )
     monkeypatch.setattr(integrations, "set_tenant_context", noop)
     monkeypatch.setattr(integrations, "_onboarding_post_connect", noop)
     monkeypatch.setattr(integrations, "_ensure_cloud_root", noop)
-    monkeypatch.setattr(integrations, "_schedule_user_sync_post_connect", lambda *_a: None)
+    monkeypatch.setattr(
+        integrations, "_schedule_user_sync_post_connect", lambda *_a: None
+    )
     monkeypatch.setattr(integrations, "_post_connect_redirect", redirect)
     monkeypatch.setattr(integrations, "encrypt_token", lambda value: f"enc:{value}")
 
@@ -99,7 +103,9 @@ def test_admin_connect_requests_sign_in_scopes_but_audits_graph_permissions():
 
 
 @pytest.mark.asyncio
-async def test_admin_callback_records_tier_and_granting_account_from_id_token(monkeypatch):
+async def test_admin_callback_records_tier_and_granting_account_from_id_token(
+    monkeypatch,
+):
     sent = []
     _patch_callback(
         monkeypatch,

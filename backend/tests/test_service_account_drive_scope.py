@@ -15,7 +15,9 @@ from app.services import google_service_account as sa
 from app.services.cloud_search import CloudHit, CloudSearchService
 
 SA_TOKEN = "service-account-token"
-TENANT_ROOT = {"google_drive": {"owner_type": "org_shared_drive", "drive_id": "drive-A"}}
+TENANT_ROOT = {
+    "google_drive": {"owner_type": "org_shared_drive", "drive_id": "drive-A"}
+}
 
 
 @pytest.fixture
@@ -92,8 +94,12 @@ async def test_drive_search_with_service_account_is_limited_to_tenant_drive(
     )
 
     await service._search_google_drive(
-        db=None, keywords=["matter"], date_after="", max_hits=10,
-        tenant_id="tenant-a", user_id=None,
+        db=None,
+        keywords=["matter"],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-a",
+        user_id=None,
     )
 
     params = calls[0][1]
@@ -117,8 +123,12 @@ async def test_drive_search_refuses_service_account_without_tenant_drive(
     )
 
     hits = await service._search_google_drive(
-        db=None, keywords=["matter"], date_after="", max_hits=10,
-        tenant_id="tenant-no-drive", user_id=None,
+        db=None,
+        keywords=["matter"],
+        date_after="",
+        max_hits=10,
+        tenant_id="tenant-no-drive",
+        user_id=None,
     )
 
     assert hits == []
@@ -144,12 +154,19 @@ async def test_content_fetch_refuses_a_file_from_another_tenants_drive(
         ),
     )
     hit = CloudHit(
-        provider="google", source="drive", object_id="foreign-file",
-        title="Other firm's memo", snippet="other firm snippet", url="",
-        modified_time="", mime_type="application/pdf",
+        provider="google",
+        source="drive",
+        object_id="foreign-file",
+        title="Other firm's memo",
+        snippet="other firm snippet",
+        url="",
+        modified_time="",
+        mime_type="application/pdf",
     )
 
-    content = await service._fetch_google_drive_content(None, hit, "tenant-a", 2000, None)
+    content = await service._fetch_google_drive_content(
+        None, hit, "tenant-a", 2000, None
+    )
 
     assert content is None
     # Only the drive-membership probe ran; the file body was never requested.

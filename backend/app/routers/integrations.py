@@ -494,7 +494,9 @@ async def microsoft_connect(
     ms_tenant = settings.MICROSOFT_TENANT_ID
     redirect_uri = f"{settings.BACKEND_URL}/api/integrations/microsoft/callback"
     scopes = (
-        _admin_request_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
+        _admin_request_scopes(teams_flag)
+        if intent == "admin"
+        else MICROSOFT_USER_SCOPES
     )
 
     authorize_url = (
@@ -547,7 +549,9 @@ async def microsoft_callback(
         _admin_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
     )
     requested_scopes = (
-        _admin_request_scopes(teams_flag) if intent == "admin" else MICROSOFT_USER_SCOPES
+        _admin_request_scopes(teams_flag)
+        if intent == "admin"
+        else MICROSOFT_USER_SCOPES
     )
     token_payload = {
         "client_id": settings.MICROSOFT_CLIENT_ID,

@@ -17,7 +17,6 @@ import pytest
 from app.routers.integrations import (
     GOOGLE_ADMIN_SCOPES,
     GOOGLE_USER_SCOPES,
-    MICROSOFT_ADMIN_SCOPES,
     MICROSOFT_USER_SCOPES,
     _admin_request_scopes,
     GOOGLE_SOLO_SCOPES,
@@ -64,13 +63,18 @@ def test_published_scopes_match_requested_scopes(
 
 def test_no_provider_publishes_an_undeclared_intent() -> None:
     for provider, intents in _published().items():
-        assert set(intents) <= {"admin", "user", "teamsOptIn"}, (
-            f"{provider} declares an intent the public page does not render"
-        )
+        assert set(intents) <= {
+            "admin",
+            "user",
+            "teamsOptIn",
+        }, f"{provider} declares an intent the public page does not render"
 
 
 def test_personal_google_onboarding_scopes_are_least_privilege() -> None:
-    assert "https://www.googleapis.com/auth/admin.directory.user.readonly" not in GOOGLE_SOLO_SCOPES
+    assert (
+        "https://www.googleapis.com/auth/admin.directory.user.readonly"
+        not in GOOGLE_SOLO_SCOPES
+    )
     assert "https://www.googleapis.com/auth/gmail.readonly" in GOOGLE_SOLO_SCOPES
     assert "https://www.googleapis.com/auth/drive" in GOOGLE_SOLO_SCOPES
     assert "https://www.googleapis.com/auth/calendar" in GOOGLE_SOLO_SCOPES
@@ -79,8 +83,12 @@ def test_personal_google_onboarding_scopes_are_least_privilege() -> None:
 def test_google_onboarding_mode_selects_exact_scope_bundle() -> None:
     assert _google_scopes_for_mode("admin", "personal") == GOOGLE_SOLO_SCOPES
     assert _google_scopes_for_mode("admin", "workspace") == GOOGLE_ADMIN_SCOPES
-    assert "admin.directory.user.readonly" in _google_scopes_for_mode("admin", "workspace")
-    assert "admin.directory.user.readonly" not in _google_scopes_for_mode("admin", "personal")
+    assert "admin.directory.user.readonly" in _google_scopes_for_mode(
+        "admin", "workspace"
+    )
+    assert "admin.directory.user.readonly" not in _google_scopes_for_mode(
+        "admin", "personal"
+    )
 
 
 def test_google_onboarding_mode_requires_matching_verified_account_tier() -> None:
