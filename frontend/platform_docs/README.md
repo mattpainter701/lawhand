@@ -7,7 +7,7 @@ This directory is the source of truth for the authenticated, in-product guides.
 
 Each chapter is Markdown with a small front matter block. `slug`, `title`, `description`, `order`, `read_time`, and `icon` are required. `order` must equal the file's number followed by a zero (`04-…` is `40`), and `icon` must be one of the icons `GuideViewer.jsx` knows. The frontend discovers chapters automatically, so adding a valid file places it in the navigation.
 
-Run `npm run docs:check` from `frontend/` before committing guide changes.
+Run `node ../scripts/check_platform_docs.mjs` from `frontend/` before committing guide changes (CI runs the same check).
 
 ## How a chapter should read
 
@@ -84,9 +84,9 @@ Screenshots are captured from the real UI with synthetic data, so they can be re
 
 ```bash
 cd frontend
-npm run docs:screenshots                              # every shot
-npm run docs:screenshots -- --only tasks-list,invoices-list
-npm run docs:screenshots -- --only time-tracking --discover   # list the API calls, write nothing
+node scripts/capture-guide-screenshots.mjs                                   # every shot
+node scripts/capture-guide-screenshots.mjs --only tasks-list,invoices-list
+node scripts/capture-guide-screenshots.mjs --only time-tracking --discover   # list the API calls, write nothing
 ```
 
 The script starts the Vite dev server, opens each page in Chromium with a frozen clock and a fixed time zone, answers every `/api` request from `scripts/guide-screenshots/fixtures.mjs` (a fictional firm, Maple & Birch Law, with `.example` addresses), and writes 2× WebP images.

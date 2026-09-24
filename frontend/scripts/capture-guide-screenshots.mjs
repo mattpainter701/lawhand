@@ -1,8 +1,8 @@
 // Captures the in-product guide screenshots from the real UI.
 //
-//   npm run docs:screenshots                  # every shot
-//   npm run docs:screenshots -- --only tasks-list,calendar-month
-//   npm run docs:screenshots -- --discover    # log API calls, write nothing
+//   node scripts/capture-guide-screenshots.mjs                    # every shot
+//   node scripts/capture-guide-screenshots.mjs --only tasks-list,calendar-month
+//   node scripts/capture-guide-screenshots.mjs --discover         # log API calls, write nothing
 //
 // The Vite dev server renders the actual application while every /api request
 // is answered from ./guide-screenshots/fixtures.mjs: a fictional firm with

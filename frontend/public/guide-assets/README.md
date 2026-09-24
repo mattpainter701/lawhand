@@ -6,7 +6,7 @@ The `.webp` screenshots are generated from the real UI with synthetic data. Rege
 
 ```bash
 cd frontend
-npm run docs:screenshots -- --only <shot-name>
+node scripts/capture-guide-screenshots.mjs --only <shot-name>
 ```
 
 Each file name matches a shot in `frontend/scripts/guide-screenshots/shots.mjs`. See `frontend/platform_docs/README.md` for how shots are defined, annotated, and referenced from a chapter.
