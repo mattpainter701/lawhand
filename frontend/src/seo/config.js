@@ -33,7 +33,17 @@ export const PLATFORM_PRICE_USD = '89'
 export const MCP_TOOL_CALL_PRICE_USD = '0.45'
 
 // Bumped whenever public marketing copy changes; feeds sitemap <lastmod>.
-export const PUBLIC_CONTENT_LASTMOD = '2026-09-07'
+export const PUBLIC_CONTENT_LASTMOD = '2026-09-23'
+
+/**
+ * The date each policy states as its own "Last updated". The React policy page,
+ * the no-JavaScript shell, and the sitemap all read it, so the sitemap can never
+ * tell a search engine that a policy is older than the page itself says it is.
+ */
+export const LEGAL_LAST_UPDATED = Object.freeze({
+  '/privacy': Object.freeze({ label: 'September 13, 2026', iso: '2026-09-13' }),
+  '/terms': Object.freeze({ label: 'July 27, 2026', iso: '2026-07-27' }),
+})
 
 export const PRICING_FAQ = Object.freeze([
   Object.freeze([
@@ -117,6 +127,24 @@ export const PRIMARY_NAVIGATION = Object.freeze([
   Object.freeze({ path: '/product/mcp', label: 'Legal Research MCP', shortLabel: 'MCP' }),
   Object.freeze({ path: '/pricing', label: 'Pricing', shortLabel: 'Pricing' }),
   Object.freeze({ path: '/request-demo', label: 'Book a Demo', shortLabel: 'Book demo' }),
+])
+
+/**
+ * The site-wide footer, rendered by the app footer and by every no-JavaScript
+ * shell. With the header menu it links every indexable page, so a crawler that
+ * reads only the served HTML can still reach each one by following links rather
+ * than only from the sitemap.
+ */
+export const FOOTER_NAVIGATION = Object.freeze([
+  Object.freeze({ path: '/product', label: 'Platform' }),
+  Object.freeze({ path: '/product/chat', label: 'AI Chat' }),
+  Object.freeze({ path: '/product/mcp', label: 'Legal Research MCP' }),
+  Object.freeze({ path: '/pricing', label: 'Pricing' }),
+  Object.freeze({ path: '/requirements', label: 'Requirements' }),
+  Object.freeze({ path: '/support', label: 'Support' }),
+  Object.freeze({ path: '/trust-center', label: 'Trust center' }),
+  Object.freeze({ path: '/privacy', label: 'Privacy' }),
+  Object.freeze({ path: '/terms', label: 'Terms' }),
 ])
 
 export const PUBLIC_ROUTE_META = Object.freeze({
@@ -247,6 +275,9 @@ const WORKSPACE_ROUTE_TITLES = [
   ['/signup', 'Request access'],
   ['/chat', 'Legal workspace'],
   ['/matters', 'Matters'],
+  ['/firm-memory', 'Firm Memory'],
+  ['/clients', 'Clients'],
+  ['/conflicts', 'Conflict search'],
   ['/calendar', 'Calendar'],
   ['/teams', 'Microsoft Teams'],
   ['/communications', 'Communications'],
@@ -262,6 +293,11 @@ const WORKSPACE_ROUTE_TITLES = [
   ['/profile', 'Profile'],
   ['/guide', 'User guide'],
   ['/admin', 'Administration'],
+  // Redirects straight to the MCP tab of Administration.
+  ['/mcp', 'Administration'],
+  // OAuth consent screens an MCP client sends a signed-in user to.
+  ['/workspace-mcp', 'Authorize a legal assistant'],
+  ['/research-mcp', 'Authorize legal research access'],
   ['/onboarding', 'Onboarding'],
   ['/platform', 'Platform administration'],
 ]
@@ -357,10 +393,20 @@ export function buildRobotsTxt(siteOrigin = '') {
   // `/login/anything`. Writing `/login/` would have left the sign-in page
   // itself crawlable, which is exactly the URL that must stay out of results.
   const disallows = ['/api/', ...workspaceCrawlDisallows()]
+  // The same prefix match also catches a public page whose path merely begins
+  // with a workspace root: `Disallow: /trust` (trust accounting) blocks
+  // /trust-center. Crawlers apply the longest matching rule (RFC 9309), so an
+  // explicit Allow for each such page keeps it crawlable without weakening the
+  // workspace rule.
+  const shadowedPublicPaths = Object.values(PUBLIC_ROUTE_META)
+    .filter((route) => route.indexable && route.canonicalPath !== '/')
+    .map((route) => route.canonicalPath)
+    .filter((path) => disallows.some((prefix) => path.startsWith(prefix)))
   const sitemap = siteOrigin ? `\nSitemap: ${siteOrigin}/sitemap.xml` : ''
   return [
     'User-agent: *',
     'Allow: /',
+    ...shadowedPublicPaths.map((route) => `Allow: ${route}`),
     ...disallows.map((route) => `Disallow: ${route}`),
     sitemap,
     '',
@@ -374,7 +420,7 @@ export function buildSitemapXml(siteOrigin) {
     .map((route) => [
       '  <url>',
       `    <loc>${siteOrigin}${route.canonicalPath}</loc>`,
-      `    <lastmod>${PUBLIC_CONTENT_LASTMOD}</lastmod>`,
+      `    <lastmod>${LEGAL_LAST_UPDATED[route.canonicalPath]?.iso || PUBLIC_CONTENT_LASTMOD}</lastmod>`,
       // Omit the hint entirely rather than publishing `undefined` when a route
       // does not declare one.
       ...(route.priority ? [`    <priority>${route.priority}</priority>`] : []),

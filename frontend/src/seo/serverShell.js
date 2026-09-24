@@ -3,6 +3,8 @@ import {
   CORE_CAPABILITIES,
 } from '../marketing/capabilities.js'
 import {
+  FOOTER_NAVIGATION,
+  LEGAL_LAST_UPDATED,
   PRIMARY_NAVIGATION,
   PUBLIC_ROUTE_META,
   buildStructuredData,
@@ -135,12 +137,6 @@ const MARKETING_SHELLS = Object.freeze({
 
 const PUBLIC_SHELLS = Object.freeze({ ...LEGAL_SHELLS, ...MARKETING_SHELLS })
 
-const LAST_UPDATED = Object.freeze({
-  '/privacy': { label: 'September 13, 2026', iso: '2026-09-13' },
-  '/terms': { label: 'July 27, 2026', iso: '2026-07-27' },
-})
-const DEFAULT_UPDATED = LAST_UPDATED['/terms']
-
 const FALLBACK_CONTACT_URL = 'mailto:support@getlawhand.com'
 
 /** Render the address a mailto: contact URL points at, for link text. */
@@ -195,7 +191,8 @@ function legalShellMarkup(pathname, contactUrl) {
             <p>${escapeHtml(section.body)}</p>
           </section>`)
     .join('\n')
-  const updated = LAST_UPDATED[pathname] || DEFAULT_UPDATED
+  const updated = LEGAL_LAST_UPDATED[pathname]
+  if (!updated) throw new Error(`No last-updated date is defined for ${pathname}`)
   return `      <main class="server-legal">
         <article class="server-legal__article">
           <header class="server-legal__header">
@@ -214,6 +211,7 @@ ${sections}
           <footer class="server-legal__footer">
             <p>The controlling subscription agreement and, where applicable, data-processing agreement are available from your organization. Contact your firm administrator for workspace-specific terms.</p>
             <p>Read the <a href="${route.otherPath}">${escapeHtml(route.otherLabel)}</a> or contact <a href="${escapeHtml(contactUrl)}">${escapeHtml(contactLabel(contactUrl))}</a>.</p>
+${footerNavigation(pathname)}
             <p>© 2026 Perevaga Group LLC d/b/a LawHand.</p>
           </footer>
         </article>
@@ -230,6 +228,23 @@ function navigationLinks(currentPath) {
     .filter(({ path }) => path !== currentPath)
     .map(({ path, label }) => `              <li><a href="${escapeHtml(PUBLIC_ROUTE_META[path]?.canonicalPath || path)}">${escapeHtml(label)}</a></li>`)
     .join('\n')
+}
+
+/**
+ * The app footer, restated in the shell. Without it the support, requirements,
+ * and trust-center pages would be reachable only from the sitemap for any
+ * crawler that reads the served HTML and never runs the app.
+ */
+function footerNavigation(currentPath) {
+  const links = FOOTER_NAVIGATION
+    .filter(({ path }) => path !== currentPath)
+    .map(({ path, label }) => `                <li><a href="${escapeHtml(path)}">${escapeHtml(label)}</a></li>`)
+    .join('\n')
+  return `            <nav aria-label="Footer">
+              <ul class="server-legal__links">
+${links}
+              </ul>
+            </nav>`
 }
 
 function marketingShellMarkup(pathname, contactUrl) {
@@ -256,6 +271,7 @@ ${navigationLinks(pathname)}
 ${sections}
           <footer class="server-legal__footer">
             <p><a href="${escapeHtml(contactUrl)}">Book a LawHand demo</a> or <a href="/login">sign in</a>.</p>
+${footerNavigation(pathname)}
             <p>© 2026 Perevaga Group LLC d/b/a LawHand.</p>
           </footer>
         </article>

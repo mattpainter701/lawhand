@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import LawHandLogo from './LawHandLogo'
-import { PRIMARY_NAVIGATION, SITE_TAGLINE } from '../seo/config'
+import { trackMarketingEvent } from '../marketingAnalytics'
+import { FOOTER_NAVIGATION, PRIMARY_NAVIGATION, SITE_TAGLINE } from '../seo/config'
 
 // Derived from the one list that also drives the SiteNavigationElement
 // structured data and the no-JavaScript shells, so the internal links Google
@@ -12,6 +13,20 @@ const NAV_ITEMS = [
   // page still lands on the home section; HomePage honours the hash on mount.
   { label: 'Security', to: '/#security', section: 'security' },
 ]
+
+/**
+ * First step of the demo funnel. The request page records `demo_form_started`
+ * and `demo_form_submitted`; this records the click that brought the visitor
+ * there, with the same `source` placement, so every CTA that links to the form
+ * is measured without having to remember to instrument it.
+ */
+export function trackDemoCtaClick(event) {
+  const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+  if (!link) return
+  const url = new URL(link.href, window.location.href)
+  if (url.origin !== window.location.origin || url.pathname !== '/request-demo') return
+  trackMarketingEvent('demo_cta_clicked', { placement: url.searchParams.get('source') || 'direct' })
+}
 
 export function MarketingHeader({ onSectionClick }) {
 
@@ -63,15 +78,10 @@ export function MarketingFooter() {
           <p className="mt-3 font-sans text-[13px] text-brand-muted">{SITE_TAGLINE}</p>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-5 gap-y-2 font-sans text-[12.5px] text-brand-muted sm:justify-end">
-          <Link to="/product" className="inline-flex min-h-11 items-center hover:text-brand-ink">Platform</Link>
-          <Link to="/product/chat" className="inline-flex min-h-11 items-center hover:text-brand-ink">AI Chat</Link>
-          <Link to="/product/mcp" className="inline-flex min-h-11 items-center hover:text-brand-ink">Legal Research MCP</Link>
-          <Link to="/pricing" className="inline-flex min-h-11 items-center hover:text-brand-ink">Pricing</Link>
-          <Link to="/requirements" className="inline-flex min-h-11 items-center hover:text-brand-ink">Requirements</Link>
-          <Link to="/support" className="inline-flex min-h-11 items-center hover:text-brand-ink">Support</Link>
-          <Link to="/trust-center" className="inline-flex min-h-11 items-center hover:text-brand-ink">Trust center</Link>
-          <Link to="/privacy" className="inline-flex min-h-11 items-center hover:text-brand-ink">Privacy</Link>
-          <Link to="/terms" className="inline-flex min-h-11 items-center hover:text-brand-ink">Terms</Link>
+          {/* The same list every no-JavaScript shell renders as its footer. */}
+          {FOOTER_NAVIGATION.map(({ path, label }) => (
+            <Link key={path} to={path} className="inline-flex min-h-11 items-center hover:text-brand-ink">{label}</Link>
+          ))}
           <span>© 2026 Perevaga Group LLC d/b/a LawHand.</span>
         </nav>
       </div>
@@ -81,7 +91,7 @@ export function MarketingFooter() {
 
 export default function MarketingPageLayout({ children }) {
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-ink">
+    <div className="min-h-screen bg-brand-bg text-brand-ink" onClickCapture={trackDemoCtaClick}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-brand-ink focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"

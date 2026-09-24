@@ -1,24 +1,61 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  FOOTER_NAVIGATION,
   HOME_DESCRIPTION,
   HOME_FAQ,
   HOME_TITLE,
+  LEGAL_LAST_UPDATED,
   MCP_TOOL_CALL_PRICE_USD,
   PLATFORM_PRICE_USD,
   PRICING_FAQ,
   PRIMARY_NAVIGATION,
+  PUBLIC_CONTENT_LASTMOD,
   PUBLIC_ROUTE_META,
   buildMarketingStructuredData,
   buildRobotsTxt,
   buildSitemapXml,
   buildStructuredData,
   getRouteMeta,
+  isKnownRoute,
   normalizeOrganizationProfile,
   normalizeSiteOrigin,
 } from './config'
 import { CORE_CAPABILITIES, CORE_CAPABILITY_NAMES } from '../marketing/capabilities'
-import { buildPublicRouteHtml } from './serverShell'
+import { PUBLIC_SERVER_SHELL_PATHS, buildPublicRouteHtml } from './serverShell'
+
+const INDEXABLE_PATHS = Object.values(PUBLIC_ROUTE_META)
+  .filter((route) => route.indexable)
+  .map((route) => route.canonicalPath)
+
+/**
+ * Whether a crawler may fetch `path` under `robots`, decided the way RFC 9309
+ * and Google do it: the longest matching rule wins and an Allow wins a tie.
+ * Written independently of buildRobotsTxt so it cannot share its mistakes.
+ */
+function robotsAllows(robots, path) {
+  const [winner] = robots.split('\n')
+    .map((line) => line.match(/^(Allow|Disallow): (\S+)$/))
+    .filter((rule) => rule && path.startsWith(rule[2]))
+    .sort((a, b) => b[2].length - a[2].length || (a[1] === 'Allow' ? -1 : 1))
+  return !winner || winner[1] === 'Allow'
+}
+
+/** Every path App.jsx routes, with each `:param` filled in by a sample value. */
+function appRoutePaths() {
+  const app = readFileSync('src/App.jsx', 'utf8')
+  const studioRoutes = app.match(/const TEMPLATE_STUDIO_ROUTES = \[([\s\S]*?)\]/)[1]
+  return [
+    ...Array.from(app.matchAll(/<Route\s+path="([^"]+)"/g), (match) => match[1]),
+    ...Array.from(studioRoutes.matchAll(/'([^']+)'/g), (match) => match[1]),
+  ]
+    .filter((path) => path !== '*')
+    .map((path) => path.replace(/:\w+\??/g, 'sample'))
+}
+
+function linkedPaths(html) {
+  return new Set(Array.from(html.matchAll(/<a\s[^>]*href="([^"]+)"/g), (match) => match[1]))
+}
 
 describe('SEO configuration', () => {
   it('ships the LawHand value proposition in the server-delivered HTML', () => {
@@ -107,6 +144,36 @@ describe('SEO configuration', () => {
     expect(robots).not.toContain('Disallow: /request-demo')
   })
 
+  it('never blocks a page the sitemap publishes, even beneath a workspace prefix', () => {
+    const robots = buildRobotsTxt('https://clarity.example')
+
+    for (const path of INDEXABLE_PATHS) {
+      expect(robotsAllows(robots, path), `robots.txt blocks ${path}`).toBe(true)
+      expect(robotsAllows(robots, `${path.replace(/\/$/, '')}/`), `robots.txt blocks ${path}/`).toBe(true)
+    }
+    // `Disallow: /trust` (trust accounting) is a prefix of /trust-center, so
+    // the public page needs its own, longer Allow; the workspace stays blocked.
+    expect(robots).toContain('Allow: /trust-center\n')
+    expect(robotsAllows(robots, '/trust')).toBe(false)
+    expect(robotsAllows(robots, '/trust/11111111-1111-4111-8111-111111111111')).toBe(false)
+  })
+
+  it('knows every route the app serves, so none is titled or crawled as a missing page', () => {
+    const robots = buildRobotsTxt('https://clarity.example')
+    const paths = appRoutePaths()
+    expect(paths.length).toBeGreaterThan(40)
+
+    for (const path of paths) {
+      // An unknown path gets the 404 metadata, which names a real page
+      // "Page not found" in the browser tab and in history.
+      expect(isKnownRoute(path), `${path} is missing from the SEO route table`).toBe(true)
+      // Every served route is either a public page or kept out of the crawl.
+      expect(robotsAllows(robots, path), `robots.txt treats ${path} wrongly`).toBe(getRouteMeta(path).indexable)
+    }
+    expect(getRouteMeta('/firm-memory').title).toBe('Firm Memory | LawHand')
+    expect(getRouteMeta('/clients/sample').title).toBe('Clients | LawHand')
+  })
+
   it('accepts only host-safe public origins', () => {
     expect(normalizeSiteOrigin('https://clarity.example/')).toBe('https://clarity.example')
     expect(normalizeSiteOrigin('http://localhost:3000')).toBe('http://localhost:3000')
@@ -141,6 +208,44 @@ describe('SEO configuration', () => {
     // guided demo, which the app itself serves as noindex.
     expect(sitemap).not.toContain(`<loc>${origin}/demo</loc>`)
     expect(sitemap).not.toContain('undefined')
+  })
+
+  it('dates each policy in the sitemap the way the policy dates itself', () => {
+    const origin = 'https://clarity.example'
+    const sitemap = buildSitemapXml(origin)
+
+    // A lastmod older than the page's own "Last updated" line teaches search
+    // engines to ignore the site's lastmod values altogether.
+    for (const [path, { iso }] of Object.entries(LEGAL_LAST_UPDATED)) {
+      expect(sitemap).toContain(`<loc>${origin}${path}</loc>\n    <lastmod>${iso}</lastmod>`)
+    }
+    expect(sitemap).toContain(`<loc>${origin}/pricing</loc>\n    <lastmod>${PUBLIC_CONTENT_LASTMOD}</lastmod>`)
+  })
+
+  it('links every indexable page from the HTML a crawler sees without JavaScript', () => {
+    const base = readFileSync('index.html', 'utf8')
+
+    // The home shell is where such a crawler enters, so it reaches every public
+    // page in one hop rather than leaving some to the sitemap alone.
+    const home = linkedPaths(base)
+    for (const path of INDEXABLE_PATHS.filter((path) => path !== '/')) {
+      expect(home.has(path), `index.html does not link ${path}`).toBe(true)
+    }
+
+    // Every route shell leads home and carries the same footer as the app.
+    for (const shellPath of PUBLIC_SERVER_SHELL_PATHS) {
+      const links = linkedPaths(buildPublicRouteHtml(base, shellPath, 'https://clarity.example'))
+      expect(links.has('/')).toBe(true)
+      for (const { path } of FOOTER_NAVIGATION.filter(({ path }) => path !== shellPath)) {
+        expect(links.has(path), `the ${shellPath} shell does not link ${path}`).toBe(true)
+      }
+    }
+
+    // And the app's own header and footer, between them, link every page.
+    const chrome = new Set([...PRIMARY_NAVIGATION, ...FOOTER_NAVIGATION].map(({ path }) => path))
+    for (const path of INDEXABLE_PATHS.filter((path) => path !== '/')) {
+      expect(chrome.has(path), `no header or footer link reaches ${path}`).toBe(true)
+    }
   })
 
   it('gives search engines a short, consistent set of sitelink candidates', () => {
