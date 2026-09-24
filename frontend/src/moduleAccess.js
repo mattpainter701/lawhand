@@ -31,3 +31,15 @@ export function hasCapability(capabilities, capability) {
   if (!Array.isArray(capabilities)) return false
   return capabilities.includes(capability)
 }
+
+// Mirrors the backend's require_finance_admin: a billing capability from any
+// role, with the legacy admin/accountant roles as the fallback.
+export function hasFinanceAccess(user) {
+  const capabilities = user?.capabilities
+  if (Array.isArray(capabilities)) {
+    if (capabilities.includes('view_billing') || capabilities.includes('manage_billing')) {
+      return true
+    }
+  }
+  return user?.role === 'admin' || user?.role === 'accountant'
+}

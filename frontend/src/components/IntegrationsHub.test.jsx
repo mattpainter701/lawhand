@@ -29,7 +29,7 @@ import { getAdminPermissions, getQBOStatus, getZoomStatus } from '../api'
 
 afterEach(cleanup)
 
-const admin = { role: 'admin', plan: 'professional', capabilities: ['manage_integrations', 'manage_users'] }
+const admin = { role: 'admin', plan: 'professional', capabilities: ['manage_integrations', 'manage_users'], enabled_modules: ['admin'] }
 
 function renderHub(props = {}) {
   const onSectionChange = vi.fn()
@@ -113,7 +113,8 @@ describe('IntegrationsHub', () => {
     const cloud = screen.getByTestId('integration-card-cloud')
     await userEvent.click(within(cloud).getByText('Permissions & setup'))
     expect(screen.getByText('Directory profiles for user provisioning')).toBeVisible()
-    expect(within(cloud).getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/guide/integrations')
+    expect(within(cloud).getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integrations#connect-microsoft-365-or-google-workspace')
+    expect(screen.getByRole('link', { name: /Full data visibility guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integration-data-visibility')
 
     await userEvent.click(within(cloud).getByText('Open'))
     expect(onSectionChange).toHaveBeenCalledWith('cloud')
@@ -200,5 +201,26 @@ describe('IntegrationsHub', () => {
     renderHub({ section: 'cloud' })
     expect(await screen.findByText('Cloud configuration')).toBeInTheDocument()
     expect(await screen.findByText('Needs attention')).toBeInTheDocument()
+  })
+
+  it('links each open section to the Admin Guide chapter that documents it', async () => {
+    renderHub({ section: 'cloud-search' })
+    expect(await screen.findByText('Search configuration')).toBeInTheDocument()
+    // The header pill and the Permissions & setup link both open the chapter.
+    const searchGuides = screen.getAllByRole('link', { name: 'Cloud Search operations guide' })
+    expect(searchGuides).toHaveLength(2)
+    searchGuides.forEach((link) => expect(link).toHaveAttribute('href', '/admin?tab=guide&chapter=cloud-search-operations'))
+
+    cleanup()
+    renderHub({ section: 'data-import' })
+    expect(await screen.findByText('Tabs3 configuration')).toBeInTheDocument()
+    screen.getAllByRole('link', { name: 'Storage, imports & readiness guide' })
+      .forEach((link) => expect(link).toHaveAttribute('href', '/admin?tab=guide&chapter=storage-imports-and-readiness#import-from-tabs3'))
+  })
+
+  it('does not offer Admin Guide links to roles that cannot open the Admin Guide', async () => {
+    renderHub({ user: { role: 'accountant', enabled_modules: ['admin'] }, section: 'quickbooks' })
+    expect(await screen.findByText('QuickBooks configuration')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /guide/i })).toBeNull()
   })
 })

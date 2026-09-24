@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.24.01 — Clearer Microsoft 365 and Google connections
+## 2026.09.24.02 — Clearer Microsoft 365 and Google connections
 
 Released September 24, 2026.
 
@@ -15,6 +15,18 @@ Cloud setup now shows what each connection asks for and whose account it uses, n
 - **See and fix missing permissions.** Declined permissions are named, the features they turn off are marked, and Re-authorize comes first. Personal Gmail firms can re-authorize; admins can disconnect.
 - **Your own connected accounts.** Profile, Connected accounts shows whether your own Microsoft 365 or Google account is connected, what that consent allows, and lets you connect or reconnect it.
 - **Microsoft account type and Teams.** Reconnecting Microsoft 365 now records the account type and who granted it. Teams no longer offers a reconnect that cannot help a personal Microsoft account.
+
+## 2026.09.24.01 — Guides with screenshots and step-by-step help
+
+Released September 24, 2026.
+
+The user and administrator guides now walk through each screen step by step, with annotated screenshots and troubleshooting, and the Guide button opens the section for the screen you are on.
+
+- **Screenshots with numbered steps.** Key screens appear in the guides with numbered markers that match each step, from matters and tasks to invoices, Template Studio, and Administration.
+- **Guide opens the right section.** The Guide button opens the exact section for the screen or matter tab you are on, and each chapter's Open in LawHand buttons take you back.
+- **Help inside panels.** The Email tasks, e-signature, client paperwork, and expenses panels link straight to the guide section that explains them.
+- **Troubleshooting in every chapter.** Each chapter ends with common problems, their likely cause, and what to do, and the guides now match the current Template Studio test and publish steps.
+- **Clearer forms and headings.** Conflict Search and invoice fixed-fee fields show their borders again, and the Integrations overview heading is readable.
 
 ## 2026.09.23.02 — Clearer recovery for matter storage
 

@@ -1,13 +1,13 @@
 ---
 slug: integration-transparency
-title: What Connected Integrations Can View
+title: What connected integrations can view
 description: Understand what Microsoft 365, Google Workspace, Zoom, and QuickBooks authorize, use, and retain.
 icon: shield
 order: 160
 read_time: 12 min
 ---
 
-# What Connected Integrations Can View
+# What connected integrations can view
 
 Connected services make it possible to find matter information without copying it between systems by hand. They also involve permissions that deserve a clear explanation.
 
@@ -46,7 +46,7 @@ Depending on the enabled features, the requested Microsoft permissions can allow
 - read and write calendar events;
 - access Teams information and send collaboration messages when Teams is separately enabled.
 
-### What the product currently views
+### What LawHand reads from Microsoft 365
 
 For mailbox lists and searches, LawHand reads fields such as sender, recipients, subject, received time, read/importance state, attachment presence, conversation identifier, and a short message preview. When you capture or open a selected message through an enabled workflow, LawHand can retrieve the full message, including its raw email content, so it can be preserved with the matter.
 
@@ -54,7 +54,7 @@ For OneDrive and SharePoint, LawHand reads file names, paths, owners, web links,
 
 For Calendar, LawHand can create and maintain events tied to tasks and key dates. Those events can contain the task title, matter name, description, due date, and an internal LawHand reference.
 
-Teams is an optional, separate feature. See [Microsoft Teams and client portals](/guide/teams-and-client-portals) for its collaboration use cases.
+Teams is an optional, separate feature. See [Teams & client portals](/guide/teams-and-client-portals#use-lawhand-in-microsoft-teams) for how it is used.
 
 ## Google Workspace
 
@@ -68,7 +68,7 @@ Depending on the enabled features, Google permissions can allow LawHand to:
 - read and write Drive files available to the connected account; and
 - read and write Google Calendar events.
 
-### What the product currently views
+### What LawHand reads from Google Workspace
 
 For Gmail lists and searches, LawHand reads message identifiers, sender, recipients, subject, date, labels, read/importance state, and a short snippet. A selected message can be retrieved in full RFC 822 email form when an enabled capture workflow needs to preserve it with a matter.
 
@@ -120,8 +120,28 @@ Your matter documents are stored in your **own** cloud account, not copied into 
 
 If you are unsure which organization or personal connections are enabled, ask your LawHand administrator before using a workflow that searches, captures, synchronizes, or exports provider data.
 
+## Check and control your own connections
+
+Your personal connections are yours to review:
+
+1. **Calendar and mailbox.** On [Calendar](/calendar), the button reads **Connect Calendar** when you have no personal Microsoft or Google connection, and **Sync Calendar** when you do. A message offers **Reconnect** when the connection has expired. The same connection lets a matter's **Correspondence** capture mail with **Scan now**.
+2. **Connected assistants.** **Workspace MCP assistants** on [your profile](/profile) lists every external assistant connected to your account, with its scopes. See [Connected assistants](/guide/account-safety-and-support#connected-assistants).
+3. **Remove a personal connection.** To remove LawHand's access to your Microsoft or Google account, remove LawHand from the apps with access in that provider's account security settings, then tell your administrator. Records already captured into matters stay in LawHand under your firm's retention policy.
+
+Organization connections, and the Zoom and QuickBooks connections, are managed by administrators under **Administration** > **Integrations**.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| A search does not show your Outlook or Gmail results | You have no personal mailbox connection, or it expired | Connect or reconnect from [Calendar](/calendar). |
+| A calendar message says the connection "needs to be reconnected" | The provider sign-in expired or was revoked | Select **Reconnect** and sign in again. |
+| You expected LawHand to see a colleague's mailbox | Personal connections act only as the person who connected | Ask your colleague to capture the message, or forward it to the matter. |
+| A disconnected provider's documents are still in a matter | Disconnecting stops future access; it does not delete retained records | Ask your administrator about your firm's retention process. |
+
 ## Related guides
 
-- [Documents and cloud files](/guide/documents-and-cloud-files)
-- [Calendar, tasks, and key dates](/guide/calendar-tasks-and-key-dates)
-- [Microsoft Teams and client portals](/guide/teams-and-client-portals)
+- [Matters & documents](/guide/matters-and-documents#correspondence-and-matter-email)
+- [Tasks, calendar & communications](/guide/tasks-calendar-communications#connect-your-own-calendar)
+- [Teams & client portals](/guide/teams-and-client-portals)
+- [Account safety & help](/guide/account-safety-and-support)

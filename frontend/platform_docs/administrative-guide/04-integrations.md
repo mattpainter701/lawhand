@@ -1,93 +1,119 @@
 ---
 slug: integrations
 title: Integrations
-description: Authorize cloud, collaboration, phone, and accounting providers with clear ownership.
+description: Connect Microsoft 365 or Google Workspace and the other services your firm uses, read each connection's health, and choose where matter documents live.
 order: 40
-read_time: 12 min
+read_time: 14 min
 icon: plug
 ---
 
 # Integrations
 
-**Email intake** provides one firm-wide forwarding contact for matter to-dos. Configure it under [Integrations → Email intake](/admin?tab=integrations&integration=email-intake), then read the **Firm email intake** chapter in this Admin Guide for sender requirements and rollout checks.
+An integration extends where your firm's data goes. Connect only approved organization accounts, accept only the permissions the workflow needs, and name an owner who can maintain the connection and respond when it fails.
 
-An integration extends the tenant's data boundary. Connect only approved organization accounts, request the minimum scopes required by the intended workflow, and identify an owner who can maintain consent and respond to failures.
+## The Integrations hub
 
-## How the hub is organized
+Open [Integrations](/admin?tab=integrations). It opens on an overview of every connection.
 
-[Integrations](/admin?tab=integrations) opens on an overview. Each card carries a status pill — **Connected**, **Needs attention**, **Not connected** or **Not configured** — so the question "is this working?" is answered without opening anything. Permissions and setup notes stay collapsed under each card; **Open** or **Set up** goes to that section.
+![The Integrations overview with the section buttons, the Advanced button, and cards for Email intake, Cloud accounts and storage, Cloud Search, and File shares, each with a status and a Permissions and setup disclosure](/guide-assets/admin-integrations.webp "Administration: Integrations overview")
 
-Sections are grouped by audience:
+1. **Advanced** reveals the operator tools, for administrators who hold the `manage_integrations` capability.
+2. Each card's status answers "is this working?": **Connected**, **Needs attention**, **Not connected**, or **Not configured**.
+3. **Open** (or **Set up**, for a connection that is not set up yet) goes to that section.
+4. **Permissions & setup** lists what the connection can access and what it needs before you start, with a link to its guide chapter.
 
-- **Firm sections** (Email intake, Cloud, Cloud Search, File shares, Teams, Zoom, QuickBooks) are what a firm administrator connects and reviews day to day.
-- **Advanced** holds operator tools: MCP servers, Storage migration, Data import and Provider app readiness. It is collapsed on the overview and in the section navigation, and it is only rendered for administrators who hold the `manage_integrations` capability. The disclosure is presentation; the capability is the authorization. A role without that capability never sees these sections.
+The sections are grouped by who uses them:
 
-Accountants see QuickBooks only. The intake-only plan sees Zoom only.
+- **Firm sections**: [Email intake](/admin?tab=integrations&integration=email-intake), [Cloud](/admin?tab=integrations&integration=cloud), [Cloud Search](/admin?tab=integrations&integration=cloud-search), [File shares](/admin?tab=integrations&integration=file-shares), [Teams](/admin?tab=integrations&integration=teams), [Zoom](/admin?tab=integrations&integration=zoom), and [QuickBooks](/admin?tab=integrations&integration=quickbooks).
+- **Advanced**: MCP servers, Storage migration, Data import, and Provider app readiness. These change every matter, so they are collapsed and only shown to administrators with `manage_integrations`. Hiding is presentation; the capability is the control.
 
-## Integration readiness
+Accountants see QuickBooks only. The intake-only plan sees Zoom only. **Full data visibility guide** opens [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
 
-Start at [Integrations](/admin?tab=integrations), then open [Cloud](/admin?tab=integrations&integration=cloud). Review provider status, permissions, and health before asking users to depend on synchronized content. A connection can be technically present while a required scope, site binding, mailbox, webhook, or provider setting remains incomplete.
+## Connect Microsoft 365 or Google Workspace
 
-## Reading a provider card
+Most firms connect one of these first: it provides sign-in, directory sync, mail, calendar, and document storage.
 
-Each cloud provider card answers three questions in order: is the firm-wide connection usable, are users' own connections usable, and what was consented.
+1. Open [Cloud](/admin?tab=integrations&integration=cloud).
+2. On the provider's card, select **Connect** under **Firm-wide connection**.
+3. Sign in with an administrator account of your organization's Microsoft or Google tenant. Check that the organization named on the consent screen is yours.
+4. Accept every requested permission. Declining one leaves the connection with **Missing Scopes**.
+5. You return to the Cloud section. Confirm the health reads **Healthy**.
+6. Test with a non-sensitive record: capture a test email, create a test matter folder, and check that it appears where you expect.
 
-**Firm-wide connection.** This is the administrator grant that runs directory sync, firm mailboxes, folder provisioning and scheduled cloud sync. Its health is one of:
+Use an organization-owned administrator or service identity whose ownership survives staff turnover. Deactivating the person who granted consent can break the connection; LawHand warns you before it happens.
 
-| Health | Meaning | Remedy |
+### Read a provider card
+
+Each provider card answers three questions in order.
+
+**Is the firm-wide connection usable?** This administrator grant runs directory sync, firm mailboxes, folder provisioning, and scheduled cloud sync. Its health is one of:
+
+| Health | Meaning | What to do |
 | --- | --- | --- |
-| Healthy | The last token refresh succeeded and every required scope is granted. | None. |
-| Missing Scopes | Usable, but a required permission was declined at consent. The card lists which. | Re-authorize as an administrator and accept every requested permission. |
-| Refresh Failed | LawHand could not refresh the token; the provider returned an error other than revocation. | Re-authorize. If it recurs, check the provider app under Advanced → Provider app readiness. |
-| Reconnect Required | The provider revoked the grant (for example `invalid_grant`). Nothing that depends on the firm-wide connection runs until it is renewed. | Re-authorize as an administrator. |
-| Disconnected | No firm-wide connection. | Connect. |
+| **Healthy** | The last token refresh succeeded and every required permission is granted. | Nothing. |
+| **Missing Scopes** | Usable, but a permission was declined at consent. The card lists which. | **Re-authorize** as an administrator and accept every permission. |
+| **Refresh Failed** | LawHand could not refresh the token for a reason other than revocation. | **Re-authorize**. If it recurs, check Advanced > Provider app readiness. |
+| **Reconnect Required** | The provider revoked the grant. Nothing that depends on it runs until it is renewed. | **Re-authorize** as an administrator. |
+| **Disconnected** | There is no firm-wide connection. | **Connect**. |
 
-When the connection is **Reconnect Required** or **Refresh Failed** the card leads with the remedy and hides the scope tally. Scope counts describe what was once consented; they say nothing about whether the credential works now, so an unusable connection never shows a full green grant. The detail remains under **Scope detail for support**.
+When the connection is **Reconnect Required** or **Refresh Failed**, the card leads with the fix and hides the permission count, because a past grant says nothing about whether the credential works now. The detail stays under **Scope detail for support**.
 
-**A successful re-authorization clears the failure immediately.** If a card still shows a stale error after you re-authorize, the consent did not complete — look for a provider error in the address bar or try again.
+A successful re-authorization clears the failure immediately. If a card still shows an error afterwards, the consent did not complete; look for a provider error in the address bar and try again.
 
-The refresh line is worded exactly: **Last successful token refresh** when the last attempt worked, or **Last token refresh attempt … failed** beside the recorded error when it did not. A failed attempt also updates the timestamp, so the time alone is not evidence of health.
+The refresh line reads **Last successful token refresh** when the last attempt worked, or **Last token refresh attempt … failed** with the recorded error. A failed attempt also updates the time, so the time alone is not proof of health.
 
-**Per-user connections.** Each user opens [Calendar](/calendar) and chooses **Connect Calendar** to connect their own Microsoft or Google account. Those tokens refresh through a separate path and fail independently of the firm-wide grant: the firm-wide grant can be revoked for weeks while users' own sync keeps running clean, and the reverse. The card shows how many users are connected and how many need to reconnect. An administrator cannot reconnect a user's token. Personal connection attempts return to Calendar with a connection result and a retry path; firm-wide connections return to the administrator's Cloud section.
+**Are people's own connections usable?** Each person connects their own Microsoft or Google account from [Calendar](/calendar) with **Connect Calendar**. These **Per-user connections** refresh separately and fail independently: the firm grant can be revoked while people's own sync keeps working, and the reverse. The card shows how many people are connected and how many need to reconnect. You cannot reconnect someone else's account; ask them to reconnect from Calendar.
 
-**Sync now** appears only when directory sync is available on the account tier. Personal Google and Microsoft accounts have no directory to import; the card says so and does not treat it as a failure.
+**What was consented?** The permission list shows what the grant allows. **Sync now** runs directory sync when your account tier supports it; personal Google and Microsoft accounts have no directory, and the card says so rather than reporting a failure.
 
-## Document storage
+## Choose where matter documents live
 
-The **Document storage** disclosure on the Cloud section holds the settings that are rarely changed and unsafe to change casually:
+The **Document storage** disclosure on the Cloud section holds settings that are rarely changed and unsafe to change casually:
 
-- **Primary provider for matter documents.** Changing it repoints where every new matter document is written. The panel asks for confirmation and warns that existing folders are not moved; use Storage migration under Advanced to rebind existing matters. Cloud-bound writes fail rather than fall back to LawHand storage, so choosing a provider that is not connected breaks uploads until it is.
-- **Create missing matter folders.** Re-creates the root and any missing matter subfolders. Safe to repeat: existing folders are detected and reused.
-- **SharePoint library.** Shown only when Microsoft 365 is connected. Narrows normal workflows to an approved site and library.
+- **Primary provider for matter documents** decides where every new matter document is written. LawHand asks you to confirm and warns that existing folders do not move; use **Storage migration** under Advanced to rebind existing matters. Cloud writes fail rather than fall back to LawHand storage, so choosing a provider that is not connected stops uploads until it is.
+- **Create missing matter folders** recreates the root folder and any missing matter folders. It is safe to repeat: existing folders are found and reused.
+- **SharePoint library** (shown when Microsoft 365 is connected) limits everyday workflows to an approved SharePoint site and library.
 
-New firms choose their provider and create the root during setup; see [Onboarding & storage setup](/guide/onboarding-and-storage-setup).
+For Microsoft 365, **Auto** storage uses the connected identity's OneDrive unless you choose SharePoint or Google Drive. Prefer an approved SharePoint site library or an organization-owned identity. The file permission follows everything that identity can access, so a connection alone does not prove that the intended matter folders are writable.
 
-## Microsoft and Google
+New firms choose their provider and create the root folder during setup; see [Onboarding & storage setup](/admin?tab=guide&chapter=onboarding-and-storage-setup).
 
-Use an authorized administrator account during consent. Confirm the organization and scope shown by the provider. After connection, test with a non-sensitive record and verify both read and write behavior expected by your workflow.
+## Other services
 
-For Microsoft 365, **Auto** storage binds matter files to the connected identity's OneDrive unless an administrator explicitly selects SharePoint or Google Drive. Use an organization-owned service identity whose ownership will survive staff turnover, or select an approved SharePoint site/drive. The current delegated file permission follows everything that identity can access; connection alone is not proof that the intended matter folders are writable.
-
-For collaboration configuration, use [Integrations → Teams](/admin?tab=integrations&integration=teams). Treat team/channel mappings and notification destinations as data-routing decisions.
-
-## Zoom Phone
-
-Use [Integrations → Zoom](/admin?tab=integrations&integration=zoom) for phone integration configuration and health. Confirm the Zoom account, required administrative grant, webhook configuration, and call visibility. Test inbound data using an approved demo call; do not expose unrelated account call history.
-
-## QuickBooks Online
-
-Use [Integrations → QuickBooks](/admin?tab=integrations&integration=quickbooks) with an Intuit administrator for the intended company. Verify the company identity before any synchronization. Establish ownership for mapping, reconciliation, and error review. LawHand should not become an unexplained alternate ledger.
+- **Email intake** gives staff one forwarding contact for matter to-dos. See [Firm email intake](/admin?tab=guide&chapter=email-intake).
+- **Cloud Search** searches connected mail and files. See [Cloud Search operations](/admin?tab=guide&chapter=cloud-search-operations).
+- **File shares** connects on-premises SMB shares through a firm-managed agent. See [File Share operations](/admin?tab=guide&chapter=file-share-operations).
+- **Teams** routes matter updates to Teams channels. Treat channel mappings and notification destinations as data-routing decisions. See [Microsoft Teams administration](/admin?tab=guide&chapter=microsoft-teams-administration).
+- **Zoom** connects Zoom Meetings and Zoom Phone as separate grants. Test with an approved demo call, and never expose unrelated call history. See [Zoom Phone administration](/admin?tab=guide&chapter=zoom-phone-administration).
+- **QuickBooks** exports clients, time, invoices, and payments. Confirm the company with your Intuit administrator before any sync, and name who reviews sync errors so LawHand never becomes an unexplained second ledger. See [QuickBooks administration](/admin?tab=guide&chapter=quickbooks-administration).
 
 ## Connection lifecycle
 
-For each integration, record the business owner, technical owner, granted scopes, affected data, renewal or consent expectations, and disconnect procedure in your restricted operations system.
+For each integration, record in your restricted operations system the business owner, technical owner, granted permissions, affected data, renewal expectations, and how to disconnect.
 
-When disconnecting:
+To disconnect a service:
 
-1. communicate the impact;
-2. stop dependent workflows;
-3. disconnect through the supported interface;
-4. revoke provider-side access when required; and
-5. confirm what synchronized data remains under retention policy.
+1. tell the people who depend on it;
+2. stop workflows that use it;
+3. disconnect through the service's section in Integrations;
+4. revoke LawHand's access in the provider's own admin console if your policy requires it; and
+5. confirm which synchronized records remain under your retention policy. Disconnecting stops future access; it does not delete what was already imported.
 
-Never paste client secrets, webhook secrets, tokens, or certificates into this guide or a support screenshot.
+> [!WARNING]
+> Never paste client secrets, webhook secrets, tokens, or certificates into this guide, a support message, or a screenshot.
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| A card says **Needs attention** | The firm-wide connection is missing permissions or failing to refresh | Open the section and follow the fix the card leads with. |
+| Uploads to matters fail | The primary provider is not connected, or the root folder is missing | Reconnect the provider, then **Create missing matter folders**. |
+| People say their calendar or mail stopped | Their own connection expired | Ask them to reconnect from Calendar; you cannot do it for them. |
+| **Advanced** is missing | Your role lacks `manage_integrations` | Ask an administrator who holds it. |
+| The card still shows an error after re-authorizing | The consent did not complete | Look for a provider error in the address bar and try again. |
+
+## Related chapters
+
+- [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility)
+- [Storage, imports & readiness](/admin?tab=guide&chapter=storage-imports-and-readiness)
+- [Cloud provider support](/admin?tab=guide&chapter=cloud-provider-support)

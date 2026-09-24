@@ -14,7 +14,7 @@ import { getMe } from './api'
 import { clearChatGenerationsForSignOut } from './chatGenerations'
 import { clearChatQueueForSignOut } from './chatQueue'
 import { clearMatterListMemory } from './utils/matterListMemory'
-import { canAccessAddonList, canAccessModuleList } from './moduleAccess'
+import { canAccessAddonList, canAccessModuleList, hasFinanceAccess } from './moduleAccess'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const DemoLoginPage = lazy(() => import('./pages/DemoLoginPage'))
@@ -168,18 +168,6 @@ export function useAuth() {
 
 function canAccessModule(user, module) {
   return canAccessModuleList(user?.enabled_modules, module)
-}
-
-function hasFinanceAccess(user) {
-  // Mirrors the backend's require_finance_admin: a billing capability from any
-  // role, with the legacy admin/accountant roles as the fallback.
-  const capabilities = user?.capabilities
-  if (Array.isArray(capabilities)) {
-    if (capabilities.includes('view_billing') || capabilities.includes('manage_billing')) {
-      return true
-    }
-  }
-  return user?.role === 'admin' || user?.role === 'accountant'
 }
 
 function ProtectedRoute({ children, adminOnly = false, financeOnly = false, module = null, addon = null }) {

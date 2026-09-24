@@ -33,6 +33,11 @@
     @apply bg-brand-surface rounded-xl shadow-sm border border-brand-line p-5;
   }
 
+  /* Standard form field, for pages that do not build their own field class. */
+  .input {
+    @apply min-h-11 w-full rounded-xl border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-accent;
+  }
+
   .sidebar-item {
     @apply flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors duration-150 font-sans font-medium text-brand-ink-2 hover:bg-brand-bg-soft hover:text-brand-ink;
   }
@@ -244,13 +249,31 @@
 .guide-prose h3 { @apply mb-3 mt-7 text-lg font-bold text-brand-ink; }
 .guide-prose p { @apply mb-5; }
 .guide-prose ul { @apply mb-5 ml-5 list-disc space-y-2 marker:text-brand-accent; }
-.guide-prose ol { @apply mb-5 ml-5 list-decimal space-y-2 marker:font-semibold marker:text-brand-accent; }
+.guide-prose ol { @apply mb-5 ml-0 list-none space-y-3; counter-reset: guide-step; }
+.guide-prose ol > li { @apply relative pl-10; counter-increment: guide-step; }
+.guide-prose ol > li::before { @apply absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-brand-accent text-xs font-bold leading-none text-white; content: counter(guide-step); }
 .guide-prose li { @apply pl-1; }
+.guide-prose li > ul, .guide-prose li > ol { @apply mb-0 mt-2; }
 .guide-prose strong { @apply font-semibold text-brand-ink; }
 .guide-prose a { @apply font-semibold text-brand-accent underline decoration-brand-accent/30 underline-offset-4 hover:text-brand-accent-2 hover:decoration-brand-accent-2; }
 .guide-prose blockquote { @apply my-6 rounded-r-xl border-l-4 border-brand-accent bg-brand-bg-soft px-5 py-4 text-brand-ink; }
 .guide-prose blockquote p { @apply mb-0; }
 .guide-prose code { @apply rounded bg-brand-bg-soft px-1.5 py-0.5 font-mono text-[13px] text-brand-accent-2; }
+.guide-prose pre { @apply mb-5 overflow-x-auto rounded-xl border border-brand-line bg-brand-surface-2 px-4 py-3; }
+.guide-prose pre code { @apply bg-transparent p-0 text-[13px] leading-6 text-brand-ink; }
+.guide-prose .guide-callout { @apply my-6 rounded-xl border px-5 py-4 text-brand-ink; }
+.guide-prose .guide-callout-title { @apply mb-1.5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em]; }
+.guide-prose .guide-callout-body > :last-child { @apply mb-0; }
+.guide-prose .guide-callout-note { @apply border-brand-accent/25 bg-brand-accent/5; }
+.guide-prose .guide-callout-note .guide-callout-title { @apply text-brand-accent-2; }
+.guide-prose .guide-callout-tip { @apply border-brand-green/35 bg-brand-green/5; }
+.guide-prose .guide-callout-tip .guide-callout-title { @apply text-brand-green; }
+.guide-prose .guide-callout-important { @apply border-brand-accent/40 bg-brand-bg-soft; }
+.guide-prose .guide-callout-important .guide-callout-title { @apply text-brand-accent-2; }
+.guide-prose .guide-callout-warning { @apply border-brand-amber/45 bg-brand-amber/10; }
+.guide-prose .guide-callout-warning .guide-callout-title { @apply text-amber-800; }
+.guide-prose .guide-callout-caution { @apply border-brand-rose/45 bg-brand-rose/10; }
+.guide-prose .guide-callout-caution .guide-callout-title { @apply text-[#8C4232]; }
 .guide-prose table { @apply w-full border-collapse text-sm; }
 .guide-prose th { @apply bg-brand-surface-2 px-4 py-3 text-left font-semibold text-brand-ink; }
 .guide-prose td { @apply border-t border-brand-line px-4 py-3 align-top; }

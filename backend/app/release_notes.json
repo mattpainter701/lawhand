@@ -2,8 +2,8 @@
   "recent_release_days": 30,
   "releases": [
     {
-      "id": "2026.09.24.01",
-      "version": "2026.09.24.01",
+      "id": "2026.09.24.02",
+      "version": "2026.09.24.02",
       "title": "Clearer Microsoft 365 and Google connections",
       "published_at": "2026-09-24",
       "summary": "Cloud setup now shows what each connection asks for and whose account it uses, names permissions that were not granted, and confirms each connect. Everyone can check and reconnect their own account from Profile.",
@@ -23,6 +23,35 @@
         {
           "title": "Microsoft account type and Teams",
           "description": "Reconnecting Microsoft 365 now records the account type and who granted it. Teams no longer offers a reconnect that cannot help a personal Microsoft account."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.24.01",
+      "version": "2026.09.24.01",
+      "title": "Guides with screenshots and step-by-step help",
+      "published_at": "2026-09-24",
+      "summary": "The user and administrator guides now walk through each screen step by step, with annotated screenshots and troubleshooting, and the Guide button opens the section for the screen you are on.",
+      "highlights": [
+        {
+          "title": "Screenshots with numbered steps",
+          "description": "Key screens appear in the guides with numbered markers that match each step, from matters and tasks to invoices, Template Studio, and Administration."
+        },
+        {
+          "title": "Guide opens the right section",
+          "description": "The Guide button opens the exact section for the screen or matter tab you are on, and each chapter's Open in LawHand buttons take you back."
+        },
+        {
+          "title": "Help inside panels",
+          "description": "The Email tasks, e-signature, client paperwork, and expenses panels link straight to the guide section that explains them."
+        },
+        {
+          "title": "Troubleshooting in every chapter",
+          "description": "Each chapter ends with common problems, their likely cause, and what to do, and the guides now match the current Template Studio test and publish steps."
+        },
+        {
+          "title": "Clearer forms and headings",
+          "description": "Conflict Search and invoice fixed-fee fields show their borders again, and the Integrations overview heading is readable."
         }
       ]
     },

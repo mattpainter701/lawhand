@@ -1,13 +1,13 @@
 ---
 slug: integration-data-visibility
-title: Integration Permissions and Data Visibility
+title: Integration permissions and data visibility
 description: Compare provider permissions, implemented data flows, retained information, and administrator controls.
 icon: shield
 order: 160
 read_time: 14 min
 ---
 
-# Integration Permissions and Data Visibility
+# Integration permissions and data visibility
 
 Use this chapter when evaluating an integration, answering a user privacy question, or preparing an internal consent and retention notice. It distinguishes provider authorization from LawHand's current implemented behavior.
 
@@ -37,31 +37,31 @@ Do not describe a broad provider scope as though it were technically restricted 
 
 ## Microsoft 365 detail
 
-### Requested scopes
+### Microsoft 365 requested scopes
 
 The tenant administrator request includes `offline_access`, `User.Read.All`, `Mail.Read`, `Files.ReadWrite.All`, `Sites.Read.All`, and `Calendars.ReadWrite`. The per-user request includes `offline_access`, `User.Read`, `Mail.Read`, `Files.ReadWrite.All`, and `Calendars.ReadWrite`.
 
 These are delegated grants. File, mail, site, and calendar visibility remains constrained by the signed-in account's effective Microsoft permissions. `Files.ReadWrite.All` is nevertheless broad: it authorizes access to files the signed-in user can access, not only files already associated with a LawHand matter.
 
-### Implemented mail and file flows
+### Microsoft 365 mail and file flows
 
 The Outlook listing workflow defaults to recent messages and a bounded result set. It reads message ID, subject, sender, recipients, receipt time, body preview, read state, importance, attachment flag, and conversation ID. A selected capture can retrieve full MIME email content.
 
 OneDrive and configured SharePoint synchronization lists metadata and downloads supported legal-document files into tenant-scoped storage for document creation and indexing. LawHand can also create matter folders and write files through configured cloud workflows. The selected SharePoint site and document library should therefore be treated as a deliberate administrative boundary, not merely a UI preference.
 
-### Calendar and Teams flows
+### Microsoft 365 calendar and Teams flows
 
 Calendar write access supports task/key-date events that contain matter context and an internal LawHand task reference. Teams permissions are appended only when Teams is explicitly selected during the Microsoft connection. Optional `Channel.Create` is used only for the matter-channel workflow.
 
 ## Google Workspace detail
 
-### Requested scopes
+### Google Workspace requested scopes
 
 The administrator request includes OpenID identity/profile, `admin.directory.user.readonly`, Gmail read-only, Calendar, Drive, and offline access. The per-user request omits directory administration but retains identity/profile, Gmail read-only, Calendar, Drive, and offline access.
 
 The Google Drive scope is read/write and may cover files available to the connected account. Gmail is read-only: LawHand reads messages for search and capture but the current grant does not authorize sending or modifying Gmail.
 
-### Implemented mail and file flows
+### Google Workspace mail and file flows
 
 Gmail listing/search reads message ID, From, To, Subject, Date, snippet, and labels used to identify read and importance state. A selected capture can retrieve the full raw RFC 822 message.
 
@@ -126,9 +126,18 @@ Use the integration status screens and provider consoles together:
 
 Disconnecting removes or disables future provider access once revocation takes effect. It does not automatically prove that previously imported documents, messages, calls, mappings, or audit records have been deleted. Handle those records through the configured LawHand retention and deletion process.
 
+## Answer a person's question about access
+
+When someone asks what LawHand can see of their mail, files, or calls:
+
+1. Check whether the access comes from the firm-wide grant or their own connection, on the provider's card in [Integrations > Cloud](/admin?tab=integrations&integration=cloud).
+2. Use the provider matrix above to separate what the grant permits from what LawHand currently does with it and what it keeps.
+3. Point them to the user guide chapter [What connected integrations can view](/guide/integration-transparency), which explains the same model in plain language, and to how they can remove their own connection.
+4. Record any follow-up request, such as access, correction, export, or deletion, in your firm's privacy process.
+
 ## Related administrative guides
 
-- [Storage, imports, and readiness](/guide/storage-imports-and-readiness)
-- [Microsoft Teams administration](/guide/microsoft-teams-administration)
-- [Zoom Phone administration](/guide/zoom-phone-administration)
-- [QuickBooks administration](/guide/quickbooks-administration)
+- [Storage, imports, and readiness](/admin?tab=guide&chapter=storage-imports-and-readiness)
+- [Microsoft Teams administration](/admin?tab=guide&chapter=microsoft-teams-administration)
+- [Zoom Phone administration](/admin?tab=guide&chapter=zoom-phone-administration)
+- [QuickBooks administration](/admin?tab=guide&chapter=quickbooks-administration)

@@ -1,58 +1,106 @@
 ---
 slug: tenant-settings-and-branding
 title: Tenant settings & branding
-description: Configure firm identity, defaults, alerts, and feature behavior without surprising users.
+description: Set the firm's name, contact details, and branding, and manage alerts, feature flags, rate limits, and case-law retrieval for everyone.
 order: 30
-read_time: 6 min
+read_time: 10 min
 icon: settings
 ---
 
 # Tenant settings & branding
 
-Tenant-wide settings shape the experience for every user. Make changes during a communicated window when they alter navigation, billing behavior, generated documents, notifications, or AI routing.
+Firm-wide settings shape what every person and client sees. Change them in a communicated window when they affect navigation, billing, generated documents, notifications, or AI behaviour.
 
-## Firm identity
+## Firm Profile
 
-[Firm Profile](/admin?tab=firm) holds the firm's name, contact details, and branding. It is the first thing to set on a new tenant.
+[Firm Profile](/admin?tab=firm) holds how the firm is named and presented. It is the first thing to set on a new firm.
 
-**Account name** is the firm's name of record. Sign-up derives it from the email domain of the first account — a firm that signed up from `painterlaw.com` starts out named "Painterlaw" — so correcting it here is usually the first change a new tenant makes. The name flows to client portal invitations, engagement and intake email, invoices, trust statements, and any template mapped to a Firm profile field.
+![The Identity card of the Firm Profile tab with the Account name and Display name fields and the Clients will see preview](/guide-assets/admin-firm-profile.webp "Firm Profile: Identity")
 
-**Display name** is optional and overrides the account name wherever clients see it. Set it only when the letterhead name differs from the name of record; leave it blank and the account name is used.
+1. **Account name** is the firm's name of record.
+2. **Display name** optionally replaces it wherever clients see it.
+3. **Clients will see** previews the name clients will actually see.
 
-Renaming does not rewrite documents already generated or matter numbers already issued — both keep the values they were created with.
+### Set the firm's identity
 
-[Tenant](/admin?tab=tenant) remains the read-only view of the organization record and plan context. Confirm the tenant there before any bulk or integration action.
+1. Correct the **Account name**. Sign-up derives it from the first account's email domain, so a firm that signed up from `painterlaw.com` starts out as "Painterlaw"; fix it here to the full legal name, such as "Painter Law Group, PLLC".
+2. Leave **Display name** blank unless your letterhead name differs from the name of record. When set, clients see it instead.
+3. Check **Clients will see**.
 
-## General settings
+**Tenant domain** is the account's permanent identifier. It cannot be changed and is never shown to clients.
 
-[Settings](/admin?tab=settings) contains defaults, alert configuration, feature flags, and other controls. Read the description and current value before changing a field. If a control is unfamiliar, test it in a non-production tenant or obtain product guidance first.
+### Contact details and branding
 
-Branding may flow into generated documents and customer-facing experiences. Use approved firm assets, accessible contrast, and current contact information. Preview a representative template after a branding change.
+1. Under **Contact details**, enter the **Phone**, **Email**, **Website**, and **Address** clients should use. A blank address falls back to the one captured at sign-up.
+2. Under **Branding**, enter a **Logo URL**: a publicly reachable image, shown in the client portal header and on invoice and statement PDFs.
+3. Enter **PDF footer text** if your documents need one, such as "Confidential — Attorney/Client Privileged Communication".
+4. Select **Save firm profile**. "Firm profile saved." confirms it.
 
-Invoice and trust-statement PDFs use the Firm Profile name, logo URL,
-address, phone, email, website, and optional PDF footer. Amounts are
-rendered in USD. Client portal invoice
-downloads use the same settings. A logo that cannot be fetched or decoded does
-not block the PDF; the remaining firm identity is still rendered. The invoice
-download audit retains the branding values and content hash used for that
-response, not a stored PDF copy.
+The name and details flow into client portal invitations, intake and engagement emails, invoices, trust statements, and templates that use firm profile fields. Invoice and statement PDFs use the name, logo, address, phone, email, website, and footer; amounts are shown in USD. If the logo cannot be fetched, the PDF is still produced with the rest of the firm's details.
 
-## Feature flags and plan scope
+Changes apply to future documents and portal pages. Documents already generated, and matter numbers already issued, keep the values they were created with. After a branding change, generate a representative document and check it.
 
-Feature controls are rollout tools, not substitutes for permissions. Enabling a module can expose new navigation and workflows to eligible users; it does not automatically establish the firm's process or train staff.
+## Settings
 
-Before enablement:
+[Settings](/admin?tab=settings) holds firm-wide controls. Read each description and the current value before you change anything.
 
-- identify the owner and intended audience;
-- confirm data and integration prerequisites;
-- define the expected workflow and rollback condition;
-- update the relevant user-guide chapter; and
-- test with representative roles.
+### Case-law retrieval
 
-## Alerts
+**Public case law search** includes CourtListener public opinions when the assistant retrieves sources. Turning it off makes the assistant answer from firm and matter sources only, and people see that public case law is off in their response settings.
 
-Set alert destinations that are actively monitored. Use a firm-controlled address or group rather than one person's mailbox for important operational notices. After saving, perform a supported test or verify the next expected delivery.
+### Alerts and budgets
+
+1. Under **Alerts & Budgets**, enter a **Monthly spend alert threshold (USD)**, or leave it blank to turn off firm-wide spend alerts.
+2. Choose **Alert at**, the percentage of the threshold that triggers an alert.
+3. Enter **Alert recipients** as comma-separated addresses, such as a monitored billing group. Leave it blank to alert every administrator.
+4. Turn on **Weekly usage digest** to email a weekly summary of token usage and costs to the recipients.
+5. Select **Save alerts**.
+
+Use a monitored group address rather than one person's mailbox. See [Subscription, usage & alerts](/admin?tab=guide&chapter=subscription-usage-alerts).
+
+### Feature flags
+
+**Feature Flags** turn platform features on or off for everyone at the firm:
+
+| Flag | What it does |
+| --- | --- |
+| **Auto memory** | Builds per-user memory from conversations. |
+| **PII detection** | Flags and suppresses personal information in outputs. |
+| **Skill routing** | Sends questions to domain-specific legal skills automatically. |
+| **Matter context** | Adds the active matter's context to chat and skills. |
+| **Legal Work Board** | Offers the work board alongside the deadline list on Tasks. |
+
+Feature flags are rollout tools, not permissions. Before turning one on, name its owner and audience, confirm any data or integration prerequisites, decide how you would roll it back, and test it with representative roles.
+
+### Rate limits
+
+**Requests / minute** and **Tokens / day** cap AI use across the firm. Leave them at **No limit** unless you need a hard ceiling; a limit that is too low interrupts people mid-task.
+
+### Advanced: AI gateway alias
+
+The **Advanced** section holds the **Standard alias override** for the AI gateway. Changing it affects every user. Leave it blank unless LawHand support asked you to set it.
+
+The bottom of Settings shows the **Deployed version** and the release notes.
+
+## Tenant
+
+[Tenant](/admin?tab=tenant) is a read-only view of the organization record: **Tenant ID**, **Name**, **Domain**, **Billing Tier**, **Max Users**, **Max Documents**, when it was **Created**, and its **Status**. Check it before any bulk change or integration action to confirm you are working in the right firm, and quote the tenant ID when you contact support.
 
 ## Onboarding
 
-[Onboarding](/onboarding) guides initial tenant setup. Returning to onboarding can help identify incomplete prerequisites, but do not repeat connection or completion steps without understanding their effect on current configuration.
+[Onboarding](/onboarding) guides a new firm's setup. Returning to it later can show incomplete prerequisites, but do not repeat connection or completion steps without understanding their effect on the current configuration. See [Onboarding & storage setup](/admin?tab=guide&chapter=onboarding-and-storage-setup).
+
+## Troubleshooting
+
+| What you notice | Likely cause | What to do |
+| --- | --- | --- |
+| "Account name cannot be blank." | The account name was cleared | Enter the firm's name of record. |
+| The logo is missing from PDFs | The logo URL is not publicly reachable, or is not an image | Use a public HTTPS image URL; the PDF still renders without it. |
+| Clients still see the old name | They are looking at a document generated before the change | Generate the document again; new documents use the new name. |
+| Nobody received a spend alert | No threshold is set, or recipients are wrong | Check the threshold, **Alert at**, and **Alert recipients**. |
+
+## Related chapters
+
+- [Administrator overview](/admin?tab=guide&chapter=admin-overview)
+- [Subscription, usage & alerts](/admin?tab=guide&chapter=subscription-usage-alerts)
+- [Prompt management](/admin?tab=guide&chapter=prompt-management)

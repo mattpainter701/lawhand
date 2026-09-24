@@ -1,49 +1,51 @@
 ---
 slug: billing-usage-and-governance
 title: Billing, usage & governance
-description: Monitor commercial health, investigate anomalies, and keep administrative evidence.
+description: Investigate usage anomalies, keep evidence of consequential changes, and run a periodic review of access, licenses, connections, and spend.
 order: 60
 read_time: 6 min
-icon: chart
+icon: shield
 ---
 
 # Billing, usage & governance
 
-Commercial controls and operational governance meet in the admin portal. Review them together: a cost anomaly may indicate a workflow change, configuration error, compromised credential, or simply legitimate growth.
+Commercial controls and operational governance meet in Administration. Review them together: a cost spike can mean a workflow change, a configuration error, a compromised credential, or simply legitimate growth. For the screens themselves, see [Subscription, usage & alerts](/admin?tab=guide&chapter=subscription-usage-alerts).
 
-## Subscription and billing
+## When usage looks wrong
 
-Use [Subscription](/admin?tab=billing) to review plan and billing status. Confirm authorization before changing paid capacity or commercial configuration. Avoid making seat and billing changes under a shared administrator identity.
+1. Identify the affected person, tool, and period on [Usage](/admin?tab=usage). Compare the same length of period, such as the last 30 days against the 30 before.
+2. Check for retries, automation loops, a recently connected integration, or a new MCP product key.
+3. Keep the request and error identifiers you find.
+4. If a compromise is plausible, contain it: turn off the person's MCP access, revoke the product key, or deactivate the account.
+5. Escalate through your approved operational or security process, and contact [LawHand support](/admin?tab=support) if the cause is on the platform side.
 
-## Usage
+Do not deactivate a person or delete evidence just because a chart looks unusual, and do not raise a budget until you understand the activity behind it. Per-person usage supports investigation and coaching; it is not a measure of productivity or professional value.
 
-[Usage](/admin?tab=usage) provides tenant and per-user consumption views. Compare like-for-like date ranges and consider matter volume, document size, integration retries, and premium model access.
+## Keep evidence of consequential changes
 
-When usage is unexpected:
-
-1. identify the affected user, tool, and period;
-2. check for retries, automation loops, or recently enabled integrations;
-3. preserve relevant request and error identifiers;
-4. contain exposed keys or access if compromise is plausible; and
-5. escalate through the approved operational or security process.
-
-Do not deactivate a user or delete evidence solely because a chart looks unusual.
-
-## Administrative evidence
-
-Keep a lightweight record for consequential changes: reason, approver, operator, previous value, new value, timestamp, validation, and rollback result when applicable. Use the audit facilities available in the product and retain complementary evidence in your restricted operations system.
+For each consequential change, record the reason, the approver, who made the change, the previous and new values, the time, how you verified it, and the rollback result if you rolled back. Use the product's audit facilities and keep complementary evidence in your restricted operations system. Never make seat or billing changes from a shared administrator account.
 
 ## Periodic review
 
-A practical review covers:
+Once a quarter, and after staff departures, vendor changes, or a suspected compromise, review:
 
-- active and dormant users;
-- administrators and powerful custom roles;
-- standard and premium licenses;
-- connected providers and granted scopes;
-- MCP keys and tool allowlists;
-- search and file-share boundaries;
-- billing status and usage anomalies; and
-- alert delivery and ownership.
+- [ ] active and dormant users, and pending invitations ([Users](/admin?tab=users));
+- [ ] administrators and powerful custom roles ([Roles](/admin?tab=roles));
+- [ ] standard and premium licenses against actual need ([Licensing](/admin?tab=licensing));
+- [ ] connected providers, granted permissions, and failed health checks ([Integrations](/admin?tab=integrations));
+- [ ] MCP product keys, tool allowlists, and people with MCP access;
+- [ ] Cloud Search and file-share boundaries;
+- [ ] billing status and usage anomalies ([Subscription](/admin?tab=billing), [Usage](/admin?tab=usage)); and
+- [ ] that alert recipients still exist and someone reads them ([Settings](/admin?tab=settings)).
 
-Update the corresponding Markdown chapter whenever a product workflow or setting changes. Documentation is part of the feature's acceptance criteria, not a cleanup task after release.
+Record who ran the review, what changed, and when the next one is due.
+
+## Keep this guide current
+
+Update the matching chapter whenever a workflow or setting changes. Documentation is part of a feature being finished, not cleanup after release.
+
+## Related chapters
+
+- [Subscription, usage & alerts](/admin?tab=guide&chapter=subscription-usage-alerts)
+- [Users, roles & licensing](/admin?tab=guide&chapter=users-roles-and-licensing)
+- [Support and escalation](/admin?tab=guide&chapter=support-and-escalation)

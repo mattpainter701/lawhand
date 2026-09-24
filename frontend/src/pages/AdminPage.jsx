@@ -37,6 +37,7 @@ import BillingDefaultsPanel from '../components/BillingDefaultsPanel'
 import GuideViewer from '../components/GuideViewer'
 import CompliancePanel from '../components/CompliancePanel'
 import { ADMINISTRATIVE_GUIDE } from '../platformDocs'
+import { ADMIN_TAB_GROUPS, adminTabsFor, canUseAdvancedSettings } from '../adminTabs'
 import { Disclosure, Spinner, Toggle } from '../components/ui'
 import { UserPlus, ChevronDown, ChevronRight, X } from 'lucide-react'
 
@@ -60,62 +61,10 @@ function StatCard({ label, value, sub }) {
   )
 }
 
-// Tabs are grouped by what an administrator is trying to do, with the
-// day-to-day groups first. Tab ids are stable because links across the app
-// deep-link with ?tab=<id>. `advanced` tabs can change AI behaviour for every
-// user and are gated on the admin_settings capability, not just the role.
-export const ADMIN_TAB_GROUPS = [
-  { id: 'people', label: 'People', tabs: [
-    { id: 'users', label: 'Users' },
-    { id: 'roles', label: 'Roles' },
-  ] },
-  { id: 'firm', label: 'Firm', tabs: [
-    { id: 'integrations', label: 'Integrations' },
-    { id: 'firm', label: 'Firm Profile' },
-    { id: 'settings', label: 'Settings' },
-  ] },
-  { id: 'billing', label: 'Billing', tabs: [
-    { id: 'billing', label: 'Subscription' },
-    { id: 'licensing', label: 'Licensing' },
-    { id: 'usage', label: 'Usage' },
-  ] },
-  { id: 'support', label: 'Support', tabs: [
-    { id: 'guide', label: 'Admin Guide' },
-    { id: 'support', label: 'Support' },
-    { id: 'tenant', label: 'Tenant' },
-    { id: 'prompts', label: 'Prompts', advanced: true },
-  ] },
-]
-
-const ADMIN_TABS = ADMIN_TAB_GROUPS.flatMap((group) => group.tabs)
-
-export function canUseAdvancedSettings(user) {
-  if (user?.role !== 'admin') return false
-  const caps = user?.capabilities
-  if (Array.isArray(caps) && caps.length > 0) return caps.includes('admin_settings')
-  return true
-}
-
-export function adminTabsFor(user) {
-  const base = user?.plan === 'intake-only'
-    ? (user?.role === 'accountant' ? INTAKE_ACCOUNTANT_TABS : INTAKE_ADMIN_TABS)
-    : (user?.role === 'accountant' ? ACCOUNTANT_TABS : ADMIN_TABS)
-  return canUseAdvancedSettings(user) ? base : base.filter((tab) => !tab.advanced)
-}
-
-const ACCOUNTANT_TABS = ADMIN_TABS.filter((tab) =>
-  ['licensing', 'billing', 'usage', 'integrations'].includes(tab.id)
-)
-
-// Keep the standalone intake product focused on the few settings needed to
-// launch and operate a reception team. Unrelated platform integrations remain
-// hidden until the tenant upgrades.
-const INTAKE_ADMIN_TABS = ADMIN_TABS.filter((tab) =>
-  ['users', 'firm', 'licensing', 'billing', 'usage', 'tenant', 'integrations', 'settings', 'guide', 'support'].includes(tab.id)
-)
-const INTAKE_ACCOUNTANT_TABS = INTAKE_ADMIN_TABS.filter((tab) =>
-  ['licensing', 'billing', 'usage'].includes(tab.id)
-)
+// Tab groups and per-role tab lists live in ../adminTabs so the app shell can
+// check guide-link reachability without loading this page. Re-exported here
+// for existing importers.
+export { ADMIN_TAB_GROUPS, adminTabsFor, canUseAdvancedSettings }
 
 // ── Invite Modal ──────────────────────────────────────────────────────────────
 
@@ -1448,6 +1397,12 @@ export default function AdminPage() {
     setSearchParams({ tab: 'integrations', integration: section })
   }
 
+  // Guide links from feature panels open /admin?tab=guide&chapter=<slug>, so
+  // the chapter lives in the address and survives reloads and sharing.
+  const selectGuideChapter = useCallback((chapter, options = {}) => {
+    setSearchParams({ tab: 'guide', chapter }, { replace: Boolean(options.replace) })
+  }, [setSearchParams])
+
   return (
     <div className="">
       {/* Content */}
@@ -1542,7 +1497,15 @@ export default function AdminPage() {
           {activeTab === 'integrations' && (
             <IntegrationsHub user={user} section={integrationSection} onSectionChange={selectIntegrationSection} />
           )}
-          {activeTab === 'guide' && <GuideViewer documents={ADMINISTRATIVE_GUIDE} audience="admin" embedded />}
+          {activeTab === 'guide' && (
+            <GuideViewer
+              documents={ADMINISTRATIVE_GUIDE}
+              audience="admin"
+              embedded
+              activeSlug={searchParams.get('chapter') || undefined}
+              onSelect={selectGuideChapter}
+            />
+          )}
         </div>
       </div>
     </div>
