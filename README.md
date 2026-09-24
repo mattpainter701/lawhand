@@ -239,15 +239,20 @@ Operational details are in
 ## Marketing and SEO posture
 
 The production frontend build uses `VITE_PUBLIC_SITE_URL` to emit absolute
-canonical/social URLs, `robots.txt`, `sitemap.xml`, and JSON-LD. `/`, `/privacy`,
-and `/terms` are indexable. Login, signup, portals, and every authenticated
-workspace route are marked `noindex, nofollow` and omitted from the sitemap.
+canonical/social URLs, `robots.txt`, `sitemap.xml`, and JSON-LD. The public
+marketing and policy pages marked indexable in `frontend/src/seo/config.js` are
+indexable. Login, signup, portals, and every authenticated workspace route are
+marked `noindex, nofollow`, disallowed in `robots.txt`, and omitted from the
+sitemap.
 Production preflight requires this value and verifies that, after removing one
 optional trailing slash, it exactly equals `https://$DOMAIN`; both supported
 Compose topologies pass that explicit value into the frontend build.
 
-This is a client-rendered SPA. The home page has useful static metadata and a
-`noscript` summary, but it is not server-rendered or prerendered. If organic
+This is a client-rendered SPA. Each public route is served a build-time HTML
+shell with its own metadata and summary copy, but the React pages are not
+server-rendered or prerendered. See
+[Google Search and business setup](docs/GOOGLE_SEARCH_AND_BUSINESS_SETUP.md)
+for what is generated and how it is tested. If organic
 search becomes a primary acquisition channel, prerendering and real search
 performance telemetry are the next architecture step. Do not publish a
 Westlaw-replacement, comprehensive/nationwide coverage, good-law,

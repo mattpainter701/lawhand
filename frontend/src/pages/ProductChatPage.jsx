@@ -25,7 +25,7 @@ const CAPABILITIES = [
 ]
 
 export default function ProductChatPage() {
-  const contactUrl = import.meta.env.VITE_CONTACT_URL || 'mailto:support@getlawhand.com'
+  const demoUrl = '/request-demo?source=chat'
 
   return (
     <MarketingPageLayout>
@@ -39,9 +39,9 @@ export default function ProductChatPage() {
             LawHand gives legal teams a focused AI workspace for research, review, summaries, and drafting—grounded in the matter and the sources your firm has authorized.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <a href={contactUrl} className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-brand-accent px-6 font-sans text-[14px] font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-accent-2">
+            <Link to={demoUrl} className="inline-flex min-h-12 items-center gap-2 rounded-lg bg-brand-accent px-6 font-sans text-[14px] font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-accent-2">
               See LawHand chat <ArrowRight size={17} aria-hidden="true" />
-            </a>
+            </Link>
             <Link to="/pricing" className="inline-flex min-h-12 items-center rounded-lg border border-brand-line-2 bg-brand-surface px-6 font-sans text-[14px] font-semibold text-brand-ink transition-colors hover:border-brand-ink">
               View pricing
             </Link>

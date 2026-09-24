@@ -2,8 +2,10 @@ import React from 'react'
 import { ArrowLeft, ArrowUp, Mail, ShieldCheck } from 'lucide-react'
 import LawHandLogo from '../components/LawHandLogo'
 import { Link } from 'react-router-dom'
+import { LEGAL_LAST_UPDATED } from '../seo/config'
 
-const UPDATED = { privacy: 'September 13, 2026', terms: 'July 27, 2026' }
+// Shared with the no-JavaScript shells and the sitemap <lastmod>.
+const UPDATED = { privacy: LEGAL_LAST_UPDATED['/privacy'].label, terms: LEGAL_LAST_UPDATED['/terms'].label }
 const GOOGLE_USER_DATA_POLICY_URL = 'https://developers.google.com/terms/api-services-user-data-policy'
 const GOOGLE_ACCOUNT_PERMISSIONS_URL = 'https://myaccount.google.com/permissions'
 
