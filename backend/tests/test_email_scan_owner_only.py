@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app.models.user import User
 from app.routers import email_agent as router
 from app.schemas.email_agent import EmailScanRequest
 
@@ -84,3 +85,61 @@ async def test_scanning_your_own_mailbox_still_works(monkeypatch):
         assert response.user_id == str(caller.id)
 
     assert [call["user_id"] for call in processed] == [str(caller.id)] * 2
+
+
+@pytest.mark.asyncio
+async def test_scan_route_refuses_a_colleagues_mailbox(
+    client, db_session, test_tenant, monkeypatch
+):
+    colleague = User(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        email="colleague@testfirm.com",
+        full_name="Colleague",
+        role="user",
+        is_active=True,
+    )
+    db_session.add(colleague)
+    await db_session.commit()
+    processed = []
+
+    async def process_emails(**kwargs):
+        processed.append(kwargs)
+        return []
+
+    monkeypatch.setattr(router.email_agent, "process_emails", process_emails)
+
+    response = await client.post(
+        "/api/email/scan",
+        json={"provider": "microsoft", "user_id": str(colleague.id)},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "You can only scan your own mailbox"
+    assert processed == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name_self", [False, True])
+async def test_scan_route_reads_only_the_callers_mailbox(
+    client, test_tenant, test_user, monkeypatch, name_self
+):
+    processed = []
+
+    async def process_emails(**kwargs):
+        processed.append(kwargs)
+        return []
+
+    monkeypatch.setattr(router.email_agent, "process_emails", process_emails)
+    body = {"provider": "google"}
+    if name_self:
+        body["user_id"] = str(test_user.id)
+
+    response = await client.post("/api/email/scan", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(test_user.id)
+    [call] = processed
+    assert call["user_id"] == str(test_user.id)
+    assert call["tenant_id"] == str(test_tenant.id)
+    assert call["provider"] == "google"
