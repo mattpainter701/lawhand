@@ -1,3 +1,11 @@
+## 2026.09.24.01 — Guide revamp, contextual guide links and screenshot capture
+
+- All 17 user and 21 administrator chapters in `frontend/platform_docs/` were rewritten against the current components: numbered steps with exact labels, annotated screenshots, troubleshooting tables and related chapters. `GuideViewer` renders GitHub-style callouts (`> [!NOTE]`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`), heading anchors and image captions.
+- `coverage.json` entries can name a heading `anchor`. The new `guideTopics.js` resolves the current route, Administration tab or Integrations section to that section and drives the app shell's **Guide** button, each chapter's **Open in LawHand** buttons and the Integrations hub's section links; `usePageGuideTopic` lets a page narrow the button, for example to the active matter tab. `GuideLink` adds inline links from the Email tasks, E-Signature, client paperwork and expenses panels. Administrator chapters are offered only when `canOpenAdminGuide` allows it; tab visibility moved to `adminTabs.js` and finance access to `moduleAccess.hasFinanceAccess`.
+- `scripts/check_platform_docs.mjs` now also checks icons against the viewer's set, unique heading anchors, link and coverage anchors, the `/admin?tab=guide&chapter=` form for administrator chapters, a 600 KB image limit, and that each chapter links to the screens it documents.
+- `frontend/scripts/capture-guide-screenshots.mjs` captures the 22 WebP screenshots from the Vite dev server with a frozen clock, a fixed time zone and synthetic fixtures (`frontend/scripts/guide-screenshots/`); no backend or customer data is involved.
+- Fixes: the shared `.input` field class used by Conflict Search and the invoice fixed-fee fields was never defined, so those fields had no border; the Integrations overview heading rendered dark on a dark background.
+
 ## 2026.09.23.02 — Matter storage recovery guidance
 
 - Missing OneDrive and Google Drive matter folder bindings return provider-specific setup guidance and identify that no file was stored. Cloud-bound writes continue to fail closed rather than falling back to another provider or local storage.
