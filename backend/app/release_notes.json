@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.24.03",
+      "version": "2026.09.24.03",
+      "title": "Fill sample forms on the document itself",
+      "published_at": "2026-09-24",
+      "summary": "Filling a sample form now opens on the original document, with each answer box ready to type in. A guided bar keeps the current answer readable on any screen, and a Questions view lists the same answers.",
+      "highlights": [
+        {
+          "title": "The document comes first",
+          "description": "Fill opens on every page of the original form. Type in each box where the answer will print. Empty required boxes are amber; matter answers are tinted blue until you change them."
+        },
+        {
+          "title": "Guided answers on any screen",
+          "description": "The bar under the document shows the current answer at full size, with Next, Previous and Next required, so small screens and tiny form boxes no longer get in the way."
+        },
+        {
+          "title": "Switch between Document and Questions",
+          "description": "Choose Questions at the top for the list view, grouped by page with Missing, Optional and Filled filters. Answers carry over both ways. Final PDF shows the file you will download."
+        }
+      ]
+    },
+    {
       "id": "2026.09.24.02",
       "version": "2026.09.24.02",
       "title": "Clearer Microsoft 365 and Google connections",

@@ -17,6 +17,19 @@ vi.mock('../prepare/MatterPicker', () => ({
   </div>,
 }))
 
+vi.mock('./FillOnDocument', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    default: ({ onChange, suggestedNames, onUnavailable }) => <div data-testid="fill-on-document">
+      {[...suggestedNames].map((name) => <span key={name}>suggested: {name}</span>)}
+      <button type="button" onClick={() => onChange('client_name', 'Typed on page')}>Doc: type client</button>
+      <button type="button" onClick={() => onChange('city', 'Denver')}>Doc: edit city</button>
+      <button type="button" onClick={() => onUnavailable('bad pdf')}>Doc: unreadable</button>
+    </div>,
+  }
+})
+
 vi.mock('./GeneratedPdfPreview', () => ({
   default: ({ title }) => <section aria-label={`Preview of ${title}`}>PDF preview</section>,
 }))
@@ -35,6 +48,11 @@ const sample = {
   ] },
 }
 
+const pickMatter = () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Fill from a matter' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+}
+
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 beforeEach(() => { getSampleTemplateSource.mockResolvedValue(new Blob(['source'], { type: 'application/pdf' })) })
 
@@ -42,7 +60,7 @@ describe('SampleFillDialog Smart Fill', () => {
   it('loads matter suggestions and shows filled and attention counts', async () => {
     previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Example' }] })
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+    pickMatter()
     expect(await screen.findByDisplayValue('Ada Example')).toBeInTheDocument()
     expect(screen.getByText(/1 filled · 1 required answers missing · 3 optional unanswered/)).toBeInTheDocument()
     expect(screen.getByText(/Source label unavailable; check this field in the source PDF/)).toBeInTheDocument()
@@ -54,7 +72,7 @@ describe('SampleFillDialog Smart Fill', () => {
   it('updates counts from live edits and clears', async () => {
     previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Example' }] })
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+    pickMatter()
     expect(await screen.findByText(/1 filled · 1 required answers missing · 3 optional unanswered/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('If yes, explain'), { target: { value: 'Details' } })
     expect(screen.getByText(/2 filled · 1 required answers missing · 2 optional unanswered/)).toBeInTheDocument()
@@ -73,7 +91,7 @@ describe('SampleFillDialog Smart Fill', () => {
     previewSampleTemplateSmartFill.mockResolvedValue({ variables: [] })
     render(<SampleFillDialog sample={checkboxSample} onClose={vi.fn()} />)
     expect(screen.getByLabelText('Count')).toHaveValue('0')
-    fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+    pickMatter()
     expect(await screen.findByText(/1 filled · 1 required answers missing · 0 optional unanswered/)).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText(/Consent/))
     expect(screen.getByText(/2 filled · 0 required answers missing · 0 optional unanswered/)).toBeInTheDocument()
@@ -94,20 +112,20 @@ describe('SampleFillDialog Smart Fill', () => {
     let resolve
     previewSampleTemplateSmartFill.mockImplementation(() => new Promise((r) => { resolve = r }))
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+    pickMatter()
     const field = screen.getByLabelText(/Client name/)
     fireEvent.change(field, { target: { value: 'Manual value' } })
     resolve({ variables: [{ variable: 'client_name', suggested_value: 'Matter value' }] })
     await waitFor(() => expect(field).toHaveValue('Manual value'))
   })
 
-  it('shows source and filled previews and leaves the dialog open after preview', async () => {
-    getSampleTemplateSource.mockResolvedValue(new Blob(['source'], { type: 'application/pdf' }))
+  it('opens the final PDF tab after preview and leaves the dialog open', async () => {
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)
-    expect(await screen.findByRole('region', { name: /Preview of Source: Sample intake/ })).toBeInTheDocument()
     renderSampleTemplateFile.mockResolvedValue({ blob: new Blob(['filled'], { type: 'application/pdf' }), filename: 'filled.pdf' })
     fireEvent.click(screen.getByRole('button', { name: 'Preview filled PDF' }))
     expect(await screen.findByRole('region', { name: /Preview of Filled: Sample intake/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Final PDF' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Download filled PDF' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close fill dialog' })).toBeInTheDocument()
   })
 
@@ -124,7 +142,7 @@ describe('SampleFillDialog Smart Fill', () => {
       .mockResolvedValueOnce({ variables: [{ variable: 'client_name', suggested_value: 'First matter' }] })
       .mockRejectedValueOnce(new Error('denied'))
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+    pickMatter()
     expect(await screen.findByDisplayValue('First matter')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Choose another matter' }))
     await waitFor(() => expect(screen.getByLabelText(/Client name/)).toHaveValue(''))
@@ -134,7 +152,7 @@ describe('SampleFillDialog Smart Fill', () => {
   it('clears matter suggestions when the selection is cleared', async () => {
     previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Matter value' }] })
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Choose matter' }))
+    pickMatter()
     expect(await screen.findByDisplayValue('Matter value')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clear matter' }))
     expect(screen.getByLabelText(/Client name/)).toHaveValue('')
@@ -146,8 +164,10 @@ describe('SampleFillDialog Smart Fill', () => {
     renderSampleTemplateFile.mockResolvedValue({ blob: new Blob(['filled']), filename: 'filled.pdf' })
     fireEvent.click(screen.getByRole('button', { name: 'Preview filled PDF' }))
     expect(await screen.findByRole('region', { name: /Preview of Filled/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
     fireEvent.change(screen.getByLabelText(/Client name/), { target: { value: 'Changed' } })
-    expect(screen.queryByRole('region', { name: /Preview of Filled/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Final PDF' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Download filled PDF' })).not.toBeInTheDocument()
   })
 
   it('ignores a stale render result after an answer changes', async () => {
@@ -162,5 +182,81 @@ describe('SampleFillDialog Smart Fill', () => {
     resolveFirst({ blob: new Blob(['first']), filename: 'first.pdf' })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(screen.getByRole('region', { name: /Preview of Filled/ })).toBeInTheDocument()
+  })
+})
+
+describe('SampleFillDialog document view', () => {
+  const placedSample = {
+    ...sample,
+    variable_schema: { fields: [
+      { name: 'client_name', label: 'Client name', field_type: 'text', required: true, page: 1, rect: [40, 740, 280, 756] },
+      { name: 'city', label: 'City', field_type: 'text', page: 1, rect: [300, 740, 400, 756] },
+    ] },
+  }
+
+  it('opens on the original document and shares answers with the Questions view', async () => {
+    previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'city', suggested_value: 'Boulder' }] })
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    expect(screen.getByRole('tab', { name: 'Document' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByTestId('fill-on-document')).toBeInTheDocument()
+    pickMatter()
+    expect(await screen.findByText('suggested: city')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Doc: type client' }))
+    expect(screen.queryByText('suggested: city')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
+    expect(screen.getByLabelText(/Client name/)).toHaveValue('Typed on page')
+    expect(screen.getByLabelText('City')).toHaveValue('Boulder')
+    expect(screen.getByText(/2 filled · 0 required answers missing · 0 optional unanswered/)).toBeInTheDocument()
+  })
+
+  it('drops the matter mark once a suggested answer is edited on the page', async () => {
+    previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'city', suggested_value: 'Boulder' }] })
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    pickMatter()
+    expect(await screen.findByText('suggested: city')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Doc: edit city' }))
+    expect(screen.queryByText('suggested: city')).not.toBeInTheDocument()
+  })
+
+  it('falls back to Questions when the source PDF cannot be loaded', async () => {
+    getSampleTemplateSource.mockRejectedValue(new Error('missing'))
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    expect(await screen.findByText(/original document could not be opened here/)).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Document' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Client name/)).toBeInTheDocument()
+  })
+
+  it('falls back to Questions when the document viewer reports the PDF is unreadable', async () => {
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Doc: unreadable' }))
+    expect(screen.getByRole('tab', { name: 'Questions' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: 'Document' })).not.toBeInTheDocument()
+  })
+
+  it('returns to the document after a final PDF is invalidated', async () => {
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    renderSampleTemplateFile.mockResolvedValue({ blob: new Blob(['filled']), filename: 'filled.pdf' })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview filled PDF' }))
+    expect(await screen.findByRole('tab', { name: 'Final PDF' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('tab', { name: 'Document' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Doc: type client' }))
+    expect(screen.queryByRole('tab', { name: 'Final PDF' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Document' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('keeps matter search folded away until asked for', () => {
+    render(<SampleFillDialog sample={placedSample} onClose={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Choose matter' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Fill from a matter' }))
+    expect(screen.getByRole('button', { name: 'Choose matter' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide' }))
+    expect(screen.queryByRole('button', { name: 'Choose matter' })).not.toBeInTheDocument()
+  })
+
+  it('closes on Escape', () => {
+    const onClose = vi.fn()
+    render(<SampleFillDialog sample={placedSample} onClose={onClose} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalled()
   })
 })
