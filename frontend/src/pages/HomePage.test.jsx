@@ -4,7 +4,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HomePage from './HomePage'
 import { CORE_CAPABILITIES } from '../marketing/capabilities'
+import { trackMarketingEvent } from '../marketingAnalytics'
 import { HOME_FAQ } from '../seo/config'
+
+vi.mock('../marketingAnalytics', async (importOriginal) => ({
+  ...(await importOriginal()),
+  trackMarketingEvent: vi.fn(),
+}))
 
 describe('HomePage launch routing and claims', () => {
   afterEach(() => cleanup())
@@ -82,6 +88,19 @@ describe('HomePage launch routing and claims', () => {
       'href',
       expect.stringMatching(/^\/request-demo\?source=/),
     )
+  })
+
+  it('records the CTA click that opens the demo form as the first funnel step', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    )
+
+    const [heroCta] = screen.getAllByRole('link', { name: 'Book a demo' })
+    await user.click(heroCta)
+    expect(trackMarketingEvent).toHaveBeenCalledWith('demo_cta_clicked', { placement: 'home' })
   })
 
   it('publishes the LawHand brand and positioning', () => {

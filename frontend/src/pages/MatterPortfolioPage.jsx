@@ -677,6 +677,9 @@ export function MatterPortfolioRow({ matter: m }) {
   )
 }
 
+const MY_MATTERS_PAGE_SIZE = 200
+const ALL_MATTERS_PAGE_SIZE = 100
+
 export default function MatterPortfolioPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -686,9 +689,16 @@ export default function MatterPortfolioPage() {
   const [myLoading, setMyLoading] = useState(true)
   const [myTotal, setMyTotal] = useState(null)
   const [myError, setMyError] = useState(false)
+  const [myPage, setMyPage] = useState(1)
+  const [myLoadingMore, setMyLoadingMore] = useState(false)
+  const [myMoreError, setMyMoreError] = useState(false)
   const myRequest = useRef(0)
+  const matterRequest = useRef(0)
   const [matters, setMatters] = useState([])
   const [matterTotal, setMatterTotal] = useState(null)
+  const [matterPage, setMatterPage] = useState(1)
+  const [matterLoadingMore, setMatterLoadingMore] = useState(false)
+  const [matterMoreError, setMatterMoreError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -778,7 +788,9 @@ export default function MatterPortfolioPage() {
     const request = ++myRequest.current
     setMyLoading(true)
     setMyError(false)
-    getMyMattersPage({ page: 1, page_size: 200 })
+    setMyMoreError(false)
+    setMyPage(1)
+    getMyMattersPage({ page: 1, page_size: MY_MATTERS_PAGE_SIZE })
       .then(data => {
         if (request !== myRequest.current) return
         if (!Array.isArray(data?.items)) throw new Error('Missing assigned-matter results')
@@ -794,15 +806,78 @@ export default function MatterPortfolioPage() {
       })
   }
 
-  const loadMatters = () => {
-    setLoading(true)
-    getMattersV2({ page_size: 100 })
+  // Page through the rest of the assigned matters instead of stopping at the
+  // first page. The list guards against duplicate rows from an overlapping page.
+  const loadMoreMyMatters = () => {
+    if (myLoadingMore) return
+    const request = ++myRequest.current
+    const nextPage = myPage + 1
+    setMyLoadingMore(true)
+    setMyMoreError(false)
+    getMyMattersPage({ page: nextPage, page_size: MY_MATTERS_PAGE_SIZE })
       .then(data => {
+        if (request !== myRequest.current) return
+        if (!Array.isArray(data?.items)) throw new Error('Missing assigned-matter results')
+        setMyMatters(previous => {
+          const seen = new Set(previous.map(m => m.id))
+          return [...previous, ...data.items.filter(m => !seen.has(m.id))]
+        })
+        setMyTotal(Number.isInteger(data?.total) ? data.total : null)
+        setMyPage(nextPage)
+      })
+      .catch(() => {
+        if (request !== myRequest.current) return
+        setMyMoreError(true)
+      })
+      .finally(() => {
+        if (request === myRequest.current) setMyLoadingMore(false)
+      })
+  }
+
+  const loadMatters = () => {
+    const request = ++matterRequest.current
+    setLoading(true)
+    setError(null)
+    setMatterMoreError(false)
+    setMatterPage(1)
+    getMattersV2({ page: 1, page_size: ALL_MATTERS_PAGE_SIZE })
+      .then(data => {
+        if (request !== matterRequest.current) return
         setMatters(data.items || [])
         setMatterTotal(Number.isInteger(data?.total) ? data.total : null)
       })
-      .catch(err => { setError('Failed to load matters.'); reportError(err) })
-      .finally(() => setLoading(false))
+      .catch(err => {
+        if (request !== matterRequest.current) return
+        setError('Failed to load matters.'); reportError(err)
+      })
+      .finally(() => {
+        if (request === matterRequest.current) setLoading(false)
+      })
+  }
+
+  const loadMoreMatters = () => {
+    if (matterLoadingMore) return
+    const request = ++matterRequest.current
+    const nextPage = matterPage + 1
+    setMatterLoadingMore(true)
+    setMatterMoreError(false)
+    getMattersV2({ page: nextPage, page_size: ALL_MATTERS_PAGE_SIZE })
+      .then(data => {
+        if (request !== matterRequest.current) return
+        setMatters(previous => {
+          const seen = new Set(previous.map(m => m.id))
+          return [...previous, ...(data.items || []).filter(m => !seen.has(m.id))]
+        })
+        setMatterTotal(Number.isInteger(data?.total) ? data.total : null)
+        setMatterPage(nextPage)
+      })
+      .catch(err => {
+        if (request !== matterRequest.current) return
+        setMatterMoreError(true); reportError(err)
+      })
+      .finally(() => {
+        if (request === matterRequest.current) setMatterLoadingMore(false)
+      })
   }
 
   useEffect(() => {
@@ -1142,6 +1217,21 @@ export default function MatterPortfolioPage() {
                   togglingId={togglingId}
                 />
               )}
+              {!myLoading && !myUnavailable && myPartial && myMatters.length > 0 && (
+                <div className="mt-4 flex flex-col items-center gap-2">
+                  {myMoreError && (
+                    <p role="alert" className="text-[13px] font-sans text-brand-rose">More assigned matters could not be loaded.</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={loadMoreMyMatters}
+                    disabled={myLoadingMore}
+                    className="rounded-lg border border-brand-line bg-brand-surface px-4 py-2 text-[13px] font-semibold text-brand-ink hover:bg-brand-bg-soft disabled:opacity-50"
+                  >
+                    {myLoadingMore ? 'Loading…' : myTotal !== null ? `Load more (${Math.max(0, myTotal - myMatters.length)} more)` : 'Load more assigned matters'}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1149,9 +1239,13 @@ export default function MatterPortfolioPage() {
         {/* ── Portfolio Header ────────────────────────────────────────────────── */}
         <div className="mb-6">
           <h2 className="font-serif font-bold text-2xl text-brand-ink mb-1">All accessible matters</h2>
-          <p className="text-brand-ink-2 text-[14px] font-sans">
-            {accessibleTotal} matter{accessibleTotal !== 1 ? 's' : ''} you can access
-          </p>
+          {/* No count until one has actually loaded: "0 matters you can access"
+              while loading or after a failure is a total nobody computed. */}
+          {!loading && !error && (
+            <p className="text-brand-ink-2 text-[14px] font-sans">
+              {accessibleTotal} matter{accessibleTotal !== 1 ? 's' : ''} you can access
+            </p>
+          )}
           {!loading && mattersPartial && (
             <p role="status" className="mt-1 text-[13px] font-sans text-brand-muted">
               Showing {matters.length}{matterTotal !== null ? ` of ${matterTotal}` : ''} loaded.
@@ -1246,9 +1340,14 @@ export default function MatterPortfolioPage() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, client, attorney, description..."
+              placeholder="Search matters"
+              aria-label="Search accessible matters"
+              aria-describedby="all-matters-search-help"
               className="w-full bg-brand-surface border border-brand-line rounded-lg pl-11 pr-4 py-2.5 text-sm font-sans text-brand-ink focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent placeholder-brand-muted transition-all"
             />
+            <p id="all-matters-search-help" className="mt-1 text-[12px] font-sans text-brand-muted">
+              Matches matter name, matter number, client name, or organization.
+            </p>
           </div>
         </div>
 
@@ -1299,6 +1398,22 @@ export default function MatterPortfolioPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {!loading && mattersPartial && matters.length > 0 && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            {matterMoreError && (
+              <p role="alert" className="text-[13px] font-sans text-brand-rose">More matters could not be loaded.</p>
+            )}
+            <button
+              type="button"
+              onClick={loadMoreMatters}
+              disabled={matterLoadingMore}
+              className="rounded-lg border border-brand-line bg-brand-surface px-4 py-2 text-[13px] font-semibold text-brand-ink hover:bg-brand-bg-soft disabled:opacity-50"
+            >
+              {matterLoadingMore ? 'Loading…' : matterTotal !== null ? `Load more (${Math.max(0, matterTotal - matters.length)} more)` : 'Load more matters'}
+            </button>
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import MatterPortfolioPage from './MatterPortfolioPage'
@@ -56,5 +56,24 @@ describe('All accessible matters access count', () => {
 
     expect(await screen.findByText('2 matters you can access')).toBeInTheDocument()
     expect(screen.queryByText(/loaded\./)).not.toBeInTheDocument()
+  })
+
+  it('shows no access count while loading or after a failure, and clears the error on a successful retry', async () => {
+    let finishFirst
+    getMattersV2
+      .mockImplementationOnce(() => new Promise((_, reject) => { finishFirst = reject }))
+      .mockResolvedValueOnce({ items: pageOf(3), total: 3, page: 1, page_size: 100 })
+
+    renderPage()
+
+    expect(screen.queryByText(/you can access/)).not.toBeInTheDocument()
+    finishFirst(new Error('network'))
+    expect(await screen.findByText('Matters could not be loaded')).toBeInTheDocument()
+    expect(screen.queryByText(/you can access/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('3 matters you can access')).toBeInTheDocument()
+    expect(screen.queryByText('Matters could not be loaded')).not.toBeInTheDocument()
   })
 })

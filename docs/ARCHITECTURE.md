@@ -330,12 +330,14 @@ deployment, billing reconciliation, monitoring, restore, and support gates in
 ## 9. Marketing and SEO boundary
 
 The public SPA emits absolute canonical/Open Graph/Twitter metadata, JSON-LD,
-`robots.txt`, and a sitemap when built with `VITE_PUBLIC_SITE_URL`. Only `/`,
-`/privacy`, and `/terms` are indexable. The build emits dedicated initial HTML
-shells for `/privacy` and `/terms`, so title, description, canonical, social
-metadata, and legal-summary content are route-correct before JavaScript loads;
-React then takes over normally. Private routes are runtime-labeled `noindex,
-nofollow` and omitted from the sitemap.
+`robots.txt`, and a sitemap when built with `VITE_PUBLIC_SITE_URL`. Only the
+public marketing and policy pages marked indexable in `PUBLIC_ROUTE_META`
+(`frontend/src/seo/config.js`) are indexable. The build emits a dedicated
+initial HTML shell for each of them, so title, description, canonical, social
+metadata, structured data, and summary content are route-correct before
+JavaScript loads; React then takes over normally. Private routes are
+runtime-labeled `noindex, nofollow`, disallowed in `robots.txt`, and omitted
+from the sitemap.
 Production preflight binds this build-time origin to `https://$DOMAIN` in both
 supported Compose topologies so a copied deployment cannot retain canonicals
 from a different host.

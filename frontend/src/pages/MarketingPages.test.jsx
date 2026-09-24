@@ -1,7 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProductChatPage from './ProductChatPage'
 import McpProductPage from './McpProductPage'
 import PricingPage from './PricingPage'
@@ -9,8 +9,18 @@ import ProductPage from './ProductPage'
 import NotFoundPage from './NotFoundPage'
 import { PRACTICE_SKILLS, WORKSPACE_MODULES } from '../marketing/catalog'
 import { CORE_CAPABILITIES } from '../marketing/capabilities'
+import { trackMarketingEvent } from '../marketingAnalytics'
+import { FOOTER_NAVIGATION } from '../seo/config'
 
-afterEach(() => cleanup())
+vi.mock('../marketingAnalytics', async (importOriginal) => ({
+  ...(await importOriginal()),
+  trackMarketingEvent: vi.fn(),
+}))
+
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
 function renderPage(Page) {
   return render(
@@ -89,6 +99,44 @@ describe('public LawHand product marketing', () => {
     expect(screen.getByRole('link', { name: /Explore AI Chat/i })).toHaveAttribute('href', '/product/chat')
     expect(screen.getByRole('link', { name: /Explore MCP/i })).toHaveAttribute('href', '/product/mcp')
     expect(screen.getAllByRole('link', { name: /Book a workflow demo/i })[0]).toHaveAttribute('href', '/request-demo?source=product')
+  })
+
+  it.each([
+    ['pricing', 'Book a demo', PricingPage],
+    ['pricing', 'Configure an intake rollout', PricingPage],
+    ['chat', 'See LawHand chat', ProductChatPage],
+    ['mcp', 'Get Research access', McpProductPage],
+  ])('sends the %s page CTA "%s" to the tracked request form', async (placement, name, Page) => {
+    const user = userEvent.setup()
+    renderPage(Page)
+
+    // A mailto: link skipped the form, its placement, and every funnel event.
+    const cta = screen.getByRole('link', { name: new RegExp(name, 'i') })
+    expect(cta).toHaveAttribute('href', `/request-demo?source=${placement}`)
+
+    await user.click(cta)
+    expect(trackMarketingEvent).toHaveBeenCalledWith('demo_cta_clicked', { placement })
+  })
+
+  it('records a demo CTA click only for links to the request form', async () => {
+    const user = userEvent.setup()
+    renderPage(ProductChatPage)
+
+    await user.click(screen.getByRole('link', { name: 'View pricing' }))
+    expect(trackMarketingEvent).not.toHaveBeenCalled()
+
+    // The header CTA carries no placement, so the funnel reads it as direct.
+    const [headerCta] = within(screen.getByRole('banner')).getAllByRole('link', { name: /Book demo/i })
+    await user.click(headerCta)
+    expect(trackMarketingEvent).toHaveBeenCalledWith('demo_cta_clicked', { placement: 'direct' })
+  })
+
+  it('renders the shared footer the crawler shells also publish', () => {
+    renderPage(PricingPage)
+
+    const footer = screen.getByRole('navigation', { name: 'Footer' })
+    expect(within(footer).getAllByRole('link').map((link) => link.getAttribute('href')))
+      .toEqual(FOOTER_NAVIGATION.map(({ path }) => path))
   })
 
   it('states the child support worksheet jurisdictions rather than implying nationwide coverage', () => {

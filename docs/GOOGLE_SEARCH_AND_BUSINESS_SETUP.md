@@ -25,14 +25,22 @@ at build time from `frontend/src/seo/config.js`.
 - **Canonical URL, Open Graph, and Twitter card** per route, absolute against
   `VITE_PUBLIC_SITE_URL`.
 - **`robots.txt`** allowing the public pages and disallowing every sign-in
-  walled route as a prefix rule.
+  walled route as a prefix rule. A prefix rule also catches any public page
+  that merely begins with it (`Disallow: /trust` would block `/trust-center`),
+  so such a page gets its own longer `Allow` line. `config.test.js` checks every
+  indexable route against the rules as Google applies them (longest match wins)
+  and fails if a route in `App.jsx` is missing from the SEO route table.
 - **`sitemap.xml`** listing only indexable public routes, with `lastmod` from
-  `PUBLIC_CONTENT_LASTMOD`.
+  `PUBLIC_CONTENT_LASTMOD`, except that the privacy policy and terms carry the
+  date each page states as its own last update (`LEGAL_LAST_UPDATED`).
 - **`X-Robots-Tag: noindex`** from nginx on every non-public path, so a
   workspace URL cannot be indexed even before JavaScript runs.
 - **No-JavaScript HTML shells** for `/product`, `/product/chat`,
-  `/product/mcp`, `/pricing`, `/request-demo`, `/privacy`, and `/terms`, so a
-  crawler sees real content without executing the bundle.
+  `/product/mcp`, `/pricing`, `/request-demo`, `/support`, `/requirements`,
+  `/trust-center`, `/privacy`, and `/terms`, plus the home shell in
+  `frontend/index.html`, so a crawler sees real content without executing the
+  bundle. Each carries the app's footer (`FOOTER_NAVIGATION`), so every public
+  page is reachable by following links, not only from the sitemap.
 - **Structured data** (`schema.org`): `Organization`, `WebSite`,
   `SoftwareApplication` with the capability `featureList`, `BreadcrumbList`,
   `FAQPage` on the home and pricing pages, and `SiteNavigationElement` for

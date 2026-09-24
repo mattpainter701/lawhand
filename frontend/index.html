@@ -7,10 +7,12 @@
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <link rel="canonical" href="/" />
-    <!-- The webfont is requested from inside the CSS bundle, so the browser
-         cannot discover these hosts until late; warming them protects LCP. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <!-- Linked here, not @imported from the CSS bundle, so the webfont
+         stylesheet downloads alongside the bundle instead of after it. The font
+         files it names are discovered only once it arrives, so their host is
+         warmed now to keep that last hop off the critical path. -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" />
     <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon-lh.svg" />
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
     <meta name="theme-color" content="#161817" />
@@ -56,8 +58,6 @@
               <a class="server-marketing__secondary" href="/product/mcp">Legal Research MCP</a>
               <a class="server-marketing__secondary" href="/pricing">Pricing</a>
               <a class="server-marketing__secondary" href="/request-demo">Book a Demo</a>
-              <a class="server-marketing__secondary" href="/privacy">Privacy Policy</a>
-              <a class="server-marketing__secondary" href="/terms">Terms of Use</a>
             </div>
           </section>
           <!-- The capability names below are the same list published as
@@ -84,6 +84,26 @@
               <li><strong>Tenant isolation and review controls</strong> &mdash; per-firm isolation, role authorization, and encrypted stored credentials.</li>
             </ul>
           </section>
+          <!-- The same links as FOOTER_NAVIGATION in src/seo/config.js.
+               src/seo/config.test.js fails if this shell stops linking an
+               indexable page, because a crawler that never runs the app would
+               otherwise reach that page only through the sitemap. -->
+          <footer class="server-marketing__footer">
+            <nav aria-label="Footer">
+              <ul>
+                <li><a href="/product">Platform</a></li>
+                <li><a href="/product/chat">AI Chat</a></li>
+                <li><a href="/product/mcp">Legal Research MCP</a></li>
+                <li><a href="/pricing">Pricing</a></li>
+                <li><a href="/requirements">Requirements</a></li>
+                <li><a href="/support">Support</a></li>
+                <li><a href="/trust-center">Trust center</a></li>
+                <li><a href="/privacy">Privacy</a></li>
+                <li><a href="/terms">Terms</a></li>
+              </ul>
+            </nav>
+            <p>&copy; 2026 Perevaga Group LLC d/b/a LawHand.</p>
+          </footer>
         </div>
       </main>
     </div>
