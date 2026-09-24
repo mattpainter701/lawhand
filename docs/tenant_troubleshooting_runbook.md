@@ -143,6 +143,56 @@ billing, imports, and similar), so it can only reach a genuinely unused trial.
 Hard deletion of an expired disposable **demo** is a different operation and
 belongs to the demo workspace panel.
 
+## Repair Microsoft sign-in links after an Entra app registration change
+
+A new Microsoft app registration changes the pairwise `sub` claim. Existing
+LawHand users without saved Entra `tid` and `oid` then get
+`microsoft_not_linked`, even though they still appear in the tenant roster.
+The `/api/auth/me` and `/api/auth/refresh` 401s follow from the failed login.
+
+For the Bismarck Law incident, target LawHand tenant
+`9ff4a695-826c-422c-bb7f-6037495a2c4e`. Obtain the **Microsoft Entra
+directory (tenant) ID** independently from Entra admin center. It is different
+from the LawHand tenant ID. Run this from `backend` on the production host with
+application database configuration. First review the dry-run mapping:
+
+```bash
+python -m scripts.repair_microsoft_entra_links \
+  --tenant-id 9ff4a695-826c-422c-bb7f-6037495a2c4e \
+  --entra-tenant-id "$BISMARCK_ENTRA_TENANT_ID" > /secure/bismarck-link-plan.json
+```
+
+The script uses the tenant's stored Microsoft Graph connection and checks its
+token's `tid` against the supplied Entra directory ID. Graph validates that
+access token. If the old app's refresh token is unusable, use a trusted export
+from **that Entra directory** instead. The JSON format is
+`{"entra_tenant_id":"<directory UUID>","users":[{"id":"<object UUID>","mail":"services@bismarcklaw.com","userPrincipalName":"services@bismarcklaw.com","accountEnabled":true,"userType":"Member"}]}`;
+include the complete paginated `/users` result with those fields. Keep the
+export in a restricted location and remove it after the repair.
+
+```bash
+python -m scripts.repair_microsoft_entra_links \
+  --tenant-id 9ff4a695-826c-422c-bb7f-6037495a2c4e \
+  --entra-tenant-id "$BISMARCK_ENTRA_TENANT_ID" \
+  --graph-export /secure/bismarck-entra-users.json > /secure/bismarck-link-plan.json
+```
+
+Check that `services@bismarcklaw.com` and the expected staff appear under
+`links` or `already_linked`. Inspect every mapping and all `skipped` rows.
+The script only links active, human LawHand users at the tenant's domain to
+enabled, non-guest Entra users with a unique exact `mail` or UPN match. It
+refuses conflicting existing links or ambiguous identities. Users with other
+email domains, such as guest addresses and `.onmicrosoft.com` accounts, need
+separate review. It never changes LawHand roles, seats, or existing subjects.
+
+Apply the reviewed mapping by repeating the same command and adding
+`--confirm-plan-sha256 <plan_sha256 from dry run>`. A changed mapping fails
+instead of applying. Re-run a dry run after applying: repaired users should
+appear under `already_linked`. On their next Microsoft sign-in, the callback
+matches `(tid, oid)` and records the new pairwise `sub`; future successful
+sign-ins keep the stable IDs. The script may refresh the stored Graph token
+during a dry run, but never writes user links without the digest.
+
 ## Performance note
 
 Postgres RLS stays on for operator reads: the registry is enumerated and each

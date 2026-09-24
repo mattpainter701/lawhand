@@ -1239,9 +1239,13 @@ export default function MatterPortfolioPage() {
         {/* ── Portfolio Header ────────────────────────────────────────────────── */}
         <div className="mb-6">
           <h2 className="font-serif font-bold text-2xl text-brand-ink mb-1">All accessible matters</h2>
-          <p className="text-brand-ink-2 text-[14px] font-sans">
-            {accessibleTotal} matter{accessibleTotal !== 1 ? 's' : ''} you can access
-          </p>
+          {/* No count until one has actually loaded: "0 matters you can access"
+              while loading or after a failure is a total nobody computed. */}
+          {!loading && !error && (
+            <p className="text-brand-ink-2 text-[14px] font-sans">
+              {accessibleTotal} matter{accessibleTotal !== 1 ? 's' : ''} you can access
+            </p>
+          )}
           {!loading && mattersPartial && (
             <p role="status" className="mt-1 text-[13px] font-sans text-brand-muted">
               Showing {matters.length}{matterTotal !== null ? ` of ${matterTotal}` : ''} loaded.

@@ -13,6 +13,7 @@ import AppErrorBoundary from './components/AppErrorBoundary'
 import { getMe } from './api'
 import { clearChatGenerationsForSignOut } from './chatGenerations'
 import { clearChatQueueForSignOut } from './chatQueue'
+import { clearMatterListMemory } from './utils/matterListMemory'
 import { canAccessAddonList, canAccessModuleList, hasFinanceAccess } from './moduleAccess'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -144,6 +145,7 @@ export function AuthProvider({ children }) {
     // Queue first, so aborting the answers does not dispatch what was waiting.
     clearChatQueueForSignOut()
     clearChatGenerationsForSignOut()
+    clearMatterListMemory()
     setUser(null)
   }, [])
 

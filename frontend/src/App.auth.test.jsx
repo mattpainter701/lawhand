@@ -11,6 +11,7 @@ vi.mock('./api', async (importOriginal) => ({
 }))
 
 import { AuthProvider, useAuth } from './App'
+import { readRememberedListUrl, rememberListUrl } from './utils/matterListMemory'
 
 function deferred() {
   let resolve
@@ -87,5 +88,23 @@ describe('AuthProvider request ordering', () => {
 
     expect(screen.getByLabelText('Current user')).toHaveTextContent('signed-out')
     expect(screen.getByLabelText('Auth loading')).toHaveTextContent('false')
+  })
+
+  it('does not hand the last matter list view to the next person on this tab', async () => {
+    apiMocks.getMe.mockResolvedValueOnce({ id: 'user-1', email: 'attorney@example.com' })
+    rememberListUrl('/matters?q=Acme%20Holdings')
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText('attorney@example.com')).toBeInTheDocument()
+    expect(readRememberedListUrl()).toBe('/matters?q=Acme%20Holdings')
+    fireEvent.click(screen.getByRole('button', { name: 'Log out locally' }))
+
+    expect(screen.getByLabelText('Current user')).toHaveTextContent('signed-out')
+    expect(readRememberedListUrl()).toBe('')
   })
 })
