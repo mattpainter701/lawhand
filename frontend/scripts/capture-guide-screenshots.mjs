@@ -22,10 +22,19 @@ const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const outputDir = path.join(frontendDir, 'public', 'guide-assets')
 const args = process.argv.slice(2)
 const discover = args.includes('--discover')
-const onlyArg = args.find((arg) => arg.startsWith('--only'))
-const only = onlyArg
-  ? new Set((onlyArg.includes('=') ? onlyArg.split('=')[1] : args[args.indexOf(onlyArg) + 1] || '').split(',').filter(Boolean))
-  : null
+// `--only a,b` or `--only=a,b`. A following flag is not a value, so
+// `--only --discover` is reported instead of selecting a shot named "--discover".
+const onlyIndex = args.findIndex((arg) => arg === '--only' || arg.startsWith('--only='))
+const onlyValue = onlyIndex === -1
+  ? null
+  : args[onlyIndex].startsWith('--only=')
+    ? args[onlyIndex].slice('--only='.length)
+    : (args[onlyIndex + 1]?.startsWith('--') ? '' : args[onlyIndex + 1] || '')
+const only = onlyValue === null ? null : new Set(onlyValue.split(',').filter(Boolean))
+if (only && only.size === 0) {
+  console.error('--only needs a comma-separated list of shot names, for example --only tasks-list,invoices-list')
+  process.exit(1)
+}
 const WEBP_QUALITY = Number(process.env.GUIDE_SCREENSHOT_QUALITY || 0.86)
 
 function chromiumExecutable() {

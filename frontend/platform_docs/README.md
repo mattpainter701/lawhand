@@ -78,6 +78,8 @@ Guide screenshots live in `frontend/public/guide-assets/` and are referenced wit
 
 Write alternative text that says what the image shows. Prefer WebP for screenshots; every image must be served from `/guide-assets/` and be no larger than 600 KB.
 
+The check also fails for an image in `guide-assets/` that no chapter uses, so delete a screenshot when you remove its shot or the last reference to it.
+
 ### Capturing screenshots
 
 Screenshots are captured from the real UI with synthetic data, so they can be regenerated after any UI change:

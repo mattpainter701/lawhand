@@ -20,6 +20,10 @@ const allowedRouteRoots = new Set([
 // Guide screenshots are served as static files; keep each one small enough to
 // load quickly inside the product.
 const maxImageBytes = 600 * 1024
+// Markdown links and images, with an optional quoted title after the target.
+const linkPattern = /(?<!!)\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+const usedGuideAssets = new Set()
 
 // Tabs are declared grouped (`export const ADMIN_TAB_GROUPS = [{ id, label,
 // tabs: [...] }]`) in frontend/src/adminTabs.js. Only the entries inside
@@ -159,12 +163,16 @@ function parseChapter(file, audience) {
   if (metadata.slug) chapters.set(`${audience}:${metadata.slug}`, { audience, content, anchors, relativeFile })
 }
 
+function linksTo(chapter, target) {
+  return Array.from(chapter.content.matchAll(linkPattern)).some(([, href]) => href === target)
+}
+
 function checkAnchor(relativeFile, href, target, anchor) {
   if (anchor && !target.anchors.has(anchor)) fail(relativeFile, `link ${href} points to a section that does not exist`)
 }
 
 function checkLinks({ audience, content, anchors, relativeFile }) {
-  const links = Array.from(content.matchAll(/(?<!!)\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g), ([, href]) => href)
+  const links = Array.from(content.matchAll(linkPattern), ([, href]) => href)
   for (const href of links) {
     if (href.startsWith('#')) {
       if (!anchors.has(decodeURIComponent(href.slice(1)))) fail(relativeFile, `link ${href} points to a section that does not exist in this chapter`)
@@ -220,12 +228,13 @@ function checkLinks({ audience, content, anchors, relativeFile }) {
     }
   }
 
-  const images = Array.from(content.matchAll(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g))
+  const images = Array.from(content.matchAll(imagePattern))
   for (const [, alt, href] of images) {
     if (!href.startsWith('/guide-assets/')) {
       fail(relativeFile, `image ${href} must be served from /guide-assets/`)
       continue
     }
+    usedGuideAssets.add(href)
     if (!alt.trim()) fail(relativeFile, `image ${href} needs meaningful alternative text`)
     const file = join(publicRoot, href)
     if (!existsSync(file)) fail(relativeFile, `image does not exist: ${href}`)
@@ -245,6 +254,16 @@ for (const [directory, audience] of [['user-guide', 'user'], ['administrative-gu
 }
 
 chapters.forEach(checkLinks)
+
+const guideAssetsRoot = join(publicRoot, 'guide-assets')
+if (existsSync(guideAssetsRoot)) {
+  for (const name of readdirSync(guideAssetsRoot)) {
+    if (name === 'README.md' || !statSync(join(guideAssetsRoot, name)).isFile()) continue
+    if (!usedGuideAssets.has(`/guide-assets/${name}`)) {
+      fail(`frontend/public/guide-assets/${name}`, 'image is not used by any chapter; reference it or delete it')
+    }
+  }
+}
 
 if (!existsSync(join(docsRoot, 'README.md'))) fail('frontend/platform_docs', 'README.md is required')
 
@@ -295,7 +314,7 @@ function validateCoverage() {
     // A record screen has no address of its own, so its chapter links to the
     // list it is opened from and explains the way in.
     const linkTarget = isParameterized(entry.route) ? entryRouteFor(entry.route) : entry.route
-    if (chapter && !chapter.content.includes(`](${linkTarget})`)) {
+    if (chapter && !linksTo(chapter, linkTarget)) {
       fail(chapter.relativeFile, `coverage chapter must link to ${linkTarget} for module ${entry.id}`)
     }
   }
@@ -328,7 +347,7 @@ function validateCoverage() {
       fail('frontend/platform_docs/coverage.json', `admin tab ${entry.tab} label must match "${adminTabLabels.get(entry.tab)}"`)
     }
     const chapter = checkEntry('admin', entry, `admin tab ${entry.tab}`)
-    if (chapter && !chapter.content.includes(`](/admin?tab=${entry.tab})`)) {
+    if (chapter && !linksTo(chapter, `/admin?tab=${entry.tab}`)) {
       fail(chapter.relativeFile, `coverage chapter must link to /admin?tab=${entry.tab}`)
     }
   }
@@ -357,7 +376,7 @@ function validateCoverage() {
     }
     const chapter = checkEntry('admin', entry, `integration section ${entry.section}`)
     const route = `/admin?tab=integrations&integration=${entry.section}`
-    if (chapter && !chapter.content.includes(`](${route})`)) {
+    if (chapter && !linksTo(chapter, route)) {
       fail(chapter.relativeFile, `coverage chapter must link to ${route}`)
     }
   }
@@ -386,7 +405,7 @@ function validateCoverage() {
     }
     coveredAdminRoutes.add(entry.route)
     const chapter = checkEntry('admin', entry, `admin route ${entry.route}`)
-    if (chapter && !chapter.content.includes(`](${entry.route})`)) {
+    if (chapter && !linksTo(chapter, entry.route)) {
       fail(chapter.relativeFile, `coverage chapter must link to ${entry.route}`)
     }
   }
