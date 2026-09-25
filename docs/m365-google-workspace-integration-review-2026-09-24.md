@@ -82,7 +82,7 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
 | D02 | Cloud search and content fetch fall back to the admin's mailbox and files for every user | Open | Decision needed |
 | D03 | 15-minute sync indexes the admin's mailbox into the firm-wide index | Open | Decision needed; purge existing mail rows |
 | D06 | Microsoft "Auto" storage writes firm matter files to the admin's personal OneDrive | Open | Decision needed (SharePoint default) |
-| D07 | Removing a matter assignee never removes their OneDrive/SharePoint/Drive folder share | **Fixed** (this branch) | Unassign and deactivation remove LawHand's own permission; failures are recorded and retried. SharePoint grants nothing per person |
+| D07 | Removing a matter assignee never removes their OneDrive/SharePoint/Drive folder share | **Fixed** (PR #625) | Unassign and deactivation remove LawHand's own permission; failures are recorded and retried. SharePoint grants nothing per person |
 | D15 | Directory sync re-activates users an admin deactivated; their mail keeps being captured | Open | Decision on source of truth |
 | D16 | Directory sync never deprovisions, and licenses guests and resource mailboxes | Open | |
 | D08 | Editing a matter document in Word/Drive, as the UI invites, breaks LawHand access (409) | Open | Needs sync-back |
