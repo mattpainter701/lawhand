@@ -1,9 +1,12 @@
 """Pydantic schemas for the global SampleTemplate catalog."""
 
+import uuid
 from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.matter_document import MatterDocumentResponse
 
 
 class SampleTemplateResponse(BaseModel):
@@ -62,3 +65,21 @@ class SampleTemplateSmartFillResponse(BaseModel):
     sample_id: str
     matter_id: Optional[str] = None
     variables: list[dict[str, Any]]
+
+
+class SampleTemplateSaveToMatterRequest(SampleTemplateRenderRequest):
+    """Fill a global library form and file the PDF on one matter."""
+
+    matter_id: str = Field(min_length=1, max_length=100)
+    folder_id: Optional[uuid.UUID] = None
+    verified_fields: list[str] = Field(default_factory=list, max_length=200)
+
+
+class SampleTemplateSaveToMatterResponse(BaseModel):
+    sample_id: str
+    matter_id: str
+    matter_document_id: str
+    matter_document: Optional[MatterDocumentResponse] = None
+    output_filename: str
+    storage_backend: Optional[str] = None
+    storage_warning: Optional[str] = None

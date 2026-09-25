@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getSampleTemplateSource, previewSampleTemplateSmartFill, renderSampleTemplateFile } from '../../api'
+import { getSampleTemplateSource, previewSampleTemplateSmartFill, renderSampleTemplateFile, saveSampleTemplateToMatter, updateMatterDocument } from '../../api'
 import SampleFillDialog from './SampleFillDialog'
 
 vi.mock('../../api', () => ({
   getSampleTemplateSource: vi.fn(),
   previewSampleTemplateSmartFill: vi.fn(),
   renderSampleTemplateFile: vi.fn(),
+  saveSampleTemplateToMatter: vi.fn(),
+  updateMatterDocument: vi.fn(),
 }))
 
 vi.mock('../prepare/MatterPicker', () => ({
@@ -275,5 +277,79 @@ describe('SampleFillDialog document view', () => {
     render(<SampleFillDialog sample={placedSample} onClose={onClose} />)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalled()
+  })
+})
+
+describe('SampleFillDialog on a matter', () => {
+  const fillable = { ...sample, variable_schema: { fields: [
+    { name: 'client_name', label: 'Client name', field_type: 'text', required: true, page: 1 },
+    { name: 'city', label: 'City', field_type: 'text', page: 1 },
+  ] } }
+  const renderOnMatter = (props = {}) => render(<SampleFillDialog sample={fillable} fixedMatterId="matter-9" folderId="folder-2" onClose={vi.fn()} onSaved={vi.fn()} {...props} />)
+  beforeEach(() => {
+    previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Example' }] })
+    renderSampleTemplateFile.mockResolvedValue({ blob: new Blob(['filled'], { type: 'application/pdf' }), filename: 'filled.pdf' })
+  })
+
+  it('fills from the matter on open without asking for a matter', async () => {
+    renderOnMatter()
+    expect(screen.getByRole('heading', { name: 'Fill “Sample intake” for this matter' })).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('Ada Example')).toBeInTheDocument()
+    expect(previewSampleTemplateSmartFill).toHaveBeenCalledWith('sample-1', { matter_id: 'matter-9', variables: ['client_name', 'city'] })
+    expect(screen.queryByRole('button', { name: 'Fill from a matter' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Filled from this matter — review every value before saving/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save to matter' })).not.toBeInTheDocument()
+  })
+
+  it('reviews the final PDF, saves it to the matter folder, and shares it with the client', async () => {
+    const onSaved = vi.fn()
+    const onClose = vi.fn()
+    saveSampleTemplateToMatter.mockResolvedValue({ matter_document_id: 'doc-1', output_filename: 'Sample intake.pdf', matter_document: { id: 'doc-1', filename: 'Sample intake.pdf', portal_visible: false } })
+    updateMatterDocument.mockResolvedValue({ id: 'doc-1', filename: 'Sample intake.pdf', portal_visible: true })
+    renderOnMatter({ onSaved, onClose })
+    await screen.findByDisplayValue('Ada Example')
+    fireEvent.click(screen.getByRole('button', { name: 'Review final PDF' }))
+    expect(await screen.findByRole('region', { name: /Preview of Filled: Sample intake/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
+    expect(await screen.findByText(/Saved to this matter’s documents/)).toBeInTheDocument()
+    expect(saveSampleTemplateToMatter).toHaveBeenCalledWith('sample-1', { matter_id: 'matter-9', variables: { client_name: 'Ada Example', city: '' }, folder_id: 'folder-2' })
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ matter_document_id: 'doc-1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Share with client' }))
+    expect(await screen.findByText(/Shared with the client/)).toBeInTheDocument()
+    expect(updateMatterDocument).toHaveBeenCalledWith('matter-9', 'doc-1', { portal_visible: true })
+    expect(screen.queryByRole('button', { name: 'Share with client' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('blocks saving while a required answer is missing', async () => {
+    previewSampleTemplateSmartFill.mockResolvedValue({ variables: [] })
+    renderOnMatter()
+    await waitFor(() => expect(previewSampleTemplateSmartFill).toHaveBeenCalled())
+    fireEvent.click(await screen.findByRole('button', { name: 'Review final PDF' }))
+    expect(await screen.findByRole('button', { name: 'Save to matter' })).toBeDisabled()
+    expect(screen.getByText('Answer the required questions to finish.')).toBeInTheDocument()
+  })
+
+  it('keeps the filled form open with the reason when saving fails', async () => {
+    saveSampleTemplateToMatter.mockRejectedValue({ response: { data: { detail: 'Matter not found' } } })
+    renderOnMatter()
+    await screen.findByDisplayValue('Ada Example')
+    fireEvent.click(screen.getByRole('button', { name: 'Review final PDF' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save to matter' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Matter not found')
+    expect(screen.getByRole('button', { name: 'Save to matter' })).toBeEnabled()
+  })
+
+  it('reports a failed share without losing the saved document', async () => {
+    saveSampleTemplateToMatter.mockResolvedValue({ matter_document_id: 'doc-1', output_filename: 'Sample intake.pdf' })
+    updateMatterDocument.mockRejectedValue(new Error('offline'))
+    renderOnMatter()
+    await screen.findByDisplayValue('Ada Example')
+    fireEvent.click(screen.getByRole('button', { name: 'Review final PDF' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save to matter' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Share with client' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('saved but could not be shared')
+    expect(screen.getByText(/Saved to this matter’s documents/)).toBeInTheDocument()
   })
 })
