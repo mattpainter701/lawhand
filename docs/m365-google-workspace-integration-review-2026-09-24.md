@@ -17,7 +17,7 @@
 2. **Three security defects were confirmed and are now fixed.**
    - One platform Google service account is a member of every firm's Shared Drive, and Drive search and sync ran with its token across all drives, so a firm could see another firm's files (D01).
    - `POST /api/email/scan` scanned any colleague's mailbox by `user_id` (D10).
-   - The Excel add-in's "set values" action let a formula such as `=WEBSERVICE(…)` through as a plain value, past the formula ban (D19, fixed later).
+   - The Excel add-in's "set values" action let a formula such as `=WEBSERVICE(…)` through as a plain value, past the formula ban (D19, fixed in PR #624).
    - Firm indexes built before the Drive fix may still hold other firms' rows and need a purge.
 3. **The Microsoft integration was stuck on "account type unknown" for every tenant (D05).** Directory sync never ran, Teams read as unavailable and "Granted by" never showed. This is now fixed; each tenant recovers on its next re-authorize.
 4. **Using the firm's Copilot or Gemini is realistic, but in the inbound direction.** The firm's AI calls LawHand tools, so the firm's licence pays for the reasoning. LawHand already has the right building block, the review-first Workspace MCP server. One auth gap blocks both Microsoft 365 Copilot and Gemini Enterprise: the server supports public OAuth clients only (D21). Outbound calls from LawHand into the firm's Copilot or Gemini exist (Work IQ, StreamAssist) but are metered, licence-gated and should wait.
@@ -80,10 +80,10 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
 | D01 | Platform Google service account surfaces other firms' Shared Drive files | **Fixed** | Purge old index rows; assess possible exposure |
 | D10 | `/api/email/scan` scans another user's mailbox | **Fixed** | |
 | D05 | Microsoft tier stuck at "unknown"; directory sync blocked | **Fixed** | Tenants recover on re-authorize |
-| D19 | Excel `set_selected_values` bypasses the unsafe-formula ban | **Fixed** | This branch: values starting with `=`, `+`, `-` or `@` are refused unless they are plain numbers; the add-in checks the same |
+| D19 | Excel `set_selected_values` bypasses the unsafe-formula ban | **Fixed** | PR #624: values starting with `=`, `+`, `-` or `@` are refused unless they are plain numbers; the add-in checks the same |
 | D08 | Editing a matter document in Word/Drive, as the UI invites, breaks LawHand access (409) | **Fixed** | PR #614: open in Word/Docs and bring the edits back |
 | D09 | AI Word drafts open as plain text; saving flattens formatting and truncates | **Fixed** | PR #617: DOCX drafts are office snapshots |
-| D12 | Date-only tasks sent to Google with an empty time range | **Fixed** | This branch: all-day events end on the next day |
+| D12 | Date-only tasks sent to Google with an empty time range | **Fixed** | PR #624: all-day events end on the next day |
 | D02 | Cloud search and content fetch fall back to the admin's mailbox and files for every user | Open | Decision needed |
 | D03 | 15-minute sync indexes the admin's mailbox into the firm-wide index | Open | Decision needed; purge existing mail rows |
 | D06 | Microsoft "Auto" storage writes firm matter files to the admin's personal OneDrive | Open | Decision needed (SharePoint default) |
