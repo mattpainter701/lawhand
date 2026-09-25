@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
+from urllib.parse import quote
 
 import aiofiles
 import httpx
@@ -145,7 +146,11 @@ class DocumentSyncService:
         if not token:
             raise RuntimeError("No Microsoft OAuth token available")
 
-        child_url = f"{GRAPH_BASE}/me/drive/root:{folder_path}:/children"
+        # Path-addressed Graph URL: encode each folder name so "#", "?" or "%"
+        # in a name cannot end the path early or be read as an escape.
+        child_url = (
+            f"{GRAPH_BASE}/me/drive/root:{quote(folder_path, safe='/')}:/children"
+        )
         if folder_path == "/":
             child_url = f"{GRAPH_BASE}/me/drive/root/children"
 

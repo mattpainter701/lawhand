@@ -7,15 +7,18 @@ provider-error, and workflow contracts quick and deterministic.
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
 from app.routers import matter_documents, tasks
 from app.schemas.task import TaskTransitionRequest
+from app.services import provider_http
 from app.services.provider_http import (
     ProviderAuthError,
     ProviderError,
@@ -169,6 +172,7 @@ async def test_cloud_delete_routes_each_supported_provider(monkeypatch):
 
     async def google(method, path, **kwargs):
         calls.append(("google", method, path, kwargs))
+        return SimpleNamespace(json=lambda: {"id": "a/b", "trashed": True})
 
     async def graph(method, path, **kwargs):
         calls.append(("graph", method, path, kwargs))
@@ -199,7 +203,14 @@ async def test_cloud_delete_routes_each_supported_provider(monkeypatch):
         object_id="item/2",
         drive_id=None,
     )
-    assert any(call[0:3] == ("google", "DELETE", "/a%2Fb") for call in calls)
+    google_calls = [call for call in calls if call[0] == "google"]
+    assert len(google_calls) == 1
+    _, method, path, kwargs = google_calls[0]
+    # Trash (recoverable), never files.delete, and always address Shared Drives.
+    assert (method, path) == ("PATCH", "/a%2Fb")
+    assert kwargs["params"]["supportsAllDrives"] == "true"
+    assert kwargs["json"] == {"trashed": True}
+    assert kwargs["base_url"] == "https://www.googleapis.com/drive/v3/files"
     assert any(
         call[0:3] == ("graph", "DELETE", "/drives/drive%2F2/items/item%2F1")
         for call in calls
@@ -272,6 +283,171 @@ async def test_cloud_delete_rejects_ambiguous_metadata_and_skips_local_files():
             db,
         )
     assert exc.value.status_code == 501
+
+
+class FakeDrive:
+    """Minimal Drive v3 files endpoint with Shared Drive semantics.
+
+    Like the real API, a Shared Drive item is invisible (404) unless the
+    request sends ``supportsAllDrives=true``, and trashing a Shared Drive
+    item may be refused with 403 when the caller lacks Content manager.
+    """
+
+    def __init__(self, files, *, trash_status=200, trashed_value=True, raw_body=None):
+        self.files = files
+        self.trash_status = trash_status
+        self.trashed_value = trashed_value
+        self.raw_body = raw_body
+        self.requests = []
+
+    def handler(self, request):
+        self.requests.append(request)
+        assert request.url.host == "www.googleapis.com"
+        assert request.headers["Authorization"] == "Bearer fresh-token"
+        file_id = request.url.path.rsplit("/", 1)[-1]
+        item = self.files.get(file_id)
+        all_drives = request.url.params.get("supportsAllDrives") == "true"
+        if item is None or (item.get("driveId") and not all_drives):
+            return httpx.Response(404, json={"error": {"reason": "notFound"}})
+        if request.method == "DELETE":
+            del self.files[file_id]
+            return httpx.Response(204)
+        if request.method == "PATCH":
+            if self.trash_status != 200:
+                return httpx.Response(
+                    self.trash_status,
+                    json={"error": {"reason": "insufficientFilePermissions"}},
+                )
+            if self.raw_body is not None:
+                return httpx.Response(200, content=self.raw_body)
+            if json.loads(request.content) == {"trashed": True}:
+                item["trashed"] = self.trashed_value
+            return httpx.Response(
+                200, json={"id": file_id, "trashed": item.get("trashed", False)}
+            )
+        return httpx.Response(405)
+
+
+def _install_fake_drive(monkeypatch, drive):
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(drive.handler)
+
+    def client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    async def token(_db, _tenant, provider):
+        assert provider == "google"
+        return "fresh-token"
+
+    async def prefer(_db, _tenant, delegated, **_kwargs):
+        return delegated
+
+    monkeypatch.setattr(provider_http.httpx, "AsyncClient", client)
+    monkeypatch.setattr(matter_documents, "get_fresh_token", token)
+    monkeypatch.setattr(
+        matter_documents.google_service_account, "prefer_service_account", prefer
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "item",
+    [
+        pytest.param({"driveId": "shared-drive-1"}, id="shared-drive"),
+        pytest.param({}, id="my-drive"),
+    ],
+)
+async def test_google_delete_moves_drive_item_to_trash(monkeypatch, item):
+    drive = FakeDrive({"file-1": dict(item)})
+    _install_fake_drive(monkeypatch, drive)
+
+    await matter_documents._delete_cloud_backing_if_needed(
+        document(provider_object_id="file-1", provider_drive_id=None), DB()
+    )
+
+    # The file is recoverable from the Drive trash, not orphaned or destroyed.
+    assert drive.files["file-1"]["trashed"] is True
+    assert [request.method for request in drive.requests] == ["PATCH"]
+    sent = drive.requests[0]
+    assert sent.url.path == "/drive/v3/files/file-1"
+    assert sent.url.params["supportsAllDrives"] == "true"
+    assert json.loads(sent.content) == {"trashed": True}
+
+
+@pytest.mark.asyncio
+async def test_google_delete_treats_already_gone_item_as_success(monkeypatch):
+    drive = FakeDrive({})
+    _install_fake_drive(monkeypatch, drive)
+
+    await matter_documents._delete_cloud_backing_if_needed(
+        document(provider_object_id="gone-1", provider_drive_id=None), DB()
+    )
+
+    # The 404 only counts as "already gone" because the request could see
+    # Shared Drive items.
+    assert len(drive.requests) == 1
+    assert drive.requests[0].url.params["supportsAllDrives"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_google_delete_surfaces_refused_trash_and_keeps_the_record(
+    monkeypatch, caplog
+):
+    drive = FakeDrive({"file-1": {"driveId": "shared-drive-1"}}, trash_status=403)
+    _install_fake_drive(monkeypatch, drive)
+    doc = document(provider_object_id="file-1", provider_drive_id=None)
+
+    with caplog.at_level("WARNING", logger=matter_documents.__name__):
+        with pytest.raises(HTTPException) as exc:
+            await matter_documents._delete_cloud_backing_if_needed(doc, DB())
+
+    assert exc.value.status_code == 502
+    assert "refused to move this document to the trash" in exc.value.detail
+    assert "Content manager" in exc.value.detail
+    assert "database record was not removed" in exc.value.detail
+    assert "trashed" not in drive.files["file-1"]
+    assert str(doc.id) in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "drive_options",
+    [
+        pytest.param({"trashed_value": False}, id="trashed-false"),
+        pytest.param({"raw_body": b"<html>proxy</html>"}, id="not-json"),
+        pytest.param({"raw_body": b"[]"}, id="json-not-object"),
+    ],
+)
+async def test_google_delete_fails_when_drive_does_not_confirm_trash(
+    monkeypatch, drive_options
+):
+    drive = FakeDrive({"file-1": {}}, **drive_options)
+    _install_fake_drive(monkeypatch, drive)
+
+    with pytest.raises(HTTPException) as exc:
+        await matter_documents._delete_cloud_backing_if_needed(
+            document(provider_object_id="file-1", provider_drive_id=None), DB()
+        )
+
+    assert exc.value.status_code == 502
+    assert exc.value.detail.startswith("Cloud provider document deletion failed")
+
+
+@pytest.mark.asyncio
+async def test_google_delete_expired_credentials_keep_generic_auth_message(
+    monkeypatch,
+):
+    drive = FakeDrive({"file-1": {}}, trash_status=401)
+    _install_fake_drive(monkeypatch, drive)
+
+    with pytest.raises(HTTPException) as exc:
+        await matter_documents._delete_cloud_backing_if_needed(
+            document(provider_object_id="file-1", provider_drive_id=None), DB()
+        )
+
+    assert exc.value.status_code == 502
+    assert exc.value.detail.startswith("Cloud provider credentials could not")
 
 
 @pytest.mark.asyncio

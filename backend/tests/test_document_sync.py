@@ -2,6 +2,7 @@
 
 import hashlib
 
+import httpx
 import pytest
 
 import app.services.document_sync as document_sync_module
@@ -121,7 +122,9 @@ async def test_cloud_sync_stream_enforces_cap_and_removes_temp_file(
 
     monkeypatch.setattr(document_sync_module.settings, "UPLOAD_DIR", str(tmp_path))
     monkeypatch.setattr(document_sync_module.settings, "MAX_FILE_SIZE_MB", 1)
-    monkeypatch.setattr(document_sync_module.httpx, "AsyncClient", lambda **kwargs: FakeClient())
+    monkeypatch.setattr(
+        document_sync_module.httpx, "AsyncClient", lambda **kwargs: FakeClient()
+    )
     monkeypatch.setattr(token_vault, "get_fresh_user_token", fake_token)
 
     with pytest.raises(RuntimeError, match="size limit"):
@@ -139,3 +142,34 @@ async def test_cloud_sync_stream_enforces_cap_and_removes_temp_file(
 
     sync_dir = tmp_path / "00000000-0000-0000-0000-000000000001" / "synced"
     assert list(sync_dir.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_onedrive_folder_listing_encodes_each_path_segment(monkeypatch):
+    sent = []
+    real_client = httpx.AsyncClient
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json={"value": []})
+
+    def client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(*args, **kwargs)
+
+    async def fake_token(_db, _tenant_id, provider):
+        assert provider == "microsoft"
+        return "token-1"
+
+    monkeypatch.setattr(document_sync_module, "get_fresh_token", fake_token)
+    monkeypatch.setattr(document_sync_module.httpx, "AsyncClient", client)
+
+    result = await document_sync_module.document_sync.sync_onedrive(
+        None, "tenant-1", folder_path="/Clients/Smith #2/50% ?"
+    )
+
+    assert result == []
+    raw_path = sent[0].url.raw_path.decode("ascii").partition("?")[0]
+    assert raw_path == "/v1.0/me/drive/root:/Clients/Smith%20%232/50%25%20%3F:/children"
+    assert sent[0].url.fragment == ""
+    assert sent[0].url.params["$top"] == "100"

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -848,3 +849,150 @@ async def test_large_google_drive_upload_sends_256k_multiple_chunks(monkeypatch)
     assert len(spans) > 1
     assert all(span % GOOGLE_CHUNK_UNIT == 0 for span in spans[:-1])
     assert spans[-1] <= store._GOOGLE_CHUNK_SIZE
+
+
+# D37: Graph addresses a new child by name inside the URL path
+# (``items/{parent}:/{name}:/content``). A raw "#" starts a fragment, "?" starts
+# a query and "%" is read as an escape, so every name must be sent as one
+# percent-encoded path segment while the stored name keeps its characters.
+GRAPH_PATH_NAMES = [
+    pytest.param("Exhibit #3.pdf", "Exhibit%20%233.pdf", id="hash"),
+    pytest.param("50% off.pdf", "50%25%20off.pdf", id="percent"),
+    pytest.param("a?b.pdf", "a%3Fb.pdf", id="question-mark"),
+    pytest.param("Invoice %20A.pdf", "Invoice%20%2520A.pdf", id="literal-escape"),
+    pytest.param("Board minutes.pdf", "Board%20minutes.pdf", id="spaces"),
+    pytest.param(
+        "Résumé 日本.docx",
+        "R%C3%A9sum%C3%A9%20%E6%97%A5%E6%9C%AC.docx",
+        id="non-ascii",
+    ),
+]
+
+
+def _assert_graph_name_path(request, prefix, encoded, suffix, name):
+    raw_path, _, raw_query = request.url.raw_path.decode("ascii").partition("?")
+    assert raw_path == f"{prefix}{encoded}{suffix}"
+    assert request.url.fragment == ""
+    # What Graph decodes back is the original name, character for character.
+    assert request.url.path == f"{prefix}{name}{suffix}"
+    return raw_query
+
+
+async def _fresh_token(_db, _tenant_id, provider):
+    assert provider == "microsoft"
+    return "token-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("name", "encoded"), GRAPH_PATH_NAMES)
+async def test_onedrive_simple_upload_encodes_name_path_segment(
+    monkeypatch, name, encoded
+):
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(
+            201,
+            json={"id": "item-1", "name": name, "webUrl": "https://1drv.ms/x"},
+        )
+
+    monkeypatch.setattr(store_module, "get_fresh_token", _fresh_token)
+    _mock_http_client(monkeypatch, handler)
+    result = await MatterFileStore()._try_store_onedrive(
+        db=None,
+        tenant_id=str(uuid.uuid4()),
+        matter_slug="matter-a",
+        category="documents",
+        filename=name,
+        content=b"pdf",
+        content_type="application/pdf",
+        folder_id="parent-1",
+    )
+
+    assert result.error is None
+    assert result.provider_item_id == "item-1"
+    assert len(sent) == 1
+    assert sent[0].method == "PUT"
+    query = _assert_graph_name_path(
+        sent[0], "/v1.0/me/drive/items/parent-1:/", encoded, ":/content", name
+    )
+    assert query == "@microsoft.graph.conflictBehavior=rename"
+    assert sent[0].url.params["@microsoft.graph.conflictBehavior"] == "rename"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("name", "encoded"), GRAPH_PATH_NAMES)
+async def test_onedrive_upload_session_encodes_name_and_keeps_raw_body_name(
+    monkeypatch, name, encoded
+):
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        if request.url.host == "graph.microsoft.com":
+            return httpx.Response(
+                200, json={"uploadUrl": "https://upload.example/session"}
+            )
+        return httpx.Response(201, json={"id": "item-large", "name": name})
+
+    _mock_http_client(monkeypatch, handler)
+    result = await MatterFileStore()._upload_large_onedrive(
+        "token-1", "parent-1", name, b"x" * 1024, "application/pdf"
+    )
+
+    assert result.error is None
+    assert result.provider_item_id == "item-large"
+    session = sent[0]
+    assert session.method == "POST"
+    query = _assert_graph_name_path(
+        session,
+        "/v1.0/me/drive/items/parent-1:/",
+        encoded,
+        ":/createUploadSession",
+        name,
+    )
+    assert query == ""
+    # The JSON body is not a URL: it carries the raw name and the conflict rule.
+    assert json.loads(session.content) == {
+        "item": {"@microsoft.graph.conflictBehavior": "rename", "name": name}
+    }
+    assert [request.url.host for request in sent[1:]] == ["upload.example"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("name", "encoded"), GRAPH_PATH_NAMES)
+async def test_sharepoint_upload_encodes_name_path_segment(monkeypatch, name, encoded):
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "sp-item-1",
+                "name": name,
+                "webUrl": "https://contoso.sharepoint.com/sites/s/doc",
+            },
+        )
+
+    monkeypatch.setattr(store_module, "get_fresh_token", _fresh_token)
+    _mock_http_client(monkeypatch, handler)
+    result = await MatterFileStore()._try_store_sharepoint(
+        db=None,
+        tenant_id=str(uuid.uuid4()),
+        filename=name,
+        content=b"pdf",
+        content_type="application/pdf",
+        folder_id="folder-1",
+        drive_id="drive-1",
+    )
+
+    assert result.error is None
+    assert result.provider_item_id == "sp-item-1"
+    assert len(sent) == 1
+    assert sent[0].method == "PUT"
+    query = _assert_graph_name_path(
+        sent[0], "/v1.0/drives/drive-1/items/folder-1:/", encoded, ":/content", name
+    )
+    assert query == "@microsoft.graph.conflictBehavior=rename"
