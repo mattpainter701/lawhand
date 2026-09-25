@@ -34,6 +34,16 @@ _UNSAFE_FORMULA_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: Characters that make Excel parse a string written through ``range.values``
+#: as a formula. A value like ``=WEBSERVICE(...)`` or ``+HYPERLINK(...)`` would
+#: otherwise skip the ``_UNSAFE_FORMULA_RE`` ban that formulas go through.
+_FORMULA_PREFIXES = ("=", "+", "-", "@")
+#: A plain number written as a string ("-5", "+1.25", "-1e3"). Excel stores it
+#: as that number, so it is a value rather than a formula.
+_PLAIN_NUMBER_RE = re.compile(
+    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", re.ASCII
+)
+
 
 class OfficePolicyError(ValueError):
     def __init__(self, code: str, message: str):
@@ -55,6 +65,18 @@ def _validate_excel_input_value(value: Any) -> None:
         raise OfficePolicyError(
             "invalid_cell_value", "Excel values must be JSON scalar values"
         )
+    if isinstance(value, str):
+        # Leading whitespace (including tabs and line breaks) is ignored, so a
+        # padded "\t=HYPERLINK(...)" is judged by its first real character.
+        text = value.lstrip()
+        if text.startswith(_FORMULA_PREFIXES) and not _PLAIN_NUMBER_RE.fullmatch(
+            text.rstrip()
+        ):
+            raise OfficePolicyError(
+                "formula_in_values",
+                "Excel values must not start with =, +, - or @; "
+                "use set_selected_formulas for formulas",
+            )
 
 
 class OfficeActionPolicy:

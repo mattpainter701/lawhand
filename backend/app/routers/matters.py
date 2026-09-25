@@ -47,6 +47,10 @@ from app.services.cloud_init import (
     resolve_cloud_folder_reference,
     share_matter_folders,
 )
+from app.services.matter_folder_shares import (
+    request_share_revocation,
+    revoke_pending_shares_now,
+)
 from app.schemas.matter import (
     BudgetUtilization,
     MatterAssignmentCreate,
@@ -195,9 +199,12 @@ async def _share_matter_with_assignees(
     if not matter.cloud_folder:
         return
 
+    # A deactivated person keeps their assignment rows but must not be
+    # re-shared into the folder when it is provisioned or re-linked.
     user_rows = await db.execute(
-        select(User.email).where(
+        select(User.id, User.email).where(
             User.tenant_id == tenant_id,
+            User.is_active.is_(True),
             User.id.in_(
                 select(MatterAssignment.user_id).where(
                     MatterAssignment.matter_id == matter.id
@@ -205,8 +212,8 @@ async def _share_matter_with_assignees(
             ),
         )
     )
-    assigned_emails = [email for (email,) in user_rows.all() if email]
-    if not assigned_emails:
+    user_ids_by_email = {email: user_id for user_id, email in user_rows.all() if email}
+    if not user_ids_by_email:
         return
 
     try:
@@ -214,7 +221,9 @@ async def _share_matter_with_assignees(
             db=db,
             tenant_id=str(tenant_id),
             cloud_folder=matter.cloud_folder,
-            user_emails=assigned_emails,
+            user_emails=list(user_ids_by_email),
+            matter_id=matter.id,
+            user_ids_by_email=user_ids_by_email,
         )
     except Exception:
         logger.warning(
@@ -980,18 +989,23 @@ async def create_matter(
             except (ValueError, TypeError):
                 continue
         user_rows = await db.execute(
-            select(User.email).where(
+            select(User.id, User.email).where(
                 User.tenant_id == tenant_id,
+                User.is_active.is_(True),
                 User.id.in_(valid_assigned_user_ids),
             )
         )
-        assigned_emails = [email for (email,) in user_rows.all() if email]
+        user_ids_by_email = {
+            email: user_id for user_id, email in user_rows.all() if email
+        }
         try:
             await share_matter_folders(
                 db=db,
                 tenant_id=str(tenant_id),
                 cloud_folder=matter.cloud_folder,
-                user_emails=assigned_emails,
+                user_emails=list(user_ids_by_email),
+                matter_id=matter.id,
+                user_ids_by_email=user_ids_by_email,
             )
         except Exception:
             logger.warning(
@@ -1721,12 +1735,17 @@ async def add_assignment(
     user_check = await db.execute(
         select(User).where(User.id == uid, User.tenant_id == current_user.tenant_id)
     )
-    if not user_check.scalar_one_or_none():
+    assignee = user_check.scalar_one_or_none()
+    if not assignee:
         raise HTTPException(status_code=404, detail="User not found")
+    assignee_email = assignee.email if assignee.is_active else None
+    tenant_id = current_user.tenant_id
+    matter_uuid = matter.id
+    cloud_folder = matter.cloud_folder
 
     assignment = MatterAssignment(
-        tenant_id=current_user.tenant_id,
-        matter_id=matter.id,
+        tenant_id=tenant_id,
+        matter_id=matter_uuid,
         user_id=uid,
         role=body.role,
         is_primary=body.is_primary,
@@ -1734,13 +1753,36 @@ async def add_assignment(
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
-    await _invalidate_matter_context_cache(current_user.tenant_id, matter.id)
+    assignment_id = assignment.id
+    await _invalidate_matter_context_cache(tenant_id, matter_uuid)
+
+    if cloud_folder and assignee_email:
+        # Best effort, like every other matter share: the assignment stands
+        # even when the provider is unreachable.
+        try:
+            await share_matter_folders(
+                db=db,
+                tenant_id=str(tenant_id),
+                cloud_folder=cloud_folder,
+                user_emails=[assignee_email],
+                matter_id=matter_uuid,
+                user_ids_by_email={assignee_email: uid},
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.warning(
+                "Failed to share cloud folders for matter %s",
+                matter_uuid,
+                exc_info=True,
+            )
 
     # Reload with user
     result = await db.execute(
         select(MatterAssignment)
         .options(selectinload(MatterAssignment.user))
-        .where(MatterAssignment.id == assignment.id)
+        .where(MatterAssignment.id == assignment_id)
+        .execution_options(populate_existing=True)
     )
     assignment = result.scalar_one()
 
@@ -1750,6 +1792,7 @@ async def add_assignment(
         user_name=assignment.user.full_name if assignment.user else "Unknown",
         role=assignment.role,
         is_primary=assignment.is_primary,
+        is_active_working=bool(assignment.is_active_working),
         assigned_at=assignment.assigned_at,
     )
 
@@ -1765,7 +1808,12 @@ async def set_active_working(
     db: AsyncSession = Depends(get_db),
     active: bool = True,
 ):
-    """Toggle the 'actively working' status on an assignment (paralegal status flag)."""
+    """Toggle the 'actively working' status on an assignment (paralegal status flag).
+
+    This is a personal "working on it now" marker, not an access change: the
+    person stays assigned either way, so their cloud folder share is kept.
+    Removing the assignment is what takes the share back.
+    """
     user = await get_current_user(request, db)
     matter = await _get_matter_or_404(db, matter_id, user.tenant_id)
 
@@ -1848,9 +1896,32 @@ async def remove_assignment(
             detail="External calendar cleanup is unavailable; assignment was not removed",
         ) from exc
 
+    tenant_id = user.tenant_id
+    matter_uuid = matter.id
+    revoked_email = await db.scalar(
+        select(User.email).where(
+            User.id == revoked_user_id, User.tenant_id == tenant_id
+        )
+    )
+    # Marked in this transaction so the removal is as durable as the unassign;
+    # the provider call runs after the commit and never blocks it.
+    pending_unshares = await request_share_revocation(
+        db,
+        tenant_id=tenant_id,
+        matter_id=matter_uuid,
+        cloud_folder=matter.cloud_folder,
+        user_id=revoked_user_id,
+        email=revoked_email,
+        actor_user_id=user.id,
+        reason="unassigned",
+    )
     await db.delete(assignment)
     await db.commit()
-    await _invalidate_matter_context_cache(user.tenant_id, matter.id)
+    await _invalidate_matter_context_cache(tenant_id, matter_uuid)
+    if pending_unshares:
+        await revoke_pending_shares_now(
+            db, tenant_id, matter_id=matter_uuid, email=revoked_email
+        )
     return None
 
 
