@@ -12,7 +12,9 @@ This is the task-level execution plan for the [epic](./core-ux-future-state-epic
 
 Proposed cadence is two-week planning/review timeboxes once the team is staffed. The table allocates ordered scope, not eight guaranteed calendar dates: split a sprint if available capacity cannot accommodate its tested scope; keep its dependency order and do not advance an incomplete gate because the timebox ended. Engineer-days are summed effort across contributors, not elapsed days. Before Sprint 1, name the people filling FE-A (matters/CRM/navigation), FE-B (tasks/calendar), BE (API/access/data), product/UX and QA roles. One person can fill several roles; do not assume three engineers are available. Dates, velocity and concurrent capacity remain uncommitted.
 
-## Progress log (22 September 2026)
+## Progress log (updated 25 September 2026, against main `99f6f14`)
+
+**At a glance.** Sprint 1: 5 of 12 tasks accepted (S1.01, S1.02, S1.08, S1.09, S1.10); S1.06/S1.07 merged but not agreed; S1.04/S1.05 blocked on people; S1.11's document half now has a draft contract. Sprint 2: not started. Sprint 3: S3.01–S3.09 all have merged work, but no task is accepted yet; S3.10/S3.11 not started. Sprints 4–8: not started. The document owner's fill and Office-editing work (below) is merged through fill phase 3 and Option A slice 4.
 
 Merged work with evidence. Statuses: **Merged & accepted**, **Merged slice** (narrower than the task's stated acceptance), **Partial**, **Blocked** (needs a person/owner). **A merged artifact is not task acceptance**: a document that names a contract still needs owner agreement, and an endpoint whose stated acceptance (unique ordering, bounded query, scoped counts) is not demonstrated stays open.
 
@@ -24,8 +26,8 @@ Merged work with evidence. Statuses: **Merged & accepted**, **Merged slice** (na
 | S1.08 Calendar range label | Merged & accepted | `CalendarPage.range.test.jsx` (PR #585) |
 | S1.09 Calendar save vs sync truthfulness | Merged & accepted | `CalendarPage.sync-truthfulness.test.jsx` (PR #586) |
 | S1.10 Shortcut editing guard | Merged & accepted | `AppShell.shortcut.test.jsx` (PR #585) |
-| S3.01/S3.02 Personal-matter paging + totals | Partial | `/matters/my/page` now filters, counts and pages in SQL over the assignment predicate with a unique `Matter.id` tie-break, and exposes `q`, `status`, `sort_by`, `sort_dir`; tests prove pages do not overlap, reach past #100, and exclude other users'/tenants' matters (PR #607, merge `aa691b2c`; base PR #588, merge `eb655ac2`). Legacy capped `/matters/my` retired (PR #603). S3.01's focus clause still waits on Sprint 2; default order is now `updated_at desc` (deadline is a display field) |
-| S3.03 Reuse/integrate search + paging | Merged & accepted | Consumed `/matters/my/page` across portfolio/profile/conflict (PR #589, merge `11772dda`); load-more shipped for both lists with id de-duplication and a non-destructive error state (PR #606, merge `8cf0a62c`); the all-accessible search now names its real fields and has a request-token stale guard that also clears the error on retry (PR #608, merge `17eb4292`) |
+| S3.01/S3.02 Personal-matter paging + totals | Partial | `/matters/my/page` now filters, counts and pages in SQL over the assignment predicate with a unique `Matter.id` tie-break, and exposes `q`, `status`, `sort_by`, `sort_dir`; tests prove pages do not overlap, reach past #100, and exclude other users'/tenants' matters (PR #607, merge `aa691b2c`; base PR #588, merge `eb655ac2`). Legacy capped `/matters/my` retired (PR #603). S3.01's focus clause still waits on Sprint 2; default order is now `updated_at desc` (deadline is a display field). Open: `sort_by` is passed to `getattr(Matter, sort_by, …)` unvalidated on both `/my/page` and the all-accessible route, so any model attribute (including relationships) is accepted; restrict it to an allow-list of sortable columns (PR #607 follow-up) |
+| S3.03 Reuse/integrate search + paging | Merged slice | Accepted slice: consumed `/matters/my/page` across portfolio/profile/conflict (PR #589, merge `11772dda`); load-more for both lists with id de-duplication and a non-destructive error state (PR #606, merge `8cf0a62c`); the all-accessible search names its real fields and has a request-token stale guard that clears the error on retry (PR #608, merge `17eb4292`). Not accepted (checked on main `99f6f14`): a page-1 refresh while a load-more is in flight strands the button on "Loading…", because `loadMyMatters` bumps `myRequest` without clearing `myLoadingMore` and the stale load-more's `finally` then skips its reset (`MatterPortfolioPage.jsx`); the all-accessible route orders by the sort column only, with no `Matter.id` tie-break (`routers/matters.py`, `list_matters` `order_by(sort_col)`); ProfilePage and ConflictChecksPage still load page 1 of 200 and turn a failure into an empty list |
 | S3.04 Needs attention view | Merged slice | shared `needsAttention` predicate + interaction/predicate tests (PR #590, merge `26e4c5d1`), accepted as a bounded My Matters repair; the attention corpus is still bounded by the loaded page until S3.03 paging |
 | S3.05 Everyday column defaults | Merged slice | everyday default + Reset to everyday; `MatterPortfolioBoard.test.jsx` (PR #592, merge `f6ae081b`). The planned preset preview/apply interaction and laptop/wide-layout validation are not established |
 | S3.06 Unify scope and record entry | Merged slice | Decorative View removed and real matter links preserved (PR #593, merge `94051494`); the access-count claim now reports the server total with a loaded-scope note and a 2-of-250 regression (PR #598, merge `165b3b36`). Not accepted: "focus as a separate filter" cannot be met until Sprint 2 exists, and the header showed "0 matters you can access" while loading/after failure (fix in PR #602) |
@@ -33,11 +35,32 @@ Merged work with evidence. Statuses: **Merged & accepted**, **Merged slice** (na
 | S3.08 Compact matter header | Merged slice | Client, responsible attorney and partner lead the header with lifecycle/alerts, ahead of the description (`MatterDetailPage.jsx`, PR #600, merge `d32b224b`); budget/trust card placement and destination arrangement remain (S3.11) |
 | S3.09 Work-first overview shell | Merged slice | Key Dates and To-Do labelled "Next work" and moved ahead of the case-setup, client-conversation and signature panels (`MatterDetailPage.jsx`, PR #601, merge `3ccd29a3`); add entry points and per-record links unchanged |
 | S1.02 Owners and shared-file turns | Merged & accepted | `docs/core-ux-s1-02-ownership-and-shared-files-2026-09-23.md` (PR #604, merge `56178adb`): roles named (owner = product/UX + QA; agents = FE-A/FE-B/BE), shared-file turns locked, document-owner dependencies recorded |
-| S1.04 / S1.05 / S1.11 | Blocked | Need baseline participants, product review, and the document owner's contract |
+| S1.04 / S1.05 | Blocked | Need baseline participants and product review |
+| S1.11 Focus and document handoff contracts | Partial | Document half: the document owner's contract is drafted in [document-fill-ux-plan-2026-09-24.md](./document-fill-ux-plan-2026-09-24.md) and built through PRs #613–#619 (below), but it has not been reviewed against S1.11's list (session correlation, serialized autosave/completion, resume and error states). Focus half: the focus flag reader/writer inventory for Sprint 2 has not been done |
+
+### Document owner's work merged (24–25 September 2026)
+
+This is the document owner's track, not a core UX task, but S1.11, S3.10 and S6.10–S6.11 depend on it. It is recorded here so those tasks start from what is on main.
+
+| Fill plan item | PR (merge) | What landed |
+| --- | --- | --- |
+| Phase 1: document-first sample Fill | #613 (`f20112a`) | `FillOnDocument` puts inputs on each PDF field box, with a guided bar and a Document / Questions / Final PDF switch |
+| Phase 2: Prepare and Generate | #613 (`f20112a`) | The same Document view in `PrepareDocumentBody`; Questions unchanged |
+| Shared library curation + publish checks | #620 (`b604e19`) | 76 shared forms relabelled from their page images; publishing a PDF template refuses unbound generic-named fields (422) |
+| Option A slices 1–2: Open in Word/Docs, bring back changes | #614 (`be75522`) | `cloud-edit`, `reconcile` and `revised-version` routes; edits adopted in place; approved/filed documents never overwritten; migration `202_matter_doc_external_edit`; Documents tab controls; SharePoint label (D23). Fixes D08 |
+| Option A slice 3: Prepare → open in Word/Docs | #618 (`250d365`) | The render response returns the saved document; Generate and Prepare offer the Office controls |
+| Option A slice 4: D34 and D09 | #617 (`4205051`) | eTag/hash check before a LawHand save on an assistant draft (409 `cloud_copy_changed`); DOCX drafts kept as office snapshots |
+| Graph upload fragments | #615 (`7782f25`) | Upload sessions use 320 KiB-multiple fragments |
+| Phase 3: packets | #619 (`c290f18`) | A template set fills on its documents, one tab per member, shared answers filled once |
+| Staff-only routes | #616 (`cf23df0`), #621 (`99f6f14`) | Client-portal logins are refused on the staff matter document routes and then on the whole matters API |
+
+Not yet done from the fill plan: phase 4 (one on-page field component), phase 6 (fill inside Word), and a check that the merged prepare/resume behavior matches S1.11's contract list. S3.10 and S6.10 can now be planned against merged routes rather than proposals; S6.11 joint testing can start once S1.11 is agreed.
 
 Notes: S1.03's reusable synthetic fixture pack was not stood up as a standalone artifact; the paging tests create their own fixtures. S1.12/sprint-close evidence is distributed across the PRs above rather than collected in one place. S1.06/S1.07 and S3.01/S3.02/S3.04/S3.05/S3.06/S3.07/S3.08/S3.09 stay unchecked below until their stated acceptance is demonstrated; merged code alone does not close them.
 
 ### Validation review (23 September 2026, against main `f85cff66`)
+
+> **Superseded in part (25 September).** The "build the foundation next" recommendation was carried out by PRs #607 (SQL paging, `id` tie-break, `q`/`status`/`sort_by`/`sort_dir`, stronger tests), #603 (legacy route retired), #606 and #608 (load-more, search guidance). The **sequencing decision is still not recorded**: Sprint 3 continues without Phase A, and no focus-free-slice record exists. The follow-up list below is updated to what main `99f6f14` shows.
 
 An independent check of the log above against merged code. Every cited PR and merge SHA matches, and no core UX work is missing from the log. The statuses above now reflect it: S3.04 and S3.06 were unticked because a merged slice does not close a task under this plan's own rule.
 
@@ -51,15 +74,17 @@ An independent check of the log above against merged code. Every cited PR and me
 That closes the remaining clauses of S3.04 and S3.07 too.
 
 **Follow-ups for the Sprint 3 owner.** None of these is fixed yet unless noted.
-- [ ] S3.02 tests are weaker than the acceptance. `test_my_matters_page_reaches_past_the_legacy_cap` asserts counts only. Assert that a specific matter past #100 is returned and that pages do not overlap. `test_my_matters_page_is_scoped_to_the_user_and_tenant` asserts `total == 1` only. Assert the returned item IDs exclude the other user's and the other tenant's matters.
-- [ ] `ProfilePage` and `ConflictChecksPage` fetch only `{ page: 1, page_size: 200 }`, have no stale-response guard, and turn a failed request into an empty list (`.catch(() => [])`). Beyond 200 matters, or on error, they silently show fewer matters or none. Confirm what the conflict-check list is used for, because a silent empty result is riskier there.
-- [ ] The old `GET /matters/my` still takes an arbitrary 100 matters (no ORDER BY) and then sorts them by deadline, so the soonest deadlines can be dropped. No screen calls it any more; only `api.js` and e2e mocks do. Contract it as the planned expand → migrate → contract step, in its own PR.
+- [x] ~~S3.02 tests are weaker than the acceptance.~~ Fixed in PR #607 (exact 105-record, no-overlap and isolation assertions). `test_my_matters_page_reaches_past_the_legacy_cap` asserts counts only. Assert that a specific matter past #100 is returned and that pages do not overlap. `test_my_matters_page_is_scoped_to_the_user_and_tenant` asserts `total == 1` only. Assert the returned item IDs exclude the other user's and the other tenant's matters.
+- [ ] (Still open on `99f6f14`.) `ProfilePage` and `ConflictChecksPage` fetch only `{ page: 1, page_size: 200 }`, have no stale-response guard, and turn a failed request into an empty list (`.catch(() => [])`). Beyond 200 matters, or on error, they silently show fewer matters or none. Confirm what the conflict-check list is used for, because a silent empty result is riskier there.
+- [x] ~~The old `GET /matters/my` still takes an arbitrary 100 matters (no ORDER BY) and then sorts them by deadline, so the soonest deadlines can be dropped. No screen calls it any more; only `api.js` and e2e mocks do. Contract it as the planned expand → migrate → contract step, in its own PR.~~ Retired in PR #603.
 - [ ] `/my/page` counts assigned matters only. Confirm whether owned-but-unassigned matters belong in "My matters" (product decision).
-- [ ] S3.04: `needsAction` compares `m.status` case-sensitively while lifecycle lowercases it, so "Closed" would count as open. There is no Firm-scope attention count.
+- [ ] (Still open on `99f6f14`.) S3.04: `needsAction` compares `m.status` case-sensitively while lifecycle lowercases it, so "Closed" would count as open. There is no Firm-scope attention count.
 - [ ] S3.05: users with no saved column choice lose four columns on upgrade (originating attorney, practice area, open date, risk). Confirm this is intended. The preview/apply step is not built.
-- [ ] S3.07: scroll restore keys off the all-matters `loading`, not `myLoading`, so it may undershoot if My Matters loads second (inferred, not reproduced). A scroll key is written per distinct URL, one per search keystroke.
+- [ ] (Still open on `99f6f14`.) S3.07: scroll restore keys off the all-matters `loading`, not `myLoading`, so it may undershoot if My Matters loads second (inferred, not reproduced). A scroll key is written per distinct URL, one per search keystroke.
 - [x] S3.06 "0 matters you can access" while loading or after failure, and the error banner not clearing after Retry: fixed in PR #602.
 - [x] S3.07 remembered view (with client search text) handed to the next user on the same tab: fixed in PR #602.
+- [ ] S3.03 load-more stranded by a page-1 refresh, and no `id` tie-break on the all-accessible route (see the S3.03 row).
+- [ ] S3.01/S3.02 `sort_by` not restricted to an allow-list (see the S3.01/S3.02 row).
 
 ## Sprint sequence and budget
 
@@ -127,7 +152,7 @@ S1 capacity check: participant recruitment/sessions and external product/UX/QA c
 
 - [ ] **S3.01 — Specify personal-matter paging precisely.** Carry assignment scope, lifecycle, focus, query, sort and stable tie-breaker through one contract. Define total as matching permitted records before pagination. Preserve callers that depend on the existing response until migrated.
 - [ ] **S3.02 — Implement and test the personal-matter backend.** Remove the silent 100-record ceiling through bounded pages and scoped totals. Use synthetic assigned/unassigned and cross-tenant records; prove a matching assigned matter beyond the first 100 is reachable without exposing another user's restricted matter.
-- [x] **S3.03 — Reuse and integrate all-matter search/paging.** Use existing current-main fields: matter name/number, client full name and organization. State those supported fields beside search or in accessible nearby help; do not imply attorney-name, docket/court-number or document-content matching. Wire page/filter changes and loading state for personal and all-accessible views. Ignore stale responses, prevent duplicate rows and distinguish failed, filtered-empty and incomplete results.
+- [ ] **S3.03 — Reuse and integrate all-matter search/paging.** Use existing current-main fields: matter name/number, client full name and organization. State those supported fields beside search or in accessible nearby help; do not imply attorney-name, docket/court-number or document-content matching. Wire page/filter changes and loading state for personal and all-accessible views. Ignore stale responses, prevent duplicate rows and distinguish failed, filtered-empty and incomplete results.
 - [ ] **S3.04 — Define attention counts from real predicates.** Document the included conditions and My/Firm scope. Clicking Needs attention opens precisely that matching corpus, not only loaded rows. Use existing authoritative data; if a predicate cannot be queried correctly, narrow the label or revise backend scope instead of presenting a fabricated total.
 - [ ] **S3.05 — Apply the everyday table defaults.** Prioritize matter/client, next deadline, status and responsible person within the stated laptop widths. Preserve saved columns, widths and sort choices; offer preview/apply/reset for an optional preset. Keep additional metadata available and test deliberately wide custom layouts.
 - [ ] **S3.06 — Unify scope and record entry.** Keep My matters and All accessible matters understandable, with focus as a separate filter. Remove/fix the decorative View affordance and redundant entry treatment. Use real matter links for keyboard, copy link and open-in-new-tab.

@@ -1,6 +1,6 @@
 # Document fill UX: document-first filling, parity, and "fill where they work"
 
-Status: phases 1 and 2 are built and in review on branch `claude/modest-lovelace-rvg12s` (sample Fill dialog; Prepare and Generate). Option A (open in the firm's Word or Google Docs, sync back) is in progress; section 10 tracks it. Phases 3–6 are proposals. Section 9 records why LawHand does not host its own editor for now.
+Status (25 September 2026, main `99f6f14`): phases 1 and 2 merged in PR #613; phase 3 (packets) merged in PR #619. Option A is merged through slice 4: slices 1–2 in PR #614 (fixes D08 and D23), slice 3 in PR #618, and slice 4 (D34, D09) in PR #617. Shared library curation and publish-time field checks merged in PR #620. Phases 4–6 are proposals. Section 9 records why LawHand does not host its own editor for now. The core UX plan's S1.11, S3.10 and S6.10–S6.11 consume this plan's contracts; those contracts are built but not yet agreed against S1.11's list.
 Date: 2026-09-24
 
 ## 1. Why
@@ -18,7 +18,7 @@ small, one-page-at-a-time PDF preview. Feedback:
   already pay for Microsoft 365 or Google Workspace. Can we fill inside the
   firm's own office suite?
 
-## 2. Phase 1 (in review): document-first sample Fill
+## 2. Phase 1 (merged, PR #613): document-first sample Fill
 
 `frontend/src/components/templates/FillOnDocument.jsx` is a reusable
 fill-on-the-page component. `SampleFillDialog.jsx` now uses it.
@@ -85,7 +85,7 @@ available as a list.
 
 ## 5. Proposed phases
 
-### Phase 2 (in review): Prepare and Generate get the same switch
+### Phase 2 (merged, PR #613): Prepare and Generate get the same switch
 
 `PrepareDocumentBody` now opens on **Document**, with **Questions** and
 **Preview** at the top. The Document/Questions choice is remembered per browser
@@ -117,7 +117,7 @@ Still to do from the original plan: lift `FieldInput` into a shared
 editor is now one function, `renderFieldEditor`, so only `PrepareSetBody`
 still has its own copy).
 
-### Phase 3: packets (M)
+### Phase 3: packets (M) (merged, PR #619)
 
 A packet asks each question once and fans the answer out to every document
 that uses it. The interview already records where each answer lands:
@@ -404,7 +404,9 @@ Open a matter's Word document in the firm's Word or Google Docs, and bring the
 edits back as the same document's next version. Built on a separate branch
 from the fill UX work.
 
-### What exists (checked 2026-09-25)
+### What existed before slice 1 (checked 2026-09-25)
+
+This records the starting point. D08 and D23 are fixed by PR #614, and D34 and D09 by PR #617.
 
 - **Matter documents** (`backend/app/models/matter_document.py`) already store
   the provider identity:
@@ -472,21 +474,21 @@ from the fill UX work.
 
 ### Slices
 
-1. **Backend**, all on the same revision model:
+1. **Backend** (merged, PR #614), all on the same revision model:
    - migration: checkout columns on `matter_documents`;
    - `POST …/documents/{id}/cloud-edit` (start: fresh links and the marker);
    - `POST …/documents/{id}/reconcile` (bring back changes);
    - `POST …/documents/{id}/revised-version` (upload fallback);
    - template saves persist eTag, version and checksum, and set `verified`.
-2. **Documents tab:**
+2. **Documents tab** (merged, PR #614):
    - Open in Word / Open in Google Docs beside a separate Download;
    - the "being edited" marker and **Bring back changes**;
    - reconcile on window focus;
    - a conflict badge;
    - the SharePoint label (D23).
-3. **Prepare:** after **Save to matter** for Word output, offer Open in Word or
+3. **Prepare** (merged, PR #618): after **Save to matter** for Word output, offer Open in Word or
    Docs. This needs the render response to return the document's backend; it
    lands after the fill UX PR merges.
-4. **Next slice:** D34 eTag check before LawHand-side writes, D09 office
+4. **Next slice** (D34 and D09 merged in PR #617; change notifications not built): D34 eTag check before LawHand-side writes, D09 office
    snapshots for AI drafts, and change notifications if polling proves
    insufficient.
