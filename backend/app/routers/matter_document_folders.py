@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff
 from app.models.matter_document import MatterDocument
 from app.models.matter_document_tag import MatterDocumentTagLink
 from app.models.plugin import Matter
@@ -96,6 +97,7 @@ async def list_matter_document_folders(
 ):
     """Return the matter's whole folder tree with per-folder document counts."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
     matter_uuid = _matter_uuid(matter_id)
@@ -123,6 +125,7 @@ async def create_matter_document_folder(
     db: AsyncSession = Depends(get_db),
 ):
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
 
@@ -160,6 +163,7 @@ async def update_matter_document_folder(
     a rename-only request cannot accidentally move the folder to the root.
     """
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
     matter_uuid = _matter_uuid(matter_id)
@@ -205,6 +209,7 @@ async def delete_matter_document_folder(
 ):
     """Delete a folder subtree. Documents are re-filed, never deleted."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
 
@@ -250,6 +255,7 @@ async def move_matter_documents(
     only newly uploaded files are written to the mirrored folder path.
     """
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
     matter_uuid = _matter_uuid(matter_id)
@@ -327,6 +333,7 @@ async def copy_matter_document(
     from app.config import get_settings
 
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     tenant_id, user_id, matter_uuid = user.tenant_id, user.id, _matter_uuid(matter_id)
     await set_tenant_context(db, str(tenant_id))
     matter = await _get_matter_or_404(matter_id, tenant_id, db)
@@ -450,6 +457,7 @@ async def list_document_tags(
 ):
     """List the firm's document tag vocabulary."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     tags = await list_tags(db, tenant_id=user.tenant_id)
     return MatterDocumentTagListResponse(
@@ -467,6 +475,7 @@ async def create_document_tag(
     db: AsyncSession = Depends(get_db),
 ):
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     try:
         tag = await create_tag(
@@ -491,6 +500,7 @@ async def update_document_tag(
     db: AsyncSession = Depends(get_db),
 ):
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     try:
         tag = await get_tag_or_404(db, tenant_id=user.tenant_id, tag_id=tag_id)
@@ -510,6 +520,7 @@ async def delete_document_tag(
 ):
     """Delete a tag firm-wide; its assignments go with it, documents do not."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     try:
         tag = await get_tag_or_404(db, tenant_id=user.tenant_id, tag_id=tag_id)
@@ -538,6 +549,7 @@ async def set_matter_document_tags(
 ):
     """Replace a document's tags with exactly the supplied set."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
 

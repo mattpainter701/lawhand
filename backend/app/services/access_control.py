@@ -12,11 +12,34 @@ ADMIN_ROLE = "admin"
 ACCOUNTANT_ROLE = "accountant"
 STANDARD_ROLES = {"user", ACCOUNTANT_ROLE, ADMIN_ROLE}
 FINANCE_ROLES = {ADMIN_ROLE, ACCOUNTANT_ROLE}
+CLIENT_ROLE = "client"
 
 
 def normalize_role(role: str | None) -> str:
     value = (role or "user").strip().lower()
     return value if value in STANDARD_ROLES else "user"
+
+
+def is_client_portal_user(user) -> bool:
+    """True for a client-portal login (``User.role == "client"``)."""
+    return (getattr(user, "role", "") or "").strip().lower() == CLIENT_ROLE
+
+
+def require_firm_staff(
+    user, message: str = "Only firm staff can use matter documents."
+) -> None:
+    """Refuse client-portal logins on a staff route.
+
+    A client-portal login is a real ``User`` whose token ``get_current_user``
+    accepts, so a client could replay it against the staff API. Call this right
+    after ``get_current_user`` and before any database or provider work. Client
+    access belongs under ``/api/portal/...``.
+    """
+    if is_client_portal_user(user):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "staff_only", "message": message},
+        )
 
 
 def can_manage_finance(role: str | None) -> bool:
