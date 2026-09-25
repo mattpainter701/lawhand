@@ -54,6 +54,10 @@ export default function DocumentDraftWorkspace({
   storageState = 'verified',
   notice,
   error,
+  cloudConflict = false,
+  refreshing = false,
+  onRefreshFromCloud,
+  onDiscardCloudEdits,
   onTitleChange,
   onBodyChange,
   onSave,
@@ -82,7 +86,9 @@ export default function DocumentDraftWorkspace({
   }, [approving, open, saving])
 
   if (!open) return null
-  const textEditable = !approved && !officeSnapshot
+  // A truncated preview is not the whole document, so saving it would cut
+  // the rest off; formatted snapshots are edited in the cloud editor.
+  const textEditable = !approved && !officeSnapshot && !previewTruncated
   const wordCount = String(body || '').trim() ? String(body).trim().split(/\s+/).length : 0
   const cloudOpenHref = sourceHref(cloudDocumentUrl)
   const downloadHref = sourceHref(downloadUrl)
@@ -122,7 +128,7 @@ export default function DocumentDraftWorkspace({
         <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
           <main className="overflow-y-auto bg-[#e9e7e1] p-3 sm:p-6 lg:p-8">
             <div className="mx-auto mb-3 flex max-w-[760px] items-center justify-between text-[11px] font-semibold text-brand-muted">
-              <span>{officeSnapshot ? 'Read-only office snapshot' : 'Editable draft'}</span>
+              <span>{officeSnapshot ? 'Read-only office snapshot' : previewTruncated ? 'Read-only preview' : 'Editable draft'}</span>
               <span>{wordCount.toLocaleString()} words</span>
             </div>
             <div className="mx-auto min-h-[820px] max-w-[760px] bg-white px-6 py-8 shadow-[0_8px_30px_rgba(37,34,28,0.12)] sm:px-14 sm:py-12">
@@ -167,11 +173,19 @@ export default function DocumentDraftWorkspace({
 
             <section className="mt-6 rounded-xl bg-brand-ink p-4 text-white">
               <h3 className="text-sm font-bold">Tenant-owned working document</h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-white/70">{officeSnapshot ? 'This is a read-only office snapshot. Continue editing in Word, LibreOffice, OpenOffice, or the connected cloud editor, then use Refresh edits from cloud to adopt the next exact snapshot.' : `The DOCX already lives in ${storageLabel}. Each LawHand save creates a new verified revision and resets review. Approval records the exact cloud bytes; client delivery is a separate action.`}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-white/70">{officeSnapshot ? 'This is a read-only office snapshot. Continue editing in Word, LibreOffice, OpenOffice, or the connected cloud editor, then use Refresh edits from cloud to adopt the next exact snapshot.' : `The DOCX already lives in ${storageLabel}. Each LawHand save creates a new verified revision and resets review. If you edit the cloud working copy, use Refresh edits from cloud before saving here. Approval records the exact cloud bytes; client delivery is a separate action.`}</p>
               {previewTruncated && <p className="mt-2 rounded-lg border border-amber-300/40 bg-amber-300/10 p-2 text-[10px] font-semibold leading-relaxed text-amber-100">Preview truncated for safe display. Use the cloud editor or download the exact DOCX to review the complete document.</p>}
               {cloudOpenHref && <a href={cloudOpenHref} target="_blank" rel="noreferrer" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2.5 text-sm font-bold text-brand-ink"><FileText size={15} />Open cloud working copy</a>}
               {downloadHref && <a href={downloadHref} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/30 px-3 py-2.5 text-sm font-bold text-white hover:bg-white/10"><FileText size={15} />Download exact DOCX</a>}
               <p className="mt-2 text-[10px] leading-relaxed text-white/60">DOCX opens in Microsoft Word, LibreOffice, and OpenOffice. Google Drive can open compatible DOCX files.</p>
+              {cloudConflict && (
+                <div role="alert" className="mt-4 rounded-lg border border-amber-300/40 bg-amber-300/10 p-3 text-[11px] leading-relaxed text-amber-100">
+                  <p className="font-semibold">The cloud working copy was edited outside LawHand.</p>
+                  <p className="mt-1">Refresh edits from cloud to bring those edits in (your unsaved text here will be replaced), or discard the cloud edits and save your LawHand text.</p>
+                  {onRefreshFromCloud && <button type="button" onClick={onRefreshFromCloud} disabled={refreshing || saving} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-brand-ink disabled:opacity-50">{refreshing ? <Loader2 size={14} className="animate-spin" /> : null}{refreshing ? 'Refreshing…' : 'Refresh edits from cloud'}</button>}
+                  {onDiscardCloudEdits && <button type="button" onClick={onDiscardCloudEdits} disabled={refreshing || saving} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/30 px-3 py-2 text-xs font-bold text-white hover:bg-white/10 disabled:opacity-50">Discard cloud edits and save</button>}
+                </div>
+              )}
               {textEditable && <button type="button" onClick={onSave} disabled={saving || approving || !dirty} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2.5 text-sm font-bold text-brand-ink disabled:cursor-not-allowed disabled:opacity-50">{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}{saving ? 'Saving new revision…' : dirty ? 'Save as new cloud revision' : 'Cloud revision saved'}</button>}
               {!approved && onApprove && <button type="button" onClick={onApprove} disabled={saving || approving || dirty || storageState !== 'verified'} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent px-3 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{approving ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}{dirty ? 'Save before approval' : storageState === 'conflict' ? 'Reconcile cloud copy' : 'Review exact revision'}</button>}
             </section>

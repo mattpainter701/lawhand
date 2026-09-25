@@ -172,6 +172,8 @@ async def test_propose_document_creates_task_materializes_and_returns_contract(
     assert response["task_url"].endswith(f"/tasks/{task.id}")
     assert response["due_date"] == "2026-09-01"
     assert context.db.flushes == 2
+    # A text-only draft is the one kind LawHand's text editor may re-render.
+    assert task.pending_action["document_edit_mode"] == "lawhand_text"
 
 
 @pytest.mark.asyncio
@@ -219,6 +221,9 @@ async def test_template_document_binds_provenance_and_exact_rendered_docx(monkey
     assert captured_artifact["variable_snapshot"] == {"client_name": "Avery Client"}
     assert captured_materialization["source_docx_bytes"] == source_bytes
     assert response["template_id"] == str(template_id)
+    # D09: a draft with real DOCX bytes is edited in Word or Docs, never
+    # flattened through the LawHand text renderer.
+    assert task.pending_action["document_edit_mode"] == "office_snapshot"
     assert response["review_policy"] == "staff_then_attorney"
 
 

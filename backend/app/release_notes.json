@@ -2,8 +2,8 @@
   "recent_release_days": 30,
   "releases": [
     {
-      "id": "2026.09.25.02",
-      "version": "2026.09.25.02",
+      "id": "2026.09.25.06",
+      "version": "2026.09.25.06",
       "title": "Shared library forms fill the right boxes",
       "published_at": "2026-09-25",
       "summary": "Every shared form in the Template Studio library now has clear field labels, fills only from the records each box belongs to, and carries the title printed on the form itself.",
@@ -31,6 +31,27 @@
         {
           "title": "Field checks before publishing",
           "description": "The Studio lists fields that would fill with the client's details by name alone, and unclear labels. A PDF with such a field must bind it before it can be published."
+        }
+      ]
+    },
+    {
+      "id": "2026.09.25.05",
+      "version": "2026.09.25.05",
+      "title": "Assistant Word drafts keep your cloud edits and formatting",
+      "published_at": "2026-09-25",
+      "summary": "Saving an assistant document draft in LawHand no longer leaves Word Online or Google Docs edits behind, and drafts made from a Word file keep their formatting.",
+      "highlights": [
+        {
+          "title": "Cloud edits are not left behind",
+          "description": "If the draft changed in Word or Google Docs since its last save, LawHand stops the save. Refresh edits from cloud, or discard them and save; discarding is recorded."
+        },
+        {
+          "title": "Formatting is kept",
+          "description": "Drafts made from a Word template or an uploaded Word file are edited in Word or Google Docs, so letterhead, tables and headers are never flattened to plain text."
+        },
+        {
+          "title": "Long drafts stay whole",
+          "description": "A draft too long to show in full is read-only in LawHand, so a save can never cut off the rest of the document."
         }
       ]
     },

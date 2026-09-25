@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.25.02 — Shared library forms fill the right boxes
+## 2026.09.25.06 — Shared library forms fill the right boxes
 
 Released September 25, 2026.
 
@@ -17,6 +17,16 @@ Every shared form in the Template Studio library now has clear field labels, fil
 - **Correct titles and choices.** Forms show their printed titles, such as ND Divorce With Children Summons or Ohio Request for Service, and radio choices read as the page prints them.
 - **Probate guidebook fixes.** The ND informal probate guidebook no longer puts names or email in County of and State of boxes, and places the decedent's domicile county and state correctly.
 - **Field checks before publishing.** The Studio lists fields that would fill with the client's details by name alone, and unclear labels. A PDF with such a field must bind it before it can be published.
+
+## 2026.09.25.05 — Assistant Word drafts keep your cloud edits and formatting
+
+Released September 25, 2026.
+
+Saving an assistant document draft in LawHand no longer leaves Word Online or Google Docs edits behind, and drafts made from a Word file keep their formatting.
+
+- **Cloud edits are not left behind.** If the draft changed in Word or Google Docs since its last save, LawHand stops the save. Refresh edits from cloud, or discard them and save; discarding is recorded.
+- **Formatting is kept.** Drafts made from a Word template or an uploaded Word file are edited in Word or Google Docs, so letterhead, tables and headers are never flattened to plain text.
+- **Long drafts stay whole.** A draft too long to show in full is read-only in LawHand, so a save can never cut off the rest of the document.
 
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
 
