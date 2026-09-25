@@ -784,10 +784,13 @@ export default function MatterPortfolioPage() {
   const accessibleTotal = matterTotal ?? matters.length
   const mattersPartial = matterTotal === null || matterTotal > matters.length
 
+  // A page-1 reload supersedes any load-more in flight. That request's finally
+  // no longer matches the token, so the reload clears its busy flag here.
   const loadMyMatters = () => {
     const request = ++myRequest.current
     setMyLoading(true)
     setMyError(false)
+    setMyLoadingMore(false)
     setMyMoreError(false)
     setMyPage(1)
     getMyMattersPage({ page: 1, page_size: MY_MATTERS_PAGE_SIZE })
@@ -838,6 +841,7 @@ export default function MatterPortfolioPage() {
     const request = ++matterRequest.current
     setLoading(true)
     setError(null)
+    setMatterLoadingMore(false)
     setMatterMoreError(false)
     setMatterPage(1)
     getMattersV2({ page: 1, page_size: ALL_MATTERS_PAGE_SIZE })
@@ -907,12 +911,14 @@ export default function MatterPortfolioPage() {
       root.removeEventListener('scroll', onScroll)
     }
   }, [listUrl])
+  // Restore only once both lists have rendered: My Matters sits above the
+  // all-matters list, so restoring while it is still loading lands short.
   useEffect(() => {
-    if (loading) return
+    if (loading || myLoading) return
     const root = document.querySelector('[data-app-scroll]')
     const saved = readListScroll(listUrl)
     if (root && saved != null) root.scrollTop = saved
-  }, [loading, listUrl])
+  }, [loading, myLoading, listUrl])
 
   const handleToggleActive = async (assignmentId, matterId, active) => {
     setTogglingId(assignmentId)

@@ -1,6 +1,7 @@
 """Personal-matter paging: bounded pages, scoped totals and SQL filtering (S3.01/S3.02)."""
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
@@ -65,9 +66,7 @@ async def test_my_matters_page_reports_total_and_paginates(
     created = await _add_assigned_matters(db_session, test_tenant.id, test_user.id, 3)
     created_ids = {str(m.id) for m in created}
 
-    first = await client.get(
-        "/api/matters/my/page", params={"page": 1, "page_size": 2}
-    )
+    first = await client.get("/api/matters/my/page", params={"page": 1, "page_size": 2})
     assert first.status_code == 200, first.text
     body = first.json()
     assert body["total"] == 3
@@ -190,3 +189,78 @@ async def test_my_matters_page_filters_by_query_and_status(
     status_body = by_status.json()
     assert status_body["total"] == 1
     assert status_body["items"][0]["id"] == str(gamma.id)
+
+
+@pytest.mark.asyncio
+async def test_all_matters_pages_do_not_overlap_when_sort_values_tie(
+    client, db_session, test_tenant, test_user
+):
+    """Every row shares ``updated_at``, so only the ``id`` tie-break orders them."""
+    tied = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    created = await _add_assigned_matters(db_session, test_tenant.id, test_user.id, 7)
+    for matter in created:
+        matter.matter_name = f"Tied Sort {matter.matter_name}"
+        matter.updated_at = tied
+    await db_session.flush()
+    created_ids = {str(m.id) for m in created}
+
+    seen: list[str] = []
+    for page in (1, 2, 3):
+        resp = await client.get(
+            "/api/matters",
+            params={"search": "Tied Sort", "page": page, "page_size": 3},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 7
+        seen.extend(item["id"] for item in body["items"])
+
+    assert len(seen) == 7
+    assert set(seen) == created_ids
+    assert seen == sorted(seen, key=uuid.UUID)
+
+
+@pytest.mark.asyncio
+async def test_matter_lists_sort_by_an_allowed_column(
+    client, db_session, test_tenant, test_user
+):
+    for name in ("Sortable Bravo", "Sortable Alpha", "Sortable Charlie"):
+        await _add_named_matter(db_session, test_tenant.id, test_user.id, name)
+
+    everyone = await client.get(
+        "/api/matters",
+        params={"search": "Sortable", "sort_by": "matter_name", "sort_dir": "asc"},
+    )
+    assert everyone.status_code == 200, everyone.text
+    assert [m["matter_name"] for m in everyone.json()["items"]] == [
+        "Sortable Alpha",
+        "Sortable Bravo",
+        "Sortable Charlie",
+    ]
+
+    mine = await client.get(
+        "/api/matters/my/page",
+        params={"q": "Sortable", "sort_by": "matter_name", "sort_dir": "desc"},
+    )
+    assert mine.status_code == 200, mine.text
+    assert [m["matter_name"] for m in mine.json()["items"]] == [
+        "Sortable Charlie",
+        "Sortable Bravo",
+        "Sortable Alpha",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/matters", "/api/matters/my/page"])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"sort_by": "assignments"},
+        {"sort_by": "memory_content"},
+        {"sort_by": "no_such_column"},
+        {"sort_by": "updated_at", "sort_dir": "sideways"},
+    ],
+)
+async def test_matter_lists_refuse_unknown_sort(client, path, params):
+    resp = await client.get(path, params=params)
+    assert resp.status_code == 422, resp.text

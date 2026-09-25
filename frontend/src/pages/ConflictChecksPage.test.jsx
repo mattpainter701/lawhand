@@ -86,4 +86,45 @@ describe('ConflictChecksPage', () => {
     ))
     expect(await screen.findByText(/This record is immutable/)).toBeInTheDocument()
   })
+
+  it('offers every assigned matter as a link, past the first page', async () => {
+    const firstPage = Array.from({ length: 200 }, (_, i) => ({ id: `m${i}`, matter_name: `Matter ${i}` }))
+    getMyMattersPage.mockImplementation(({ page }) => Promise.resolve(
+      page === 1
+        ? { items: firstPage, total: 201 }
+        : { items: [{ id: 'm200', matter_name: 'Matter 200 on page two' }], total: 201 },
+    ))
+    render(<ConflictChecksPage />)
+
+    expect(await screen.findByRole('option', { name: 'Matter 200 on page two' })).toBeInTheDocument()
+    expect(getMyMattersPage).toHaveBeenCalledWith({ page: 2, page_size: 200 })
+    expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument()
+  })
+
+  it('says the matters failed to load instead of showing an empty picker', async () => {
+    const user = userEvent.setup()
+    getMyMattersPage.mockRejectedValueOnce(new Error('offline'))
+    render(<ConflictChecksPage />)
+
+    expect(await screen.findByText(/Your assigned matters could not be loaded/)).toBeInTheDocument()
+    // The search itself is still usable without a link.
+    expect(screen.getByRole('option', { name: 'Not linked' })).toBeInTheDocument()
+
+    getMyMattersPage.mockResolvedValueOnce({ items: [{ id: 'm1', matter_name: 'Smith v. Jones' }], total: 1 })
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByRole('option', { name: 'Smith v. Jones' })).toBeInTheDocument()
+    expect(screen.queryByText(/Your assigned matters could not be loaded/)).not.toBeInTheDocument()
+  })
+
+  it('states when only part of a very large assigned set is listed', async () => {
+    getMyMattersPage.mockImplementation(({ page }) => Promise.resolve({
+      items: Array.from({ length: 200 }, (_, i) => ({ id: `p${page}-${i}`, matter_name: `P${page} ${i}` })),
+      total: 2500,
+    }))
+    render(<ConflictChecksPage />)
+
+    expect(await screen.findByText(/Showing the 2000 most recently updated of your 2500 assigned matters/)).toBeInTheDocument()
+    expect(getMyMattersPage).toHaveBeenCalledTimes(10)
+  })
 })
