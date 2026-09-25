@@ -1,5 +1,6 @@
 """Router for matter file attachments (case documents)."""
 
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -83,6 +84,7 @@ from app.services.provider_http import (
 from app.services import google_service_account
 from app.services.token_vault import get_fresh_token
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(
     prefix="/api",
@@ -309,13 +311,28 @@ async def _delete_cloud_provider_object(
     safe_drive_id = quote(drive_id, safe="") if drive_id else None
 
     if storage_provider == "google_drive":
-        await google_request(
-            "DELETE",
+        # Move the file to the trash rather than calling files.delete. Graph
+        # DELETE sends OneDrive/SharePoint items to the recycle bin, so this
+        # keeps an accidental delete recoverable on every provider. Trashing a
+        # Shared Drive item needs only the Content manager (fileOrganizer)
+        # role LawHand's service account holds; a permanent delete would need
+        # Manager. supportsAllDrives is required: without it Drive answers 404
+        # for every Shared Drive item and the file is orphaned.
+        response = await google_request(
+            "PATCH",
             f"/{safe_object_id}",
             token=token,
             base_url="https://www.googleapis.com/drive/v3/files",
             provider_name="Google Drive",
+            params={"supportsAllDrives": "true", "fields": "id,trashed"},
+            json={"trashed": True},
         )
+        try:
+            trashed = response.json().get("trashed")
+        except (ValueError, AttributeError):
+            trashed = None
+        if trashed is not True:
+            raise ProviderError("Google Drive did not move the document to the trash")
         return
 
     if storage_provider == "sharepoint":
@@ -374,6 +391,9 @@ async def _delete_cloud_backing_if_needed(
             drive_id=_doc_provider_drive_id(doc),
         )
     except ProviderNotFound:
+        # Already gone. Every provider call above addresses Shared Drive and
+        # SharePoint items explicitly (supportsAllDrives / drive id), so a 404
+        # here is not a missing-parameter false negative.
         return
     except ProviderThrottled as exc:
         raise HTTPException(
@@ -389,6 +409,23 @@ async def _delete_cloud_backing_if_needed(
             ),
         ) from exc
     except ProviderAuthError as exc:
+        if storage_provider == "google_drive" and exc.status_code == 403:
+            logger.warning(
+                "Google Drive refused to trash document %s for tenant %s: %s",
+                doc.id,
+                doc.tenant_id,
+                exc.response_text,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Google Drive refused to move this document to the trash "
+                    "(HTTP 403). LawHand's Google account usually needs the "
+                    "Content manager or Manager role on the Shared Drive, or "
+                    "ownership of the file in My Drive; database record was "
+                    "not removed."
+                ),
+            ) from exc
         raise HTTPException(
             status_code=502,
             detail=(

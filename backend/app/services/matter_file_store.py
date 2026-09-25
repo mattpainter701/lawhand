@@ -1072,7 +1072,8 @@ class MatterFileStore:
 
             # Small-file path: single PUT with rename-on-conflict.
             upload_url = (
-                f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{filename}:/content"
+                f"{GRAPH_BASE}/me/drive/items/{parent_id}:/"
+                f"{_graph_path_segment(filename)}:/content"
                 "?@microsoft.graph.conflictBehavior=rename"
             )
             async with httpx.AsyncClient(timeout=60) as client:
@@ -1128,7 +1129,12 @@ class MatterFileStore:
         """Upload a large file to OneDrive using the resumable upload session API."""
         try:
             # Create upload session
-            session_url = f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{filename}:/createUploadSession"
+            # The name is percent-encoded in the path; the JSON body keeps the
+            # raw name, which is what Graph stores and shows.
+            session_url = (
+                f"{GRAPH_BASE}/me/drive/items/{parent_id}:/"
+                f"{_graph_path_segment(filename)}:/createUploadSession"
+            )
             async with httpx.AsyncClient(timeout=30) as client:
                 session_resp = await client.post(
                     session_url,
@@ -1588,7 +1594,7 @@ class MatterFileStore:
                 )
             upload_url = (
                 f"{GRAPH_BASE}/drives/{drive_id}/items/{folder_id}:/"
-                f"{filename}:/content"
+                f"{_graph_path_segment(filename)}:/content"
                 "?@microsoft.graph.conflictBehavior=rename"
             )
             async with httpx.AsyncClient(timeout=60) as client:
@@ -1951,6 +1957,18 @@ def _matter_folder_setup_required_message(provider: str | None) -> str:
         f"This matter's {label} folder is not set up. In Documents > Document tools, "
         f"choose Set up folders, then retry. No file was stored."
     )
+
+
+def _graph_path_segment(name: str) -> str:
+    """Percent-encode one name for a Graph path-addressed URL (``:/{name}:/``).
+
+    Graph addresses a child by name inside the URL path, so a raw ``#`` starts
+    a fragment (dropping the rest of the path and the conflictBehavior query),
+    ``?`` starts a query, and ``%`` is read as an escape. Encoding every
+    reserved character, including ``/``, keeps the name one literal segment.
+    Graph decodes it, so the stored item name keeps the original characters.
+    """
+    return quote(name, safe="")
 
 
 def _storage_result_from_graph_item(
