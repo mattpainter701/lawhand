@@ -6,6 +6,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.matter_document import MatterDocumentResponse
+
 CATEGORIES = ["engagement_letter", "retainer", "NDA", "motion", "other"]
 
 
@@ -291,6 +293,10 @@ class DocumentTemplateRenderResponse(BaseModel):
     signing_placement_problems: list[dict[str, Any]] = Field(default_factory=list)
     # Field, filled and verified counts recorded on the saved document.
     generation_summary: Optional[dict[str, Any]] = None
+    # The saved matter document as the Documents tab lists it, so the caller
+    # can offer "Open in Word / Google Docs" in place. Absent when nothing was
+    # saved or the saved row could not be read back.
+    matter_document: Optional[MatterDocumentResponse] = None
 
 
 class DocumentTemplateSmartFillRequest(BaseModel):

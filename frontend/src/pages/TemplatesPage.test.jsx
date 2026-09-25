@@ -2,7 +2,9 @@ import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor, within }
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import TemplatesPage from './TemplatesPage'
+import TemplatesPage, { RenderModal } from './TemplatesPage'
+import { ToastProvider } from '../components/toast/ToastProvider'
+import { ConfirmProvider } from '../components/dialog/ConfirmProvider'
 import {
   analyzeTemplateUpload,
   getSampleTemplate,
@@ -19,6 +21,7 @@ import {
   renderTemplate,
   renderTemplateFile,
   publishTemplate,
+  startMatterDocumentCloudEdit,
   updateTemplate,
 } from '../api'
 
@@ -63,6 +66,9 @@ vi.mock('../api', () => ({
   restoreTemplateVersion: vi.fn(),
   getMatterDocumentDownloadUrl: (matterId, documentId) => `/api/matters/${matterId}/documents/${documentId}/download`,
   triggerBlobDownload: vi.fn(),
+  startMatterDocumentCloudEdit: vi.fn(),
+  reconcileMatterDocument: vi.fn(),
+  uploadRevisedMatterDocument: vi.fn(),
 }))
 
 const render = (ui) => rtlRender(<MemoryRouter initialEntries={['/templates']}>{ui}</MemoryRouter>)
@@ -1648,5 +1654,84 @@ describe('document template workflow', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/PDF, DOCX, TXT, PNG, JPEG, TIFF, BMP, or WebP/i)
     expect(analyzeTemplateUpload).not.toHaveBeenCalled()
+  })
+})
+
+describe('a Word document saved from the Generate dialog', () => {
+  const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  const wordTemplate = {
+    id: 'word-template', title: 'Engagement letter', format: 'docx', source_filename: 'engagement.docx', source_sha256: 'abc',
+    is_active: true, variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }] },
+  }
+  const savedDocument = {
+    id: 'saved-word', matter_id: 'matter-1', filename: 'Engagement_letter.docx', content_type: DOCX,
+    storage_backend: 'sharepoint', provider_object_id: 'item-1', document_status: 'draft', storage_state: 'synced',
+  }
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    URL.createObjectURL = originalCreateObjectURL
+    URL.revokeObjectURL = originalRevokeObjectURL
+  })
+
+  async function saveWordDocument(response) {
+    renderTemplateFile.mockResolvedValue({ blob: new Blob(['docx'], { type: DOCX }), filename: 'Engagement_letter.docx', contentType: DOCX })
+    renderTemplate.mockResolvedValue(response)
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:word-preview')
+    URL.revokeObjectURL = vi.fn()
+    const user = userEvent.setup()
+    rtlRender(
+      <MemoryRouter>
+        <ToastProvider><ConfirmProvider>
+          <RenderModal template={wordTemplate} fixedMatterId="matter-1" onClose={() => {}} />
+        </ConfirmProvider></ToastProvider>
+      </MemoryRouter>,
+    )
+    await user.type(screen.getByRole('textbox', { name: /Client name/ }), 'Ada')
+    await user.click(screen.getByRole('button', { name: 'Preview' }))
+    const save = screen.getByRole('button', { name: 'Save to matter' })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
+    await screen.findByText(/Saved to the matter as Engagement_letter.docx/)
+    return user
+  }
+
+  it('offers Open in Word in place and opens the saved document there', async () => {
+    const popup = { location: { href: '' }, close: vi.fn() }
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const editing = { ...savedDocument, external_edit_started_at: new Date().toISOString(), external_edit_app: 'word_web' }
+    startMatterDocumentCloudEdit.mockResolvedValue({ document: editing, links: { word_web: 'https://firm.sharepoint.com/doc' }, app: 'word_web' })
+    const user = await saveWordDocument({
+      rendered: '', matter_document_id: 'saved-word', output_format: 'docx', output_filename: 'Engagement_letter.docx',
+      storage_backend: 'sharepoint', matter_document: savedDocument,
+    })
+
+    expect(screen.getByText('Finish it in Word. Your edits come back to this matter document.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open Engagement_letter.docx in Word' }))
+
+    expect(startMatterDocumentCloudEdit).toHaveBeenCalledWith('matter-1', 'saved-word', 'word_web')
+    await waitFor(() => expect(popup.location.href).toBe('https://firm.sharepoint.com/doc'))
+    expect(await screen.findByText(/Being edited in Word/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Bring back changes to Engagement_letter.docx' })).toBeInTheDocument()
+  })
+
+  it('offers nothing for a document kept in LawHand storage', async () => {
+    await saveWordDocument({
+      rendered: '', matter_document_id: 'saved-word', output_format: 'docx', output_filename: 'Engagement_letter.docx',
+      storage_backend: 'local', matter_document: { ...savedDocument, storage_backend: 'local', provider_object_id: null },
+    })
+
+    expect(screen.queryByRole('button', { name: /Open Engagement_letter.docx in/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Upload a revised version/ })).not.toBeInTheDocument()
+  })
+
+  it('offers nothing when the save did not return the document', async () => {
+    await saveWordDocument({
+      rendered: '', matter_document_id: 'saved-word', output_format: 'docx', output_filename: 'Engagement_letter.docx',
+      storage_backend: 'sharepoint',
+    })
+
+    expect(screen.queryByRole('button', { name: /Open Engagement_letter.docx in/ })).not.toBeInTheDocument()
   })
 })
