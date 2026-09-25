@@ -194,6 +194,12 @@
 - Studio field discovery and paused-template counts are consistent. The selected cloud provider's credential health is reflected in storage setup status. Matter search includes client names and matter numbers without widening tenant access.
 - Validation and remaining production acceptance requirements are recorded in `docs/pdf-release-acceptance-2026-09-22.md`. Cloud grant reauthorization and actual save/reopen checks remain operational acceptance, not a claim made by the code change.
 
+## Unreleased — The whole matters API refuses client-portal logins
+
+- Security: most `/api/matters` routers scope by tenant only, never by matter assignment, so a replayed client-portal token (`role="client"`) could list every matter in the firm (`GET /api/matters` returned 200 with all matters) and read or change them. Before this change, 97 of the 143 `/api/matters` routes did not refuse a client. The rest already require an RBAC capability, which portal clients never hold.
+- `app/services/access_control.py` gains `require_firm_staff_user`, a dependency that runs `get_current_user` (sharing the request's cached result) and raises `403 {"code": "staff_only"}` for a client. It is set as a router-level dependency on `matters`, `esignature` (`/api/matters` router only; the `/api/portal/client/signatures` router is untouched), `matter_parties`, `brief_checks`, `research_workspaces`, the firm-side `client_portal.firm_router` (invites, portal messages, upload links), `matter_documents` and `matter_document_folders`. `matters_correspondence` gets it per route, because the Cloudflare inbound-email webhook shares that router. A router-level dependency refuses a client before request-body validation and before the handler, and covers routes added later.
+- Tests: `test_matters_api_staff_only.py` walks the live route table and asserts every `/api/matters` route returns 403 for a client token, so a new unguarded route fails CI. It also checks that client writes to a matter change nothing and that staff still read and write.
+
 ## Unreleased — Matter document routes refuse client-portal logins
 
 - Security: a client-portal login (`User.role == "client"`) is a real user whose JWT `get_current_user` accepts, and portal responses expose shared document IDs. Replayed as `Authorization: Bearer …`, it could list, download, open, search, edit, delete, file and tag firm documents in its own matter through the staff API.

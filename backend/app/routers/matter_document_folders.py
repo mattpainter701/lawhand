@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
-from app.services.access_control import require_firm_staff
+from app.services.access_control import require_firm_staff, require_firm_staff_user
 from app.models.matter_document import MatterDocument
 from app.models.matter_document_tag import MatterDocumentTagLink
 from app.models.plugin import Matter
@@ -55,7 +55,13 @@ from app.services.matter_document_organization import (
     update_tag,
 )
 
-router = APIRouter(prefix="/api", tags=["matter-document-folders"])
+router = APIRouter(
+    prefix="/api",
+    tags=["matter-document-folders"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    # Router-level, so a client is refused before request-body validation.
+    dependencies=[Depends(require_firm_staff_user)],
+)
 
 
 async def _get_matter_or_404(

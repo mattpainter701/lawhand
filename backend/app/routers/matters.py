@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.database import async_session_maker, get_db, set_tenant_context
 from app.middleware.tenant import get_current_user, require_admin
+from app.services.access_control import require_firm_staff_user
 from app.models.billing import TimeEntry, Expense, Invoice, Payment
 from app.models.communication_log import CommunicationLog
 from app.models.contact import Contact
@@ -104,7 +105,12 @@ _cloud_search = CloudSearchService()
 _cloud_sync = CloudSyncService()
 matter_context_cache_manager = ExpertiseCacheManager()
 
-router = APIRouter(prefix="/api/matters", tags=["matters"])
+router = APIRouter(
+    prefix="/api/matters",
+    tags=["matters"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    dependencies=[Depends(require_firm_staff_user)],
+)
 logger = logging.getLogger(__name__)
 SUPPORTED_CLOUD_FOLDER_PROVIDERS = {"onedrive", "google_drive", "sharepoint"}
 

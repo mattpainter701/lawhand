@@ -71,6 +71,7 @@ from app.database import (
     set_tenant_context,
 )
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff_user
 from app.models.billing import Invoice, Payment
 from app.models.client_portal import ClientPortalInvite
 from app.models.conflict_check import PortalInvoiceDownload
@@ -242,7 +243,12 @@ ALLOWED_UPLOAD_EXTENSIONS = frozenset(
 )
 
 router = APIRouter(prefix="/api/portal/client", tags=["client-portal"])
-firm_router = APIRouter(prefix="/api/matters", tags=["client-portal-admin"])
+firm_router = APIRouter(
+    prefix="/api/matters",
+    tags=["client-portal-admin"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    dependencies=[Depends(require_firm_staff_user)],
+)
 
 
 # ── Portal auth ─────────────────────────────────────────────────────────────

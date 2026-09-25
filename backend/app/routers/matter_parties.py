@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff_user
 from app.models.contact import Contact
 from app.models.matter_party import MatterParty
 from app.models.plugin import Matter
@@ -27,7 +28,12 @@ from app.schemas.matter_party import (
     normalize_matter_party_role,
 )
 
-router = APIRouter(prefix="/api/matters", tags=["matter-parties"])
+router = APIRouter(
+    prefix="/api/matters",
+    tags=["matter-parties"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    dependencies=[Depends(require_firm_staff_user)],
+)
 
 
 async def _clear_other_primary_for_role(

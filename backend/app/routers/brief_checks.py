@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff_user
 from app.models.brief_check import BriefCheck, BriefCheckAudit
 from app.models.matter_document import MatterDocument
 from app.models.plugin import Matter
@@ -31,7 +32,12 @@ from app.services.document_export import markdown_to_docx_bytes
 from app.services.matter_file_store import MatterFileReadError, MatterFileStore
 from app.utils.text_processing import extract_text_from_docx, extract_text_from_pdf
 
-router = APIRouter(prefix="/api/matters/{matter_id}/brief-checks", tags=["brief-check"])
+router = APIRouter(
+    prefix="/api/matters/{matter_id}/brief-checks",
+    tags=["brief-check"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    dependencies=[Depends(require_firm_staff_user)],
+)
 file_store = MatterFileStore()
 
 
