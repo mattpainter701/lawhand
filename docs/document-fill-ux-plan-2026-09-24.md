@@ -1,6 +1,6 @@
 # Document fill UX: document-first filling, parity, and "fill where they work"
 
-Status: phases 1 and 2 shipped (sample Fill dialog; Prepare and Generate). Phases 3–6 are proposals. Section 8 lays out the Microsoft 365 / Google Workspace options.
+Status: phases 1 and 2 shipped (sample Fill dialog; Prepare and Generate). Phases 3–6 are proposals. Section 8 lays out the Microsoft 365 / Google Workspace options, and section 9 how LawHand's own editor sits beside them.
 Date: 2026-09-24
 
 ## 1. Why
@@ -117,10 +117,41 @@ Still to do from the original plan: lift `FieldInput` into a shared
 editor is now one function, `renderFieldEditor`, so only `PrepareSetBody`
 still has its own copy).
 
-### Phase 3: packets (S–M)
+### Phase 3: packets (M)
 
-`PrepareSetBody` uses the same switch. Document shows the selected member
-(member tabs across the top), and Questions stays the single shared interview.
+A packet asks each question once and fans the answer out to every document
+that uses it. The interview already records where each answer lands:
+`InterviewQuestion.appears_in` holds the `template_id` and `field_name` for
+every document (`backend/app/services/template_sets.py:60`). That is enough to
+put packet answers on each document's page.
+
+- **Same switch: Document / Questions / Packet.**
+  - Document is the default, with one tab per member document along the top.
+    Each tab shows its own status: missing count, previewed, saved.
+  - Questions is today's single interview, grouped by card.
+  - Packet is today's member list with Generate all, Save all and Send.
+- **Document view per member:**
+  - PDF members use `FillOnDocument` over that member's source, with fields
+    renamed from `field_name` to the question `key` through `appears_in`.
+  - Word and text members use the page reference with the guided bar, as
+    Prepare does.
+  - Typing on any document writes the shared answer, so every document that
+    uses it updates at once.
+- **Make sharing visible.** The guided bar says "Also fills: Engagement
+  letter, Conflict waiver" for a shared answer. Boxes for shared answers get a
+  small link marker, so nobody is surprised that editing one document changed
+  another.
+- **Walk the packet in one pass.** "Next required" goes across documents: at
+  the end of one member it opens the next member's tab at its first missing
+  box. Each required answer is asked once, even when it appears in several
+  documents.
+- **Preview per member in place.** Replace the preview dialog with a Preview
+  sub-tab inside each member tab, using the same live-updating PDF preview as
+  Prepare.
+- **Code:** the member templates are already loaded by `usePrepareSet`. The
+  work is the key mapping, the member tabs, and moving `PrepareSetBody`'s
+  inline input copy onto `renderFieldEditor`, which should become a shared
+  component at this point.
 
 ### Phase 4: one on-page field component (S)
 
@@ -183,17 +214,17 @@ Options for editing in the browser inside LawHand:
 | ONLYOFFICE Docs | Similar embedded editor | A commercial licence is needed to embed it in a proprietary product (`template-studio-document-workflow.md:135`). |
 | **The firm's own Word or Google Docs** (phases 5–6) | Editing where lawyers already work, with their fonts, styles and tracked changes | No new server to run. Needs the D08/D34/D09 fixes and, for phase 6, the add-in content-control work. |
 
-**Decision (2026-09-24).** Every customer must have Microsoft 365 or Google
-Workspace, so LawHand will not host its own office editor. LibreOffice stays
-for rendering and conversion, and editing happens in the firm's suite (section
-8).
+**Decision (2026-09-25).** LawHand keeps and grows its **own editor**, and
+also adds Option A (open in the firm's Word or Docs). The two are not
+alternatives; section 9 explains how they share one document. The first
+decision (2026-09-24) to drop an in-app editor is withdrawn.
 
 ## 7. Decisions
 
 1. ~~Phase 2 next?~~ Yes. Shipped.
 2. Which suite first for "fill where they work"? The options are in section 8.
-3. ~~Embedded editor?~~ No. Every customer has Microsoft 365 or Google
-   Workspace.
+3. Embedded editor? **Yes, keep our own** (2026-09-25), alongside Option A.
+   The engine choice is in section 9.
 
 ## 8. Options: filling and editing in the firm's own suite
 
@@ -313,3 +344,55 @@ Each host adapter only knows how to find, select and write an anchor.
    the panel and anchor contract are the same either way.
 3. **Treat Option C as the Google adapter of D,** not as a separate product.
    Offer native-Docs templates only to firms that want to author in Docs.
+
+## 9. LawHand's own editor beside the firm's suite
+
+**What exists.** Today the in-app editing is:
+
+- the plain-text draft editor in `DocumentDraftWorkspace.jsx`, which drops
+  Word formatting (D09);
+- the Template Studio wording editor (`WordWordingEditor.jsx`), which edits
+  paragraph spans in a template.
+
+Neither is a full document editor.
+
+**Why keep one.** Quick edits without leaving LawHand, the same experience for
+every firm whichever suite it runs, and a fallback when a Microsoft or Google
+connection is broken or not yet approved by the firm's administrator.
+
+**How the two coexist.** Both editors work on the same DOCX, which lives in the
+matter's cloud folder. LawHand's revision history stays the record.
+
+- **One writer at a time.** Opening a document in either editor checks it out
+  (who, where, since when). The other editor's button shows who has it, and
+  offers "Open read-only" or "Take over" (take-over snapshots first).
+- **Every save is a revision.** An in-app save, or an adopted Word or Docs
+  edit through the existing snapshot path, creates a new LawHand revision and
+  resets review. Nothing is overwritten silently. This is also the fix for
+  D34.
+- **Change detection by hash.** The existing byte check
+  (`cloud_docx_snapshot.py`) compares the cloud file with the last revision
+  before any save, so an edit made elsewhere is never lost. It becomes "the
+  file changed in Word since you opened it: review the changes, or keep both".
+- **Fields should survive both editors.** Anchor template fields as Word
+  content controls. Whether they survive a round trip through Collabora
+  (LibreOffice's DOCX content-control support) must be verified in the pilot
+  before the phase 6 guided bar is offered inside our editor.
+
+**Engine options for our editor:**
+
+| Engine | Fidelity | Cost and risk | Fit |
+| --- | --- | --- | --- |
+| **Collabora Online** (LibreOffice in the browser, WOPI client) | High for DOCX. It is the same engine we already use for previews and PDF output, so what you edit matches what we render. | We implement a **WOPI host** (check file info, get/put file, lock and unlock); this is a normal, documented integration. Running it needs a separate service. A subscription is needed for production support and for large deployments. | **Recommended.** WOPI's Lock/Unlock/RefreshLock calls map directly onto the checkout model above. |
+| ONLYOFFICE Docs | High for DOCX | Commercial licence required to embed it in our product. Its own document server. | Viable if its licence cost is acceptable. |
+| Rich-text editor (e.g. ProseMirror-based) over a DOCX subset | Loses layout, tables, headers and section formatting on round trip | Cheapest, fully ours | Fine for letters and emails, not for court or agreement documents. |
+
+**Order of work.**
+
+1. Option A for both suites, with checkout and hash-checked revisions. This
+   builds the lock and revision model that both editors need.
+2. A Collabora pilot behind a feature flag. We implement the WOPI host against
+   the same revision store, and offer **Edit in LawHand** beside **Open in
+   Word/Docs**.
+3. Retire the plain-text draft editor for DOCX once Collabora covers it. Keep
+   the text editor for text-only drafts.

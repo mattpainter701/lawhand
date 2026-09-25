@@ -11,7 +11,7 @@
   - `usePrepareFill`'s `nextField` and `verifyAndAdvance` now return the field they moved to, so Enter-to-advance and "Next field needing attention" move the bar and scroll the page in Document view.
   - Preview and Test in Document view open the Preview tab; the tab shows "updating…" while the live PDF preview refreshes.
 - `FillOnDocument` gains a controlled `activeName`/`onActiveChange`, `statusFor`, `isMissing`, `markerFor`, `legend`, `checkboxValues` and `disabled`. It also exports `GuidedFieldBar`, `useGuidedFields` and `FILL_TONES`.
-- `docs/document-fill-ux-plan-2026-09-24.md` records the rollout, the decision not to host an office editor (every customer has Microsoft 365 or Google Workspace), and options for filling and editing in the firm's own suite.
+- `docs/document-fill-ux-plan-2026-09-24.md` records the rollout, the options for filling and editing in the firm's own suite, how LawHand's own editor (a Collabora/WOPI pilot) coexists with Open in Word/Docs, and the packet (multi-document) design.
 
 ## 2026.09.24.02 — Microsoft 365 and Google connection clarity
 
