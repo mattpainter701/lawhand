@@ -123,7 +123,7 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
   - Google events send no invitations and have no Meet link (D46)
   - the UI claims calendar updates that failed (D80)
 - **Storage and documents:**
-  - Word Online edits are orphaned by a LawHand save (D34)
+  - Word Online edits are orphaned by a LawHand save (D34; fixed in PR #617)
   - AI drafts require an explicit provider (D35)
   - Shared Drive deletes omit `supportsAllDrives` and orphan files (D36)
   - `#` or `%` in a filename breaks OneDrive uploads (D37)
@@ -204,7 +204,7 @@ The position: LawHand remains the template and fill engine, the source of matter
 
 | Play | Detail | Effort |
 |---|---|---|
-| **Open in Word / Docs, sync back** | For drafts stored in OneDrive/SharePoint, offer three ways to open: Word for the web (`webUrl?action=edit`), Word desktop (`ms-word:ofe\|u\|…`), and view. Detect edits with a drive-root subscription plus delta filtered to matter folders, then snapshot the new version into LawHand. This fixes D08 and D34. Note that subscriptions need `Files.Read.All`/`Sites.Read.All`, which conflicts with a move to `Sites.Selected`; decide which matters more. | M–L |
+| **Open in Word / Docs, sync back** | For drafts stored in OneDrive/SharePoint, offer three ways to open: Word for the web (`webUrl?action=edit`), Word desktop (`ms-word:ofe\|u\|…`), and view. Detect edits with a drive-root subscription plus delta filtered to matter folders, then snapshot the new version into LawHand. This fixes D08 and D34. **Shipped:** PR #614 (open in Word/Docs, bring back changes on return or focus, upload fallback; fixes D08) and PR #617 (eTag check before a LawHand save; fixes D34). Change subscriptions were not built; edits are reconciled on return instead. Note that subscriptions need `Files.Read.All`/`Sites.Read.All`, which conflicts with a move to `Sites.Selected`; decide which matters more. | M–L |
 | **Stop flattening Word drafts** | Default template and agent DOCX drafts to the Word/cloud editing path, not plain text (D09). | S |
 | **PDF conversion in the firm's tenant** | When the source DOCX is already in OneDrive/SharePoint, use `GET …/content?format=pdf` (a 302 to a short-lived URL), validate it with the existing pypdf checks, and fall back to LibreOffice. This improves fidelity (D82) and removes load from the worker (D83). | S |
 | **Firm template library in SharePoint or Drive** | An admin binds one library (SharePoint via `Sites.Selected`, Drive via Picker). LawHand ingests and version-tracks the DOCX files into Template Studio, and can publish them back as content-type templates so "New > Engagement letter" works in SharePoint. `ms-word:nft` only suggests a save location; copy into the matter folder instead. | M |
@@ -261,7 +261,7 @@ The UX findings in `ux.json` and `clusters-ux.json` (102 clusters) were reported
 | Horizon | Items |
 |---|---|
 | **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D07 unshare on unassign. D36 Shared Drive deletes. D37 filename encoding. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. Pin a current Gemini model. |
-| **Next** (decisions needed) | End the admin-token fallback for mail, search and calendar (D02, D03, D04, D25). SharePoint default storage instead of the admin's OneDrive (D06, D13). Directory-sync lifecycle rules (D15, D16). Confidential MCP clients (D21). "Open in Word/Docs" with sync-back (D08, D34). Admin-first Microsoft consent. Per-capability health. |
+| **Next** (decisions needed) | End the admin-token fallback for mail, search and calendar (D02, D03, D04, D25). SharePoint default storage instead of the admin's OneDrive (D06, D13). Directory-sync lifecycle rules (D15, D16). Confidential MCP clients (D21). Admin-first Microsoft consent. Per-capability health. |
 | **Later** (growth) | Matter Agent for Microsoft 365 Copilot. Federated connector. Gemini Enterprise connector. Meeting recap. Firm template library in SharePoint/Drive. Native pickers and `drive.file`. Word add-in content controls and tracked changes. Outlook and Gmail "file to matter" add-ins. Event-driven sync. Teams tab. |
 
 ## Decisions needed
