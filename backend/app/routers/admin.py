@@ -302,8 +302,27 @@ async def deactivate_user(
     # A deactivated person must not be able to walk back in through an
     # invitation link that was still sitting in their inbox.
     await revoke_open_invitation(db, tenant_id=admin.tenant_id, user_id=target_user.id)
+    from app.services.matter_folder_shares import (
+        request_user_share_revocations,
+        revoke_pending_shares_now,
+    )
+
+    tenant_id = admin.tenant_id
+    target_email = target_user.email
+    # Their matter folder shares go with the account. The provider call runs
+    # after the commit; a failure is recorded and retried, never blocking this.
+    pending_unshares = await request_user_share_revocations(
+        db,
+        tenant_id=tenant_id,
+        user_id=target_user.id,
+        email=target_email,
+        actor_user_id=admin.id,
+        reason="user_deactivated",
+    )
     target_user.is_active = False
     await db.commit()
+    if pending_unshares:
+        await revoke_pending_shares_now(db, tenant_id, email=target_email)
 
 
 @router.get("/integrations/health")
@@ -2161,6 +2180,18 @@ async def reactivate_user(
 
     user.is_active = True
     await db.commit()
+    # Deactivation took their matter folder shares back; their assignments
+    # stayed, so share those folders again. Best effort, like any share.
+    from app.services.matter_folder_shares import share_user_matter_folders
+
+    try:
+        await share_user_matter_folders(db, admin.tenant_id, user)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning(
+            "Failed to re-share matter folders for user %s", user_id, exc_info=True
+        )
     return {"status": "reactivated", "user_id": user_id}
 
 
