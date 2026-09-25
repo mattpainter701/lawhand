@@ -349,6 +349,31 @@ def _normalized_options(field: dict, type_name: str) -> list[Any]:
     return normalized
 
 
+def _radio_options_in_page_order(field: dict, widgets: list[PdfWidget]) -> list[Any]:
+    """A radio group's export values in the order its buttons appear.
+
+    ``/_States_`` follows the appearance dictionaries, which authoring tools
+    write in any order: one Ohio complaint lists "Choice 2" before "Choice 1"
+    although its buttons read left to right. Filling offers the options as the
+    form shows them -- top to bottom, then left to right -- and keeps any state
+    no widget carries at the end rather than dropping it.
+    """
+
+    ordered: list[Any] = []
+    for widget in sorted(
+        widgets,
+        key=lambda item: (
+            item.page_index,
+            -round(max(item.rect[1], item.rect[3])),
+            min(item.rect[0], item.rect[2]),
+        ),
+    ):
+        if widget.on_state and widget.on_state not in ordered:
+            ordered.append(widget.on_state)
+    states = _normalized_options(field, "radio")
+    return ordered + [state for state in states if state not in ordered]
+
+
 def _widgets(reader: PdfReader) -> list[PdfWidget]:
     widgets: list[PdfWidget] = []
     for page_index, page in enumerate(reader.pages):
@@ -482,7 +507,13 @@ def _discover_pdf_fields(reader: PdfReader) -> list[dict[str, Any]]:
                 # uses it to show which requirements it cannot lift.
                 "source_required": bool(flags & 2),
                 "multiline": field_type == "/Tx" and bool(flags & 4096),
-                "options": _normalized_options(field, type_name),
+                "options": (
+                    _radio_options_in_page_order(
+                        field, widgets_by_name.get(pdf_name) or []
+                    )
+                    if type_name == "radio"
+                    else _normalized_options(field, type_name)
+                ),
                 "default": default,
                 "page": page_number,
                 "rect": list(first_widget.rect) if first_widget else None,

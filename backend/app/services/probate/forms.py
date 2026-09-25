@@ -332,18 +332,21 @@ GUIDEBOOK_BINDINGS.update(
         "a_1_i_am_the_state_name_and_interest_of_applicant": "estate.applicant_name_and_interest",
         "dod_f2": "estate.date_of_death",
         "age_f2": "estate.age_at_death",
-        "years_at_the_time_of_death_the_decedent_was_domiciled_in": "estate.domicile_county",
+        # "domiciled in [ ] / [ ] County, [ ] (State)": the county is the box
+        # before "County", whatever the PDF's names and tooltips say.
+        "following_persons_who_are_the_surviving_spouse_children_heirs_and_devisees_of_the": "estate.domicile_county",
         "state_1": "estate.domicile_state",
         "heirs_app": "estate.heirs_table",
         "3_venue_for_this_case_is_in_this_county_because_1": "estate.venue_basis",
         "terminated_except": "estate.prior_appointment_statement",
-        "5_i_have_not_received_any_demand_for_notice_and_am_unaware_of_a_demand_for_notice_of": "estate.demand_for_notice_statement",
+        # The field named for item (5) is the state box that ends item (4);
+        # item (5)'s own blank follows "expects as follows:".
+        "filed_in_this_state_or_elsewhere_expects_as_follows_1": "estate.demand_for_notice_statement",
         "will_f2": "estate.will_execution_date",
         "sought_is_as_follows_1": "estate.pr_name",
         "sought_is_as_follows_2": "estate.pr_priority_statement",
         "sta_add": "estate.applicant_full_address",
         "sta_phone": "estate.applicant_phone",
-        "undefined_3": "estate.applicant_email",
         "pr_f2": "estate.applicant_name",
         # Form 3 — statement of informal probate (clerk's order; the names are ours).
         "pr_f3": "estate.applicant_name",
@@ -375,7 +378,6 @@ GUIDEBOOK_BINDINGS.update(
         "prnc_phone": "estate.pr_phone",
         "prncemail": "estate.pr_email",
         # Form 7 — affidavit forwarding application to HHS.
-        "aff_co": "estate.pr_name",
         "pr_f7": "estate.pr_name",
         "decedent_f7": "estate.decedent_name",
         "aff_for_dhhs": "estate.pr_address",
@@ -431,8 +433,8 @@ GUIDEBOOK_BINDINGS.update(
         "ainest_app": "estate.applicant_name_and_interest",
         "dod_f17": "estate.date_of_death",
         "age": "estate.age_at_death",
-        "domaint": "estate.domicile_county",
-        "domaint22": "estate.domicile_state",
+        "domaint22": "estate.domicile_county",
+        "appintsur": "estate.domicile_state",
         "appintheir": "estate.heirs_table",
         "3_venue_for_this_case_is_in_this_county_because": "estate.venue_basis",
         "ainstexcept": "estate.prior_appointment_statement",
@@ -441,7 +443,7 @@ GUIDEBOOK_BINDINGS.update(
         "appint_prio": "estate.pr_priority_statement",
         "appintn": "estate.pr_prior_priority_persons",
         "appintrequest": "estate.pr_name",
-        "appintc": "estate.applicant_name",
+        "appintestapp": "estate.applicant_name",
         "appaddressint": "estate.applicant_address",
         "appcityint": "estate.applicant_city_state_zip",
         "appintestcity": "estate.applicant_phone",

@@ -54,6 +54,17 @@ SEED_DIR = REPO_ROOT / "backend" / "seed" / "sample_templates"
 #: paperwork and the court packets shipped by ``backend/scripts/build_nd_probate_guidebook.py``.
 _PRESERVED_ORIGINS = {"authored", "court_form"}
 
+# Hand-curated keys an imported form may carry: where a field's value comes
+# from, readable labels for fields the PDF left as "Text3", and readable labels
+# for options the PDF only names "Choice 1". The
+# scraped catalog cannot regenerate them, so a rebuild carries them over to the
+# entry with the same digest -- the same bytes, hence the same field names --
+# and drops them when the file itself changed.
+_CURATED_KEYS = ("bindings", "field_labels", "option_labels")
+#: Carried too when ``title_source`` is "document": the title was read from the
+#: form itself, which is better evidence than the scraped catalog's name.
+_DOCUMENT_TITLE_KEYS = ("title", "description", "title_source")
+
 # "Fillable" is not enough: the template studio also rejects PDFs with active
 # content (embedded files, /URI links, /OpenAction, /AA, XFA, etc.). Use the
 # app's own discovery path as the single source of truth for what is renderable.
@@ -163,13 +174,15 @@ def _clean_title(name: str) -> str:
 # Provenance
 # ---------------------------------------------------------------------------
 #
-# Four titles repeat across the catalog ("ND Divorce" three times, and so on).
+# Four titles repeated across the scraped catalog ("ND Divorce" three times).
 # The files behind them are genuinely distinct — different hashes, sizes, and
 # field counts — so they cannot be de-duplicated, and until this ran, nothing in
 # the manifest said which court form or edition each one was. A label invented
 # after the fact would read as authoritative on a page where a paralegal picks
 # the form they are about to file, so the manifest carries what the source
-# actually said instead, and nothing when the source said nothing.
+# actually said instead, and nothing when the source said nothing. Curation
+# later read each such form's own printed title ("Summons", "Complaint") and
+# marks it ``title_source: "document"``; a rebuild keeps those titles.
 #
 # The keys below are aliases seen in ``catalog.json``; unknown shapes yield no
 # provenance rather than a guess.
@@ -779,6 +792,25 @@ def _authored_forms(out: Path) -> list[dict]:
     return [form for form in forms if form.get("origin") in _PRESERVED_ORIGINS]
 
 
+def _curation_by_digest(out: Path) -> dict[str, dict]:
+    """Return the curated keys of the current manifest, keyed by file digest."""
+
+    manifest = out / "manifest.json"
+    if not manifest.is_file():
+        return {}
+    forms = json.loads(manifest.read_text(encoding="utf-8")).get("forms") or []
+    curated: dict[str, dict] = {}
+    for form in forms:
+        if form.get("origin") in _PRESERVED_ORIGINS:
+            continue
+        kept = {key: form[key] for key in _CURATED_KEYS if form.get(key)}
+        if form.get("title_source") == "document":
+            kept.update({key: form[key] for key in _DOCUMENT_TITLE_KEYS if form.get(key)})
+        if kept:
+            curated[form["sha256"]] = kept
+    return curated
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
@@ -795,6 +827,9 @@ def main() -> int:
     # (backend/scripts/build_library_intake_forms.py), and they live in the same
     # tree. Rebuilding the scraped catalog keeps them and their files rather
     # than deleting content this script cannot regenerate.
+    curated = _curation_by_digest(out)
+    for form in manifest["forms"]:
+        form.update(curated.get(form["sha256"], {}))
     authored = _authored_forms(out)
     manifest["forms"].extend(authored)
     manifest["forms"].sort(key=lambda form: (form["category"], form["title"].lower()))
