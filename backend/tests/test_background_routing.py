@@ -33,8 +33,7 @@ async def test_background_route_is_global_and_ignores_caller_model(monkeypatch):
     assert route.requested_route == "background"
     assert route.resolved_route == "background"
     assert route.gateway_alias == "lawhand-background-r7"
-    assert route.customer_api_key is None
-    assert route.customer_provider is None
+    assert route.gateway_provider == "litellm"
 
 
 @pytest.mark.asyncio

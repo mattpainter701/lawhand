@@ -24,9 +24,9 @@ Rotation sequence:
    ```
 
 4. Run the same command without `--dry-run`. It rewrites OAuth, QBO, tenant
-   OAuth-app, tenant BYOK and platform-provider credentials with the new primary
+   OAuth-app and platform-provider credentials with the new primary
    key, committing one tenant at a time.
-5. Reconnect/test Microsoft, Google, Zoom Phone, QBO, tenant BYOK, and one
+5. Reconnect/test Microsoft, Google, Zoom Phone, QBO, and one
    platform model provider. Preserve both keys through at least this release.
 6. In a later maintenance window, validate with **both** environment variables
    set to the new key for the one-off process. Merely changing the keyring while

@@ -323,7 +323,7 @@ and OpenAI HTTP client; only the gateway transport and database reads are mocked
 
 Template Studio's explicitly requested premium field suggestions resolve only the
 platform-global `template_ai_profile_v1` setting. They do not inherit a tenant's
-Standard/Premium chat profile, tenant BYOK, or Background Automations route.
+Standard/Premium chat profile or Background Automations route.
 Only this function calls the dedicated resolver; deterministic intake remains
 available when premium template AI is disabled or unconfigured.
 

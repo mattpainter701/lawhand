@@ -62,7 +62,7 @@
 - **Sync.** Everything polls. There are no Graph change notifications, no delta queries and no Gmail or Drive push. The cloud metadata index is rebuilt every 15 minutes. Correspondence capture reads a fixed 50-message, 7-day window (D39).
 - **Office add-in (Word/Excel/Outlook).** Behind a feature flag. Its session is a LawHand cookie obtained through Nested App Authentication; it has no Graph access of its own. Only four action types exist (replace selection, set values, set formulas, set Outlook subject).
 - **Teams app.** A static personal tab and a configurable channel tab, but nginx forbids framing `/teams` and there is no Teams SSO, so the tabs cannot render inside Teams (D17, D18). Channel notifications and Teams voice intake work.
-- **AI routes.** All inference goes through LiteLLM. A BYOK path for Azure and Gemini keys exists in the API with no UI; its Gemini fallback model has been retired (see the roadmap).
+- **AI routes.** All inference goes through LiteLLM. The API-only BYOK path for Azure OpenAI and Gemini keys, and its retired Gemini fallback model, were removed on 2026-09-25 (D68, D69).
 - **Workspace MCP.** An OAuth 2.1 server with DCR, read tools, and review-first "propose" tools for email, SMS, tasks, documents and workflows. It is a good fit for firm-side assistants.
 
 ## Verified defects
@@ -152,6 +152,10 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
   - any tenant credential, including Zoom, counts as "cloud connected" (D78)
   - cloud errors are shown as "no files" (D79)
 
+### Low severity, resolved by removal
+
+- **D68** (BYOK Gemini accepted only a global AI Studio key, with no paid-tier, region or Vertex controls and a hard-coded `gemini-2.0-flash` default) and **D69** (the "copilot"/"gemini" BYOK path was mislabelled as a subscription and bypassed the LiteLLM gateway) are **resolved by removal**. The product owner decided on 2026-09-25 that LawHand never calls a firm's own model provider: firms connect LawHand's MCP servers to the AI tool they already pay for. The admin endpoints, direct-provider client, customer route and dead `AZURE_OPENAI_*`/`GEMINI_API_KEY` settings are gone, and migration `204_retire_customer_llm` wiped any stored provider key.
+
 ## Using the firm's own Copilot or Gemini
 
 Fact-checked against primary sources on 2026-09-24. learn.microsoft.com and developers.google.com were blocked by the proxy, so the MicrosoftDocs GitHub sources and search snippets were used; the evidence files mark which.
@@ -162,7 +166,7 @@ Fact-checked against primary sources on 2026-09-24. learn.microsoft.com and deve
 |---|---|---|---|
 | **Inbound:** the firm's AI calls LawHand | Declarative agent with a remote MCP plugin (GA). Federated Copilot connector, read-only and live (GA, Copilot seat or E7 only). Copilot Cowork plugin: skills plus MCP (GA 2026-06-16, Copilot seat plus credits, off by default). | Gemini Enterprise custom MCP server data store (Public Preview, admin enters client ID and secret). Custom A2A agents (Standard/Plus). Workspace add-on with Workspace Studio custom steps (limited preview, off by default). | The firm's Copilot or Gemini seat. LawHand serves only tool calls. |
 | **Outbound:** LawHand calls the firm's AI | Work IQ Chat/Context/Tools APIs (GA 2026-06-16, delegated `WorkIQAgent.Ask`, metered in Copilot Credits even for seat holders). Retrieval API (GA, seat included). Meeting AI Insights (GA, seat only). | StreamAssist on Discovery Engine v1 (needs the `cloud-platform` user scope, per-user IAM, per-seat licence). No API invokes Gemini inside Docs or Gmail. | The firm, metered; per-run cost varies. |
-| **Bring your own cloud** | Azure OpenAI BYOK (exists, no UI). | Gemini on the firm's Agent Platform (Vertex) project; a Google Cloud training restriction applies. | The firm's cloud bill. |
+| **Bring your own cloud** | Removed. LawHand's API-only Azure OpenAI BYOK path was taken out on 2026-09-25; LawHand does not call a firm's own model provider. | Not planned. Gemini on the firm's Agent Platform (Vertex) project would need the same removed outbound path. | None. |
 
 ### Corrections from the fact-check
 
@@ -171,7 +175,7 @@ Fact-checked against primary sources on 2026-09-24. learn.microsoft.com and deve
 - The "Copilot agent inside the Office add-in" path is **withdrawn**. Microsoft removed those docs and they now redirect to the add-ins overview; only Excel Copilot skills remain, in preview. Park the Word add-in-as-Copilot-skill idea.
 - Cowork is **GA**, not Frontier-only. It still needs the Copilot seat plus Copilot Credits, and EU/UK tenants must enable Anthropic models, which triggers a DPIA.
 - Microsoft's **iManage** connector is now a *federated* (MCP) connector ("iManage Work"), not a synced one. Model the LawHand connector as federated.
-- LawHand's Gemini BYOK fallback `gemini-2.0-flash` was shut down on 2026-06-01, and `gemini-2.5-flash` retires in October 2026. Pin a 3.x Flash model and validate it when the setting is saved.
+- LawHand's Gemini BYOK fallback `gemini-2.0-flash` was shut down on 2026-06-01. BYOK was removed on 2026-09-25, so LawHand no longer names or pins any Gemini model.
 - Gemini Enterprise custom MCP is **preview** under Google's Pre-GA terms. Workspace Studio add-on extensibility is still limited preview.
 
 ### Recommended plays, in order
@@ -191,7 +195,7 @@ Fact-checked against primary sources on 2026-09-24. learn.microsoft.com and deve
 4. **Gemini Enterprise custom MCP connector (S, after play 1).** Document the admin steps (client ID and secret) and label it preview. Pair it with a SKILL.md pack for engagement letters, chronologies and client updates.
 5. **Meeting recap to matter note (M).** For Copilot-licensed firms, pull `/copilot/users/{id}/onlineMeetings/{id}/aiInsights`. This needs `OnlineMeetingAiInsight.Read.All`, which is not in today's consent. Match the meeting to a matter by attendees and file it as a reviewable note.
 6. **Copilot Cowork plugin (S, once play 2 exists).** Package LawHand drafting skills with the MCP connector. Document the Anthropic-model toggle, the spending limit and the DPIA for EU/UK firms.
-7. **BYO Vertex/Agent Platform route (M).** Use the firm's GCP project via Workload Identity Federation, pin the region and model, and add an admin UI. Fix the retired default model now.
+7. **BYO Vertex/Agent Platform route: dropped.** BYOK was removed on 2026-09-25. A firm brings its own AI to LawHand through MCP (plays 1 to 4), never the other way round.
 8. **Defer:**
    - Work IQ Chat as "Ask the firm's Copilot": metered, and the data leaves LawHand's review boundary.
    - StreamAssist.
@@ -260,7 +264,7 @@ The UX findings in `ux.json` and `clusters-ux.json` (102 clusters) were reported
 
 | Horizon | Items |
 |---|---|
-| **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. Pin a current Gemini model. |
+| **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. |
 | **Next** (decisions needed) | End the admin-token fallback for mail, search and calendar (D02, D03, D04, D25). SharePoint default storage instead of the admin's OneDrive (D06, D13). Directory-sync lifecycle rules (D15, D16). Confidential MCP clients (D21). Admin-first Microsoft consent. Per-capability health. |
 | **Later** (growth) | Matter Agent for Microsoft 365 Copilot. Federated connector. Gemini Enterprise connector. Meeting recap. Firm template library in SharePoint/Drive. Native pickers and `drive.file`. Word add-in content controls and tracked changes. Outlook and Gmail "file to matter" add-ins. Event-driven sync. Teams tab. |
 

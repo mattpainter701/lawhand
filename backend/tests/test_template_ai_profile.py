@@ -56,7 +56,7 @@ async def test_profile_resolution_snapshots_rates_and_has_no_customer_credential
     assert route.model == profile.alias
     assert route.requested_route == route.resolved_route == TEMPLATE_AI_ROUTE
     assert route.provider == "litellm"
-    assert route.customer_api_key is route.customer_provider is route.customer_endpoint is None
+    assert not hasattr(route, "customer_api_key")
     assert route.cost(1000, 100, "payg") == Decimal("0.085")
     assert route.cost(1000, 100, "flat") == Decimal("0.0085")
     assert profile.alias != profile.model_copy(update={"input_usd_per_million": Decimal(7)}).alias

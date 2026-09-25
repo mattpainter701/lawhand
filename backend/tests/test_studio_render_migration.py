@@ -22,7 +22,7 @@ def test_studio_render_revision_is_the_single_next_head():
     script = ScriptDirectory.from_config(config)
     revision = script.get_revision("150_studio_render_jobs")
 
-    assert script.get_heads() == ["203_matter_folder_share_grants"]
+    assert script.get_heads() == ["204_retire_customer_llm"]
     assert revision.down_revision == "149_firm_memory_source_auth"
     assert (
         script.get_revision("151_fm_native_authz").down_revision

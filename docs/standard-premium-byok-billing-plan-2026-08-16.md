@@ -1,5 +1,13 @@
 # Standard, Premium, BYOK, and MCP commercial plan
 
+**Status: Withdrawn (BYOK parts), 2026-09-25.** The product owner decided that
+LawHand will not call a firm's own model provider. Firms connect LawHand's
+platform and research MCP servers to the AI tool they already pay for (Claude
+Desktop and the like), so a firm-supplied key is never needed. No customer used
+the API-only BYOK path and no UI reached it, so it was removed along with its
+tenant settings (migration `204_retire_customer_llm`). The BYOK sections below
+are kept as history only and are not a plan of record.
+
 ## Decision summary
 
 - **OpenCode Go** is a development and synthetic-benchmark source only. It is

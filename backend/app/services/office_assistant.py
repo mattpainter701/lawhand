@@ -74,15 +74,11 @@ def _audit_hmac(value: str) -> str:
 
 
 def _usage_record(user, route, tokens_in: int, tokens_out: int) -> UsageRecord:
-    cost = (
-        0
-        if route.resolved_route == "customer"
-        else calculate_cost(
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            model=route.model,
-            billing_tier=user.tenant.billing_tier if user.tenant else "payg",
-        )
+    cost = calculate_cost(
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        model=route.model,
+        billing_tier=user.tenant.billing_tier if user.tenant else "payg",
     )
     return UsageRecord(
         id=uuid.uuid4(),
@@ -138,9 +134,6 @@ class OfficeAssistantService:
                 context="",
                 model=route.model,
                 provider=route.provider,
-                customer_api_key=route.customer_api_key,
-                customer_provider=route.customer_provider,
-                customer_endpoint=route.customer_endpoint,
                 response_format={"type": "json_object"},
                 system_prompt_override=_SYSTEM_PROMPT,
                 gateway_metadata=gateway_metadata(

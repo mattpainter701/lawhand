@@ -141,17 +141,15 @@ secret unset.
 
 ### Stored provider credentials
 
-OAuth tokens, tenant-owned OAuth app secrets, QBO tokens, tenant BYOK keys, and
-platform model-provider keys are encrypted at the application layer. The
+OAuth tokens, tenant-owned OAuth app secrets, QBO tokens, and platform
+model-provider keys are encrypted at the application layer. The
 newest key in `TOKEN_ENCRYPTION_KEYS` encrypts writes; remaining keys decrypt
 old ciphertext during a staged rotation. This keyring does not replace host or
 volume encryption and is currently injected through the host's protected
 `.env` file.
 
-Tenant BYOK does not accept an arbitrary administrator-controlled base URL.
-Provider selection and URL validation restrict outbound destinations so a
-tenant configuration cannot turn the backend into an SSRF or prompt-exfiltration
-proxy.
+Tenant BYOK (a firm's own model-provider key) was removed on 2026-09-25; all
+inference goes through the platform's LiteLLM gateway.
 
 ## 4. Tenant isolation
 

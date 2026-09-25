@@ -41,9 +41,6 @@ class _ScriptedLLM:
 class _Route:
     model = "lawhand-standard"
     provider = "litellm"
-    customer_api_key = None
-    customer_provider = None
-    customer_endpoint = None
     resolved_route = "platform"
 
 

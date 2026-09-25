@@ -144,7 +144,6 @@ def test_gateway_delegates_fallbacks_to_litellm():
         candidates = service._gateway_candidates(
             settings.LITELLM_STANDARD_MODEL,
             use_premium=False,
-            customer_api_key=None,
         )
 
     assert candidates == [settings.LITELLM_STANDARD_MODEL]
@@ -406,41 +405,3 @@ async def test_complete_sends_metadata_without_prompt_content():
         "tokens_in": 3,
         "tokens_out": 2,
     }
-
-
-@pytest.mark.asyncio
-async def test_customer_byok_complete_does_not_send_gateway_metadata():
-    class FakeCompletions:
-        def __init__(self):
-            self.kwargs = None
-
-        async def create(self, **kwargs):
-            self.kwargs = kwargs
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="answer"))],
-                usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
-            )
-
-    async def run():
-        service = LLMService()
-        completions = FakeCompletions()
-        service._client_for = lambda *args, **kwargs: SimpleNamespace(
-            chat=SimpleNamespace(completions=completions)
-        )
-        await service.complete(
-            [{"role": "user", "content": "tenant byok prompt"}],
-            tenant_name="Tenant",
-            context="confidential context",
-            model="customer-model",
-            customer_api_key="tenant-key",
-            customer_provider="gemini",
-            gateway_metadata={
-                "tenant_id": "tenant-1",
-                "operation_type": "chat",
-            },
-        )
-        return completions.kwargs
-
-    kwargs = await run()
-
-    assert "extra_body" not in kwargs

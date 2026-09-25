@@ -6,7 +6,6 @@ from typing import Any, AsyncGenerator, List, Tuple
 from openai import APIConnectionError, APIError, AsyncOpenAI
 
 from app.config import get_settings
-from app.services.byok_security import normalize_customer_llm_endpoint
 from app.services.gateway_privacy import litellm_metadata as sanitized_gateway_metadata
 
 settings = get_settings()
@@ -61,9 +60,6 @@ def _stream_token_budget(base_max_tokens: int, attempt: int) -> int:
     return min(budget, _EMPTY_RESPONSE_TOKEN_CEILING)
 
 
-# Public OpenAI-compatible endpoints for tenant BYOK providers that don't
-# require a tenant-supplied endpoint. Copilot (Azure OpenAI) always requires
-# a tenant-supplied endpoint — Azure deployments are per-resource.
 SYSTEM_PROMPT_TEMPLATE = """You are a senior paralegal and legal analyst working for {tenant_name}. You support attorneys with research, drafting, and analysis. You are precise, discreet, and bound by professional ethics.
 
 CAPABILITIES:
@@ -215,7 +211,6 @@ class LLMService:
         gateway_model: str,
         *,
         use_premium: bool,
-        customer_api_key: str | None,
     ) -> list[str]:
         # LiteLLM is the single authority for balancing, retries, cooldowns, and
         # fallbacks. A second application-side chain can silently route around
@@ -252,28 +247,6 @@ class LLMService:
             context=context.strip() or "No public authority retrieved."
         )
 
-    def _client_for(
-        self,
-        customer_api_key: str | None,
-        customer_provider: str | None = None,
-        customer_endpoint: str | None = None,
-    ) -> AsyncOpenAI:
-        """Build a client for tenant BYOK requests.
-
-        BYOK requests bypass the LiteLLM gateway entirely — the tenant's own
-        API key is only valid against their own provider account, not the
-        gateway's virtual key namespace. We point the client directly at the
-        provider's OpenAI-compatible endpoint instead.
-        """
-        if not customer_api_key:
-            return self.client
-        # Revalidate here so legacy or tampered database values cannot bypass
-        # the persistence-time SSRF boundary.
-        base_url = normalize_customer_llm_endpoint(
-            customer_provider or "", customer_endpoint
-        )
-        return AsyncOpenAI(api_key=customer_api_key, base_url=base_url)
-
     async def complete(
         self,
         messages: List[dict],
@@ -286,9 +259,6 @@ class LLMService:
         model: str | None = None,
         user_name: str = "",
         response_format: dict | None = None,
-        customer_api_key: str | None = None,
-        customer_provider: str | None = None,
-        customer_endpoint: str | None = None,
         gateway_metadata: dict | None = None,
         system_prompt_override: str | None = None,
         usage_sink: dict[str, Any] | None = None,
@@ -304,9 +274,6 @@ class LLMService:
         ``response_format`` accepts e.g. ``{"type": "json_object"}`` for
         structured output — LiteLLM drops it silently for models that don't
         support it (drop_params: true in gateway config).
-        ``customer_api_key``/``customer_provider``/``customer_endpoint`` route
-        tenant BYOK requests directly to the tenant's own provider account,
-        bypassing the LiteLLM gateway (the tenant's key is not valid there).
         """
         system_prompt = system_prompt_override or self._build_system_prompt(
             tenant_name=tenant_name,
@@ -318,15 +285,12 @@ class LLMService:
         gateway_model = model or self._default_model(use_premium)
         all_messages = [_build_system_message(system_prompt)] + messages
 
-        client = self._client_for(
-            customer_api_key, customer_provider, customer_endpoint
-        )
+        client = self.client
         if disable_retries:
             client = client.with_options(max_retries=0)
         candidates = self._gateway_candidates(
             gateway_model,
             use_premium=use_premium,
-            customer_api_key=customer_api_key,
         )
         last_error: APIError | APIConnectionError | RuntimeError | None = None
         for candidate in candidates:
@@ -348,7 +312,7 @@ class LLMService:
                 },
             )
             metadata = sanitized_gateway_metadata(**(gateway_metadata or {}))
-            if metadata and not customer_api_key:
+            if metadata:
                 # Keep accounting context internal to LiteLLM. Generic
                 # ``metadata`` is provider-visible and can replace a model's
                 # mandatory ``extra_body`` privacy controls.
@@ -452,9 +416,6 @@ class LLMService:
         global_user_context: str | None = None,
         model: str | None = None,
         user_name: str = "",
-        customer_api_key: str | None = None,
-        customer_provider: str | None = None,
-        customer_endpoint: str | None = None,
         gateway_metadata: dict | None = None,
         system_prompt_override: str | None = None,
         usage_sink: dict[str, Any] | None = None,
@@ -471,13 +432,10 @@ class LLMService:
         gateway_model = model or self._default_model(use_premium)
         all_messages = [_build_system_message(system_prompt)] + messages
 
-        client = self._client_for(
-            customer_api_key, customer_provider, customer_endpoint
-        )
+        client = self.client
         candidates = self._gateway_candidates(
             gateway_model,
             use_premium=use_premium,
-            customer_api_key=customer_api_key,
         )
         for candidate in candidates:
             for attempt in range(_EMPTY_RESPONSE_ATTEMPTS):
@@ -502,10 +460,9 @@ class LLMService:
                         extra_headers={"x-request-id": request_id},
                     )
                     metadata = sanitized_gateway_metadata(**(gateway_metadata or {}))
-                    if metadata and not customer_api_key:
+                    if metadata:
                         create_kwargs["extra_body"] = {"litellm_metadata": metadata}
-                    if not customer_api_key:
-                        create_kwargs["stream_options"] = {"include_usage": True}
+                    create_kwargs["stream_options"] = {"include_usage": True}
                     stream = await client.chat.completions.create(**create_kwargs)
                     async for chunk in stream:
                         if usage_sink is not None:
