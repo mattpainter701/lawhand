@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import TemplatePreparePage from './TemplatePreparePage'
@@ -33,6 +33,11 @@ vi.mock('../components/templates/GeneratedPdfPreview', () => ({ default: ({ titl
 vi.mock('../components/templates/TemplateFillSource', () => ({ default: () => <div>reference</div> }))
 vi.mock('../components/templates/TemplateFactReview', () => ({ default: () => null }))
 vi.mock('../components/templates/GeneratedSigningPlacementReview', () => ({ default: () => null }))
+const pdfState = vi.hoisted(() => ({ result: { document: null, pages: [], error: '' } }))
+vi.mock('../components/templates/PdfDocumentCanvas', () => ({
+  useTemplatePdfDocument: () => pdfState.result,
+  PdfPageCanvas: ({ pageNumber }) => <canvas aria-label={`PDF page ${pageNumber}`} />,
+}))
 
 const T = '11111111-1111-4111-8111-111111111111'
 const M = '22222222-2222-4222-8222-222222222222'
@@ -58,6 +63,9 @@ function renderAt(search) {
 }
 
 beforeEach(() => {
+  // Most tests here exercise the Questions layout; the Document view block
+  // below clears this to test the default.
+  localStorage.setItem('lawhand.fill.view', 'questions')
   api.writeFillSession.mockImplementation(async (data) => ({ id: data.id || '99999999-9999-4999-8999-999999999999', status: 'open', members: [], ...data }))
   api.getFillSession.mockResolvedValue({ id: '99999999-9999-4999-8999-999999999999', status: 'open', answers: {}, verified: [], members: [] })
   api.getTemplate.mockResolvedValue(published)
@@ -66,7 +74,7 @@ beforeEach(() => {
   api.renderTemplate.mockResolvedValue({ rendered: 'Dear Ada Smith', matter_document_id: DOC, output_format: 'markdown', output_filename: 'fee.md' })
   api.completeFillSession.mockResolvedValue({ status: 'saved' })
 })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); localStorage.clear(); pdfState.result = { document: null, pages: [], error: '' } })
 
 describe('the Prepare route', () => {
   it('loads the published release when the workspace holds a newer draft', async () => {
@@ -553,5 +561,106 @@ describe('the Prepare route', () => {
     api.getTemplate.mockRejectedValue({ response: { data: { detail: 'Template not found' } } })
     renderAt(`?template=${T}`)
     expect(await screen.findByRole('alert')).toHaveTextContent('Template not found')
+  })
+})
+
+describe('the Prepare route Document view', () => {
+  const pdfTemplate = {
+    ...published,
+    format: 'pdf', source_filename: 'fee.pdf', source_sha256: 'abc',
+    variable_schema: { fields: [
+      { name: 'client_name', label: 'Client name', field_type: 'text', required: true, page: 1, rect: [40, 740, 280, 756] },
+      { name: 'consent', label: 'Consent', field_type: 'checkbox', page: 1, rect: [40, 700, 52, 712] },
+      { name: 'client_sig', label: 'Client signature', field_type: 'signature', signer_role: 'client', page: 1, rect: [40, 100, 240, 130] },
+    ] },
+  }
+  const loadedPdf = { document: { numPages: 1 }, pages: [{ page: 1, width: 612, height: 792, rotation: 0 }], error: '' }
+
+  beforeEach(() => {
+    localStorage.clear()
+    api.getTemplateSource.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }))
+    api.renderTemplateFile.mockResolvedValue({ blob: new Blob(['%PDF']), filename: 'fee.pdf', previewId: 'p1', previewPurpose: 'generation' })
+  })
+
+  it('opens on the document and edits the active field in the guided bar', async () => {
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    expect(screen.getByRole('tab', { name: 'Document' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('reference')).toBeInTheDocument()
+    const bar = screen.getByRole('region', { name: 'Current field' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
+    expect(bar).toHaveTextContent('Field 1 of 1')
+    fireEvent.change(screen.getByRole('textbox', { name: /Client name/ }), { target: { value: 'Ada B. Smith' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Questions' }))
+    expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada B. Smith')
+    expect(screen.getByRole('region', { name: 'Document completion' })).toBeInTheDocument()
+    expect(localStorage.getItem('lawhand.fill.view')).toBe('questions')
+  })
+
+  it('shows the generated document on the Preview tab after choosing Preview', async () => {
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /Client name/ })).toHaveValue('Ada Smith'))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(await screen.findByText('Dear Ada Smith')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('aria-selected', 'true')
+    expect(localStorage.getItem('lawhand.fill.view')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
+    await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
+  })
+
+  it('types PDF answers on the page with review colours, signing markers and Enter to advance', async () => {
+    pdfState.result = loadedPdf
+    api.getTemplate.mockResolvedValue({ ...pdfTemplate, variable_schema: { fields: [
+      ...pdfTemplate.variable_schema.fields,
+      { name: 'city', label: 'City', field_type: 'text', page: 1, rect: [300, 740, 400, 756] },
+    ] } })
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [
+      { variable: 'client_name', suggested_value: 'Ada Smith', source_type: 'contact', confidence: 1, review_required: false },
+      { variable: 'city', suggested_value: 'Boulder', source_type: 'matter', confidence: 1, review_required: false },
+    ] })
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    const page = await screen.findByRole('group', { name: 'Page 1' })
+    await waitFor(() => expect(api.getTemplateSource).toHaveBeenCalledWith(T, 'fee.pdf'))
+    await waitFor(() => expect(within(page).getByLabelText('City')).toHaveValue('Boulder'))
+    expect(within(page).getByLabelText('City').className).toContain('bg-violet-50')
+    expect(within(page).getByRole('note', { name: 'Client signature: Signed later' })).toBeInTheDocument()
+    expect(screen.getByText('Suggested, check it')).toBeInTheDocument()
+
+    const bar = screen.getByRole('region', { name: 'Current field' })
+    expect(bar).toHaveTextContent('Client name')
+    fireEvent.keyDown(within(bar).getByRole('textbox', { name: /Client name/ }), { key: 'Enter' })
+    await waitFor(() => expect(within(bar).getByRole('textbox', { name: /City/ })).toBeInTheDocument())
+    expect(within(page).getByLabelText('Client name').className).toContain('bg-green-50')
+
+    fireEvent.click(within(page).getByRole('checkbox', { name: 'Consent' }))
+    expect(within(page).getByRole('checkbox', { name: 'Consent' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(bar).getByRole('checkbox', { name: /^Consent/ })).toBeChecked()
+    const onPage = within(page).getByLabelText('Client name')
+    fireEvent.focus(onPage)
+    fireEvent.change(onPage, { target: { value: 'Grace Hopper' } })
+    expect(within(bar).getByRole('textbox', { name: /Client name/ })).toHaveValue('Grace Hopper')
+  })
+
+  it('falls back to the page reference when the source PDF cannot be loaded', async () => {
+    api.getTemplate.mockResolvedValue(pdfTemplate)
+    api.getTemplateSource.mockRejectedValue(new Error('gone'))
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    expect(await screen.findByText(/original PDF could not be opened for typing/)).toBeInTheDocument()
+    expect(screen.getByText('reference')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Current field' })).toBeInTheDocument()
+  })
+
+  it('moves to the next field needing attention', async () => {
+    api.getTemplate.mockResolvedValue({ ...published, body: '{{client_name}} {{city}}', variable_schema: { fields: [{ name: 'client_name', label: 'Client name', required: true }, { name: 'city', label: 'City' }] } })
+    api.discoverTemplateVariables.mockResolvedValue({ variables: [] })
+    renderAt(`?template=${T}&matter=${M}`)
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    const bar = screen.getByRole('region', { name: 'Current field' })
+    fireEvent.click(screen.getByRole('button', { name: 'Next field needing attention' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next field needing attention' }))
+    await waitFor(() => expect(within(bar).getByRole('textbox', { name: /City/ })).toBeInTheDocument())
   })
 })

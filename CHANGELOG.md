@@ -1,3 +1,58 @@
+## 2026.09.25.02 — Shared library forms fill the right boxes
+
+- Every shared sample form not generated in-repo (76 forms, ~3,600 fields) is curated in `backend/seed/sample_templates/manifest.json` from its page images: `field_labels` (new; seeded as `label` with `label_source: "curated"`, the PDF's own label kept in `source_label`), `bindings`, and `option_labels` (new; radio/choice options become `{value, label}`, export values unchanged). `seed_sample_templates._variable_schema` rejects curation naming a field or option the PDF lacks.
+- Bindings: captions to `party.*`, `matter.case_number`/`judge`/`court`; ND probate forms to `estate.*`; wills, directives, POAs and tax forms map the maker to `client.*`; attorney signature blocks to `attorney.*`/`firm.phone`. Fields that would fill by accidental name match (Smart Fill `NAME_SYNONYMS` such as `address`/`email`/`full_name`) bind to `manual`. Leases, bills of sale and contracts bind no person.
+- Twelve forms take the title printed on the document (`title_source: "document"`), e.g. `ohio-divorce-no-children` is Ohio DR Form 31 Request for Service; catalog titles are now unique.
+- `probate/forms.py` `GUIDEBOOK_BINDINGS`: fixed bindings that followed the guidebook's shifted tooltips (Form 2/17 domicile county and state, Form 2 demand-for-notice and "State of" boxes, Form 7/17 "County of" boxes).
+- PDF discovery orders radio options by widget position (page, top to bottom, left to right) instead of `/_States_` order.
+- `scripts/build_sample_template_library.py` and `update_manifest` carry curated keys (and document titles) over for byte-identical files.
+- Catalog-wide tests in `tests/test_sample_template_library.py`: no placeholder, over-long or duplicate label; no field filling by accidental name match; no unreadable option; unique titles. The fill campaign covers every newly bound form. `SampleFillDialog` no longer warns "source label unavailable" for curated labels.
+
+## 2026.09.25.01 — Edit matter documents in Word or Google Docs
+
+- New endpoints on matter documents:
+  - `POST /api/matters/{m}/documents/{d}/cloud-edit` returns fresh provider links, `word_web` / `word_desktop` (`ms-word:ofe|u|<webDavUrl>`) or `google_docs`, and records an informational editing marker.
+  - `POST …/reconcile` reads the exact cloud bytes by durable ID and adopts them in place.
+  - `POST …/revised-version` is the upload fallback.
+- Migration `202_matter_doc_external_edit` adds `external_edit_started_at`, `external_edit_started_by` and `external_edit_app` to `matter_documents`. Responses add `external_edit_started_by_name`.
+  - The marker lasts 12 hours from opening and is renewed by opening again.
+  - Bringing edits back keeps it, because the person is usually still editing; an uploaded revised version clears it.
+  - The upload's `If-Match` uses a freshly read eTag, so a SharePoint metadata change cannot refuse it by mistake.
+- **Adopt in place.** The row keeps its ID, cloud item, folder, tags and sharing. Its SHA-256, size and provider markers update, and `storage_state` returns to `verified` (clearing a download `conflict`, D08).
+  - Each adoption writes an `external_cloud_edit_adopted` integrity event and a `document_edits_adopted` matter event.
+  - The old text-cache row is dropped once unreferenced, and search is re-queued for the new bytes.
+  - Files are inspected with `inspect_cloud_docx_snapshot` before adoption, so unsafe or broken DOCX files never land.
+- The three routes are staff-only. A client-portal login (`role="client"`) is refused with `staff_only` before any database or provider access.
+- **What is never overwritten:** documents whose `document_status` is approved, filed, superseded or archived, and documents with a sent, partially signed or completed signature request.
+  - A changed cloud copy of one of these is marked `conflict` with the reason, and an `external_cloud_edit_blocked` integrity event is written.
+  - Assistant drafts (artifact-bound) and `assistant_revision` documents are refused and keep their own flow.
+- **Upload revised version:**
+  - It refuses with `changed_in_office` when the cloud copy no longer matches the stored hash.
+  - It writes to the same item: Graph `PUT …/content` or an upload session with `If-Match` and `conflictBehavior=replace`, where a 412 becomes `changed_in_office`; Drive uses a resumable `PATCH`; local files are replaced atomically.
+  - Graph upload-session chunks are 320 KiB multiples.
+- `MatterFileStore` gains `get_matter_file_metadata` (web and WebDAV links, eTag, cTag/version, checksum) and `replace_matter_file_content`. `get_matter_file_open_url` now wraps the metadata call.
+- Template saves persist the provider eTag, version, checksum and modified time returned by storage.
+- **Documents tab:**
+  - `OfficeEditControls` on desktop rows and mobile cards: Open in Word / Word app / Open in Google Docs, the editing marker, **Bring back changes**, the `conflict` reason, and **Upload revised**.
+  - Changes are brought back automatically when the person who opened the file returns to the tab, at most every 15 seconds.
+  - Download is now always a separate link. The view link goes through `/open` for a fresh provider URL instead of the stored display URL.
+  - SharePoint is labelled (D23 in the tab), and a SharePoint-only matter folder counts as provisioned.
+
+## 2026.09.24.03 — Fill forms on the document
+
+- `SampleFillDialog` now opens on a **Document** view (new `FillOnDocument`) instead of a side-panel field list. Every page of the source PDF is drawn with the shared `PdfPageCanvas`, pages render lazily as they near the viewport, and each field's `pdf_overlays`/`rect` placement (via `placementsFor` + `overlayToCanvasRect`) becomes an input on the page: text, multiline textarea, checkbox toggle, select for choice/radio, and a read-only "Signed later" marker for signature fields. Zoom offers fit-width and 75–200%.
+- A guided bar under the document edits the active field at full size, using the dialog's existing `FieldInput`, with Previous/Next in reading order (page, then top to bottom, then left to right; unplaced fields last) and **Next required**. Navigation scrolls the page box into view without taking focus from the bar, so phones and tiny form boxes stay usable.
+- A top **Document / Questions / Final PDF** switch replaces the fixed two-pane grid. Questions is the previous grouped list with its filters, now full-width. Final PDF appears after **Preview filled PDF**, and goes away when an answer changes, returning to the last editing view. Values, matter suggestions and filled/required counts are shared across views. Matter-suggested answers are tinted until edited; unanswered required boxes are amber.
+- The matter picker is collapsed behind **Fill from a matter** until used, the dialog fills the viewport (edge to edge on phones), and Escape closes it. If the source PDF cannot be loaded or no field has a placement, the dialog falls back to Questions and says why.
+- `PrepareDocumentBody` (the Prepare route and the Generate dialog) gets the same switch: **Document / Questions / Preview**. Document is the default; Questions is the previous two-pane layout, unchanged. The Document/Questions choice is stored per browser in `lawhand.fill.view` (`fillViewPreference.js`), with a try/catch fallback to Document, and is shared with the sample dialog.
+  - PDF templates with field geometry use `FillOnDocument` over the source PDF, fetched by the new `useTemplateSourceBlob` only while the Document view needs it. Word and text templates, PDFs whose source cannot be loaded, and templates with newer draft edits use `TemplateFillSource` above a `GuidedFieldBar`.
+  - The guided bar renders `renderFieldEditor`, which is the former inline list row extracted into one function. The list and the bar therefore share labels, Confirm/Verify, provenance and "now suggests" prompts.
+  - Box tones come from `fillReview` rows (missing / review / verified / suggested / filled / open). Signing fields render "Signed later" / "Dated at signing" markers; `value_from` fields render "Uses …". Checkbox overlays write `true`/`false`, and overlays are disabled while saving.
+  - `usePrepareFill`'s `nextField` and `verifyAndAdvance` now return the field they moved to, so Enter-to-advance and "Next field needing attention" move the bar and scroll the page in Document view.
+  - Preview and Test in Document view open the Preview tab; the tab shows "updating…" while the live PDF preview refreshes.
+- `FillOnDocument` gains a controlled `activeName`/`onActiveChange`, `statusFor`, `isMissing`, `markerFor`, `legend`, `checkboxValues` and `disabled`. It also exports `GuidedFieldBar`, `useGuidedFields` and `FILL_TONES`.
+- The rollout plan, including packets and Open in Word/Google Docs, is `docs/document-fill-ux-plan-2026-09-24.md` (mattpainter701/lawhand#584).
+
 ## 2026.09.24.02 — Microsoft 365 and Google connection clarity
 
 - Cloud accounts (`IntegrationsPanel`): a never-connected provider renders a neutral card that lists the non-sign-in scopes it will request in plain language and who must consent, instead of a red Required/Granted/Missing tally; the unused suite collapses when the other is connected. `missing_scopes` health shows a named banner, a primary Re-authorize and downgrades the capability badges powered by declined scopes (the backend capability matrix still reports mail, calendar and storage from tier alone). Scope labels state that firm grants act as the connecting account. Sync job types and provider errors are rendered in plain language with the raw text behind "Technical details". Disconnect calls the existing `POST /integrations/{provider}/disconnect` after a confirmation that names the firm-wide effect. Document storage opens when a connected firm cannot save. `?connected=` / `?error=&provider=` returns are shown in the panel.

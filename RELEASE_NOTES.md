@@ -5,7 +5,7 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.25.01 — Shared library forms fill the right boxes
+## 2026.09.25.02 — Shared library forms fill the right boxes
 
 Released September 25, 2026.
 
@@ -16,6 +16,27 @@ Every shared form in the Template Studio library now has clear field labels, fil
 - **Wills and directives fill from the client.** The testator, declarant or principal on wills, living wills and powers of attorney fills from the client. Agents, witnesses and notaries stay for you to type.
 - **Correct titles and choices.** Forms show their printed titles, such as ND Divorce With Children Summons or Ohio Request for Service, and radio choices read as the page prints them.
 - **Probate guidebook fixes.** The ND informal probate guidebook no longer puts names or email in County of and State of boxes, and places the decedent's domicile county and state correctly.
+
+## 2026.09.25.01 — Edit matter documents in Word or Google Docs
+
+Released September 25, 2026.
+
+Open a matter's Word document in Word or Google Docs from its row, and bring the edits back as the same document's current version. Upload revised covers edits made to a downloaded copy.
+
+- **Open in Word or Google Docs.** Each Word document stored in your firm's Microsoft 365 or Google storage has Open in Word, Word app or Open in Google Docs. The row shows who is editing and since when.
+- **Bring back changes.** Edits come back when you return to LawHand, or with Bring back changes. The document keeps its name, folder, tags and sharing; the timeline records the change.
+- **Nothing is silently overwritten.** Approved, filed and signing documents are never replaced, and an uploaded revised version is refused if the document changed in Word or Google Docs since LawHand last saved it.
+
+## 2026.09.24.03 — Fill forms on the document itself
+
+Released September 24, 2026.
+
+Filling a sample form or preparing a template on a matter now opens on the original document, with each answer box ready to type in. A guided bar keeps the current answer readable on any screen, and Questions lists the same answers.
+
+- **The document comes first.** Fill and Prepare open on the original document. Type in each PDF form box where the answer will print, or select a highlighted placeholder in a Word template.
+- **Review on the page.** Box colours show what needs you: missing, a suggestion to check, or verified. The bar keeps Confirm, Verify and each value's source; Enter still verifies and moves on.
+- **Guided answers on any screen.** The bar shows the current answer at full size with Next, Previous and Next required, so small screens and tiny form boxes no longer get in the way.
+- **Switch between Document, Questions and Preview.** Questions is the field list beside the document; LawHand remembers your choice on this browser. Preview shows the exact file you will download or save.
 
 ## 2026.09.24.02 — Clearer Microsoft 365 and Google connections
 

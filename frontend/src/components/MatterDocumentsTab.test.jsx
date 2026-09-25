@@ -7,6 +7,9 @@ import MatterDocumentsTab, { canReviseWithAssistant, isAssistantRevisionDocument
 import { ConfirmProvider } from './dialog/ConfirmProvider'
 import { ToastProvider } from './toast/ToastProvider'
 
+// Opened a minute ago, so the 12-hour editing marker is live whenever the suite runs.
+const RECENT = new Date(Date.now() - 60_000).toISOString()
+
 function LocationProbe() {
   const location = useLocation()
   return <span data-testid="location-search">{location.search}</span>
@@ -40,6 +43,10 @@ const apiMocks = vi.hoisted(() => ({
   updateMatterDocument: vi.fn(),
   updateMatterDocumentFolder: vi.fn(),
   uploadMatterDocument: vi.fn(),
+  getMatterDocumentOpenUrl: vi.fn((matterId, documentId) => `/api/matters/${matterId}/documents/${documentId}/open`),
+  startMatterDocumentCloudEdit: vi.fn(),
+  reconcileMatterDocument: vi.fn(),
+  uploadRevisedMatterDocument: vi.fn(),
 }))
 
 vi.mock('../api', () => apiMocks)
@@ -571,5 +578,52 @@ describe('MatterDocumentsTab prepared documents', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Review and save' }))
     expect(onPrepareTemplate).toHaveBeenCalledWith('t-1', null)
     expect(screen.queryByRole('dialog', { name: 'Attach template' })).not.toBeInTheDocument()
+  })
+})
+
+describe('MatterDocumentsTab Word and Google Docs editing', () => {
+  const cloudDoc = {
+    ...documents[0],
+    id: 'cloud-1',
+    filename: 'Engagement.docx',
+    storage_backend: 'sharepoint',
+    storage_provider: 'microsoft',
+    provider_object_id: 'item-1',
+    cloud_url: 'https://firm.sharepoint.com/display',
+    document_status: 'draft',
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    apiMocks.getMatterDocuments.mockResolvedValue({ items: [cloudDoc], total: 1 })
+    apiMocks.getMatterCloudFiles.mockResolvedValue({ files: [] })
+    apiMocks.getMatterCloudFolder.mockResolvedValue(null)
+    apiMocks.getMatterDocumentFolders.mockResolvedValue({ items: [], total: 0, root_document_count: 1 })
+    apiMocks.getDocumentTags.mockResolvedValue({ items: [], total: 0 })
+    apiMocks.getMatterDocumentDownloadUrl.mockImplementation((matterId, documentId) => `/api/matters/${matterId}/documents/${documentId}/download`)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+  })
+
+  it('labels SharePoint, keeps Download separate from Open, and shows the editor after opening', async () => {
+    const popup = { location: { href: '' }, close: vi.fn() }
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    apiMocks.startMatterDocumentCloudEdit.mockResolvedValue({
+      document: { ...cloudDoc, external_edit_started_at: RECENT, external_edit_app: 'word_web', external_edit_started_by_name: 'Test Attorney' },
+      links: { word_web: 'https://firm.sharepoint.com/edit' },
+      app: 'word_web',
+    })
+    renderDocuments()
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText('Open in SharePoint').closest('a')).toHaveAttribute('href', '/api/matters/matter-1/documents/cloud-1/open')
+    expect(within(table).getByRole('link', { name: 'Download Engagement.docx' })).toHaveAttribute('href', '/api/matters/matter-1/documents/cloud-1/download')
+    fireEvent.click(within(table).getByRole('button', { name: 'Open Engagement.docx in Word' }))
+    await waitFor(() => expect(popup.location.href).toBe('https://firm.sharepoint.com/edit'))
+    expect(await within(table).findByText(/Being edited in Word by Test Attorney/)).toBeInTheDocument()
+    expect(within(table).getByRole('button', { name: 'Bring back changes to Engagement.docx' })).toBeInTheDocument()
+    window.open.mockRestore()
   })
 })

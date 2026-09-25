@@ -2211,12 +2211,36 @@ export const updateMatterDocument = (matterId, docId, data) =>
 export const deleteMatterDocument = (matterId, docId) =>
   api.delete(`/matters/${matterId}/documents/${docId}`).then(r => r.data)
 
+// Open a matter's Word document in the firm's Word or Google Docs, and bring
+// the edits back as the same document's next version. `app` is word_web,
+// word_desktop or google_docs; the response carries a link for each.
+export const startMatterDocumentCloudEdit = (matterId, docId, app) =>
+  api.post(`/matters/${matterId}/documents/${docId}/cloud-edit`, app ? { app } : {}).then(r => r.data)
+
+export const reconcileMatterDocument = (matterId, docId) =>
+  api.post(`/matters/${matterId}/documents/${docId}/reconcile`).then(r => r.data)
+
+export const uploadRevisedMatterDocument = (matterId, docId, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post(`/matters/${matterId}/documents/${docId}/revised-version`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+
 export const getMatterDocumentDownloadUrl = (matterId, docId) => {
   const ids = [matterId, docId].map(id => String(id ?? ''))
   // Browsers normalize standalone dot segments even when percent-encoded.
   // Omit the link for missing/dot IDs; encode every other ID as one segment.
   if (ids.some(id => !id || id === '.' || id === '..')) return undefined
   return `${API_BASE_URL}/matters/${encodeURIComponent(ids[0])}/documents/${encodeURIComponent(ids[1])}/download`
+}
+
+// Fresh provider view link (server redirect) instead of the stored display URL.
+export const getMatterDocumentOpenUrl = (matterId, docId) => {
+  const ids = [matterId, docId].map(id => String(id ?? ''))
+  if (ids.some(id => !id || id === '.' || id === '..')) return undefined
+  return `${API_BASE_URL}/matters/${encodeURIComponent(ids[0])}/documents/${encodeURIComponent(ids[1])}/open`
 }
 
 export const getMatterDocumentSigningSource = (matterId, docId) =>
