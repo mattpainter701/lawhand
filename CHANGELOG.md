@@ -1,3 +1,7 @@
+## Unreleased — Provider-aligned cloud upload chunk sizes
+
+- `app/services/matter_file_store.py`: the shared 2 MiB `_CHUNK_SIZE` is replaced by one constant per provider. Microsoft Graph upload sessions require every fragment except the last to be a multiple of 320 KiB, and 2 MiB is 6.4 × 320 KiB, so new OneDrive files over 4 MiB could fail to commit. `_GRAPH_CHUNK_SIZE = 10 * 320 * 1024` (3.125 MiB) now drives both `_upload_large_onedrive` and in-place replacement (`_replace_graph_item`, previously `_REPLACE_CHUNK_SIZE`). `_GOOGLE_CHUNK_SIZE = 8 * 256 * 1024` (2 MiB, unchanged) drives Drive resumable uploads, which need 256 KiB multiples. SharePoint stores still use a single `PUT …/content` and are not chunked.
+- Tests: `test_matter_file_store.py` uploads a >10 MiB file through the OneDrive and Google Drive chunked paths and checks that each non-final `Content-Range` span is a multiple of the provider's unit and that the ranges are contiguous.
 ## 2026.09.25.05 — Assistant Word drafts keep your cloud edits and formatting
 
 - **D34: a LawHand text save no longer orphans Word Online / Google Docs edits.** `PATCH /api/tasks/{id}/pending-action` on an artifact-bound `matter_document_draft` now reads the bound working copy (`read_current_cloud_bytes`) and compares its SHA-256 with the recorded `document_sha256` before writing a revision or superseding anything.

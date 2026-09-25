@@ -738,3 +738,113 @@ async def test_cloud_cleanup_missing_tenant_token_fails_closed(monkeypatch):
                 provider_item_id="item",
             ),
         )
+
+
+GRAPH_FRAGMENT_UNIT = 320 * 1024
+GOOGLE_CHUNK_UNIT = 256 * 1024
+LARGE_UPLOAD_SIZE = 10 * 1024 * 1024 + 123
+
+
+def _content_range_spans(ranges, total):
+    spans = []
+    expected_start = 0
+    for value in ranges:
+        unit, _, rest = value.partition(" ")
+        assert unit == "bytes"
+        span, _, size = rest.partition("/")
+        start, _, end = span.partition("-")
+        assert int(size) == total
+        assert int(start) == expected_start
+        spans.append(int(end) - int(start) + 1)
+        expected_start = int(end) + 1
+    assert expected_start == total
+    return spans
+
+
+def test_upload_chunk_sizes_match_each_provider_unit():
+    assert MatterFileStore._GRAPH_CHUNK_SIZE % GRAPH_FRAGMENT_UNIT == 0
+    assert MatterFileStore._GOOGLE_CHUNK_SIZE % GOOGLE_CHUNK_UNIT == 0
+    # Graph caps a single fragment below 60 MiB.
+    assert MatterFileStore._GRAPH_CHUNK_SIZE < 60 * 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_large_onedrive_upload_sends_320k_multiple_fragments(monkeypatch):
+    store = MatterFileStore()
+    content = b"x" * LARGE_UPLOAD_SIZE
+    assert len(content) > store._CHUNK_THRESHOLD_ONEDRIVE
+    ranges = []
+
+    def handler(request):
+        if request.url.path.endswith(":/createUploadSession"):
+            assert request.headers["Authorization"] == "Bearer token-1"
+            return httpx.Response(
+                200, json={"uploadUrl": "https://upload.example/session"}
+            )
+        assert request.url.host == "upload.example"
+        assert "Authorization" not in request.headers
+        assert int(request.headers["Content-Length"]) == len(request.content)
+        ranges.append(request.headers["Content-Range"])
+        end = int(ranges[-1].split("-")[1].split("/")[0])
+        if end + 1 < len(content):
+            return httpx.Response(202, json={"nextExpectedRanges": [f"{end + 1}-"]})
+        return httpx.Response(
+            201,
+            json={
+                "id": "item-large",
+                "webUrl": "https://contoso.sharepoint.com/large.pdf",
+            },
+        )
+
+    _mock_http_client(monkeypatch, handler)
+    result = await store._upload_large_onedrive(
+        "token-1", "parent-1", "large.pdf", content, "application/pdf"
+    )
+
+    assert result.error is None
+    assert result.provider_item_id == "item-large"
+    spans = _content_range_spans(ranges, len(content))
+    assert len(spans) > 1
+    assert all(span % GRAPH_FRAGMENT_UNIT == 0 for span in spans[:-1])
+    assert spans[-1] <= store._GRAPH_CHUNK_SIZE
+
+
+@pytest.mark.asyncio
+async def test_large_google_drive_upload_sends_256k_multiple_chunks(monkeypatch):
+    store = MatterFileStore()
+    content = b"y" * LARGE_UPLOAD_SIZE
+    assert len(content) > store._CHUNK_THRESHOLD_GOOGLE
+    ranges = []
+
+    def handler(request):
+        if request.method == "POST":
+            assert request.url.params["uploadType"] == "resumable"
+            assert request.headers["X-Upload-Content-Length"] == str(len(content))
+            return httpx.Response(
+                200, headers={"Location": "https://upload.example/resumable"}
+            )
+        assert request.url.host == "upload.example"
+        assert int(request.headers["Content-Length"]) == len(request.content)
+        ranges.append(request.headers["Content-Range"])
+        end = int(ranges[-1].split("-")[1].split("/")[0])
+        if end + 1 < len(content):
+            return httpx.Response(308, headers={"Range": f"bytes=0-{end}"})
+        return httpx.Response(
+            200,
+            json={
+                "id": "drive-large",
+                "webViewLink": "https://drive.google.com/file/d/drive-large/view",
+            },
+        )
+
+    _mock_http_client(monkeypatch, handler)
+    result = await store._upload_large_google_drive(
+        "token-1", "parent-1", "large.pdf", content, "application/pdf"
+    )
+
+    assert result.error is None
+    assert result.provider_item_id == "drive-large"
+    spans = _content_range_spans(ranges, len(content))
+    assert len(spans) > 1
+    assert all(span % GOOGLE_CHUNK_UNIT == 0 for span in spans[:-1])
+    assert spans[-1] <= store._GOOGLE_CHUNK_SIZE
