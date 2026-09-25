@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import TemplatePreparePage from './TemplatePreparePage'
+import { ToastProvider } from '../components/toast/ToastProvider'
+import { ConfirmProvider } from '../components/dialog/ConfirmProvider'
 
 const api = vi.hoisted(() => ({
   getTemplate: vi.fn(),
@@ -27,6 +29,9 @@ const api = vi.hoisted(() => ({
   writeFillSession: vi.fn(),
   completeFillSession: vi.fn(),
   renderFillSession: vi.fn(),
+  startMatterDocumentCloudEdit: vi.fn(),
+  reconcileMatterDocument: vi.fn(),
+  uploadRevisedMatterDocument: vi.fn(),
 }))
 vi.mock('../api', () => api)
 vi.mock('../components/templates/GeneratedPdfPreview', () => ({ default: ({ title }) => <section aria-label={`Preview of ${title}`} /> }))
@@ -119,6 +124,31 @@ describe('the Prepare route', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry closing this draft' }))
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/matters/${M}?tab=documents&document=${DOC}`))
     expect(api.renderTemplate).toHaveBeenCalledTimes(renderCountAfterSave)
+  })
+
+  it('offers Open in Word on a saved Word document while the page stays on it', async () => {
+    const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    api.renderTemplate.mockResolvedValue({
+      rendered: 'Dear Ada Smith', matter_document_id: DOC, output_format: 'docx', output_filename: 'fee.docx', storage_backend: 'onedrive',
+      matter_document: { id: DOC, matter_id: M, filename: 'fee.docx', content_type: docx, storage_backend: 'onedrive', provider_object_id: 'item-1', document_status: 'draft' },
+    })
+    api.completeFillSession.mockRejectedValueOnce(new Error('temporary completion failure'))
+    render(
+      <MemoryRouter initialEntries={[`/templates/prepare?template=${T}&matter=${M}`]}>
+        <ToastProvider><ConfirmProvider>
+          <Routes><Route path="/templates/prepare" element={<TemplatePreparePage />} /></Routes>
+        </ConfirmProvider></ToastProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByRole('heading', { name: 'Prepare: Fee agreement' })
+    await waitFor(() => expect(api.writeFillSession).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('Dear Ada Smith')
+    fireEvent.click(screen.getByRole('button', { name: 'Save to matter' }))
+    await screen.findByText(/document was saved, but this draft could not be closed/i)
+    expect(screen.getByText('Finish it in Word. Your edits come back to this matter document.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open fee.docx in Word' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Open fee.docx in the Word app' })).toBeEnabled()
   })
 
   it('waits for an in-flight first autosave before completing the saved document', async () => {

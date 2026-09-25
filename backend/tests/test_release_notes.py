@@ -27,9 +27,9 @@ def test_release_catalog_returns_latest_release_and_history():
     assert history_ids[:5] == [
         LATEST_RELEASE_ID,
         "2026.09.25.05",
+        "2026.09.25.04",
         "2026.09.25.01",
         "2026.09.24.03",
-        "2026.09.24.02",
     ]
     assert all(f"2026.09.07.{n}" in history_ids for n in (7, 8, 9))
     assert "2026.09.07.6" in history_ids

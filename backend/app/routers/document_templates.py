@@ -44,6 +44,8 @@ from app.models.matter_party import MatterParty
 from app.models.plugin import Matter, MatterEvent
 from app.models.retainer import Retainer
 from app.models.tenant import TenantSettings
+from app.schemas.matter_document import MatterDocumentResponse
+from app.routers.matter_documents import serialize_document
 from app.schemas.document_template import (
     DocumentTemplateBindingCatalogue,
     DocumentTemplateCard,
@@ -664,6 +666,25 @@ def _existing_document_response(
         signing_placement_problems=list(document.signing_placement_problems or []),
         generation_summary=dict(document.generation_summary or {}) or None,
     )
+
+
+async def _saved_document_response(
+    db: AsyncSession, *, tenant_id: uuid.UUID, document: MatterDocument
+) -> MatterDocumentResponse | None:
+    """The just-committed document as the Documents tab lists it.
+
+    Best effort: the save already committed, so a failed read-back must not
+    turn it into an error the caller would retry into a duplicate.
+    """
+    try:
+        return await serialize_document(db, tenant_id=tenant_id, document=document)
+    except Exception:
+        logger.warning(
+            "Saved document %s could not be serialized for the render response",
+            document.id,
+            exc_info=True,
+        )
+        return None
 
 
 async def _trim_preview_evidence(
@@ -4852,6 +4873,7 @@ async def render_template_endpoint(
         )
 
     matter_document_id = None
+    matter_document: MatterDocumentResponse | None = None
     download_url = None
     storage_backend = None
     storage_provider = None
@@ -5254,6 +5276,9 @@ async def render_template_endpoint(
                 ) from exc
         if not commit_confirmed_independently:
             await db.refresh(doc)
+            matter_document = await _saved_document_response(
+                db, tenant_id=parsed_tenant_id, document=doc
+            )
         matter_document_id = str(doc_id)
         download_url = f"/api/matters/{parsed_matter_id}/documents/{doc_id}/download"
 
@@ -5278,6 +5303,7 @@ async def render_template_endpoint(
             else []
         ),
         generation_summary=generation_summary if matter_document_id else None,
+        matter_document=matter_document,
     )
 
 

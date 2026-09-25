@@ -28,6 +28,16 @@ Saving an assistant document draft in LawHand no longer leaves Word Online or Go
 - **Formatting is kept.** Drafts made from a Word template or an uploaded Word file are edited in Word or Google Docs, so letterhead, tables and headers are never flattened to plain text.
 - **Long drafts stay whole.** A draft too long to show in full is read-only in LawHand, so a save can never cut off the rest of the document.
 
+## 2026.09.25.04 — Finish a prepared document in Word or Google Docs
+
+Released September 25, 2026.
+
+Save a Word document to a matter from Prepare or Generate, then open it in Word or Google Docs straight away. Edits come back to the same matter document.
+
+- **Open in Word right after saving.** When a Word document is saved to a matter stored in your firm's OneDrive, SharePoint or Google Drive, the saved notice offers Open in Word, Word app or Open in Google Docs.
+- **On the document you land on.** Saving from the Prepare page opens the new document on the matter's Documents tab, and its preview now carries the same buttons.
+- **Edits come back as before.** Returning to LawHand, or Bring back changes, saves your edits as the document's current version. PDFs for signature and documents kept in LawHand storage are unchanged.
+
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
 
 Released September 25, 2026.
