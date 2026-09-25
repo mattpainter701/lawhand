@@ -169,6 +169,9 @@ _PURGE_ONLY_TABLES = {
     "lead_channel_consents",
     "lead_funnel_events",
     "matter_smb_shares",
+    # Provider permission ids LawHand granted to a real firm's staff. Purge
+    # them with an expired demo; never clone another tenant's cloud shares.
+    "matter_folder_share_grants",
     # Configurable workflow definitions, custom values, and immutable run
     # evidence are tenant-specific legal work product. They are removed only
     # by the verified expired-demo purge and are never fixture-cloned.
@@ -309,6 +312,7 @@ SENSITIVE_NEVER_CLONE = frozenset(
         "smb_agents",
         "smb_credentials",
         "smb_shares",
+        "matter_folder_share_grants",
         "teams_channel_links",
         # Carries the Entra directory binding and the notification clientState
         # secret — never cloned into a demo tenant.

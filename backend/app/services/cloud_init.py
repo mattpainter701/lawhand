@@ -615,89 +615,141 @@ async def ensure_matter_marker(
     )
 
 
-async def share_matter_folders(
-    db: AsyncSession,
-    tenant_id: str,
+def matter_folder_share_targets(
     cloud_folder: dict | None,
-    user_emails: list[str],
-) -> None:
-    """Best-effort sharing of matter root folders with assigned firm users."""
-    if not cloud_folder or not user_emails:
-        return
+) -> list[tuple[str, str, str]]:
+    """Return ``(provider, folder_id, role)`` for every folder shared per assignee.
 
-    unique_emails = sorted({email for email in user_emails if email})
-
+    Assignees get write on the matter's own OneDrive/Google Drive folder and
+    read on linked context folders. SharePoint-bound folders are not listed:
+    access there follows site membership, so LawHand never shares them per
+    person and has nothing of its own to take back.
+    """
+    if not cloud_folder:
+        return []
     context_folders = [
         folder
         for folder in (cloud_folder.get("context_folders") or [])
         if isinstance(folder, dict)
     ]
-
-    onedrive = cloud_folder.get("onedrive")
-    onedrive_folder_roles: dict[str, str] = {}
-    if onedrive and onedrive.get("matter_folder_id"):
-        onedrive_folder_roles[onedrive["matter_folder_id"]] = "write"
-    for folder in context_folders:
-        if folder.get("provider") == "onedrive" and folder.get("matter_folder_id"):
-            onedrive_folder_roles.setdefault(folder["matter_folder_id"], "read")
-    if onedrive_folder_roles:
-        ms_token = await get_fresh_token(db, tenant_id, "microsoft")
-        if ms_token:
-            for folder_id, role in sorted(onedrive_folder_roles.items()):
-                try:
-                    await _share_onedrive_folder(
-                        ms_token, folder_id, unique_emails, role=role
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to share OneDrive matter folder: %s", exc)
-
-    google_drive = cloud_folder.get("google_drive")
-    google_folder_roles: dict[str, str] = {}
-    if google_drive and google_drive.get("matter_folder_id"):
-        google_folder_roles[google_drive["matter_folder_id"]] = "writer"
-    for folder in context_folders:
-        if folder.get("provider") == "google_drive" and folder.get("matter_folder_id"):
-            google_folder_roles.setdefault(folder["matter_folder_id"], "reader")
-    if google_folder_roles:
-        g_token = await get_fresh_token(db, tenant_id, "google")
-        g_token = await google_service_account.prefer_service_account(
-            db, tenant_id, g_token
+    targets: list[tuple[str, str, str]] = []
+    for provider, owner_role, context_role in (
+        ("onedrive", "write", "read"),
+        ("google_drive", "writer", "reader"),
+    ):
+        roles: dict[str, str] = {}
+        binding = cloud_folder.get(provider)
+        if isinstance(binding, dict) and binding.get("matter_folder_id"):
+            roles[str(binding["matter_folder_id"])] = owner_role
+        for folder in context_folders:
+            if folder.get("provider") == provider and folder.get("matter_folder_id"):
+                roles.setdefault(str(folder["matter_folder_id"]), context_role)
+        targets.extend(
+            (provider, folder_id, role) for folder_id, role in sorted(roles.items())
         )
-        if g_token:
-            for folder_id, role in sorted(google_folder_roles.items()):
-                try:
-                    await _share_gdrive_folder(
-                        g_token, folder_id, unique_emails, role=role
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to share Google Drive matter folder: %s", exc
-                    )
+    return targets
+
+
+async def provider_share_token(db: AsyncSession, tenant_id: str, provider: str):
+    """Return the token LawHand shares and unshares a provider's folders with."""
+    if provider == "onedrive":
+        return await get_fresh_token(db, tenant_id, "microsoft")
+    token = await get_fresh_token(db, tenant_id, "google")
+    return await google_service_account.prefer_service_account(db, tenant_id, token)
+
+
+async def share_matter_folders(
+    db: AsyncSession,
+    tenant_id: str,
+    cloud_folder: dict | None,
+    user_emails: list[str],
+    *,
+    matter_id=None,
+    user_ids_by_email: dict[str, object] | None = None,
+) -> None:
+    """Best-effort sharing of matter root folders with assigned firm users.
+
+    With ``matter_id`` every permission the provider creates is recorded, so
+    the share can be taken back exactly when the person leaves the matter.
+    """
+    if not cloud_folder or not user_emails:
+        return
+
+    unique_emails = sorted({email.strip() for email in user_emails if email})
+    tokens: dict[str, object] = {}
+    for provider, folder_id, role in matter_folder_share_targets(cloud_folder):
+        if provider not in tokens:
+            tokens[provider] = await provider_share_token(db, tenant_id, provider)
+        token = tokens[provider]
+        if not token:
+            continue
+        label = "OneDrive" if provider == "onedrive" else "Google Drive"
+        # A direct share someone already holds must be told apart from the
+        # one LawHand creates: providers merge a repeat invite into it.
+        existing: list[dict] | None = None
+        if matter_id is not None:
+            try:
+                existing = await list_folder_permissions(token, provider, folder_id)
+            except Exception as exc:
+                logger.warning("Could not list %s folder shares: %s", label, exc)
+        try:
+            if provider == "onedrive":
+                granted = await _share_onedrive_folder(
+                    token, folder_id, unique_emails, role=role
+                )
+            else:
+                granted = await _share_gdrive_folder(
+                    token, folder_id, unique_emails, role=role
+                )
+        except Exception as exc:
+            logger.warning("Failed to share %s matter folder: %s", label, exc)
+            continue
+        if matter_id is None:
+            continue
+        from app.services.matter_folder_shares import record_folder_grants
+
+        await record_folder_grants(
+            db,
+            tenant_id=tenant_id,
+            matter_id=matter_id,
+            provider=provider,
+            folder_id=folder_id,
+            role=role,
+            granted=granted,
+            existing=existing,
+            user_ids_by_email=user_ids_by_email or {},
+        )
 
 
 async def _share_onedrive_folder(
     token: str, folder_id: str, emails: list[str], role: str = "write"
-) -> None:
+) -> dict[str, str | None]:
+    """Invite each person separately so every permission id maps to one email."""
+    granted: dict[str, str | None] = {}
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{GRAPH_BASE}/me/drive/items/{folder_id}/invite",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "recipients": [{"email": email} for email in emails],
-                "requireSignIn": True,
-                "sendInvitation": False,
-                "roles": [role],
-            },
-        )
-        if resp.status_code not in (200, 201, 202):
-            raise RuntimeError(
-                f"OneDrive invite failed: {resp.status_code} {resp.text[:200]}"
+        for email in emails:
+            resp = await client.post(
+                f"{GRAPH_BASE}/me/drive/items/{folder_id}/invite",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "recipients": [{"email": email}],
+                    "requireSignIn": True,
+                    "sendInvitation": False,
+                    "roles": [role],
+                },
             )
+            if resp.status_code not in (200, 201, 202):
+                raise RuntimeError(
+                    f"OneDrive invite failed: {resp.status_code} {resp.text[:200]}"
+                )
+            granted[email] = _first_permission_id(resp)
+    return granted
 
 
 async def _share_gdrive_folder(
     token: str, folder_id: str, emails: list[str], role: str = "writer"
-) -> None:
+) -> dict[str, str | None]:
+    granted: dict[str, str | None] = {}
     async with httpx.AsyncClient(timeout=30) as client:
         for email in emails:
             resp = await client.post(
@@ -715,6 +767,141 @@ async def _share_gdrive_folder(
                     f"Google Drive permission failed for {email}: "
                     f"{resp.status_code} {resp.text[:200]}"
                 )
+            granted[email] = _first_permission_id(resp)
+    return granted
+
+
+def _first_permission_id(resp: httpx.Response) -> str | None:
+    """Read the permission id from a Graph invite or Drive create response."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    if isinstance(body.get("value"), list):
+        body = next((p for p in body["value"] if isinstance(p, dict)), {})
+    permission_id = body.get("id")
+    return str(permission_id) if permission_id else None
+
+
+def _graph_permission_emails(permission: dict) -> set[str]:
+    identities = [
+        permission[key]
+        for key in ("grantedToV2", "grantedTo")
+        if isinstance(permission.get(key), dict)
+    ]
+    for key in ("grantedToIdentitiesV2", "grantedToIdentities"):
+        identities.extend(
+            item for item in permission.get(key) or [] if isinstance(item, dict)
+        )
+    emails = {
+        str(email).strip().lower()
+        for identity in identities
+        for kind in ("user", "siteUser")
+        if (email := (identity.get(kind) or {}).get("email"))
+    }
+    invitation = permission.get("invitation") or {}
+    if invitation.get("email"):
+        emails.add(str(invitation["email"]).strip().lower())
+    return emails
+
+
+def normalize_folder_permission(provider: str, permission: dict) -> dict | None:
+    """Reduce a provider permission to ``{id, emails, roles, direct}``.
+
+    ``direct`` is false for a permission inherited from a parent folder or a
+    Shared Drive membership: it cannot be removed on this folder and was never
+    LawHand's per-person share.
+    """
+    if not isinstance(permission, dict) or not permission.get("id"):
+        return None
+    if provider == "onedrive":
+        return {
+            "id": str(permission["id"]),
+            "emails": _graph_permission_emails(permission),
+            "roles": {str(role) for role in permission.get("roles") or []},
+            "direct": not permission.get("inheritedFrom"),
+        }
+    details = [
+        detail
+        for detail in permission.get("permissionDetails") or []
+        if isinstance(detail, dict)
+    ]
+    direct = not details or any(not detail.get("inherited") for detail in details)
+    email = permission.get("emailAddress")
+    return {
+        "id": str(permission["id"]),
+        "emails": {str(email).strip().lower()} if email else set(),
+        "roles": {str(permission.get("role") or "")} - {""},
+        "direct": direct and permission.get("type", "user") == "user",
+    }
+
+
+async def list_folder_permissions(token, provider: str, folder_id: str) -> list[dict]:
+    """List a folder's permissions, normalized, following provider paging."""
+    headers = {"Authorization": f"Bearer {token}"}
+    if provider == "onedrive":
+        url: str | None = f"{GRAPH_BASE}/me/drive/items/{folder_id}/permissions"
+        params: dict | None = None
+        items_key = "value"
+    else:
+        url = f"{GOOGLE_DRIVE_BASE}/files/{folder_id}/permissions"
+        params = {
+            "supportsAllDrives": "true",
+            "pageSize": "100",
+            "fields": (
+                "nextPageToken,permissions(id,type,emailAddress,role,"
+                "permissionDetails(inherited))"
+            ),
+        }
+        items_key = "permissions"
+    permissions: list[dict] = []
+    async with httpx.AsyncClient(timeout=30) as client:
+        for _page in range(20):
+            resp = await client.get(url, headers=headers, params=params)
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"Listing folder permissions failed: {resp.status_code} "
+                    f"{resp.text[:200]}"
+                )
+            body = resp.json()
+            for item in body.get(items_key) or []:
+                normalized = normalize_folder_permission(provider, item)
+                if normalized:
+                    permissions.append(normalized)
+            if provider == "onedrive":
+                url, params = body.get("@odata.nextLink"), None
+            elif body.get("nextPageToken"):
+                params = {**params, "pageToken": body["nextPageToken"]}
+            else:
+                url = None
+            if not url:
+                break
+    return permissions
+
+
+async def delete_folder_permission(
+    token, provider: str, folder_id: str, permission_id: str
+) -> None:
+    """Delete one folder permission. A permission already gone counts as done."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        if provider == "onedrive":
+            resp = await client.delete(
+                f"{GRAPH_BASE}/me/drive/items/{folder_id}/permissions/{permission_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        else:
+            resp = await client.delete(
+                f"{GOOGLE_DRIVE_BASE}/files/{folder_id}/permissions/{permission_id}",
+                params={"supportsAllDrives": "true"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    if resp.status_code in (200, 204, 404):
+        return
+    raise RuntimeError(
+        f"Removing the folder share failed: {resp.status_code} {resp.text[:200]}"
+    )
 
 
 # ── helpers ────────────────────────────────────────────────────────────

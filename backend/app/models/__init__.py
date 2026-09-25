@@ -50,6 +50,7 @@ from app.models.domestic import (
     DomesticEvent,
 )
 from app.models.matter_assignment import MatterAssignment
+from app.models.matter_folder_share_grant import MatterFolderShareGrant
 from app.models.firm_memory import (
     FirmMemoryCollection,  # noqa: F401
     FirmMemoryCollectionSource,  # noqa: F401
@@ -318,6 +319,7 @@ __all__ = [
     "DomesticDeadline",
     "DomesticEvent",
     "MatterAssignment",
+    "MatterFolderShareGrant",
     "MatterNote",
     "Retainer",
     "RetainerTransaction",

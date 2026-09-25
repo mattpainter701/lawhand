@@ -12,7 +12,7 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["202_matter_doc_external_edit"]
+    assert heads == ["203_matter_folder_share_grants"]
 
 
 def test_matter_engagement_migration_adds_open_date_and_engagement_columns():
@@ -889,10 +889,7 @@ def test_platform_email_suppression_migration_is_platform_scoped():
     """
     backend_dir = Path(__file__).resolve().parents[1]
     source = (
-        backend_dir
-        / "migrations"
-        / "versions"
-        / "185_platform_email_suppression.py"
+        backend_dir / "migrations" / "versions" / "185_platform_email_suppression.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "185_platform_email_suppression"' in source
@@ -907,7 +904,7 @@ def test_platform_email_suppression_migration_is_platform_scoped():
     assert "uq_platform_email_webhook_provider_event" in source
     # Additive only — the gate rejects destructive upgrades, and a downgrade
     # must still be able to remove what this added.
-    assert "op.drop_table(\"email_suppressions\")" in source
+    assert 'op.drop_table("email_suppressions")' in source
 
 
 def test_unpublished_templates_migration_only_deactivates_unpublished_rows():

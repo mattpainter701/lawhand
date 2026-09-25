@@ -68,6 +68,9 @@ JOB_HANDLERS = {
     "template_set_render": JobHandler(
         "app.services.fill_sessions", "run_set_render_job", "session_row"
     ),
+    "matter_folder_unshare": JobHandler(
+        "app.services.matter_folder_shares", "run_unshare_job", "session_row"
+    ),
 }
 
 
