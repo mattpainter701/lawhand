@@ -349,9 +349,7 @@ def _normalized_options(field: dict, type_name: str) -> list[Any]:
     return normalized
 
 
-def _radio_options_in_page_order(
-    field: dict, widgets: list[PdfWidget]
-) -> list[Any]:
+def _radio_options_in_page_order(field: dict, widgets: list[PdfWidget]) -> list[Any]:
     """A radio group's export values in the order its buttons appear.
 
     ``/_States_`` follows the appearance dictionaries, which authoring tools
