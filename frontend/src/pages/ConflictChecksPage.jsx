@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2,
   Download,
@@ -11,9 +11,9 @@ import {
   closeConflictCheck,
   createConflictCheck,
   downloadConflictCheckReport,
-  getMyMattersPage,
   listConflictChecks,
 } from '../api'
+import { loadAllMyMatters } from '../utils/loadAllMyMatters'
 import {
   AlertBanner,
   Spinner,
@@ -41,6 +41,9 @@ export default function ConflictChecksPage() {
   const [records, setRecords] = useState([])
   const [selected, setSelected] = useState(null)
   const [matters, setMatters] = useState([])
+  // null while loading; otherwise { total, complete } or { error: true }.
+  const [mattersState, setMattersState] = useState(null)
+  const mattersRequest = useRef(0)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [closing, setClosing] = useState(false)
@@ -58,16 +61,34 @@ export default function ConflictChecksPage() {
     acknowledge_attorney_review: false,
   })
 
+  // The link picker lists every assigned matter, not page 1 of 200, and a
+  // failed load says so instead of showing an empty picker. S3.03.
+  const loadMatters = useCallback(async () => {
+    const request = ++mattersRequest.current
+    setMattersState(null)
+    try {
+      const result = await loadAllMyMatters()
+      if (request !== mattersRequest.current) return
+      setMatters(result.items)
+      setMattersState({ total: result.total, complete: result.complete })
+    } catch {
+      if (request !== mattersRequest.current) return
+      setMatters([])
+      setMattersState({ error: true })
+    }
+  }, [])
+
+  useEffect(() => {
+    loadMatters()
+    return () => { mattersRequest.current += 1 }
+  }, [loadMatters])
+
   const load = useCallback(async () => {
     setError(null)
     try {
-      const [history, assignedMatters] = await Promise.all([
-        listConflictChecks(),
-        getMyMattersPage({ page: 1, page_size: 200 }).catch(() => ({ items: [] })),
-      ])
+      const history = await listConflictChecks()
       const items = history?.items || []
       setRecords(items)
-      setMatters(Array.isArray(assignedMatters) ? assignedMatters : assignedMatters?.items || [])
       setSelected((current) =>
         current ? items.find((item) => item.id === current.id) || current : items[0] || null
       )
@@ -211,6 +232,20 @@ export default function ConflictChecksPage() {
                 ))}
               </select>
             </Field>
+            {mattersState === null ? (
+              <p className="-mt-2 text-xs text-brand-muted">Loading your matters…</p>
+            ) : mattersState.error ? (
+              <p role="alert" className="-mt-2 text-xs text-brand-danger">
+                Your assigned matters could not be loaded. The search can still run without a link.{' '}
+                <button type="button" onClick={loadMatters} className="font-semibold underline">
+                  Try again
+                </button>
+              </p>
+            ) : !mattersState.complete ? (
+              <p className="-mt-2 text-xs text-brand-muted">
+                Showing the {matters.length} most recently updated of your {mattersState.total} assigned matters.
+              </p>
+            ) : null}
             <button
               type="submit"
               disabled={running || !form.label.trim() || !hasSearchTerms}

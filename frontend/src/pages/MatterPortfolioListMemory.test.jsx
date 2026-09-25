@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import MatterPortfolioPage from './MatterPortfolioPage'
@@ -52,6 +52,23 @@ describe('matter portfolio list memory', () => {
     const scroller = container.querySelector('[data-app-scroll]')
 
     await screen.findByText('Alpha')
+    await waitFor(() => expect(scroller.scrollTop).toBe(420))
+  })
+
+  it('waits for My Matters before restoring, so the offset is not cut short', async () => {
+    const url = '/matters?status=open'
+    rememberListScroll(url, 420)
+    let resolveMine
+    getMyMattersPage.mockReturnValue(new Promise(resolve => { resolveMine = resolve }))
+
+    const { container } = renderPage(url)
+    const scroller = container.querySelector('[data-app-scroll]')
+
+    await screen.findByText('Alpha')
+    // The all-matters list is in, but My Matters (above it) is still loading.
+    expect(scroller.scrollTop).toBe(0)
+
+    await act(async () => { resolveMine({ items: [], total: 0 }) })
     await waitFor(() => expect(scroller.scrollTop).toBe(420))
   })
 })
