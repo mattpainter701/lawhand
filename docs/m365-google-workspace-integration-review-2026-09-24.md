@@ -124,8 +124,8 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
 - **Storage and documents:**
   - Word Online edits are orphaned by a LawHand save (D34)
   - AI drafts require an explicit provider (D35)
-  - Shared Drive deletes omit `supportsAllDrives` and orphan files (D36)
-  - `#` or `%` in a filename breaks OneDrive uploads (D37)
+  - Shared Drive deletes omit `supportsAllDrives` and orphan files (D36; fixed on this branch: deletes now move the file to the Drive trash with `supportsAllDrives`)
+  - `#` or `%` in a filename breaks OneDrive uploads (D37; fixed on this branch: file names are percent-encoded in Graph upload paths)
   - the container has no Office-metric fonts for signing PDFs (D82)
   - unbounded LibreOffice processes in the API worker (D83)
 - **Reliability:**
