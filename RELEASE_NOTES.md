@@ -16,6 +16,7 @@ Every shared form in the Template Studio library now has clear field labels, fil
 - **Wills and directives fill from the client.** The testator, declarant or principal on wills, living wills and powers of attorney fills from the client. Agents, witnesses and notaries stay for you to type.
 - **Correct titles and choices.** Forms show their printed titles, such as ND Divorce With Children Summons or Ohio Request for Service, and radio choices read as the page prints them.
 - **Probate guidebook fixes.** The ND informal probate guidebook no longer puts names or email in County of and State of boxes, and places the decedent's domicile county and state correctly.
+- **Field checks before publishing.** The Studio lists fields that would fill with the client's details by name alone, and unclear labels. A PDF with such a field must bind it before it can be published.
 
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
 

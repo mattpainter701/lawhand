@@ -9,7 +9,6 @@ no ``tenant_id`` column and no tenant mutation endpoints.
 import hashlib
 import io
 import json
-import re
 import uuid
 from pathlib import Path
 
@@ -526,50 +525,32 @@ def test_a_rebuild_carries_curation_only_to_unchanged_files(tmp_path):
 
 # ── Catalog-wide curation invariants ────────────────────────────────────────
 
-#: Labels that tell a person nothing about what goes in the box: the PDF's own
-#: tool-generated names ("Text3", "Check Box4", "undefined 2"), the discovery
-#: fallback ("Source field 12 (page 1)"), bare numbers, and one- or two-letter
-#: fragments.
-_PLACEHOLDER_LABEL = re.compile(
-    r"^(source field \d+.*|undefined[\s_]*\d*|text[\s_]*(field)?[\s_]*\d*"
-    r"|check[\s_]*box[\s_]*\d*|field[\s_]*\d+|fill[\s_]*\d+|group[\s_]*\d+"
-    r"|radio[\s_]*button[\s_]*\d*|toggle[\s_]*\d*|dropdown[\s_]*\d*"
-    r"|button[\s_]*\d*|[\d\s_.,-]+|[a-z]{1,2}[\s_]*\d*)$",
-    re.I,
-)
-_MAX_LABEL = 90
-
-
 def _curated_forms() -> list[dict]:
     # Authored forms are generated in-repo with field names that already are the
     # platform's variables; everything else arrives with a stranger's PDF names.
     return [form for form in _manifest()["forms"] if form.get("origin") != "authored"]
 
 
-def test_every_shared_form_labels_each_field_readably_and_uniquely():
+def test_every_shared_form_passes_the_studio_field_checks():
+    # The same checks the Studio shows a firm before it publishes a template;
+    # the shared library holds itself to all of them, warnings included.
+    from app.services import template_field_quality
+
     problems = []
     for form in _curated_forms():
-        seen: dict[str, list[str]] = {}
-        for field in _seeded_schema(form["slug"])["fields"]:
-            label = field["label"].strip()
-            if _PLACEHOLDER_LABEL.match(label):
-                problems.append(f"{form['slug']}: {field['name']} is labelled {label!r}")
-            if len(label) > _MAX_LABEL:
-                problems.append(f"{form['slug']}: {field['name']} label is too long")
-            seen.setdefault(label.casefold(), []).append(field["name"])
+        schema = _seeded_schema(form["slug"])
         problems.extend(
-            f"{form['slug']}: {names} share the label {label!r}"
-            for label, names in seen.items()
-            if len(names) > 1
+            f"{form['slug']}: {finding.name}: {finding.message}"
+            for finding in template_field_quality.accidental_fills(schema)
+            + template_field_quality.warnings(schema)
         )
     assert problems == [], "\n".join(problems[:40])
 
 
-def test_no_shared_form_fills_a_field_by_accidental_name_match():
-    # A generic PDF name ("Address", "Email", "Full Name") matches a client
-    # alias, so an unbound field would fill with the client's details even
-    # when the box belongs to a landlord, a witness or the attorney. Every
-    # such field must say where its value comes from, or that it is typed.
+def test_no_shared_form_fills_a_field_by_name_alone():
+    # Stricter than the Studio gate: a curated form names the source of every
+    # field Smart Fill would fill by name, including exact variable names such
+    # as "case_number", because a stranger's PDF chose them.
     from app.services.template_fill_engine import normalize_variable_name, vocabulary
 
     names = vocabulary()
@@ -580,21 +561,6 @@ def test_no_shared_form_fills_a_field_by_accidental_name_match():
         if normalize_variable_name(field["name"]) in names and not field.get("binding")
     ]
     assert unbound == []
-
-
-def test_every_shared_option_reads_as_what_the_page_prints():
-    unreadable = []
-    for form in _curated_forms():
-        for field in _seeded_schema(form["slug"])["fields"]:
-            for option in field["options"]:
-                label = str(option["label"] if isinstance(option, dict) else option)
-                if label.strip().lower() in {"yes", "no"}:
-                    continue
-                if _PLACEHOLDER_LABEL.match(label) or re.fullmatch(
-                    r"choice\s*\d+", label, re.I
-                ):
-                    unreadable.append(f"{form['slug']}: {field['name']} -> {label!r}")
-    assert unreadable == []
 
 
 def test_a_builder_rewrite_keeps_curation_for_the_same_bytes(tmp_path):

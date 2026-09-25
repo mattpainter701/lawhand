@@ -171,6 +171,7 @@ from app.services.template_fill_loaders import (
     load_matter_context,
     load_matter_parties,
 )
+from app.services import template_field_quality
 from app.services.template_labels import unusable_labels
 from app.services.template_ocr import TemplateOcrError, image_to_pdf
 from app.services.matter_file_store import MatterFileStore
@@ -533,6 +534,7 @@ def _template_response(template: DocumentTemplate) -> DocumentTemplateResponse:
         update={
             "source_ready": source_ready,
             "fill_coverage": _fill_coverage_response(template.variable_schema),
+            "field_quality": template_field_quality.summary(template.variable_schema),
         }
     )
 
@@ -4347,6 +4349,27 @@ def _ensure_usable_labels(variable_schema: dict | None) -> None:
     )
 
 
+def _ensure_no_accidental_fills(template, variable_schema: dict | None) -> None:
+    """Refuse to publish a PDF whose generic field names would fill the client in.
+
+    A PDF's field names come from whoever built it, so "Email" in an attorney
+    signature block or "Address" in a landlord's block reads to Smart Fill as
+    the client's. Binding the field (to the client when that is right) or
+    marking it entered by hand is one edit, and it is the only way to say which
+    person the box belongs to. Word templates are left alone: their author
+    typed ``{{email}}`` into their own letter and meant it.
+    """
+
+    if str(template.format or "").lower() not in {"pdf", "image"}:
+        return
+    findings = template_field_quality.accidental_fills(variable_schema)
+    if not findings:
+        return
+    listed = "; ".join(item.message for item in findings[:5])
+    more = "" if len(findings) <= 5 else f" ({len(findings) - 5} more fields like this)"
+    raise HTTPException(status_code=422, detail=f"{listed}{more}")
+
+
 @router.post(
     "/{template_id}/publish",
     response_model=DocumentTemplateResponse,
@@ -4388,6 +4411,7 @@ async def publish_template(
     await _ensure_word_source_review(template, template.variable_schema)
     _ensure_pdf_source_review(template, template.variable_schema)
     _ensure_usable_labels(template.variable_schema)
+    _ensure_no_accidental_fills(template, template.variable_schema)
     _ensure_signing_fields_placeable(template, template.variable_schema)
     _validate_approval_ready(
         template=template,

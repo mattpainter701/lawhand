@@ -17,11 +17,12 @@ def test_release_catalog_returns_latest_release_and_history():
     assert latest["id"] == LATEST_RELEASE_ID
     assert latest["version"] == LATEST_RELEASE_ID
     assert latest["is_recent"] is True
-    assert len(latest["highlights"]) == 5
+    assert len(latest["highlights"]) == 6
     assert latest["title"] == "Shared library forms fill the right boxes"
     assert latest["highlights"][0]["title"] == "Readable fields"
     assert latest["highlights"][1]["title"] == "No more client details in the wrong box"
     assert latest["highlights"][4]["title"] == "Probate guidebook fixes"
+    assert latest["highlights"][5]["title"] == "Field checks before publishing"
     history_ids = [release["id"] for release in catalog["release_notes"]]
     assert history_ids[:5] == [
         LATEST_RELEASE_ID,

@@ -6,6 +6,7 @@
 - `probate/forms.py` `GUIDEBOOK_BINDINGS`: fixed bindings that followed the guidebook's shifted tooltips (Form 2/17 domicile county and state, Form 2 demand-for-notice and "State of" boxes, Form 7/17 "County of" boxes).
 - PDF discovery orders radio options by widget position (page, top to bottom, left to right) instead of `/_States_` order.
 - `scripts/build_sample_template_library.py` and `update_manifest` carry curated keys (and document titles) over for byte-identical files.
+- New `app/services/template_field_quality.py`: `accidental_fills` (an included, non-signing field with no `binding`/`value_from` whose normalized name is a Smart Fill `NAME_SYNONYMS` key) and `warnings` (placeholder, duplicate or over-90-character labels; placeholder option labels). Publishing a PDF/image template now refuses accidental fills (`_ensure_no_accidental_fills`, 422 naming each field); Word templates are not gated. `DocumentTemplateResponse.field_quality` carries both lists, shown by the new `TemplateFieldChecks` panel in the Studio workspace.
 - Catalog-wide tests in `tests/test_sample_template_library.py`: no placeholder, over-long or duplicate label; no field filling by accidental name match; no unreadable option; unique titles. The fill campaign covers every newly bound form. `SampleFillDialog` no longer warns "source label unavailable" for curated labels.
 
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
