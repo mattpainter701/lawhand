@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,6 +103,25 @@ class StorageResult:
     @property
     def succeeded(self) -> bool:
         return self.error is None
+
+
+@dataclass(frozen=True)
+class ProviderFileMetadata:
+    """Fresh provider facts about one cloud matter document.
+
+    ``web_url`` opens the file in the provider's web editor (Word for the web
+    or Google Docs). ``desktop_url`` is the WebDAV address Word desktop opens
+    through ``ms-word:ofe|u|…``; Microsoft only, and absent for personal
+    OneDrive. The change markers let callers record what they adopted.
+    """
+
+    backend: str
+    web_url: str
+    desktop_url: str | None = None
+    etag: str | None = None
+    version_id: str | None = None
+    modified_at: str | None = None
+    checksum: str | None = None
 
 
 class MatterFileReadError(RuntimeError):
@@ -316,48 +336,33 @@ class MatterFileStore:
         document: Any,
     ) -> str:
         """Resolve a fresh provider web URL from durable tenant-scoped IDs."""
-        if document is None or str(getattr(document, "tenant_id", "")) != str(
-            tenant_id
-        ):
-            raise MatterFileAccessError("Document is not owned by this tenant")
+        metadata = await self.get_matter_file_metadata(
+            db=db, tenant_id=tenant_id, document=document
+        )
+        return metadata.web_url
 
-        backend = _normalized_read_backend(document)
-        if backend not in {"google_drive", "onedrive", "sharepoint"}:
-            raise MatterFileMetadataError(
-                "Only tenant-cloud documents have an external editing URL"
-            )
-        item_id = str(getattr(document, "provider_object_id", "") or "").strip()
-        if not item_id:
-            raise MatterFileMetadataError(
-                "Cloud document is missing its durable provider item ID"
-            )
+    async def get_matter_file_metadata(
+        self,
+        *,
+        db: AsyncSession,
+        tenant_id: str,
+        document: Any,
+    ) -> ProviderFileMetadata:
+        """Read fresh provider metadata (open links and change markers) by durable IDs."""
+        backend, item_id, base, token_provider, provider_label = _cloud_item_target(
+            document, tenant_id
+        )
         encoded_item_id = quote(item_id, safe="")
-
         if backend == "google_drive":
-            token_provider = "google"
-            provider_label = "Google Drive"
             metadata_url = (
                 f"{GOOGLE_DOWNLOAD_BASE}/files/{encoded_item_id}"
-                "?supportsAllDrives=true&fields=id,webViewLink,modifiedTime,sha256Checksum,version,trashed"
+                "?supportsAllDrives=true&fields=id,webViewLink,modifiedTime,"
+                "sha256Checksum,version,headRevisionId,trashed"
             )
         else:
-            token_provider = "microsoft"
-            provider_label = (
-                "Microsoft SharePoint" if backend == "sharepoint" else "OneDrive"
-            )
-            drive_id = str(getattr(document, "provider_drive_id", "") or "").strip()
-            if backend == "sharepoint" and not drive_id:
-                raise MatterFileMetadataError(
-                    "SharePoint document is missing its durable drive ID"
-                )
-            base = (
-                f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items"
-                if drive_id
-                else f"{GRAPH_BASE}/me/drive/items"
-            )
             metadata_url = (
                 f"{base}/{encoded_item_id}"
-                "?$select=id,webUrl,eTag,cTag,lastModifiedDateTime,deleted"
+                "?$select=id,webUrl,webDavUrl,eTag,cTag,lastModifiedDateTime,deleted,file"
             )
 
         token = await _storage_token(db, str(tenant_id), token_provider)
@@ -389,7 +394,206 @@ class MatterFileStore:
         url = str(payload.get("webViewLink") or payload.get("webUrl") or "").strip()
         if backend == "google_drive" and not url:
             url = _gdrive_web_url(item_id)
-        return _validated_provider_open_url(url, backend)
+        web_url = _validated_provider_open_url(url, backend)
+        if backend == "google_drive":
+            return ProviderFileMetadata(
+                backend=backend,
+                web_url=web_url,
+                version_id=_optional_text(
+                    payload.get("version") or payload.get("headRevisionId")
+                ),
+                modified_at=_optional_text(payload.get("modifiedTime")),
+                checksum=_optional_text(payload.get("sha256Checksum")),
+            )
+        desktop_url = None
+        raw_dav = str(payload.get("webDavUrl") or "").strip()
+        if raw_dav:
+            try:
+                desktop_url = _validated_provider_open_url(raw_dav, backend)
+            except ProviderError:
+                desktop_url = None
+        hashes = (payload.get("file") or {}).get("hashes") or {}
+        return ProviderFileMetadata(
+            backend=backend,
+            web_url=web_url,
+            desktop_url=desktop_url,
+            etag=_optional_text(payload.get("eTag")),
+            version_id=_optional_text(payload.get("cTag")),
+            modified_at=_optional_text(payload.get("lastModifiedDateTime")),
+            checksum=_optional_text(
+                hashes.get("sha256Hash") or hashes.get("quickXorHash")
+            ),
+        )
+
+    _REPLACE_CHUNK_SIZE = 10 * 320 * 1024  # Graph byte ranges must be 320 KiB multiples
+
+    async def replace_matter_file_content(
+        self,
+        *,
+        db: AsyncSession,
+        tenant_id: str,
+        document: Any,
+        content: bytes,
+        content_type: str,
+        if_match: str | None = None,
+    ) -> StorageResult:
+        """Overwrite an existing matter file in place, keeping its item identity.
+
+        The cloud item keeps its ID and link, so a copy someone has open in
+        Word or Docs stays the document LawHand points to. Microsoft writes
+        send ``If-Match`` when an eTag is given and raise
+        :class:`MatterFileIntegrityError` on 412, so a concurrent Word edit is
+        never silently overwritten.
+        """
+        if document is None or str(getattr(document, "tenant_id", "")) != str(
+            tenant_id
+        ):
+            raise MatterFileAccessError("Document is not owned by this tenant")
+        backend = _normalized_read_backend(document)
+        if backend == "local":
+            raw_path = getattr(document, "storage_path", None)
+            if not raw_path:
+                raise MatterFileMetadataError("Local document path is missing")
+            path = _safe_existing_local_path(str(tenant_id), str(raw_path))
+            await asyncio.to_thread(_replace_local_file, path, content)
+            return StorageResult(
+                provider="local", backend="local", storage_path=str(path)
+            )
+
+        backend, item_id, base, token_provider, provider_label = _cloud_item_target(
+            document, tenant_id
+        )
+        token = await _storage_token(db, str(tenant_id), token_provider)
+        if not token:
+            raise ProviderAuthError(f"{provider_label} credentials are unavailable")
+        encoded_item_id = quote(item_id, safe="")
+        try:
+            if backend == "google_drive":
+                return await self._replace_google_drive(
+                    token, encoded_item_id, document, content, content_type
+                )
+            return await self._replace_graph_item(
+                token,
+                f"{base}/{encoded_item_id}",
+                backend,
+                document,
+                content,
+                content_type,
+                if_match,
+                provider_label,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise ProviderError(
+                f"{provider_label} document update did not complete"
+            ) from exc
+
+    async def _replace_graph_item(
+        self,
+        token: str,
+        item_url: str,
+        backend: str,
+        document: Any,
+        content: bytes,
+        content_type: str,
+        if_match: str | None,
+        provider_label: str,
+    ) -> StorageResult:
+        headers = {"Authorization": f"Bearer {token}"}
+        if if_match:
+            headers["If-Match"] = if_match
+        async with httpx.AsyncClient(timeout=120) as client:
+            if len(content) <= self._CHUNK_THRESHOLD_ONEDRIVE:
+                response = await client.put(
+                    f"{item_url}/content",
+                    content=content,
+                    headers={**headers, "Content-Type": content_type},
+                )
+            else:
+                session = await client.post(
+                    f"{item_url}/createUploadSession",
+                    json={"item": {"@microsoft.graph.conflictBehavior": "replace"}},
+                    headers=headers,
+                )
+                _raise_for_replace_response(session, provider_label)
+                upload_url = (session.json() or {}).get("uploadUrl")
+                if not upload_url:
+                    raise ProviderError(
+                        f"{provider_label} upload session missing uploadUrl"
+                    )
+                total = len(content)
+                offset = 0
+                response = None
+                while offset < total:
+                    end = min(offset + self._REPLACE_CHUNK_SIZE, total)
+                    response = await client.put(
+                        upload_url,
+                        content=content[offset:end],
+                        headers={
+                            "Content-Length": str(end - offset),
+                            "Content-Range": f"bytes {offset}-{end - 1}/{total}",
+                        },
+                    )
+                    if response.status_code == 202:
+                        offset = end
+                        continue
+                    break
+            _raise_for_replace_response(response, provider_label)
+            if response.status_code not in (200, 201):
+                raise ProviderError(f"{provider_label} upload did not finish")
+            data = response.json()
+        return _storage_result_from_graph_item(
+            data,
+            backend=backend,
+            parent_id=getattr(document, "provider_parent_id", None),
+            drive_id=getattr(document, "provider_drive_id", None),
+        )
+
+    async def _replace_google_drive(
+        self,
+        token: str,
+        encoded_item_id: str,
+        document: Any,
+        content: bytes,
+        content_type: str,
+    ) -> StorageResult:
+        fields = "id,webViewLink,parents,driveId,version,modifiedTime,sha256Checksum,headRevisionId"
+        async with httpx.AsyncClient(timeout=120) as client:
+            session = await client.patch(
+                f"{GOOGLE_UPLOAD_BASE}/files/{encoded_item_id}"
+                f"?uploadType=resumable&supportsAllDrives=true&fields={fields}",
+                json={},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Upload-Content-Type": content_type,
+                    "X-Upload-Content-Length": str(len(content)),
+                },
+            )
+            _raise_for_replace_response(session, "Google Drive")
+            upload_url = session.headers.get("Location")
+            if not upload_url:
+                raise ProviderError("Google Drive upload session missing its location")
+            response = await client.put(
+                upload_url,
+                content=content,
+                headers={"Content-Type": content_type},
+            )
+            _raise_for_replace_response(response, "Google Drive")
+            data = response.json()
+        file_id = data.get("id") or getattr(document, "provider_object_id", None)
+        web_link = data.get("webViewLink") or _gdrive_web_url(str(file_id))
+        return StorageResult(
+            provider="google",
+            backend="google_drive",
+            storage_path=web_link,
+            web_url=web_link,
+            provider_item_id=file_id,
+            parent_id=getattr(document, "provider_parent_id", None),
+            provider_version_id=data.get("version") or data.get("headRevisionId"),
+            provider_modified_at=data.get("modifiedTime"),
+            provider_checksum=data.get("sha256Checksum"),
+            drive_id=data.get("driveId")
+            or getattr(document, "provider_drive_id", None),
+        )
 
     async def delete_stored_result(
         self,
@@ -1561,6 +1765,71 @@ def _validate_read_integrity(
             raise MatterFileIntegrityError(
                 "Document bytes do not match the expected SHA-256"
             )
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _cloud_item_target(document: Any, tenant_id: str) -> tuple[str, str, str, str, str]:
+    """Return (backend, item_id, graph item base, token provider, label) for a cloud document."""
+    if document is None or str(getattr(document, "tenant_id", "")) != str(tenant_id):
+        raise MatterFileAccessError("Document is not owned by this tenant")
+    backend = _normalized_read_backend(document)
+    if backend not in {"google_drive", "onedrive", "sharepoint"}:
+        raise MatterFileMetadataError(
+            "Only tenant-cloud documents have an external editing URL"
+        )
+    item_id = str(getattr(document, "provider_object_id", "") or "").strip()
+    if not item_id:
+        raise MatterFileMetadataError(
+            "Cloud document is missing its durable provider item ID"
+        )
+    if backend == "google_drive":
+        return backend, item_id, "", "google", "Google Drive"
+    drive_id = str(getattr(document, "provider_drive_id", "") or "").strip()
+    if backend == "sharepoint" and not drive_id:
+        raise MatterFileMetadataError(
+            "SharePoint document is missing its durable drive ID"
+        )
+    base = (
+        f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items"
+        if drive_id
+        else f"{GRAPH_BASE}/me/drive/items"
+    )
+    label = "Microsoft SharePoint" if backend == "sharepoint" else "OneDrive"
+    return backend, item_id, base, "microsoft", label
+
+
+def _raise_for_replace_response(response: httpx.Response, provider_label: str) -> None:
+    status = response.status_code
+    if status < 400:
+        return
+    if status == 412:
+        raise MatterFileIntegrityError(
+            f"{provider_label} document changed since it was last read"
+        )
+    message = f"{provider_label} document update failed with HTTP {status}"
+    kwargs = {"status_code": status}
+    if status in (401, 403):
+        raise ProviderAuthError(message, **kwargs)
+    if status == 404:
+        raise MatterFileNotFound(f"{provider_label} document no longer exists")
+    if status == 429:
+        raise ProviderThrottled(message, **kwargs)
+    raise ProviderError(message, **kwargs)
+
+
+def _replace_local_file(path: Path, content: bytes) -> None:
+    """Replace a local file atomically so a failed write never leaves half a document."""
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_bytes(content)
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            temp.unlink()
 
 
 def _raise_for_download_response(response: httpx.Response, provider_label: str) -> None:

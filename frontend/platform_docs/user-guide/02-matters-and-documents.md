@@ -160,6 +160,21 @@ When your firm's templates can be filled from the matter, a banner such as **2 d
 
 Generated content is a draft until a qualified person reviews and approves it.
 
+### Edit a document in Word or Google Docs
+
+LawHand does not have its own editor. A Word document (DOCX) stored in your firm's Microsoft 365 or Google storage is edited in Word or Google Docs, and the edits come back into LawHand as the same document's current version.
+
+1. On the document's row, select **Open in Word** (Word for the web) or **Word app** (Word on your computer). For a file in Google Drive, select **Open in Google Docs**. Google Docs edits the file as a Word document, so it stays a DOCX.
+2. The row shows **Being edited in Word by** *name* **since** *time*, so colleagues know the document is open. The note stays for 12 hours, and opening the document again renews it.
+3. Make your changes. Word and Google Docs save as you go.
+4. Come back to LawHand. The edits are brought back automatically when you return to the tab you opened the document from. You or a colleague can also select **Bring back changes** at any time.
+
+Each time edits come back, the document keeps its name, folder, tags, and sharing. The change appears on the matter timeline as **Edits brought back**, and search reads the new text shortly afterwards.
+
+No Microsoft 365 or Google access at hand? Select **Download**, edit the copy on your computer, then select **Upload revised** and choose the edited file. LawHand refuses the upload if someone changed the document in Word or Google Docs after it was last saved in LawHand. Select **Bring back changes** first, so no one's edits are lost.
+
+Approved, filed, and signed documents, and documents out for signature, are never overwritten. If one of them is changed in Word or Google Docs, its row shows **Changed outside LawHand** with the reason. Restore the file in Word or Google Docs, or save the edited copy as a new document. Assistant drafts and revisions keep their own review; bring their edits back from the review task.
+
 ### Revise a document with the assistant
 
 For a Word (DOCX) document, select **Revise with assistant** on its row. The revision opens on its own page with the document's saved revision history, so you can compare the source and the reviewed output, approve or reject a revision, and prepare a replacement for an e-signature request. Assistant revisions are **Release locked** until they go through the separate release approval, and **Back to matter documents** returns you to the list.
@@ -271,6 +286,8 @@ Leave enough context for the next person. Do not delete or overwrite history to 
 | Search finds nothing inside documents | Fewer than three characters, or the document has not been read yet | Type at least three characters; a new upload is indexed shortly after it is first read. |
 | **Close matter** is disabled in the dialog | Something under **Resolve before closing** is still open | Resolve the listed item, such as unbilled time or a trust balance, then try again. |
 | A forwarded email never arrives | Wrong or rotated address, or delivery delay | Compare the address with the one under **Forward email to this matter**, wait a few minutes, and refresh. |
+| **Download** says the document must be reconciled | The document was changed in Word or Google Docs after it was last saved in LawHand | Select **Bring back changes** on its row. |
+| **Open in Word** or **Bring back changes** asks you to reconnect | The firm's Microsoft 365 or Google connection has expired | An administrator reconnects it under **Administration → Integrations**. Meanwhile, use **Download** and **Upload revised**. |
 | **Scan now** reports a failure | Your mailbox is not connected or needs reconnecting | Connect your account from [Calendar](/calendar) with **Connect Calendar**, then scan again. |
 
 ## Related chapters

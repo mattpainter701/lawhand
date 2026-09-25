@@ -83,6 +83,11 @@ class MatterDocument(Base):
             "document_sha256 IS NULL OR document_sha256 ~ '^[0-9a-f]{64}$'",
             name="ck_matter_documents_document_sha256",
         ),
+        CheckConstraint(
+            "external_edit_app IS NULL OR external_edit_app IN "
+            "('word_web', 'word_desktop', 'google_docs')",
+            name="ck_matter_documents_external_edit_app",
+        ),
         Index(
             "idx_matter_documents_tenant_artifact_revision",
             "tenant_id",
@@ -188,6 +193,18 @@ class MatterDocument(Base):
     # had, how many were filled, and which the preparer marked verified before
     # saving. Names only; values live in the document.
     generation_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Informational marker for "Open in Word / Google Docs": who opened the
+    # document in the firm's office suite, where, and when. Cleared when the
+    # edits are brought back. Never a lock; adoption is hash-checked.
+    external_edit_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    external_edit_started_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    external_edit_app: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

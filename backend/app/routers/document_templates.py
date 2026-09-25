@@ -851,6 +851,8 @@ async def _ensure_word_source_review(template, schema):
 
 
 def _storage_document_fields(result) -> dict:
+    # The provider's change markers are kept so "Bring back changes" can tell
+    # what the firm's Word or Google Docs copy looked like when LawHand saved it.
     return {
         "storage_path": result.storage_path,
         "storage_provider": result.provider,
@@ -858,8 +860,25 @@ def _storage_document_fields(result) -> dict:
         "provider_object_id": result.provider_item_id,
         "provider_drive_id": result.drive_id,
         "provider_parent_id": result.parent_id,
+        "provider_etag": getattr(result, "provider_etag", None),
+        "provider_version_id": getattr(result, "provider_version_id", None),
+        "provider_checksum": getattr(result, "provider_checksum", None),
+        "provider_modified_at": _provider_time(
+            getattr(result, "provider_modified_at", None)
+        ),
         "storage_error": result.error,
     }
+
+
+def _provider_time(value) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 async def _matter_document_commit_outcome(

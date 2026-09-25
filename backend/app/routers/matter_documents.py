@@ -30,12 +30,15 @@ from app.models.matter_document import MatterDocument
 from app.models.matter_document_folder import MatterDocumentFolder
 from app.models.matter_document_tag import MatterDocumentTagLink
 from app.models.plugin import Matter
+from app.models.user import User
 from app.services.portal_client_alerts import (
     notify_client_portal_update,
     shared_document_headline,
 )
 from app.models.tenant import TenantSettings
 from app.schemas.matter_document import (
+    MatterDocumentCloudEditRequest,
+    MatterDocumentCloudEditResponse,
     MatterDocumentListResponse,
     MatterDocumentResponse,
     MatterDocumentTagResponse,
@@ -55,6 +58,7 @@ from app.services.matter_document_organization import (
     storage_routing_for_folder,
     tags_for_documents,
 )
+from app.services import matter_document_cloud_edit as cloud_edit
 from app.services.matter_file_store import (
     MatterFileIntegrityError,
     MatterFileNotFound,
@@ -227,9 +231,27 @@ async def serialize_documents(
         matter_ids={doc.matter_id for doc in documents},
     )
 
+    editor_ids = {
+        doc.external_edit_started_by
+        for doc in documents
+        if doc.external_edit_started_by is not None
+    }
+    editor_names: dict[uuid.UUID, str] = {}
+    if editor_ids:
+        result = await db.execute(
+            select(User.id, User.full_name, User.email).where(
+                User.tenant_id == tenant_id, User.id.in_(editor_ids)
+            )
+        )
+        editor_names = {row[0]: row[1] or row[2] for row in result.all()}
+
     responses = []
     for doc in documents:
         response = MatterDocumentResponse.model_validate(doc)
+        if doc.external_edit_started_by is not None:
+            response.external_edit_started_by_name = editor_names.get(
+                doc.external_edit_started_by
+            )
         response.signing_access = (
             not doc.portal_visible
             and doc.uploaded_by_user_id is not None
@@ -744,6 +766,348 @@ async def open_matter_document(
         url,
         status_code=307,
         headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _lock_doc_or_404(
+    doc_id: str, matter_id: str, tenant_id: uuid.UUID, db: AsyncSession
+) -> MatterDocument:
+    """Load a document row for update so two adoptions cannot interleave."""
+    result = await db.execute(
+        select(MatterDocument)
+        .where(
+            MatterDocument.id == doc_id,
+            MatterDocument.matter_id == matter_id,
+            MatterDocument.tenant_id == tenant_id,
+        )
+        .with_for_update()
+    )
+    doc = result.scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+def _require_firm_staff(user) -> None:
+    """Opening, bringing back or replacing a matter document is staff work.
+
+    A client-portal login is a real ``User`` (``role="client"``) whose token
+    ``get_current_user`` accepts, and portal responses expose shared document
+    IDs. Refuse it before any database or provider access so a client can
+    never overwrite a firm document.
+    """
+    if (getattr(user, "role", "") or "").strip().lower() == "client":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "staff_only",
+                "message": "Only firm staff can edit matter documents.",
+            },
+        )
+
+
+def _cloud_edit_http_error(exc: cloud_edit.CloudEditError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={"code": exc.code, "message": exc.message},
+    )
+
+
+def _provider_http_error(exc: Exception) -> HTTPException:
+    """Plain-language errors for a provider read or write in the edit flow."""
+    if isinstance(exc, MatterFileNotFound):
+        return HTTPException(
+            status_code=404,
+            detail={
+                "code": "cloud_file_missing",
+                "message": "The file is no longer in the firm's cloud storage.",
+            },
+        )
+    if isinstance(exc, ProviderAuthError):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": "reconnect_required",
+                "message": "The firm's Microsoft 365 or Google connection needs to be "
+                "reconnected before LawHand can reach this file.",
+            },
+        )
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": "cloud_unavailable",
+            "message": "The firm's cloud storage did not respond. Try again shortly.",
+        },
+    )
+
+
+async def _refresh_index_after_adoption(
+    tenant_id: uuid.UUID, document: MatterDocument, outcome: str
+) -> None:
+    if outcome == "adopted":
+        await matter_document_index.enqueue_index(
+            tenant_id=tenant_id,
+            document_id=document.id,
+            document_sha256=document.document_sha256,
+        )
+
+
+@router.post(
+    "/matters/{matter_id}/documents/{doc_id}/cloud-edit",
+    response_model=MatterDocumentCloudEditResponse,
+)
+async def start_matter_document_cloud_edit(
+    matter_id: str,
+    doc_id: str,
+    body: MatterDocumentCloudEditRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return fresh links to open this Word document in the firm's office suite.
+
+    Records who opened it, where and when, for the Documents tab. It is not a
+    lock: the office suite handles co-authoring, and bringing the edits back
+    is hash-checked.
+    """
+    user = await get_current_user(request, db)
+    _require_firm_staff(user)
+    await set_tenant_context(db, str(user.tenant_id))
+    doc = await _lock_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    try:
+        cloud_edit.assert_editable_in_office(doc, require_cloud=True)
+        reason = await cloud_edit.locked_reason(db, doc)
+        if reason:
+            raise cloud_edit.CloudEditError(
+                409,
+                "document_locked",
+                f"{reason} Open it read-only from the cloud instead.",
+            )
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    try:
+        metadata = await matter_file_store.get_matter_file_metadata(
+            db=db, tenant_id=str(user.tenant_id), document=doc
+        )
+    except (MatterFileReadError, ProviderError) as exc:
+        raise _provider_http_error(exc) from exc
+    links = cloud_edit.open_links(metadata)
+    app = body.app or next(iter(links))
+    if app not in links:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "app_unavailable",
+                "message": "This file cannot be opened in that app.",
+            },
+        )
+    try:
+        cloud_edit.start_external_edit(doc, user_id=user.id, app=app)
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    await db.commit()
+    await db.refresh(doc)
+    return MatterDocumentCloudEditResponse(
+        document=await serialize_document(db, tenant_id=user.tenant_id, document=doc),
+        links=links,
+        app=app,
+    )
+
+
+@router.post(
+    "/matters/{matter_id}/documents/{doc_id}/reconcile",
+    response_model=MatterDocumentCloudEditResponse,
+)
+async def reconcile_matter_document(
+    matter_id: str,
+    doc_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Bring back edits made in Word or Google Docs as this document's next version.
+
+    Reads the exact cloud file by its durable ID and adopts it in place when
+    it changed. Approved, filed and signing-bound documents are never
+    overwritten; a change to one of them leaves it in ``conflict`` with the
+    reason.
+    """
+    user = await get_current_user(request, db)
+    _require_firm_staff(user)
+    await set_tenant_context(db, str(user.tenant_id))
+    doc = await _lock_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    tenant_id = user.tenant_id
+    try:
+        cloud_edit.assert_editable_in_office(doc, require_cloud=True)
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    try:
+        content = await matter_file_store.read_matter_file_bytes(
+            db=db,
+            tenant_id=str(tenant_id),
+            document=doc,
+            expected_sha256=None,
+            expected_size=None,
+            max_bytes=cloud_edit.MAX_REVISED_BYTES,
+            enforce_persisted_size=False,
+        )
+    except (MatterFileReadError, ProviderError) as exc:
+        raise _provider_http_error(exc) from exc
+    try:
+        metadata = await matter_file_store.get_matter_file_metadata(
+            db=db, tenant_id=str(tenant_id), document=doc
+        )
+    except (MatterFileReadError, ProviderError):
+        # Change markers are a convenience; the adopted bytes are what count.
+        metadata = None
+    try:
+        result = await cloud_edit.adopt_document_bytes(
+            db,
+            document=doc,
+            content=content,
+            actor_user_id=user.id,
+            source="cloud_reconcile",
+            metadata=metadata,
+        )
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    if result.outcome == "adopted":
+        await matter_document_index.forget_document(
+            db, tenant_id=tenant_id, document_id=doc.id
+        )
+    await db.commit()
+    await db.refresh(doc)
+    await _refresh_index_after_adoption(tenant_id, doc, result.outcome)
+    return MatterDocumentCloudEditResponse(
+        document=await serialize_document(db, tenant_id=tenant_id, document=doc),
+        outcome=result.outcome,
+        message=result.message,
+    )
+
+
+@router.post(
+    "/matters/{matter_id}/documents/{doc_id}/revised-version",
+    response_model=MatterDocumentCloudEditResponse,
+)
+async def upload_revised_matter_document(
+    matter_id: str,
+    doc_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace a Word document's content with an uploaded revised version.
+
+    The fallback when someone cannot use Word or Google Docs through the
+    firm's connection. The file goes to the same cloud item (or local file),
+    and is adopted exactly like edits brought back from the office suite. If
+    the cloud copy changed since LawHand last saved it, nothing is written:
+    those edits must be brought back first.
+    """
+    user = await get_current_user(request, db)
+    _require_firm_staff(user)
+    await set_tenant_context(db, str(user.tenant_id))
+    max_bytes = cloud_edit.MAX_REVISED_BYTES
+    reject_oversized_request(request, max_bytes, max_bytes // (1024 * 1024))
+    content = await file.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "file_too_large",
+                "message": f"The revised version is larger than {max_bytes // (1024 * 1024)} MB.",
+            },
+        )
+    doc = await _lock_doc_or_404(doc_id, matter_id, user.tenant_id, db)
+    tenant_id = user.tenant_id
+    try:
+        cloud_edit.assert_editable_in_office(doc, require_cloud=False)
+        snapshot = cloud_edit.inspect_revised_docx(content, filename=doc.filename)
+        reason = await cloud_edit.locked_reason(db, doc)
+        if reason:
+            raise cloud_edit.CloudEditError(409, "document_locked", reason)
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    if snapshot.source_sha256 == doc.document_sha256:
+        return MatterDocumentCloudEditResponse(
+            document=await serialize_document(db, tenant_id=tenant_id, document=doc),
+            outcome="unchanged",
+            message="This file is identical to the current version.",
+        )
+
+    is_cloud = doc.storage_backend in cloud_edit.CLOUD_BACKENDS
+    try:
+        if is_cloud and doc.document_sha256:
+            current = await matter_file_store.read_matter_file_bytes(
+                db=db,
+                tenant_id=str(tenant_id),
+                document=doc,
+                expected_sha256=None,
+                expected_size=None,
+                max_bytes=max_bytes,
+                enforce_persisted_size=False,
+            )
+            if cloud_edit.sha256_hex(current) != doc.document_sha256:
+                raise cloud_edit.CloudEditError(
+                    409,
+                    "changed_in_office",
+                    "This document was changed in Word or Google Docs since LawHand "
+                    "last saved it. Bring back those changes first, then upload your "
+                    "revised version if it is still needed.",
+                )
+        # Guard the write with the eTag of the bytes just checked, not the
+        # stored one: SharePoint changes eTags on metadata edits too, and a
+        # stale value would refuse an upload for no reason.
+        if_match = None
+        if doc.storage_backend in {"onedrive", "sharepoint"}:
+            try:
+                fresh = await matter_file_store.get_matter_file_metadata(
+                    db=db, tenant_id=str(tenant_id), document=doc
+                )
+                if_match = fresh.etag
+            except (MatterFileReadError, ProviderError):
+                if_match = None
+        storage_result = await matter_file_store.replace_matter_file_content(
+            db=db,
+            tenant_id=str(tenant_id),
+            document=doc,
+            content=content,
+            content_type=cloud_edit.DOCX_CONTENT_TYPE,
+            if_match=if_match,
+        )
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    except MatterFileIntegrityError as exc:
+        raise _cloud_edit_http_error(
+            cloud_edit.CloudEditError(
+                409,
+                "changed_in_office",
+                "This document changed in Word while the upload was running. "
+                "Bring back those changes first.",
+            )
+        ) from exc
+    except (MatterFileReadError, ProviderError) as exc:
+        raise _provider_http_error(exc) from exc
+    try:
+        result = await cloud_edit.adopt_document_bytes(
+            db,
+            document=doc,
+            content=content,
+            actor_user_id=user.id,
+            source="revised_upload",
+            storage_result=storage_result if is_cloud else None,
+        )
+    except cloud_edit.CloudEditError as exc:
+        raise _cloud_edit_http_error(exc) from exc
+    if result.outcome == "adopted":
+        await matter_document_index.forget_document(
+            db, tenant_id=tenant_id, document_id=doc.id
+        )
+    await db.commit()
+    await db.refresh(doc)
+    await _refresh_index_after_adoption(tenant_id, doc, result.outcome)
+    return MatterDocumentCloudEditResponse(
+        document=await serialize_document(db, tenant_id=tenant_id, document=doc),
+        outcome=result.outcome,
+        message=result.message,
     )
 
 
