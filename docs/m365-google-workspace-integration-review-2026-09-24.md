@@ -260,7 +260,7 @@ The UX findings in `ux.json` and `clusters-ux.json` (102 clusters) were reported
 
 | Horizon | Items |
 |---|---|
-| **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D36 Shared Drive deletes. D37 filename encoding. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. Pin a current Gemini model. |
+| **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. Pin a current Gemini model. |
 | **Next** (decisions needed) | End the admin-token fallback for mail, search and calendar (D02, D03, D04, D25). SharePoint default storage instead of the admin's OneDrive (D06, D13). Directory-sync lifecycle rules (D15, D16). Confidential MCP clients (D21). Admin-first Microsoft consent. Per-capability health. |
 | **Later** (growth) | Matter Agent for Microsoft 365 Copilot. Federated connector. Gemini Enterprise connector. Meeting recap. Firm template library in SharePoint/Drive. Native pickers and `drive.file`. Word add-in content controls and tracked changes. Outlook and Gmail "file to matter" add-ins. Event-driven sync. Teams tab. |
 
