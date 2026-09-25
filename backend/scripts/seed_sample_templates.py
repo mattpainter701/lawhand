@@ -67,28 +67,70 @@ def _provenance(form: dict) -> dict | None:
     return provenance
 
 
-def _variable_schema(content: bytes, bindings: dict | None = None) -> dict:
-    """Derive the field schema from the PDF, carrying the manifest's bindings.
+def _variable_schema(
+    content: bytes,
+    bindings: dict | None = None,
+    option_labels: dict | None = None,
+    field_labels: dict | None = None,
+) -> dict:
+    """Derive the field schema from the PDF, carrying the manifest's curation.
 
     Field discovery stays the single source of truth for what is in the form.
     A manifest may additionally declare where a field's value comes from — the
     authored firm-paperwork samples name their fields after the platform's own
-    variables — and those declarations are attached here so Smart Fill resolves
-    them without a firm re-declaring anything. A path the catalogue does not
-    recognise is a build error, not a field that quietly fills from nothing.
+    variables, and curated court forms map their caption and signature block —
+    and those declarations are attached here so Smart Fill resolves them
+    without a firm re-declaring anything. ``option_labels`` gives a radio or
+    choice option a readable label when the PDF only carries an export value
+    such as "Choice 1"; the export value itself is unchanged, so filling writes
+    exactly what the PDF expects. ``field_labels`` replaces a label the PDF
+    left meaningless ("Text3", "undefined 2", "Check Box4") with what the page
+    prints beside the box; the PDF's own label stays in ``source_label``.
+
+    A path the catalogue does not recognise, or curation naming a field or
+    option the PDF does not have, is a build error rather than a declaration
+    that silently does nothing.
     """
 
     fields = discover_pdf_fields(content)
+    by_name = {field["name"]: field for field in fields}
     declared = bindings or {}
     unknown = sorted(
         path for path in set(declared.values()) if not is_valid_binding(path)
     )
     if unknown:
         raise SystemExit(f"Unknown binding path in manifest: {', '.join(unknown)}")
+    missing = sorted(set(declared) - set(by_name))
+    if missing:
+        raise SystemExit(f"Manifest binds unknown field: {', '.join(missing)}")
     for field in fields:
         binding = declared.get(field["name"])
         if binding:
             field["binding"] = binding
+    for name, label in (field_labels or {}).items():
+        field = by_name.get(name)
+        if field is None:
+            raise SystemExit(f"Manifest labels unknown field: {name}")
+        if not isinstance(label, str) or not label.strip():
+            raise SystemExit(f"Manifest label for {name} must be non-empty text")
+        field["label"] = label.strip()
+        field["label_source"] = "curated"
+    for name, labels in (option_labels or {}).items():
+        field = by_name.get(name)
+        if field is None or field["field_type"] not in {"radio", "choice"}:
+            raise SystemExit(f"Manifest labels options of a non-option field: {name}")
+        values = [
+            option["value"] if isinstance(option, dict) else option
+            for option in field["options"]
+        ]
+        stray = sorted(set(labels) - set(values))
+        if stray:
+            raise SystemExit(
+                f"Manifest labels unknown option(s) of {name}: {', '.join(stray)}"
+            )
+        field["options"] = [
+            {"value": value, "label": labels.get(value, value)} for value in values
+        ]
     return {
         "version": 1,
         "source": "sample_library",
@@ -120,7 +162,12 @@ async def seed(prune: bool = False) -> None:
                     f"Sample source integrity mismatch: {form['filename']}"
                 )
             try:
-                schema = _variable_schema(content, form.get("bindings"))
+                schema = _variable_schema(
+                    content,
+                    form.get("bindings"),
+                    form.get("option_labels"),
+                    form.get("field_labels"),
+                )
             except TemplatePdfError as exc:
                 print(f"SKIP {form['slug']}: {exc}")
                 continue

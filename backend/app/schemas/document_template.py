@@ -129,6 +129,10 @@ class DocumentTemplateResponse(BaseModel):
     variable_schema: Optional[dict[str, Any]] = None
     #: Derived on read, never accepted on write.
     fill_coverage: Optional[DocumentTemplateFillCoverage] = None
+    #: Derived on read: fields that would fill by generic name from the client
+    #: (``accidental_fills``, blocks publishing a PDF) and labels or options a
+    #: person cannot act on (``warnings``). See ``template_field_quality``.
+    field_quality: Optional[dict[str, Any]] = None
     signer_roles: Optional[list[dict[str, Any]]] = None
     branding_profile: Optional[dict[str, Any]] = None
     source_filename: Optional[str] = None

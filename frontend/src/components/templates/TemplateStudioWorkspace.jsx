@@ -6,6 +6,7 @@ import TemplateStudioEditor from './TemplateStudioEditor'
 import TemplateVersionHistory from './TemplateVersionHistory'
 import TemplateTestSummary from './TemplateTestSummary'
 import TemplateCopyAction from './TemplateCopyAction'
+import TemplateFieldChecks from './TemplateFieldChecks'
 import './templateStudioWorkspace.css'
 
 const tabs = [
@@ -118,6 +119,7 @@ export default function TemplateStudioWorkspace({
 
         {section === 'workspace' ? (
           <section className="studio-editing-area" aria-label="Template workspace summary">
+            <TemplateFieldChecks quality={template.field_quality} format={template.format} />
             {sourceMissing && (
               <div role="alert" className="flex gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber/10 p-4 md:col-span-3">
                 <AlertTriangle className="mt-0.5 shrink-0 text-brand-amber" size={18} aria-hidden="true" />

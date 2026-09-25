@@ -1872,6 +1872,10 @@ def build_form(form: LibraryForm, out_dir: Path) -> dict:
     }
 
 
+#: Manifest keys a person curates by hand rather than a builder generating them.
+CURATED_KEYS = ("bindings", "field_labels", "option_labels")
+
+
 def update_manifest(entries: list[dict], out_dir: Path) -> int:
     """Merge the authored entries into the library manifest, keeping the rest."""
 
@@ -1882,6 +1886,16 @@ def update_manifest(entries: list[dict], out_dir: Path) -> int:
         else {"forms": []}
     )
     authored = {entry["slug"] for entry in entries}
+    previous = {form["slug"]: form for form in manifest.get("forms", [])}
+    for entry in entries:
+        # Hand curation (labels, and bindings a builder does not declare) is
+        # kept while the file is byte-identical: same bytes, same field names.
+        prior = previous.get(entry["slug"])
+        if prior is None or prior.get("sha256") != entry.get("sha256"):
+            continue
+        for key in CURATED_KEYS:
+            if prior.get(key) and not entry.get(key):
+                entry[key] = prior[key]
     forms = [form for form in manifest.get("forms", []) if form["slug"] not in authored]
     forms.extend(entries)
     forms.sort(key=lambda form: (form["category"], form["title"].lower()))
