@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, FileCheck2, Loader2, Wand2, X } from 'lucide-react'
-import { getSampleTemplateSource, previewSampleTemplateSmartFill, renderSampleTemplateFile } from '../../api'
+import { CheckCircle2, Download, Eye, FileCheck2, Loader2, Save, Wand2, X } from 'lucide-react'
+import { getSampleTemplateSource, previewSampleTemplateSmartFill, renderSampleTemplateFile, saveSampleTemplateToMatter, updateMatterDocument } from '../../api'
 import MatterPicker from '../prepare/MatterPicker'
 import FillOnDocument, { hasFillValue as hasValue, isFieldRequired as isRequired } from './FillOnDocument'
 import GeneratedPdfPreview from './GeneratedPdfPreview'
@@ -9,7 +9,12 @@ import { readFillViewPreference, writeFillViewPreference } from './fillViewPrefe
 
 // Fill a shared sample form with ad-hoc values and download the flattened PDF.
 // The sample library is read-only shared content: filling never saves a copy to
-// the tenant's own template library, it only produces a one-off PDF download.
+// the tenant's own template library, it only produces a one-off PDF.
+//
+// Opened from a matter (`fixedMatterId`), the dialog fills from that matter on
+// open and files the reviewed PDF on it, then offers to share it with the
+// client. That keeps a one-off court form from having to be imported, tested
+// and published as a firm template before it can be used.
 //
 // Answers are typed on the original document by default (Document view). The
 // Questions view lists the same answers as a form for people who prefer it, and
@@ -104,7 +109,7 @@ const VIEWS = [
   { id: 'questions', label: 'Questions' },
 ]
 
-export default function SampleFillDialog({ sample, onClose }) {
+export default function SampleFillDialog({ sample, onClose, fixedMatterId = '', folderId = null, onSaved }) {
   const fields = useMemo(
     () => (sample.variable_schema?.fields || []).filter((field) => field?.name),
     [sample],
@@ -138,6 +143,11 @@ export default function SampleFillDialog({ sample, onClose }) {
   }, [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [savedDocument, setSavedDocument] = useState(null)
+  const [sharing, setSharing] = useState(false)
+  const [shareError, setShareError] = useState('')
+  const matterMode = Boolean(fixedMatterId)
   useEffect(() => {
     let active = true
     getSampleTemplateSource(sample.id)
@@ -145,8 +155,10 @@ export default function SampleFillDialog({ sample, onClose }) {
       .catch(() => { if (active) setSourceUnavailable(true) })
     return () => { active = false }
   }, [sample.id])
+  const savingRef = useRef(false)
+  const requestClose = () => { if (!savingRef.current) onClose() }
   useEffect(() => {
-    const onKey = (event) => { if (event.key === 'Escape') onClose() }
+    const onKey = (event) => { if (event.key === 'Escape' && !savingRef.current) onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -172,6 +184,7 @@ export default function SampleFillDialog({ sample, onClose }) {
     setBusy(false)
   }
   const setValue = (name, value) => {
+    if (savedDocument) return
     manualFields.current.add(name)
     invalidateFinal()
     setSuggestedNames((current) => {
@@ -247,6 +260,11 @@ export default function SampleFillDialog({ sample, onClose }) {
     }
   }
 
+  // From a matter the destination is already known, so fill from it at once.
+  useEffect(() => {
+    if (fixedMatterId && fields.length) chooseMatter(fixedMatterId)
+  }, [fixedMatterId, sample.id])
+
   const renderPreview = async () => {
     const revision = ++renderRevision.current
     setBusy(true)
@@ -274,7 +292,49 @@ export default function SampleFillDialog({ sample, onClose }) {
     URL.revokeObjectURL(url)
   }
 
-  const submit = (event) => { event.preventDefault(); renderPreview() }
+  const saveToMatter = async () => {
+    if (!filledPreview || busy || smartFillBusy || saving || savedDocument) return
+    savingRef.current = true
+    setSaving(true)
+    setError('')
+    try {
+      const result = await saveSampleTemplateToMatter(sample.id, {
+        matter_id: fixedMatterId,
+        // Saving requires an explicit answer for every field; blank is an answer.
+        variables: Object.fromEntries(fields.map((field) => [field.name, values[field.name] ?? ''])),
+        ...(folderId ? { folder_id: folderId } : {}),
+      })
+      if (!mounted.current) return
+      setSavedDocument(result.matter_document || { id: result.matter_document_id, filename: result.output_filename, portal_visible: false })
+      await onSaved?.(result)
+    } catch (err) {
+      if (mounted.current) setError(err?.response?.data?.detail || err?.message || 'The document could not be saved to the matter. Try again.')
+    } finally {
+      savingRef.current = false
+      if (mounted.current) setSaving(false)
+    }
+  }
+
+  const shareWithClient = async () => {
+    if (!savedDocument || sharing) return
+    setSharing(true)
+    setShareError('')
+    try {
+      const updated = await updateMatterDocument(fixedMatterId, savedDocument.id, { portal_visible: true })
+      if (mounted.current) setSavedDocument((current) => ({ ...current, ...updated, portal_visible: true }))
+    } catch (err) {
+      if (mounted.current) setShareError(err?.response?.data?.detail || 'The document was saved but could not be shared. Share it from the Documents list.')
+    } finally {
+      if (mounted.current) setSharing(false)
+    }
+  }
+
+  const requiredMissing = smartFillCounts.requiredMissing > 0
+  const submit = (event) => {
+    event.preventDefault()
+    if (matterMode && filledPreview) saveToMatter()
+    else renderPreview()
+  }
   const renderInput = (field, value, onChange) => <FieldInput field={field} value={value} onChange={onChange} />
   const views = [
     ...VIEWS.filter((item) => item.id !== 'document' || documentAvailable),
@@ -282,7 +342,7 @@ export default function SampleFillDialog({ sample, onClose }) {
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:p-3" role="presentation" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:p-3" role="presentation" onClick={requestClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -293,7 +353,7 @@ export default function SampleFillDialog({ sample, onClose }) {
         <header className="shrink-0 border-b border-brand-line px-3 pb-2 pt-3 sm:px-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h3 id="sample-fill-title" className="truncate text-base font-semibold text-brand-ink sm:text-lg">Fill “{sample.title}”</h3>
+              <h3 id="sample-fill-title" className="truncate text-base font-semibold text-brand-ink sm:text-lg">{matterMode ? `Fill “${sample.title}” for this matter` : `Fill “${sample.title}”`}</h3>
               <details className="text-xs text-brand-muted">
                 <summary className="cursor-pointer">About this sample</summary>
                 <p className="mt-1 leading-5">
@@ -301,14 +361,16 @@ export default function SampleFillDialog({ sample, onClose }) {
                   {sourceContext ? ` · Source: ${sourceContext}` : ' · Source details were not recorded'}
                 </p>
                 {sample.description && <p className="mt-2 text-xs leading-5 text-brand-muted">{sample.description}</p>}
-                <p className="mt-1">Downloading does not save a copy to the matter or template library.</p>
+                <p className="mt-1">{matterMode
+                  ? 'Saving files the filled PDF on this matter. Nothing is added to your firm’s template library.'
+                  : 'Downloading does not save a copy to the matter or template library.'}</p>
               </details>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close fill dialog" className="rounded-lg p-1 text-brand-muted hover:bg-brand-bg hover:text-brand-ink">
+            <button type="button" onClick={requestClose} disabled={saving} aria-label="Close fill dialog" className="rounded-lg p-1 text-brand-muted hover:bg-brand-bg hover:text-brand-ink">
               <X size={18} aria-hidden="true" />
             </button>
           </div>
-          {(matterOpen || matterId) && (
+          {!matterMode && (matterOpen || matterId) && (
             <div className="mt-2 flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <MatterPicker matters={[]} selectedMatterId={matterId} onSelect={chooseMatter} loading={false} disabled={smartFillBusy || busy} />
@@ -331,14 +393,14 @@ export default function SampleFillDialog({ sample, onClose }) {
                 </button>
               ))}
             </div>
-            {!matterOpen && !matterId && (
+            {!matterMode && !matterOpen && !matterId && (
               <button type="button" onClick={() => setMatterOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-brand-line bg-brand-surface px-3 py-1.5 text-sm font-semibold text-brand-ink hover:bg-brand-bg">
                 <Wand2 size={15} aria-hidden="true" /> Fill from a matter
               </button>
             )}
             <p className="text-xs text-brand-muted" aria-live="polite">
               {smartFillBusy ? 'Filling from the matter…' : `${smartFillCounts.filled} filled · ${smartFillCounts.requiredMissing} required answers missing · ${smartFillCounts.optionalUnfilled} optional unanswered.`}
-              {smartFill && !smartFillBusy && ' Review every value before downloading.'}
+              {smartFill && !smartFillBusy && (matterMode ? ' Filled from this matter — review every value before saving.' : ' Review every value before downloading.')}
             </p>
           </div>
         </header>
@@ -392,6 +454,40 @@ export default function SampleFillDialog({ sample, onClose }) {
             </div>
           )}
           {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+          {savedDocument ? (
+            <div role="status" className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-brand-line py-3">
+              <p className="flex min-w-0 items-center gap-2 text-sm text-brand-ink">
+                <CheckCircle2 size={18} className="shrink-0 text-brand-green" aria-hidden="true" />
+                <span className="min-w-0">Saved to this matter’s documents{savedDocument.filename ? <> as <strong className="break-all">{savedDocument.filename}</strong></> : ''}.{savedDocument.portal_visible ? ' Shared with the client.' : ''}</span>
+              </p>
+              {shareError && <p role="alert" className="w-full text-sm text-red-700">{shareError}</p>}
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={downloadPreview} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-bg"><Download size={16} aria-hidden="true" /> Download</button>
+                {!savedDocument.portal_visible && <button type="button" disabled={sharing} onClick={shareWithClient} className="inline-flex items-center gap-2 rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50">
+                  {sharing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />} {sharing ? 'Sharing…' : 'Share with client'}
+                </button>}
+                <button type="button" onClick={onClose} className="rounded-lg bg-brand-ink px-4 py-2 text-sm font-semibold text-white">Done</button>
+              </div>
+            </div>
+          ) : matterMode ? (
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-brand-line py-3">
+              {requiredMissing && <p className="mr-auto text-xs text-brand-muted">Answer the required questions to finish.</p>}
+              <button type="button" onClick={requestClose} disabled={saving} className="rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-bg disabled:opacity-50">
+                Cancel
+              </button>
+              {filledPreview ? (
+                <button type="submit" disabled={busy || smartFillBusy || saving || requiredMissing} className="inline-flex items-center gap-2 rounded-lg bg-brand-ink px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                  {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+                  {saving ? 'Saving to matter…' : 'Save to matter'}
+                </button>
+              ) : (
+                <button type="submit" disabled={busy || smartFillBusy || !fields.length} className="inline-flex items-center gap-2 rounded-lg bg-brand-ink px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                  {busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <FileCheck2 size={16} aria-hidden="true" />}
+                  {busy ? 'Preparing final PDF…' : 'Review final PDF'}
+                </button>
+              )}
+            </div>
+          ) : (
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-brand-line py-3">
             <button type="button" onClick={onClose} className="rounded-lg border border-brand-line px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-bg">
               Cancel
@@ -402,6 +498,7 @@ export default function SampleFillDialog({ sample, onClose }) {
               {busy ? 'Preparing preview…' : 'Preview filled PDF'}
             </button>
           </div>
+          )}
         </form>
       </div>
     </div>

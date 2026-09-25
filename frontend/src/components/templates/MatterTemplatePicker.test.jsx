@@ -8,6 +8,11 @@ const harness = vi.hoisted(() => ({
 }))
 vi.mock('../../api', () => harness)
 vi.mock('react-router-dom', () => ({ useNavigate: () => harness.navigate }))
+vi.mock('./SampleFillDialog', () => ({ default: ({ sample, fixedMatterId, folderId, onSaved, onClose }) => <div role="dialog" aria-label={`Fill ${sample.title}`}>
+  <p>Filling {fixedMatterId} in {folderId}</p>
+  <button type="button" onClick={() => onSaved({ matter_document_id: 'filled' })}>Save filled form</button>
+  <button type="button" onClick={onClose}>Close fill</button>
+</div> }))
 vi.mock('../../pages/TemplatesPage', () => ({ RenderModal: ({ fixedMatterId, folderId, onSaved }) => <button onClick={() => onSaved({ matter_document_id: 'saved' })}>Review {fixedMatterId} in {folderId}</button> }))
 
 const firmItem = (overrides = {}) => ({ id: 'firm-1', title: 'Firm motion', is_active: true, current_version_no: 2, published_version_no: 2, ...overrides })
@@ -99,7 +104,7 @@ describe('matter template attachment catalog', () => {
     expect(await screen.findByRole('dialog', { name: /Preview: Global lease/ })).toBeVisible()
     expect(harness.getSampleTemplateSource).toHaveBeenCalledWith('sample-1')
     fireEvent.click(screen.getByRole('button', { name: 'Close PDF preview' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add to firm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to firm library' }))
     expect(harness.navigate).toHaveBeenLastCalledWith('/templates/new?sample=sample-1', { state: { preparationContext: { matterId: 'matter/one', folderId: 'intake', returnTo: '/matters/matter%2Fone?tab=documents' } } })
   })
 
@@ -138,5 +143,32 @@ describe('matter template attachment catalog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('preview for “Global lease” could not be loaded')
     fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }))
     await waitFor(() => expect(harness.getSampleTemplateSource).toHaveBeenCalledTimes(2))
+  })
+
+  it('fills a schema-backed global form directly on the matter instead of importing it', async () => {
+    const onSaved = vi.fn()
+    const onClose = vi.fn()
+    harness.getSampleTemplates.mockResolvedValue({ items: [sampleItem({ variable_schema: { fields: [{ name: 'county' }] } })] })
+    renderPicker({ onSaved, onClose })
+    fireEvent.click(await screen.findByRole('button', { name: 'Use Global lease on this matter' }))
+    expect(screen.getByRole('dialog', { name: 'Fill Global lease' })).toHaveTextContent('Filling matter/one in intake')
+    expect(harness.navigate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close fill' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(await screen.findByRole('dialog', { name: 'Attach template' })).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use Global lease on this matter' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save filled form' }))
+    expect(onSaved).toHaveBeenCalledWith({ matter_document_id: 'filled' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close fill' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('only offers adding to the firm library when a global form has no field schema', async () => {
+    renderPicker()
+    expect(await screen.findByText('Global lease')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /on this matter/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to firm library' })).toBeVisible()
   })
 })
