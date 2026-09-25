@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useConfirm } from '../components/dialog/ConfirmProvider'
 import { useToast } from '../components/toast/useToast'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   getCommunications,
   createCommunication,
   updateCommunication,
   deleteCommunication,
   scanEmailInbox,
+  matterCorrespondenceDownloadUrl,
 } from '../api'
 import ContactPicker from '../components/ContactPicker'
+import MatterPicker from '../components/prepare/MatterPicker'
 import {
   ArrowLeft,
   ArrowRight,
@@ -25,6 +27,9 @@ import {
   Pencil,
   ChevronDown,
   RefreshCw,
+  FolderInput,
+  Download,
+  Lock,
 } from 'lucide-react'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -34,7 +39,6 @@ const CHANNELS = [
   { value: 'email', label: 'Email' },
   { value: 'call', label: 'Call' },
   { value: 'meeting', label: 'Meeting' },
-  { value: 'note', label: 'Note' },
   { value: 'sms', label: 'SMS' },
   { value: 'letter', label: 'Letter' },
   { value: 'portal', label: 'Portal' },
@@ -109,10 +113,25 @@ function formatDateTime(dt) {
   })
 }
 
+function matterLabel(entry) {
+  if (!entry?.matter_id) return ''
+  const name = entry.matter_name || 'Matter'
+  return entry.matter_number ? `${name} (${entry.matter_number})` : name
+}
+
+// Seeds the matter picker with the entry's current matter so it shows by name.
+function currentMatterOption(entry) {
+  if (!entry?.matter_id) return []
+  return [{ id: entry.matter_id, matter_name: entry.matter_name || 'Matter', matter_number: entry.matter_number }]
+}
+
 // ── Log Form Modal ───────────────────────────────────────────────────────────
 
 function LogFormModal({ initial, onClose, onSaved }) {
   const isEdit = !!initial?.id
+  // A captured or sent message is the firm's record of what was said: it can
+  // be re-filed to the right matter or contact, never rewritten.
+  const isMoveOnly = isEdit && !!initial?.content_locked
   const [form, setForm] = useState({
     direction: initial?.direction || 'outbound',
     channel: initial?.channel || 'email',
@@ -135,27 +154,32 @@ function LogFormModal({ initial, onClose, onSaved }) {
     setSaving(true)
     setError(null)
     try {
-      const payload = {
-        direction: form.direction,
-        channel: form.channel,
-        subject: form.subject.trim(),
-        body: form.body.trim() || null,
-        summary: form.summary.trim() || null,
-        matter_id: form.matter_id.trim() || null,
-        contact_id: form.contact_id.trim() || null,
-        occurred_at: form.occurred_at ? new Date(form.occurred_at).toISOString() : null,
-      }
       let saved
       if (isEdit) {
-        saved = await updateCommunication(initial.id, {
-          subject: payload.subject,
-          body: payload.body,
-          summary: payload.summary,
-          matter_id: payload.matter_id,
-          contact_id: payload.contact_id,
-        })
+        // Send only what changed; the API refuses content edits on captured records.
+        const changes = {}
+        if (form.matter_id && form.matter_id !== initial.matter_id) changes.matter_id = form.matter_id
+        if (form.contact_id && form.contact_id !== initial.contact_id) changes.contact_id = form.contact_id
+        if (!isMoveOnly) {
+          const subject = form.subject.trim()
+          const body = form.body.trim()
+          const summary = form.summary.trim()
+          if (subject !== (initial.subject || '')) changes.subject = subject
+          if (body !== (initial.body || '').trim()) changes.body = body
+          if (summary !== (initial.summary || '').trim()) changes.summary = summary
+        }
+        saved = Object.keys(changes).length ? await updateCommunication(initial.id, changes) : initial
       } else {
-        saved = await createCommunication(payload)
+        saved = await createCommunication({
+          direction: form.direction,
+          channel: form.channel,
+          subject: form.subject.trim(),
+          body: form.body.trim() || null,
+          summary: form.summary.trim() || null,
+          matter_id: form.matter_id || null,
+          contact_id: form.contact_id || null,
+          occurred_at: form.occurred_at ? new Date(form.occurred_at).toISOString() : null,
+        })
       }
       onSaved(saved)
     } catch (err) {
@@ -165,148 +189,157 @@ function LogFormModal({ initial, onClose, onSaved }) {
     }
   }
 
+  const title = isMoveOnly ? 'Move to another matter' : isEdit ? 'Edit Communication' : 'Log Communication'
+  const submitLabel = saving ? 'Saving…' : isMoveOnly ? 'Move' : isEdit ? 'Save Changes' : 'Log Communication'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-brand-surface-2 border border-brand-line w-full max-w-lg mx-4 p-6 relative">
+      <div role="dialog" aria-modal="true" aria-labelledby="communicationspage-dialog-title" className="bg-brand-surface-2 border border-brand-line w-full max-w-lg mx-4 p-6 relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
+          aria-label="Close"
           className="absolute top-4 right-4 text-brand-muted hover:text-brand-ink"
         >
           <X size={16} />
         </button>
-        <h2 className="font-serif text-lg font-semibold text-brand-ink mb-5">
-          {isEdit ? 'Edit Communication' : 'Log Communication'}
-        </h2>
+        <h2 id="communicationspage-dialog-title" className="font-serif text-lg font-semibold text-brand-ink mb-5">{title}</h2>
         {error && (
           <div className="mb-4 text-sm text-brand-rose bg-brand-rose/10 border border-brand-rose/30 px-3 py-2">
             {error}
           </div>
         )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="communicationspage-channel" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-                Channel
-              </label>
-              <div className="relative">
-                <select id="communicationspage-channel"
-                  value={form.channel}
-                  onChange={set('channel')}
-                  disabled={isEdit}
-                  className="w-full appearance-none bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent disabled:opacity-60"
-                >
-                  {CHANNELS.filter((c) => c.value).map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={13}
-                  className="absolute right-2 top-3 text-brand-muted pointer-events-none"
+          {isMoveOnly ? (
+            <div className="border border-brand-line bg-brand-bg px-3 py-2 text-sm">
+              <p className="flex items-center gap-1.5 text-xs text-brand-muted mb-1">
+                <Lock size={11} /> Recorded {initial.direction} {initial.channel} · content can’t be edited
+              </p>
+              <p className="font-medium text-brand-ink">{initial.subject}</p>
+              <p className="text-xs text-brand-muted mt-0.5">{formatDateTime(initial.occurred_at)}</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="communicationspage-channel" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+                    Channel
+                  </label>
+                  <div className="relative">
+                    <select id="communicationspage-channel"
+                      value={form.channel}
+                      onChange={set('channel')}
+                      disabled={isEdit}
+                      className="w-full appearance-none bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent disabled:opacity-60"
+                    >
+                      {CHANNELS.filter((c) => c.value && c.value !== 'sms' && c.value !== 'portal').map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={13}
+                      className="absolute right-2 top-3 text-brand-muted pointer-events-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="communicationspage-direction" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+                    Direction
+                  </label>
+                  <div className="relative">
+                    <select id="communicationspage-direction"
+                      value={form.direction}
+                      onChange={set('direction')}
+                      disabled={isEdit}
+                      className="w-full appearance-none bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent disabled:opacity-60"
+                    >
+                      <option value="outbound">Outbound</option>
+                      <option value="inbound">Inbound</option>
+                    </select>
+                    <ChevronDown
+                      size={13}
+                      className="absolute right-2 top-3 text-brand-muted pointer-events-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="communicationspage-subject" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+                  Subject <span className="text-brand-rose">*</span>
+                </label>
+                <input id="communicationspage-subject"
+                  type="text"
+                  required
+                  value={form.subject}
+                  onChange={set('subject')}
+                  placeholder="Brief subject or description"
+                  className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent"
                 />
               </div>
-            </div>
-            <div>
-              <label htmlFor="communicationspage-direction" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-                Direction
-              </label>
-              <div className="relative">
-                <select id="communicationspage-direction"
-                  value={form.direction}
-                  onChange={set('direction')}
-                  disabled={isEdit}
-                  className="w-full appearance-none bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent disabled:opacity-60"
-                >
-                  <option value="outbound">Outbound</option>
-                  <option value="inbound">Inbound</option>
-                </select>
-                <ChevronDown
-                  size={13}
-                  className="absolute right-2 top-3 text-brand-muted pointer-events-none"
+
+              <div>
+                <label htmlFor="communicationspage-body" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+                  Body
+                </label>
+                <textarea id="communicationspage-body"
+                  rows={4}
+                  value={form.body}
+                  onChange={set('body')}
+                  placeholder="Full message or notes..."
+                  className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent resize-none"
                 />
               </div>
-            </div>
-          </div>
 
-          <div>
-            <label htmlFor="communicationspage-subject" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-              Subject <span className="text-brand-rose">*</span>
-            </label>
-            <input id="communicationspage-subject"
-              type="text"
-              required
-              value={form.subject}
-              onChange={set('subject')}
-              placeholder="Brief subject or description"
-              className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent"
-            />
-          </div>
+              <div>
+                <label htmlFor="communicationspage-summary" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+                  Summary
+                </label>
+                <textarea id="communicationspage-summary"
+                  rows={2}
+                  value={form.summary}
+                  onChange={set('summary')}
+                  placeholder="Short AI or manual summary..."
+                  className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent resize-none"
+                />
+              </div>
+            </>
+          )}
 
+          <MatterPicker
+            label={isEdit ? 'Matter' : 'Matter (optional)'}
+            inputId="communicationspage-matter"
+            matters={currentMatterOption(initial)}
+            selectedMatterId={form.matter_id}
+            onSelect={(matterId) => setForm((f) => ({ ...f, matter_id: matterId || '' }))}
+            loading={false}
+            disabled={saving}
+          />
           <div>
-            <label htmlFor="communicationspage-body" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-              Body
-            </label>
-            <textarea id="communicationspage-body"
-              rows={4}
-              value={form.body}
-              onChange={set('body')}
-              placeholder="Full message or notes..."
-              className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent resize-none"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="communicationspage-summary" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-              Summary
-            </label>
-            <textarea id="communicationspage-summary"
-              rows={2}
-              value={form.summary}
-              onChange={set('summary')}
-              placeholder="Short AI or manual summary..."
-              className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent resize-none"
+            <span className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+              {isEdit ? 'Contact' : 'Contact (optional)'}
+            </span>
+            <ContactPicker
+              ariaLabel="Contact"
+              value={initial?.contact_id ? { id: initial.contact_id, display_name: initial.contact_name || 'Contact' } : null}
+              onChange={(contact) => setForm((f) => ({ ...f, contact_id: contact?.id || '' }))}
+              placeholder="Search contacts..."
             />
           </div>
 
           {!isEdit && (
-            <>
-              <div>
-                <label htmlFor="communicationspage-matter-id-optional" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-                  Matter ID (optional)
-                </label>
-                <input id="communicationspage-matter-id-optional"
-                  type="text"
-                  value={form.matter_id}
-                  onChange={set('matter_id')}
-                  placeholder="UUID"
-                  className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent font-mono text-xs"
-                />
-              </div>
-              <div>
-                <span className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-                  Contact (optional)
-                </span>
-                <ContactPicker
-                  ariaLabel="Contact (optional)"
-                  value={null}
-                  onChange={(contact) => setForm((f) => ({ ...f, contact_id: contact?.id || '' }))}
-                  placeholder="Search contacts..."
-                />
-              </div>
-
-              <div>
-                <label htmlFor="communicationspage-occurred-at" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
-                  Occurred At
-                </label>
-                <input id="communicationspage-occurred-at"
-                  type="datetime-local"
-                  value={form.occurred_at}
-                  onChange={set('occurred_at')}
-                  className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-                />
-              </div>
-            </>
+            <div>
+              <label htmlFor="communicationspage-occurred-at" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1">
+                Occurred At
+              </label>
+              <input id="communicationspage-occurred-at"
+                type="datetime-local"
+                value={form.occurred_at}
+                onChange={set('occurred_at')}
+                className="w-full bg-brand-bg border border-brand-line px-3 py-2 text-sm text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
+              />
+            </div>
           )}
 
           <div className="flex justify-end gap-2 pt-2">
@@ -322,7 +355,7 @@ function LogFormModal({ initial, onClose, onSaved }) {
               disabled={saving}
               className="px-4 py-2 text-sm bg-brand-ink text-white hover:bg-brand-ink-2 transition-colors disabled:opacity-60"
             >
-              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Log Communication'}
+              {submitLabel}
             </button>
           </div>
         </form>
@@ -334,7 +367,10 @@ function LogFormModal({ initial, onClose, onSaved }) {
 // ── Entry Row ─────────────────────────────────────────────────────────────────
 
 function EntryRow({ entry, onEdit, onDelete }) {
-  const navigate = useNavigate()
+  const [expanded, setExpanded] = useState(false)
+  const matterTab = entry.channel === 'email' ? 'correspondence' : 'activity'
+  const detail = entry.body || entry.summary
+  const canDownload = entry.matter_id && entry.document_id
 
   return (
     <div className="flex items-start gap-4 px-5 py-4 border-b border-brand-line hover:bg-brand-line/20 transition-colors group">
@@ -347,48 +383,83 @@ function EntryRow({ entry, onEdit, onDelete }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <ChannelBadge channel={entry.channel} />
-          <span className="text-sm font-medium text-brand-ink truncate">{entry.subject}</span>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="text-sm font-medium text-brand-ink truncate text-left hover:underline"
+          >
+            {entry.subject}
+          </button>
+          {entry.content_locked && (
+            <span title="Recorded message — content can’t be edited" className="text-brand-muted">
+              <Lock size={11} />
+            </span>
+          )}
         </div>
-        {entry.summary && (
+        {!expanded && entry.summary && (
           <p className="text-xs text-brand-muted truncate">{entry.summary}</p>
+        )}
+        {expanded && (
+          <div className="mt-2 mb-1 border border-brand-line bg-brand-bg px-3 py-2 text-sm text-brand-ink">
+            {entry.summary && entry.body && (
+              <p className="text-xs text-brand-muted mb-2">{entry.summary}</p>
+            )}
+            <p className="whitespace-pre-wrap break-words">{detail || 'No message text was recorded.'}</p>
+            {canDownload && (
+              <a
+                href={matterCorrespondenceDownloadUrl(entry.matter_id, entry.id)}
+                className="mt-2 inline-flex items-center gap-1 text-xs text-brand-accent hover:underline"
+              >
+                <Download size={12} /> Download original
+              </a>
+            )}
+          </div>
         )}
         <div className="flex items-center gap-3 mt-1 text-xs text-brand-muted flex-wrap">
           <span>{formatDateTime(entry.occurred_at)}</span>
           {entry.matter_id && (
-            <button
-              onClick={() => navigate(`/plugins/litigation/matters/${entry.matter_id}`)}
-              className="text-brand-accent hover:underline font-mono"
+            <Link
+              to={`/matters/${entry.matter_id}?tab=${matterTab}`}
+              className="text-brand-accent hover:underline"
             >
-              Matter {entry.matter_id.slice(0, 8)}…
-            </button>
+              {matterLabel(entry)}
+            </Link>
           )}
+          {!entry.matter_id && <span className="italic">Not filed to a matter</span>}
           {entry.contact_id && (
-            <button
-              onClick={() => navigate(`/contacts/${entry.contact_id}`)}
-              className="text-brand-accent hover:underline font-mono"
+            <Link
+              to={`/contacts/${entry.contact_id}`}
+              className="text-brand-accent hover:underline"
             >
-              Contact {entry.contact_id.slice(0, 8)}…
-            </button>
+              {entry.contact_name || 'Contact'}
+            </Link>
           )}
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={() => onEdit(entry)}
-          className="p-1.5 text-brand-muted hover:text-brand-ink hover:bg-brand-line/40 transition-colors"
-          title="Edit"
-        >
-          <Pencil size={13} />
-        </button>
-        <button
-          onClick={() => onDelete(entry.id)}
-          className="p-1.5 text-brand-muted hover:text-brand-rose hover:bg-brand-rose/10 transition-colors"
-          title="Delete"
-        >
-          <Trash2 size={13} />
-        </button>
+      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {entry.channel !== 'sms' && (
+          <button
+            onClick={() => onEdit(entry)}
+            className="p-1.5 text-brand-muted hover:text-brand-ink hover:bg-brand-line/40 transition-colors"
+            title={entry.content_locked ? 'Move to another matter' : 'Edit'}
+            aria-label={entry.content_locked ? 'Move to another matter' : 'Edit'}
+          >
+            {entry.content_locked ? <FolderInput size={13} /> : <Pencil size={13} />}
+          </button>
+        )}
+        {entry.channel !== 'sms' && (
+          <button
+            onClick={() => onDelete(entry.id)}
+            className="p-1.5 text-brand-muted hover:text-brand-rose hover:bg-brand-rose/10 transition-colors"
+            title="Remove from log"
+            aria-label="Remove from log"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -411,6 +482,7 @@ export default function CommunicationsPage() {
   const [filterDirection, setFilterDirection] = useState('')
   const [filterMatterId, setFilterMatterId] = useState('')
   const [filterContactId, setFilterContactId] = useState('')
+  const [filterContact, setFilterContact] = useState(null)
   const [offset, setOffset] = useState(0)
 
   // Modal state
@@ -428,8 +500,8 @@ export default function CommunicationsPage() {
       const params = { limit: PAGE_SIZE, offset }
       if (filterChannel) params.channel = filterChannel
       if (filterDirection) params.direction = filterDirection
-      if (filterMatterId.trim()) params.matter_id = filterMatterId.trim()
-      if (filterContactId.trim()) params.contact_id = filterContactId.trim()
+      if (filterMatterId) params.matter_id = filterMatterId
+      if (filterContactId) params.contact_id = filterContactId
       const data = await getCommunications(params)
       if (requestSequence !== fetchSequenceRef.current) return
       setItems(data.items || [])
@@ -465,7 +537,7 @@ export default function CommunicationsPage() {
   }
 
   const handleDelete = async (id) => {
-    if (!await confirmAction({ title: 'Delete communication entry?', message: 'This log entry will be permanently removed.', confirmLabel: 'Delete entry', destructive: true })) return
+    if (!await confirmAction({ title: 'Remove from the communication log?', message: 'It will no longer appear on the matter or contact. The record is kept for audit.', confirmLabel: 'Remove', destructive: true })) return
     try {
       await deleteCommunication(id)
       setItems((prev) => prev.filter((e) => e.id !== id))
@@ -547,29 +619,28 @@ export default function CommunicationsPage() {
             </div>
           </div>
 
-          <div>
-            <label htmlFor="communicationspage-matter-id" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1.5">
-              Matter ID
-            </label>
-            <input id="communicationspage-matter-id"
-              type="text"
-              value={filterMatterId}
-              onChange={(e) => changeFilter(setFilterMatterId, e.target.value)}
-              placeholder="Paste UUID…"
-              className="w-full bg-brand-bg border border-brand-line px-2 py-1.5 text-xs font-mono text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent"
-            />
-          </div>
+          <MatterPicker
+            label="Matter"
+            inputId="communicationspage-filter-matter"
+            matters={[]}
+            selectedMatterId={filterMatterId}
+            onSelect={(matterId) => changeFilter(setFilterMatterId, matterId || '')}
+            loading={false}
+          />
 
           <div>
-            <label htmlFor="communicationspage-contact-id" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1.5">
-              Contact ID
-            </label>
-            <input id="communicationspage-contact-id"
-              type="text"
-              value={filterContactId}
-              onChange={(e) => changeFilter(setFilterContactId, e.target.value)}
-              placeholder="Paste UUID…"
-              className="w-full bg-brand-bg border border-brand-line px-2 py-1.5 text-xs font-mono text-brand-ink placeholder-brand-muted focus:outline-none focus:ring-1 focus:ring-brand-accent"
+            <span className="block text-xs font-semibold uppercase tracking-wider text-brand-muted mb-1.5">
+              Contact
+            </span>
+            <ContactPicker
+              key={filterContactId ? 'contact-set' : 'contact-empty'}
+              ariaLabel="Filter by contact"
+              value={filterContact}
+              onChange={(contact) => {
+                setFilterContact(contact || null)
+                changeFilter(setFilterContactId, contact?.id || '')
+              }}
+              placeholder="Search contacts..."
             />
           </div>
 
@@ -580,6 +651,7 @@ export default function CommunicationsPage() {
                 setFilterDirection('')
                 setFilterMatterId('')
                 setFilterContactId('')
+                setFilterContact(null)
                 setOffset(0)
               }}
               className="text-xs text-brand-muted hover:text-brand-rose transition-colors text-left flex items-center gap-1"

@@ -4,7 +4,7 @@ import { getMattersV2 } from '../../api'
 import { formatMatterLabel } from './prepareHelpers'
 
 // The matter chooser shared by the Generate dialog and the Prepare route.
-export default function MatterPicker({ matters = [], selectedMatterId, onSelect, loading, disabled = false }) {
+export default function MatterPicker({ matters = [], selectedMatterId, onSelect, loading, disabled = false, label = 'Fill from a matter', inputId = 'templatespage-matter' }) {
   const [query, setQuery] = useState('')
   const [choosing, setChoosing] = useState(false)
   const [matches, setMatches] = useState(null)
@@ -48,12 +48,12 @@ export default function MatterPicker({ matters = [], selectedMatterId, onSelect,
 
   return (
     <div className="border border-brand-line rounded bg-brand-bg p-3">
-      <label htmlFor="templatespage-matter" className="block text-sm font-medium text-brand-ink mb-2">
-        Fill from a matter
+      <label htmlFor={inputId} className="block text-sm font-medium text-brand-ink mb-2">
+        {label}
       </label>
       <div className="relative">
         <Search size={15} className="absolute left-3 top-2.5 text-brand-muted" />
-        <input id="templatespage-matter"
+        <input id={inputId}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

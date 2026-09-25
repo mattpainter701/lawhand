@@ -344,6 +344,7 @@ async def list_matter_correspondence(
         CommunicationLog.matter_id == matter_id,
         CommunicationLog.tenant_id == user.tenant_id,
         CommunicationLog.channel == "email",
+        CommunicationLog.status != "deleted",
     )
     if direction in ("inbound", "outbound"):
         query = query.where(CommunicationLog.direction == direction)
@@ -361,7 +362,12 @@ async def list_matter_correspondence(
     items = []
     for row in rows:
         if participant:
-            haystack = str(row.participants or "").lower()
+            # Addresses only: the stored Message-ID often carries a mail
+            # domain and would otherwise match a participant search.
+            parts = row.participants or {}
+            haystack = str(
+                [parts.get("from"), parts.get("to"), parts.get("cc")]
+            ).lower()
             if participant.lower() not in haystack:
                 continue
         items.append(

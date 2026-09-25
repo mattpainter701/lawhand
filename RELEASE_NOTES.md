@@ -5,6 +5,18 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.25.09 — Emails land on the right matter, and the log shows matter names
+
+Released September 25, 2026.
+
+Automatic email filing is more precise: fewer unrelated or duplicate emails on a matter. The Communications page now names each matter and contact, opens the full record, and protects captured messages from edits.
+
+- **Staff addresses no longer file mail.** A staff member's send-as address is no longer treated as a matter party, so their everyday mail stops being filed into every matter they work on.
+- **Case numbers match exactly.** A case number must appear whole, so 2024-CV-12 no longer catches 2024-CV-1234. When a client has several matters, an email naming one case number goes only to that matter.
+- **No duplicate copies.** An email that two staff members both received is filed once, not once per mailbox.
+- **Readable, linked communication log.** Each entry shows the matter and contact by name and links to them. Click a subject to read the message or download the original email.
+- **Captured messages are protected.** Emails, portal messages and texts that were actually sent or received can be moved to the right matter but no longer edited. Hand-logged notes stay editable.
+
 ## 2026.09.25.08 — Use a global library form on a matter without importing it
 
 Released September 25, 2026.

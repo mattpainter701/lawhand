@@ -56,7 +56,7 @@ async def gmail_read_mail(
                 token=token,
                 params={
                     "format": "metadata",
-                    "metadataHeaders": ["From", "To", "Subject", "Date"],
+                    "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"],
                 },
             )
         except ProviderError as exc:
@@ -85,6 +85,9 @@ async def gmail_read_mail(
                 "from": headers_dict.get("from", ""),
                 "to": headers_dict.get("to", ""),
                 "date": headers_dict.get("date", ""),
+                # RFC 5322 Message-ID: shared by every mailbox holding this
+                # message, unlike the per-mailbox Gmail id.
+                "internet_message_id": headers_dict.get("message-id"),
                 "is_read": "UNREAD" not in label_ids,
                 "labels": label_ids,
                 "importance": "high" if "IMPORTANT" in label_ids else "normal",
