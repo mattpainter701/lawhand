@@ -138,3 +138,41 @@ describe('FillOnDocument', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Opening the original document')
   })
 })
+
+describe('FillOnDocument packet hooks', () => {
+  it('marks shared boxes and lets the host drive "Next required"', () => {
+    pdfState.result = loaded
+    const onNextRequired = vi.fn()
+    render(
+      <FillOnDocument
+        source={new Blob(['pdf'])}
+        fields={fields}
+        values={{}}
+        onChange={() => {}}
+        renderInput={renderInput}
+        isShared={(field) => field.name === 'client_name'}
+        onNextRequired={onNextRequired}
+        requiredMissing={5}
+      />,
+    )
+    const page1 = screen.getByRole('group', { name: 'Page 1' })
+    expect(page1.querySelector('[data-fill-shared="client_name"]')).not.toBeNull()
+    expect(page1.querySelector('[data-fill-shared="city"]')).toBeNull()
+    expect(within(page1).getByLabelText('Client name')).toHaveAttribute('title', 'Client name (required) · also fills other documents')
+    fireEvent.click(screen.getByRole('button', { name: 'Next required (5)' }))
+    expect(onNextRequired).toHaveBeenCalledTimes(1)
+  })
+
+  it('brings the opening field into view when the host asks for it', () => {
+    pdfState.result = loaded
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      render(<FillOnDocument source={new Blob(['pdf'])} fields={fields} values={{}} onChange={() => {}} renderInput={renderInput} activeName="notes" onActiveChange={() => {}} scrollToActiveOnOpen />)
+      expect(scrollIntoView).toHaveBeenCalled()
+      expect(scrollIntoView.mock.contexts.at(-1)).toHaveAttribute('data-fill-field', 'notes')
+    } finally {
+      delete Element.prototype.scrollIntoView
+    }
+  })
+})

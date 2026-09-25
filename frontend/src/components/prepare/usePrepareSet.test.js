@@ -287,4 +287,35 @@ describe('usePrepareSet race handling', () => {
     expect(event.defaultPrevented).toBe(true)
     act(() => unmount())
   })
+
+  it('previews one member once its own required answers are in, while another member still waits', async () => {
+    const other = { id: 'template-2', title: 'Order', format: 'markdown', variable_schema: { fields: [{ name: 'hearing', required: true }] } }
+    api.getTemplateSet.mockResolvedValue({ id: SET, title: 'Packet', items: [
+      { template_id: template.id, title: template.title, position: 0, resolved_version_no: 1 },
+      { template_id: other.id, title: other.title, position: 1, resolved_version_no: 1 },
+    ] })
+    api.getTemplate.mockImplementation(async (id) => (id === other.id ? other : template))
+    api.getTemplateSetInterview.mockResolvedValue({ set_id: SET, unavailable: [], questions: [
+      { ...interview().questions[0], required: true },
+      { key: 'manual:template-2:hearing', label: 'Hearing', value_kind: 'text', required: true, card: '', appears_in: [{ template_id: other.id, template_title: other.title, field_name: 'hearing' }] },
+    ] })
+    api.getTemplateSetDocumentsVariables.mockResolvedValue({ documents: { [template.id]: { name: 'Ada' }, [other.id]: {} } })
+    api.renderTemplate.mockResolvedValue({ rendered: 'Ada' })
+    const { result } = renderHook(() => usePrepareSet({ setId: SET, initialMatterId: MATTER_A }))
+    await waitFor(() => expect(result.current.questions).toHaveLength(2))
+    expect(result.current.requiredMissingFor([template.id])).toEqual(['manual:template-1:name'])
+    expect(result.current.requiredMissingFor()).toEqual(['manual:template-1:name', 'manual:template-2:hearing'])
+    await act(async () => { await result.current.generateAll([template.id]) })
+    expect(result.current.error).toMatch(/Answer 1 required question before generating/)
+    act(() => result.current.setAnswer('manual:template-1:name', 'Ada'))
+    expect(result.current.requiredMissingFor([template.id])).toEqual([])
+    await act(async () => { await result.current.generateAll([template.id]) })
+    expect(api.renderTemplate).toHaveBeenCalledTimes(1)
+    expect(api.renderTemplate).toHaveBeenCalledWith(template.id, { variables: { name: 'Ada' } })
+    expect(result.current.previewOf({ template_id: template.id }).status).toBe('ready')
+    expect(result.current.previewOf({ template_id: other.id }).status).toBe('idle')
+    // The whole packet still waits on the other document's answer.
+    await act(async () => { await result.current.generateAll() })
+    expect(result.current.error).toMatch(/Answer 1 required question before generating/)
+  })
 })

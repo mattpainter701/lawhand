@@ -2,6 +2,22 @@
 
 - `app/services/matter_file_store.py`: the shared 2 MiB `_CHUNK_SIZE` is replaced by one constant per provider. Microsoft Graph upload sessions require every fragment except the last to be a multiple of 320 KiB, and 2 MiB is 6.4 × 320 KiB, so new OneDrive files over 4 MiB could fail to commit. `_GRAPH_CHUNK_SIZE = 10 * 320 * 1024` (3.125 MiB) now drives both `_upload_large_onedrive` and in-place replacement (`_replace_graph_item`, previously `_REPLACE_CHUNK_SIZE`). `_GOOGLE_CHUNK_SIZE = 8 * 256 * 1024` (2 MiB, unchanged) drives Drive resumable uploads, which need 256 KiB multiples. SharePoint stores still use a single `PUT …/content` and are not chunked.
 - Tests: `test_matter_file_store.py` uploads a >10 MiB file through the OneDrive and Google Drive chunked paths and checks that each non-final `Content-Range` span is a multiple of the provider's unit and that the ranges are contiguous.
+
+## 2026.09.25.06 — Fill a whole packet on its documents
+
+- `PrepareSetBody` (the Prepare route for a template set) gets a **Document / Questions / Packet** switch. Document is the default and shares the `lawhand.fill.view` preference with single-template Prepare; Packet is never remembered. A finished (all saved) packet opens on Packet.
+  - **Document** has one tab per available member, labelled with its status: `N missing` (required questions unanswered in that member), Previewed, Saving…, Saved or a failure. Each member tab has **Fill** and **Preview** sub-tabs.
+  - **Questions** is the previous interview (grouped by card, `set-answer-*` ids, `TemplateFillProgress`) beside the packet list, so Generate all / Save all / Send also work from there.
+  - **Packet** is the previous member list with Generate all, Save all, retries and Send cards.
+- PDF members with field geometry (and no newer draft) use `FillOnDocument` over their stored source. Sources are fetched with `getTemplateSource` the first time a member's Fill tab opens and cached for the page. Word and text members, and PDFs whose source cannot be opened, use `TemplateFillSource` above a `GuidedFieldBar`.
+- New `packetFill.js` maps member fields to interview questions through `appears_in` (`memberDocumentFields`, `memberValues`). Typing on any member therefore reads and writes the shared `answers[question.key]`. Fields no question asks (signatures, `value_from`, `item.*`) render markers.
+- Shared answers are visible: `FillOnDocument` accepts `isShared`, which draws a link marker on the box and adds "also fills other documents" to its title; the guided bar's editor lists **Also fills: …**.
+- **Next required** walks the packet with `nextRequiredStop`: later in the member, then the next member's first missing box, wrapping. Each missing question is listed once, at its first member. `FillOnDocument` accepts `onNextRequired`/`requiredMissing` so the host drives the button, and `scrollToActiveOnOpen` so the opened member scrolls to that box. The bar input takes focus. Enter verifies and moves to the next box in the member.
+- The per-member `PdfPreviewDialog` is replaced by the **Preview** sub-tab (`GeneratedPdfPreview`, the Word download or the Markdown text). It calls `generateAll([memberId])` 600 ms after it opens with that member's required answers present and again after answers change; failures show **Retry preview**. The packet list's **Open preview** opens that tab.
+- `usePrepareSet.generateAll(only)` now checks only the named members' required questions (new `requiredMissingFor`), so one document (or a retry) can preview while another still waits. `generateAll()` still requires every answer.
+- New shared `FieldEditor` holds the per-field editor: required state, confidence, Confirm, the input by type, Verify and Enter-to-advance. `PrepareDocumentBody.renderFieldEditor` now composes it, with its provenance, firm-profile, "now suggests", signing and `value_from` content passed as slots. `PrepareSetBody`'s inline copy of the inputs is gone.
+- No backend or migration changes.
+
 ## 2026.09.25.05 — Assistant Word drafts keep your cloud edits and formatting
 
 - **D34: a LawHand text save no longer orphans Word Online / Google Docs edits.** `PATCH /api/tasks/{id}/pending-action` on an artifact-bound `matter_document_draft` now reads the bound working copy (`read_current_cloud_bytes`) and compares its SHA-256 with the recorded `document_sha256` before writing a revision or superseding anything.

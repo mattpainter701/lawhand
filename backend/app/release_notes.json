@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.25.06",
+      "version": "2026.09.25.06",
+      "title": "Fill a whole packet on its documents",
+      "published_at": "2026-09-25",
+      "summary": "Preparing a template set now opens on the documents themselves, one tab per document. Each answer is still asked once, and typing it on any document fills every document that uses it.",
+      "highlights": [
+        {
+          "title": "One tab per document",
+          "description": "Type on each PDF's own pages, or on the page reference for Word and text templates. Each tab shows how many required answers are missing, or that it is previewed or saved."
+        },
+        {
+          "title": "Shared answers are visible",
+          "description": "A box whose answer also fills another document carries a link marker, and the bar under the document names those documents under Also fills."
+        },
+        {
+          "title": "One pass through the packet",
+          "description": "Next required moves on to the next document's first missing box and asks a shared answer only once. Each document has a Preview tab in place of the preview dialog."
+        }
+      ]
+    },
+    {
       "id": "2026.09.25.05",
       "version": "2026.09.25.05",
       "title": "Assistant Word drafts keep your cloud edits and formatting",

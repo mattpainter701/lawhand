@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.25.06 — Fill a whole packet on its documents
+
+Released September 25, 2026.
+
+Preparing a template set now opens on the documents themselves, one tab per document. Each answer is still asked once, and typing it on any document fills every document that uses it.
+
+- **One tab per document.** Type on each PDF's own pages, or on the page reference for Word and text templates. Each tab shows how many required answers are missing, or that it is previewed or saved.
+- **Shared answers are visible.** A box whose answer also fills another document carries a link marker, and the bar under the document names those documents under Also fills.
+- **One pass through the packet.** Next required moves on to the next document's first missing box and asks a shared answer only once. Each document has a Preview tab in place of the preview dialog.
+
 ## 2026.09.25.05 — Assistant Word drafts keep your cloud edits and formatting
 
 Released September 25, 2026.

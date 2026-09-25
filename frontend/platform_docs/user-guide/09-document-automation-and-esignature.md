@@ -152,6 +152,15 @@ A workflow template can list documents to prepare alongside its checklist. When 
 
 A [template set](/templates/sets) groups the templates one matter's packet needs, such as a fee agreement, an engagement letter, and an intake form, so one interview fills them all. Preparing a set runs the same fill, review, preview, and save steps for each member; each member is saved to the matter separately and can be sent for signature from the set.
 
+Preparing a set opens on the **Document** view, with one tab per document along the top. Each tab shows what that document still needs: how many required answers are missing, **Previewed**, or **Saved**.
+
+- **Fill** shows the document itself. For a PDF form, type into each box on the page. For a Word or text template, select a highlighted placeholder. The bar under the document edits the selected answer, as it does for a single document.
+- Each question is asked once for the whole packet. Typing an answer on any document fills it in every document that uses it. A box whose answer also fills another document carries a small link marker, and the bar names those documents under **Also fills**.
+- **Next required** walks the whole packet. After the last missing answer in one document, it opens the next document at its first missing box. An answer shared by several documents is asked only once.
+- **Preview** shows that document as it will be generated. It prepares itself once the document's own required answers are in, and again after you change an answer.
+
+Choose **Questions** for the single interview, grouped by topic, beside the packet. LawHand remembers whether you prefer **Document** or **Questions** on this browser. Choose **Packet** (or **Review the packet**) to **Generate all**, **Save all to matter**, and then send the saved PDFs for signature.
+
 A suggested dropdown answer must match one of the options. Recognized state names and abbreviations are matched automatically; an unmatched suggestion stays missing until you choose an answer.
 
 ## Fill a sample form

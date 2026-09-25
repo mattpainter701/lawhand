@@ -12,7 +12,8 @@ import FillOnDocument, { GuidedFieldBar, useGuidedFields } from '../templates/Fi
 import { placementsFor } from '../templates/pdfFieldGeometry'
 import { readFillViewPreference, writeFillViewPreference } from '../templates/fillViewPreference'
 import useTemplateSourceBlob from './useTemplateSourceBlob'
-import { fillValue, isSigningField, suggestionConfidenceLabel, suggestionOriginLabel } from '../templates/templateFillReview'
+import FieldEditor from './FieldEditor'
+import { fillValue, isSigningField, suggestionOriginLabel } from '../templates/templateFillReview'
 import { getMatterDocumentDownloadUrl, triggerBlobDownload } from '../../api'
 import { downloadRenderedText, friendlyVariableLabel } from './prepareHelpers'
 
@@ -183,104 +184,46 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     const signingField = isSigningField(field)
     const label = field.label || friendlyVariableLabel(name)
     const inputId = `template-variable-${name}`
-    const options = (field.options || []).map((option) => (
-      typeof option === 'object'
-        ? { value: option.value ?? option.name ?? option.label ?? '', label: option.label ?? option.name ?? option.value ?? '' }
-        : { value: option, label: option }
-    ))
+    const advance = () => followField(verifyAndAdvanceCurrentValue(name))
     return (
-    <div key={name} onFocus={() => setFocusedFillName(name)} className={signingField ? 'border border-brand-line rounded bg-brand-bg px-3 py-2' : ''}>
-      {signingField ? (
-        <p className="block text-xs font-medium text-brand-muted mb-0.5">
-          {label}
-        </p>
-      ) : (
-        <label htmlFor={inputId} className="block text-xs font-medium text-brand-muted mb-0.5">
-          {label}{field.required ? ' *' : ''}
-        </label>
-      )}
-      {review && !review.present && <p className={`mb-1 text-xs font-semibold ${field.required ? 'text-brand-rose' : 'text-brand-amber'}`}>{field.required ? 'Required — missing' : 'Optional — not filled'}</p>}
-      {fieldSources[name] && <p className="mb-1 text-xs text-brand-muted">{suggestionOriginLabel(fieldSources[name])}{fieldSources[name].provenance?.updated_at ? ` · Updated ${new Date(fieldSources[name].provenance.updated_at).toLocaleDateString()}` : ''}</p>}
-      {field.binding?.startsWith('firm.') && <p className="mb-1 text-xs text-brand-muted">Shared firm profile. Missing or outdated details can be updated once by a firm administrator in Firm settings, then refreshed here with Smart Fill.</p>}
-      {fieldSources[name]?.provenance?.source_document_id && <a className="block mb-1 text-xs underline" href={getMatterDocumentDownloadUrl(matterId, fieldSources[name].provenance.source_document_id)} target="_blank" rel="noreferrer">Open reviewed source document</a>}
-      {review?.source && <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-        <span>{suggestionConfidenceLabel(review)}</span>
-        {review.needsReview ? <button type="button" disabled={saving} className="rounded border border-brand-line px-2 py-1" onClick={() => setReviewedValues(prev => ({ ...prev, [name]: fillValue(variables[name]) }))}>Confirm {label}</button> : <span className="text-brand-green">Reviewed</span>}
-      </div>}
-      {changedSuggestion && <div className="mb-2 rounded border border-brand-amber/40 bg-brand-amber/10 p-2 text-xs">
-        <p>{changedSuggestion.source_type === 'firm_profile' ? 'Firm profile now suggests' : 'Matter now suggests'}: {fillValue(changedSuggestion.suggested_value)}</p>
-        <button type="button" disabled={saving} className="mt-1 rounded border border-brand-line px-2 py-1" onClick={() => { setVariable(name, fillValue(changedSuggestion.suggested_value)); setFieldSources(prev => ({ ...prev, [name]: changedSuggestion })); setReviewedValues(prev => ({ ...prev, [name]: undefined })) }}>Use updated {label}</button>
-      </div>}
-      {field.value_from ? <p id={inputId} className="text-sm text-brand-muted">Uses {fieldDefinitions[field.value_from]?.label || field.value_from}</p> : signingField ? (
-        <p className="text-sm text-brand-muted">
-          {fieldType === 'date' ? `Signing date is completed by ${field.signer_role} during e-signing.` : 'Signature area is left blank for signing; it is not populated during document generation.'}
-          {field.pdf_field_name ? ` PDF field: ${field.pdf_field_name}.` : ''}
-        </p>
-      ) : fieldType === 'checkbox' ? (
-        <label className="inline-flex items-center gap-2 text-sm text-brand-ink py-1">
-          <input
-            id={inputId}
-            type="checkbox"
-            checked={variables[name] === 'true'}
-            onChange={(e) => updateValue(name, e.target.checked ? 'true' : 'false')}
-            disabled={saving}
-            className="h-4 w-4 rounded border-brand-line text-brand-accent focus:ring-brand-accent"
-          />
-          Checked
-        </label>
-      ) : (fieldType === 'choice' || fieldType === 'radio') && options.length > 0 ? (
-        <select
-          id={inputId}
-          value={variables[name] || ''}
-          onChange={(e) => updateValue(name, e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); followField(verifyAndAdvanceCurrentValue(name)) } }}
-          disabled={saving}
-          className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-        >
-          <option value="">Select {label}</option>
-          {options.map((option) => <option key={String(option.value)} value={option.value}>{option.label}</option>)}
-        </select>
-      ) : fieldType === 'multiline' || field.multiline ? (
-        <textarea
-          id={inputId}
-          rows={3}
-          value={variables[name] || ''}
-          onChange={(e) => updateValue(name, e.target.value)}
-          disabled={saving}
-          className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-          placeholder={`Enter ${label}`}
-        />
-      ) : (
-        <input
-          id={inputId}
-          type="text"
-          value={variables[name] || ''}
-          onChange={(e) => updateValue(name, e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && String(variables[name] || '').trim()) { e.preventDefault(); followField(verifyAndAdvanceCurrentValue(name)) } }}
-          disabled={saving}
-          className="w-full px-3 py-2 border border-brand-line rounded text-sm bg-brand-bg text-brand-ink focus:outline-none focus:ring-1 focus:ring-brand-accent"
-          placeholder={`Enter ${label}`}
-        />
-      )}
-      {review?.present && !signingField && !field.value_from && (
-        <label className={`mt-1 inline-flex items-center gap-2 text-xs ${review.verified ? 'text-brand-green' : 'text-brand-muted'}`}>
-          <input
-            id={`template-verified-${name}`}
-            type="checkbox"
-            aria-label={`Verified: ${label}`}
-            checked={Boolean(review.verified)}
-            onChange={() => toggleValueVerified(name, variables[name], review.verified)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); followField(verifyAndAdvanceCurrentValue(name)) } }}
-            disabled={saving}
-            className="h-3.5 w-3.5 rounded border-brand-line text-brand-green focus:ring-brand-green"
-          />
-          {review.verified ? 'Verified' : 'Verify'}
-        </label>
-      )}
-      {field.pdf_field_name && !signingField && (
-        <p className="mt-1 text-[11px] text-brand-muted">PDF field: {field.pdf_field_name}{field.page ? ` · Page ${field.page}` : ''}</p>
-      )}
-    </div>
+      <FieldEditor
+        key={name}
+        inputId={inputId}
+        verifyId={`template-verified-${name}`}
+        label={label}
+        required={Boolean(field.required)}
+        asHeading={signingField}
+        fieldType={fieldType}
+        multiline={Boolean(field.multiline)}
+        options={field.options}
+        value={variables[name] || ''}
+        disabled={saving}
+        review={review}
+        onFocus={() => setFocusedFillName(name)}
+        onChange={(value) => updateValue(name, value)}
+        onConfirm={() => setReviewedValues(prev => ({ ...prev, [name]: fillValue(variables[name]) }))}
+        onToggleVerified={() => toggleValueVerified(name, variables[name], review.verified)}
+        onEnter={advance}
+        className={signingField ? 'border border-brand-line rounded bg-brand-bg px-3 py-2' : ''}
+        notes={<>
+          {fieldSources[name] && <p className="mb-1 text-xs text-brand-muted">{suggestionOriginLabel(fieldSources[name])}{fieldSources[name].provenance?.updated_at ? ` · Updated ${new Date(fieldSources[name].provenance.updated_at).toLocaleDateString()}` : ''}</p>}
+          {field.binding?.startsWith('firm.') && <p className="mb-1 text-xs text-brand-muted">Shared firm profile. Missing or outdated details can be updated once by a firm administrator in Firm settings, then refreshed here with Smart Fill.</p>}
+          {fieldSources[name]?.provenance?.source_document_id && <a className="block mb-1 text-xs underline" href={getMatterDocumentDownloadUrl(matterId, fieldSources[name].provenance.source_document_id)} target="_blank" rel="noreferrer">Open reviewed source document</a>}
+        </>}
+        afterReview={changedSuggestion && <div className="mb-2 rounded border border-brand-amber/40 bg-brand-amber/10 p-2 text-xs">
+          <p>{changedSuggestion.source_type === 'firm_profile' ? 'Firm profile now suggests' : 'Matter now suggests'}: {fillValue(changedSuggestion.suggested_value)}</p>
+          <button type="button" disabled={saving} className="mt-1 rounded border border-brand-line px-2 py-1" onClick={() => { setVariable(name, fillValue(changedSuggestion.suggested_value)); setFieldSources(prev => ({ ...prev, [name]: changedSuggestion })); setReviewedValues(prev => ({ ...prev, [name]: undefined })) }}>Use updated {label}</button>
+        </div>}
+        readOnly={field.value_from ? <p id={inputId} className="text-sm text-brand-muted">Uses {fieldDefinitions[field.value_from]?.label || field.value_from}</p> : signingField ? (
+          <p className="text-sm text-brand-muted">
+            {fieldType === 'date' ? `Signing date is completed by ${field.signer_role} during e-signing.` : 'Signature area is left blank for signing; it is not populated during document generation.'}
+            {field.pdf_field_name ? ` PDF field: ${field.pdf_field_name}.` : ''}
+          </p>
+        ) : null}
+        footer={field.pdf_field_name && !signingField && (
+          <p className="mt-1 text-[11px] text-brand-muted">PDF field: {field.pdf_field_name}{field.page ? ` · Page ${field.page}` : ''}</p>
+        )}
+      />
     )
   }
 

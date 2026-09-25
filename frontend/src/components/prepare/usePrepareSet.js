@@ -477,6 +477,15 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   }
 
   const availableMembers = members.filter((member) => member.template && member.output)
+  // Required questions still unanswered for the named members (every member
+  // when `only` is null).
+  const requiredMissingFor = (only = null) => {
+    if (!only) return requiredUnresolvedNames
+    const missing = new Set(requiredUnresolvedNames)
+    return questions
+      .filter((question) => missing.has(question.key) && (question.appears_in || []).some((ref) => only.some((id) => String(id) === String(ref.template_id))))
+      .map((question) => question.key)
+  }
   const previewOf = (member) => previews[member.template_id] || memberState('idle')
   const saveOf = (member) => saves[member.template_id] || null
   const allPreviewed = availableMembers.length > 0 && availableMembers.every((member) => previewOf(member).status === 'ready' || saveOf(member)?.status === 'saved')
@@ -487,7 +496,9 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   // per member, three at a time. `only` limits a retry to the named members.
   const generateAll = async (only = null) => {
     if (!matterId.trim()) { setError('Choose the destination matter before generating the packet.'); return }
-    if (requiredUnresolvedNames.length) { setError(`Answer ${requiredUnresolvedNames.length} required question${requiredUnresolvedNames.length === 1 ? '' : 's'} before generating.`); return }
+    // A retry or one document's preview needs only that document's answers.
+    const missing = requiredMissingFor(only)
+    if (missing.length) { setError(`Answer ${missing.length} required question${missing.length === 1 ? '' : 's'} before generating.`); return }
     const targets = availableMembers.filter((member) => !only || only.includes(member.template_id))
     const revision = revisionRef.current
     const targetMatterId = matterId.trim()
@@ -534,7 +545,7 @@ export default function usePrepareSet({ setId, initialMatterId = '', folderId = 
   return {
     set, members, availableMembers, unavailable, interview, questions, loading, error, setError,
     matterId, selectMatter, answers, setAnswer, reviewedValues, setReviewedValues, verifiedNames, toggleVerified,
-    fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames,
+    fieldFilter, setFieldFilter, filteredKeys, nextField, progress, requiredUnresolvedNames, requiredMissingFor,
     smartFillState, smartFillMessage, refresh: () => loadInterview(matterId.trim()),
     previews, previewOf, saves, saveOf, generating, saving: saving || background === 'saving', generateAll, saveAll, allPreviewed, allSaved,
     savedDocuments, sendable: savedDocuments.filter(renderIsSendable).map(savedDocumentFromRender),
