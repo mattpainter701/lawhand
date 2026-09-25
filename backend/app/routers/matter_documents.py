@@ -26,6 +26,7 @@ from app.services.upload_guard import reject_oversized_request
 from app.services.portal_document_access import matter_signing_grant_document_ids
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff
 from app.models.matter_document import MatterDocument
 from app.models.matter_document_folder import MatterDocumentFolder
 from app.models.matter_document_tag import MatterDocumentTagLink
@@ -422,6 +423,7 @@ async def list_matter_documents(
 ):
     """List documents attached to a matter, optionally scoped to a folder."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
 
@@ -523,6 +525,7 @@ async def upload_matter_document(
 ):
     """Upload a file attachment to a matter."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     matter = await _get_matter_or_404(matter_id, user.tenant_id, db)
 
@@ -621,6 +624,7 @@ async def update_matter_document(
 ):
     """Update description or category of an attached document."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     doc = await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
 
@@ -697,6 +701,7 @@ async def delete_matter_document(
 ):
     """Delete an attached document and its file from disk."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     doc = await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     await db.refresh(doc, with_for_update=True)
@@ -747,6 +752,7 @@ async def open_matter_document(
 ):
     """Resolve a fresh tenant-provider editing URL from durable object IDs."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     doc = await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     try:
@@ -786,24 +792,6 @@ async def _lock_doc_or_404(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
-
-
-def _require_firm_staff(user) -> None:
-    """Opening, bringing back or replacing a matter document is staff work.
-
-    A client-portal login is a real ``User`` (``role="client"``) whose token
-    ``get_current_user`` accepts, and portal responses expose shared document
-    IDs. Refuse it before any database or provider access so a client can
-    never overwrite a firm document.
-    """
-    if (getattr(user, "role", "") or "").strip().lower() == "client":
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "staff_only",
-                "message": "Only firm staff can edit matter documents.",
-            },
-        )
 
 
 def _cloud_edit_http_error(exc: cloud_edit.CloudEditError) -> HTTPException:
@@ -870,7 +858,7 @@ async def start_matter_document_cloud_edit(
     is hash-checked.
     """
     user = await get_current_user(request, db)
-    _require_firm_staff(user)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     doc = await _lock_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     try:
@@ -931,7 +919,7 @@ async def reconcile_matter_document(
     reason.
     """
     user = await get_current_user(request, db)
-    _require_firm_staff(user)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     doc = await _lock_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     tenant_id = user.tenant_id
@@ -1003,7 +991,7 @@ async def upload_revised_matter_document(
     those edits must be brought back first.
     """
     user = await get_current_user(request, db)
-    _require_firm_staff(user)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     max_bytes = cloud_edit.MAX_REVISED_BYTES
     reject_oversized_request(request, max_bytes, max_bytes // (1024 * 1024))
@@ -1120,6 +1108,7 @@ async def download_matter_document(
 ):
     """Download exact registered bytes without trusting a persisted display URL."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     doc = await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
 
@@ -1215,6 +1204,7 @@ async def propose_matter_document_facts(
     and fails soft to the deterministic result.
     """
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return await matter_fact_extraction.propose(
@@ -1244,6 +1234,7 @@ async def search_matter_document_text(
     snippet is the document's own words.
     """
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_matter_or_404(matter_id, user.tenant_id, db)
     results = await matter_document_index.search(
@@ -1269,6 +1260,7 @@ async def list_matter_document_form_sources(
 ):
     """The forms this matter has generated, so a scan can be read against one."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return {
@@ -1292,6 +1284,7 @@ async def read_matter_document_against_form(
     to accept through ``facts/accept``; nothing is written here.
     """
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return await matter_form_reading.read_against_form(
@@ -1315,6 +1308,7 @@ async def accept_matter_document_fact(
 ):
     """Write one reviewed value after re-proving it against the live source."""
     user = await get_current_user(request, db)
+    require_firm_staff(user)
     await set_tenant_context(db, str(user.tenant_id))
     await _get_doc_or_404(doc_id, matter_id, user.tenant_id, db)
     return await matter_fact_extraction.accept(
