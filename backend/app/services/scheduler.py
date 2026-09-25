@@ -601,6 +601,21 @@ class LegalScheduler:
             replace_existing=True,
             max_instances=1,
         )
+        # A matter folder share that could not be removed when someone left a
+        # matter is retried by its own durable job; this hourly sweep re-queues
+        # any that outlived those retries, so the removal never silently stops.
+        from app.services.matter_folder_shares import enqueue_stale_unshare_jobs
+
+        self.scheduler.add_job(
+            enqueue_stale_unshare_jobs,
+            "interval",
+            hours=1,
+            id="matter-folder-unshare-sweep",
+            jitter=INTERVAL_JOB_JITTER_SECONDS,
+            name="Matter Folder Unshare Sweep",
+            replace_existing=True,
+            max_instances=1,
+        )
         self.scheduler.add_job(
             process_pending_teams_voice_jobs,
             "interval",
