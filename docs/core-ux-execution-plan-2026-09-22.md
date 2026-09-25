@@ -2,6 +2,8 @@
 
 Companion to the [core UX epic](./core-ux-future-state-epic-2026-09-22.md). The epic holds scope, estimates and acceptance criteria; this document holds implementation order, prerequisites and evidence.
 
+The document owner's plan for filling and editing documents (document-first fill, Open in Word/Google Docs with sync back) is [document-fill-ux-plan-2026-09-24.md](./document-fill-ux-plan-2026-09-24.md). S1.11, S3.10 and S6.10–S6.11 consume its contracts.
+
 ---
 
 This is the task-level execution plan for the [epic](./core-ux-future-state-epic-2026-09-22.md)'s UX stories. All checkboxes are **planned, not completed**. The hierarchy is epic → phase gate → sprint → numbered task → implementation PR/evidence. UX-xx remains the scope/estimate identifier; Sx.yy identifies an executable task. The story table defines the outcome, this section defines implementation order, and [Usability validation](./core-ux-future-state-epic-2026-09-22.md#usability-validation) remains the only source of scenario thresholds.
