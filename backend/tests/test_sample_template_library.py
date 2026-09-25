@@ -314,24 +314,20 @@ def test_the_seeder_rejects_an_unknown_provenance_field():
         _provenance({"slug": "x", "provenance": "Example Courts"})
 
 
-def test_duplicate_titles_are_distinct_files_not_byte_duplicates():
-    """#504: the repeated titles cannot be mechanically de-duplicated.
+def test_titles_are_unique_and_read_from_the_document_where_curated():
+    """#504: several distinct files shared a scraped title ("ND Divorce" x3).
 
-    If this ever fails because two same-titled forms share a digest, the right
-    fix is to drop one from the manifest — not to label them apart.
+    Curation replaced each with the title the form prints ("Summons",
+    "Complaint"), so a paralegal picking a form sees which one it is.
     """
 
-    by_title: dict[str, list[dict]] = {}
-    for form in _manifest()["forms"]:
-        by_title.setdefault(form["title"].strip().lower(), []).append(form)
-
-    duplicates = {
-        title: forms for title, forms in by_title.items() if len(forms) > 1
-    }
-    assert duplicates, "expected the known duplicate-titled variants"
-    for title, forms in duplicates.items():
-        digests = {form["sha256"] for form in forms}
-        assert len(digests) == len(forms), f"{title} has byte-identical variants"
+    forms = _manifest()["forms"]
+    titles = [form["title"].strip().lower() for form in forms]
+    assert len(titles) == len(set(titles))
+    for form in forms:
+        assert form.get("title_source") in (None, "document"), form["slug"]
+        if form.get("title_source") == "document":
+            assert form["description"].startswith(form["title"]), form["slug"]
 
 
 # ── Curated court forms: bindings and option labels ─────────────────────────
@@ -511,7 +507,9 @@ def test_a_rebuild_carries_curation_only_to_unchanged_files(tmp_path):
                 "forms": [
                     {"slug": "a", "sha256": "aa", "bindings": {"x": "matter.judge"},
                      "option_labels": {"r": {"1": "One"}}},
-                    {"slug": "b", "sha256": "bb"},
+                    {"slug": "b", "sha256": "bb", "title": "Scraped"},
+                    {"slug": "d", "sha256": "dd", "title": "Summons",
+                     "description": "Summons.", "title_source": "document"},
                     {"slug": "c", "sha256": "cc", "origin": "authored",
                      "bindings": {"y": "client.name"}},
                 ]
@@ -520,7 +518,8 @@ def test_a_rebuild_carries_curation_only_to_unchanged_files(tmp_path):
         encoding="utf-8",
     )
     assert module._curation_by_digest(tmp_path) == {
-        "aa": {"bindings": {"x": "matter.judge"}, "option_labels": {"r": {"1": "One"}}}
+        "aa": {"bindings": {"x": "matter.judge"}, "option_labels": {"r": {"1": "One"}}},
+        "dd": {"title": "Summons", "description": "Summons.", "title_source": "document"},
     }
     assert module._curation_by_digest(tmp_path / "missing") == {}
 

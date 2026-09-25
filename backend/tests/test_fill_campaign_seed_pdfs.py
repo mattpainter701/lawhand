@@ -18,11 +18,15 @@ pytestmark = pytest.mark.asyncio
 #: record exists on the catalogue but not on this matter.
 EXPECTED_BOUND_BLANK = {
     "general-legal-services-fee-agreement": {"contingency_percentage"},
+    # A business-name box, bound to the client's organization name, stays
+    # blank for the individual client the scenario carries.
+    "alaska-motor-vehicle-power-of-attorney-847": {"company_name_if_applicable"},
+    "hawaii-tax-power-of-attorney-n-848": {"110"},
 }
 
 
 def _scenario_for(form):
-    if form["slug"] == "nd-informal-probate-guidebook":
+    if any(path.startswith("estate.") for path in form["bindings"].values()):
         return scenarios.probate_estate()
     return scenarios.individual_client()
 

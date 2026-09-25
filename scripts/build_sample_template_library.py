@@ -61,6 +61,9 @@ _PRESERVED_ORIGINS = {"authored", "court_form"}
 # entry with the same digest -- the same bytes, hence the same field names --
 # and drops them when the file itself changed.
 _CURATED_KEYS = ("bindings", "field_labels", "option_labels")
+#: Carried too when ``title_source`` is "document": the title was read from the
+#: form itself, which is better evidence than the scraped catalog's name.
+_DOCUMENT_TITLE_KEYS = ("title", "description", "title_source")
 
 # "Fillable" is not enough: the template studio also rejects PDFs with active
 # content (embedded files, /URI links, /OpenAction, /AA, XFA, etc.). Use the
@@ -171,13 +174,15 @@ def _clean_title(name: str) -> str:
 # Provenance
 # ---------------------------------------------------------------------------
 #
-# Four titles repeat across the catalog ("ND Divorce" three times, and so on).
+# Four titles repeated across the scraped catalog ("ND Divorce" three times).
 # The files behind them are genuinely distinct — different hashes, sizes, and
 # field counts — so they cannot be de-duplicated, and until this ran, nothing in
 # the manifest said which court form or edition each one was. A label invented
 # after the fact would read as authoritative on a page where a paralegal picks
 # the form they are about to file, so the manifest carries what the source
-# actually said instead, and nothing when the source said nothing.
+# actually said instead, and nothing when the source said nothing. Curation
+# later read each such form's own printed title ("Summons", "Complaint") and
+# marks it ``title_source: "document"``; a rebuild keeps those titles.
 #
 # The keys below are aliases seen in ``catalog.json``; unknown shapes yield no
 # provenance rather than a guess.
@@ -799,6 +804,8 @@ def _curation_by_digest(out: Path) -> dict[str, dict]:
         if form.get("origin") in _PRESERVED_ORIGINS:
             continue
         kept = {key: form[key] for key in _CURATED_KEYS if form.get(key)}
+        if form.get("title_source") == "document":
+            kept.update({key: form[key] for key in _DOCUMENT_TITLE_KEYS if form.get(key)})
         if kept:
             curated[form["sha256"]] = kept
     return curated

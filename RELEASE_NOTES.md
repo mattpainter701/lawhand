@@ -5,15 +5,17 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
-## 2026.09.24.03 — Ohio divorce forms fill from the right records
+## 2026.09.25.01 — Shared library forms fill the right boxes
 
-Released September 24, 2026.
+Released September 25, 2026.
 
-The shared Ohio divorce complaints now fill the judge, case number, parties and signature block from the matter and firm, and the pregnancy question shows plain answers.
+Every shared form in the Template Studio library now has clear field labels, fills only from the records each box belongs to, and carries the title printed on the form itself.
 
-- **Signature block uses the attorney.** Printed name and email come from the matter's attorney and the phone from the firm profile, not the client. The address lines stay for you to type.
-- **Caption fills from the matter.** Plaintiff, defendant, case number and judge fill from the matter when it records them.
-- **Readable choices.** The pregnancy question reads Neither party is pregnant or A party is pregnant, in the order the form shows them.
+- **Readable fields.** Boxes the PDFs called Text3 or undefined now say what goes in them, such as Landlord name or Seller ZIP code, and no two fields share a label.
+- **No more client details in the wrong box.** Address, phone and email boxes for a landlord, witness, seller or attorney no longer fill with the client's details. Captions fill from parties, case number and judge.
+- **Wills and directives fill from the client.** The testator, declarant or principal on wills, living wills and powers of attorney fills from the client. Agents, witnesses and notaries stay for you to type.
+- **Correct titles and choices.** Forms show their printed titles, such as ND Divorce With Children Summons or Ohio Request for Service, and radio choices read as the page prints them.
+- **Probate guidebook fixes.** The ND informal probate guidebook no longer puts names or email in County of and State of boxes, and places the decedent's domicile county and state correctly.
 
 ## 2026.09.24.02 — Clearer Microsoft 365 and Google connections
 
