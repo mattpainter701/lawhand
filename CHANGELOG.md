@@ -140,6 +140,13 @@
 - Studio field discovery and paused-template counts are consistent. The selected cloud provider's credential health is reflected in storage setup status. Matter search includes client names and matter numbers without widening tenant access.
 - Validation and remaining production acceptance requirements are recorded in `docs/pdf-release-acceptance-2026-09-22.md`. Cloud grant reauthorization and actual save/reopen checks remain operational acceptance, not a claim made by the code change.
 
+## Unreleased — Matter document routes refuse client-portal logins
+
+- Security: a client-portal login (`User.role == "client"`) is a real user whose JWT `get_current_user` accepts, and portal responses expose shared document IDs. Replayed as `Authorization: Bearer …`, it could list, download, open, search, edit, delete, file and tag firm documents in its own matter through the staff API.
+- `app/services/access_control.py` gains `is_client_portal_user` and `require_firm_staff`, which raise `403 {"code": "staff_only"}`. Every route in `app/routers/matter_documents.py` (list, upload, patch, delete, `/open`, `/download`, `/search`, facts, form reading, fact accept, `cloud-edit`, `reconcile`, `revised-version`) and `app/routers/matter_document_folders.py` (folders, move, copy, `/api/document-tags`, per-document tags) calls it right after `get_current_user`, before any database or storage-provider work. The router-local `_require_firm_staff` from the Word/Google Docs routes is replaced by the shared helper.
+- Document revisions already require the `manage_documents` capability, which portal clients never hold. Clients keep using `/api/portal/client/...`; no portal page calls the staff routes. No migration.
+- Tests: `test_matter_document_staff_only.py` (every route refuses a client with no storage call and no row change; staff still list, edit, create folders and move documents).
+
 ## Unreleased — Research MCP request-level idempotency and billing visibility
 
 - `app/models/mcp_product.py` / migration `196_mcp_usage_idempotency`: `mcp_usage_events` gains nullable `request_idempotency_key`, `credential_scope`, and `request_sha256`, plus a partial unique index on `(tenant_id, credential_scope, request_idempotency_key)` where the key is not null. Additive and reversible; keyless events and the internal chat path are unaffected.
