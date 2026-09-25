@@ -2,6 +2,27 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.25.01",
+      "version": "2026.09.25.01",
+      "title": "Edit matter documents in Word or Google Docs",
+      "published_at": "2026-09-25",
+      "summary": "Open a matter's Word document in Word or Google Docs from its row, and bring the edits back as the same document's current version. Upload revised covers edits made to a downloaded copy.",
+      "highlights": [
+        {
+          "title": "Open in Word or Google Docs",
+          "description": "Each Word document stored in your firm's Microsoft 365 or Google storage has Open in Word, Word app or Open in Google Docs. The row shows who is editing and since when."
+        },
+        {
+          "title": "Bring back changes",
+          "description": "Edits come back when you return to LawHand, or with Bring back changes. The document keeps its name, folder, tags and sharing; the timeline records the change."
+        },
+        {
+          "title": "Nothing is silently overwritten",
+          "description": "Approved, filed and signing documents are never replaced, and an uploaded revised version is refused if the document changed in Word or Google Docs since LawHand last saved it."
+        }
+      ]
+    },
+    {
       "id": "2026.09.24.03",
       "version": "2026.09.24.03",
       "title": "Fill forms on the document itself",

@@ -59,6 +59,12 @@ class MatterDocumentResponse(BaseModel):
     signing_roles: list[str] = Field(default_factory=list)
     signing_placement_problems: list[dict] = Field(default_factory=list)
     generation_summary: dict | None = None
+    # "Open in Word / Google Docs" marker: who opened it in the firm's office
+    # suite, in which app, and when. Informational, never a lock.
+    external_edit_started_at: datetime | None = None
+    external_edit_started_by: UUID | None = None
+    external_edit_started_by_name: str | None = None
+    external_edit_app: str | None = None
 
     @field_validator(
         "positioned_fields",
@@ -166,3 +172,24 @@ class MatterDocumentTagListResponse(BaseModel):
 
 class MatterDocumentTagAssignRequest(BaseModel):
     tag_ids: list[UUID] = Field(default_factory=list, max_length=25)
+
+
+class MatterDocumentCloudEditRequest(BaseModel):
+    """Which app to open a matter's Word document in; omitted means the default."""
+
+    app: str | None = Field(default=None, max_length=20)
+
+
+class MatterDocumentCloudEditResponse(BaseModel):
+    """Result of opening, bringing back or uploading edits for a matter document.
+
+    ``links`` maps each app that can open the file (``word_web``,
+    ``word_desktop``, ``google_docs``) to its URL. ``outcome`` is ``unchanged``,
+    ``adopted`` or ``blocked`` for a bring-back or upload.
+    """
+
+    document: MatterDocumentResponse
+    links: dict[str, str] = Field(default_factory=dict)
+    app: str | None = None
+    outcome: str | None = None
+    message: str | None = None

@@ -7,12 +7,14 @@ import MatterTemplatePicker from './templates/MatterTemplatePicker'
 import PreparedDocumentsBanner from './documents/PreparedDocumentsBanner'
 import FillSessionsList from './documents/FillSessionsList'
 import MatterDocumentFacts from './documents/MatterDocumentFacts'
+import OfficeEditControls from './documents/OfficeEditControls'
 import { format, parseISO } from 'date-fns'
 import api, {
   uploadMatterDocument,
   updateMatterDocument,
   deleteMatterDocument,
   getMatterDocumentDownloadUrl,
+  getMatterDocumentOpenUrl,
   getMatterCloudFolder,
   provisionMatterCloudFolder,
   syncMatterCloudFolder,
@@ -68,6 +70,7 @@ function formatBytes(bytes) {
 function storageLabel(backend) {
   if (backend === 'google_drive') return 'Google Drive'
   if (backend === 'onedrive') return 'OneDrive'
+  if (backend === 'sharepoint') return 'SharePoint'
   if (backend === 'cloud') return 'Cloud'
   return 'Local'
 }
@@ -159,7 +162,7 @@ export function CloudFolderCard({ matterId, onFolderChange, onSynced }) {
   const gd = providers.google_drive
   const provStatus = providers._status
   const provMessage = providers._status_message
-  const isProvisioned = status.status === 'provisioned' && (od || gd)
+  const isProvisioned = status.status === 'provisioned' && (od || gd || providers.sharepoint)
   const isFailed = provStatus === 'failed'
 
   return (
@@ -284,6 +287,12 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
     refreshTags,
     refreshDocuments,
   } = explorer
+  // A document returned by Open in Word / Bring back changes / Upload
+  // revised replaces its row, so the marker and version show at once.
+  const replaceDocument = useCallback((updated) => {
+    if (!updated?.id) return
+    setDocs((prev) => prev.map((doc) => (doc.id === updated.id ? updated : doc)))
+  }, [setDocs])
   const [templateOpen, setTemplateOpen] = useState(false)
   // Phase 5e: the same search box also looks inside the documents' text
   // (the matter-scoped index over the extraction cache). Three characters
@@ -440,7 +449,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
       if (newDoc.cloud_url) {
         setUploadNotice({
           type: 'success',
-          text: `Saved to ${storageLabel(newDoc.storage_backend)}. Edits happen in the firm's cloud copy.`,
+          text: `Saved to ${storageLabel(newDoc.storage_backend)}. Use Open in Word or Google Docs to edit it, then bring the changes back.`,
         })
       } else {
         setUploadNotice({
@@ -1137,13 +1146,12 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                     {releaseLocked ? 'Release locked' : doc.portal_visible ? 'Shared' : doc.signing_access ? 'Signing access' : 'Private'}
                   </button>
                   <a
-                    href={doc.cloud_url || getMatterDocumentDownloadUrl(matterId, doc.id)}
+                    href={getMatterDocumentDownloadUrl(matterId, doc.id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-brand-line px-3 text-xs font-bold text-brand-ink"
                   >
-                    {doc.cloud_url ? <ExternalLink size={15} aria-hidden="true" /> : <Download size={15} aria-hidden="true" />}
-                    {doc.cloud_url ? 'Open' : 'Download'}
+                    <Download size={15} aria-hidden="true" /> Download
                   </a>
                   <button type="button" onClick={() => startEdit(doc)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-brand-line px-3 text-xs font-bold text-brand-ink">
                     <Pencil size={15} aria-hidden="true" /> Edit details
@@ -1155,6 +1163,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                     <p id={releaseLockedReasonId} className="col-span-2 text-center text-[11px] leading-relaxed text-brand-muted">Content approval does not authorize client release. Use a separate destination approval workflow.</p>
                   )}
                 </div>
+                <OfficeEditControls matterId={matterId} doc={doc} onDocumentChange={replaceDocument} layout="card" />
               </article>
             )
           })}
@@ -1277,7 +1286,7 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                         </button>
                         {doc.cloud_url && (
                           <a
-                            href={doc.cloud_url}
+                            href={getMatterDocumentOpenUrl(matterId, doc.id) || doc.cloud_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="mt-1 flex items-center gap-1 text-[11px] font-sans text-brand-accent hover:underline"
@@ -1403,13 +1412,14 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                             <Sparkles size={15} aria-hidden="true" /> Revise
                           </button>
                           <a
-                            href={doc.cloud_url || getMatterDocumentDownloadUrl(matterId, doc.id)}
+                            href={getMatterDocumentDownloadUrl(matterId, doc.id)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-brand-muted hover:text-brand-ink transition-colors"
-                            title={doc.cloud_url ? `Open in ${storageLabel(doc.storage_backend)}` : 'Download'}
+                            aria-label={`Download ${doc.filename}`}
+                            title="Download"
                           >
-                            {doc.cloud_url ? <ExternalLink size={16} /> : <Download size={16} />}
+                            <Download size={16} />
                           </a>
                           <button
                             onClick={() => handleDelete(doc.id)}
@@ -1418,6 +1428,9 @@ export default function MatterDocumentsTab({ matterId, onCloudFolderChange, onRe
                           >
                             <Trash2 size={16} />
                           </button>
+                        </div>
+                        <div className="flex justify-end">
+                          <OfficeEditControls matterId={matterId} doc={doc} onDocumentChange={replaceDocument} />
                         </div>
                       </td>
                     </>

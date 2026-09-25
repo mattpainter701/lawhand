@@ -1,3 +1,33 @@
+## 2026.09.25.01 — Edit matter documents in Word or Google Docs
+
+- New endpoints on matter documents:
+  - `POST /api/matters/{m}/documents/{d}/cloud-edit` returns fresh provider links, `word_web` / `word_desktop` (`ms-word:ofe|u|<webDavUrl>`) or `google_docs`, and records an informational editing marker.
+  - `POST …/reconcile` reads the exact cloud bytes by durable ID and adopts them in place.
+  - `POST …/revised-version` is the upload fallback.
+- Migration `202_matter_doc_external_edit` adds `external_edit_started_at`, `external_edit_started_by` and `external_edit_app` to `matter_documents`. Responses add `external_edit_started_by_name`.
+  - The marker lasts 12 hours from opening and is renewed by opening again.
+  - Bringing edits back keeps it, because the person is usually still editing; an uploaded revised version clears it.
+  - The upload's `If-Match` uses a freshly read eTag, so a SharePoint metadata change cannot refuse it by mistake.
+- **Adopt in place.** The row keeps its ID, cloud item, folder, tags and sharing. Its SHA-256, size and provider markers update, and `storage_state` returns to `verified` (clearing a download `conflict`, D08).
+  - Each adoption writes an `external_cloud_edit_adopted` integrity event and a `document_edits_adopted` matter event.
+  - The old text-cache row is dropped once unreferenced, and search is re-queued for the new bytes.
+  - Files are inspected with `inspect_cloud_docx_snapshot` before adoption, so unsafe or broken DOCX files never land.
+- The three routes are staff-only. A client-portal login (`role="client"`) is refused with `staff_only` before any database or provider access.
+- **What is never overwritten:** documents whose `document_status` is approved, filed, superseded or archived, and documents with a sent, partially signed or completed signature request.
+  - A changed cloud copy of one of these is marked `conflict` with the reason, and an `external_cloud_edit_blocked` integrity event is written.
+  - Assistant drafts (artifact-bound) and `assistant_revision` documents are refused and keep their own flow.
+- **Upload revised version:**
+  - It refuses with `changed_in_office` when the cloud copy no longer matches the stored hash.
+  - It writes to the same item: Graph `PUT …/content` or an upload session with `If-Match` and `conflictBehavior=replace`, where a 412 becomes `changed_in_office`; Drive uses a resumable `PATCH`; local files are replaced atomically.
+  - Graph upload-session chunks are 320 KiB multiples.
+- `MatterFileStore` gains `get_matter_file_metadata` (web and WebDAV links, eTag, cTag/version, checksum) and `replace_matter_file_content`. `get_matter_file_open_url` now wraps the metadata call.
+- Template saves persist the provider eTag, version, checksum and modified time returned by storage.
+- **Documents tab:**
+  - `OfficeEditControls` on desktop rows and mobile cards: Open in Word / Word app / Open in Google Docs, the editing marker, **Bring back changes**, the `conflict` reason, and **Upload revised**.
+  - Changes are brought back automatically when the person who opened the file returns to the tab, at most every 15 seconds.
+  - Download is now always a separate link. The view link goes through `/open` for a fresh provider URL instead of the stored display URL.
+  - SharePoint is labelled (D23 in the tab), and a SharePoint-only matter folder counts as provisioned.
+
 ## 2026.09.24.03 — Fill forms on the document
 
 - `SampleFillDialog` now opens on a **Document** view (new `FillOnDocument`) instead of a side-panel field list. Every page of the source PDF is drawn with the shared `PdfPageCanvas`, pages render lazily as they near the viewport, and each field's `pdf_overlays`/`rect` placement (via `placementsFor` + `overlayToCanvasRect`) becomes an input on the page: text, multiline textarea, checkbox toggle, select for choice/radio, and a read-only "Signed later" marker for signature fields. Zoom offers fit-width and 75–200%.
