@@ -490,6 +490,17 @@ preview; the provider bytes and SHA-256 are the approval evidence. An adopted
 Office snapshot is intentionally read-only in LawHand's plain-text editor so a
 save cannot flatten the original formatting or revision markup.
 
+The same rule applies from the start to drafts proposed with real DOCX bytes:
+`propose_document_from_template` with a DOCX template and
+`propose_matter_document_file` bind their review task with
+`document_edit_mode="office_snapshot"`, so the reviewer edits them in Word or
+Google Docs and adopts the edits with sync-cloud. Only text-only drafts use
+`lawhand_text`. A plain-text save is also refused when the preview is
+truncated, and when the bound working copy changed in the cloud since LawHand
+last recorded its SHA-256 (409 `cloud_copy_changed`, unless the reviewer sends
+`discard_cloud_edits`, which is recorded as a `cloud_edits_discarded` integrity
+event).
+
 ## Identity contract
 
 The endpoint accepts only a Bearer access token with all of these claims:
