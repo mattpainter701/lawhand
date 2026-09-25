@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff_user
 from app.models.plugin import Matter
 from app.models.matter_assignment import MatterAssignment
 from app.models.research_workspace import (
@@ -42,7 +43,10 @@ from app.schemas.research_workspace import (
 )
 
 router = APIRouter(
-    prefix="/api/matters/{matter_id}/research-workspaces", tags=["research-workspaces"]
+    prefix="/api/matters/{matter_id}/research-workspaces",
+    tags=["research-workspaces"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    dependencies=[Depends(require_firm_staff_user)],
 )
 _WRITE_ROLES = {"owner", "editor", "reviewer"}
 

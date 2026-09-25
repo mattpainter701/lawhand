@@ -21,6 +21,7 @@ from app.database import (
     set_tenant_context,
 )
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff_user
 from app.models.communication_log import CommunicationLog
 from app.models.inbound_email import (
     InboundEmail,
@@ -76,6 +77,9 @@ from app.services.task_notifications import notify_task_created
 
 settings = get_settings()
 router = APIRouter(prefix="/api", tags=["matter-correspondence"])
+# Staff-only: a client-portal login (role="client") must use /api/portal. Not
+# router-wide, because the Cloudflare inbound-email webhook shares this router.
+STAFF_ONLY = [Depends(require_firm_staff_user)]
 matter_file_store = MatterFileStore()
 logger = logging.getLogger(__name__)
 
@@ -318,6 +322,7 @@ async def receive_cloudflare_inbound_email(
 
 @router.get(
     "/matters/{matter_id}/correspondence",
+    dependencies=STAFF_ONLY,
     response_model=CorrespondenceListResponse,
 )
 async def list_matter_correspondence(
@@ -382,6 +387,7 @@ async def list_matter_correspondence(
 
 @router.post(
     "/matters/{matter_id}/correspondence/scan",
+    dependencies=STAFF_ONLY,
     response_model=CorrespondenceScanResponse,
 )
 async def scan_matter_correspondence(
@@ -416,7 +422,10 @@ async def scan_matter_correspondence(
     return CorrespondenceScanResponse(provider=body.provider, **result)
 
 
-@router.get("/matters/{matter_id}/correspondence/{comm_id}/download")
+@router.get(
+    "/matters/{matter_id}/correspondence/{comm_id}/download",
+    dependencies=STAFF_ONLY,
+)
 async def download_matter_correspondence(
     matter_id: str,
     comm_id: str,
@@ -463,6 +472,7 @@ async def download_matter_correspondence(
 
 @router.get(
     "/matters/{matter_id}/correspondence/rules",
+    dependencies=STAFF_ONLY,
     response_model=CorrespondenceRules,
 )
 async def get_correspondence_rules(
@@ -487,6 +497,7 @@ async def get_correspondence_rules(
 
 @router.put(
     "/matters/{matter_id}/correspondence/rules",
+    dependencies=STAFF_ONLY,
     response_model=CorrespondenceRules,
 )
 async def update_correspondence_rules(
@@ -514,6 +525,7 @@ async def update_correspondence_rules(
 
 @router.get(
     "/matters/{matter_id}/inbound-email/alias",
+    dependencies=STAFF_ONLY,
     response_model=MatterInboundAliasResponse,
 )
 async def get_matter_inbound_alias(
@@ -529,6 +541,7 @@ async def get_matter_inbound_alias(
 
 @router.post(
     "/matters/{matter_id}/inbound-email/alias",
+    dependencies=STAFF_ONLY,
     response_model=MatterInboundAliasResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -573,6 +586,7 @@ async def create_matter_inbound_alias(
 
 @router.post(
     "/matters/{matter_id}/inbound-email/alias/rotate",
+    dependencies=STAFF_ONLY,
     response_model=MatterInboundAliasResponse,
 )
 async def rotate_matter_inbound_alias(
@@ -608,6 +622,7 @@ async def rotate_matter_inbound_alias(
 
 @router.delete(
     "/matters/{matter_id}/inbound-email/alias",
+    dependencies=STAFF_ONLY,
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def disable_matter_inbound_alias(
@@ -627,6 +642,7 @@ async def disable_matter_inbound_alias(
 
 @router.get(
     "/matters/{matter_id}/inbound-email",
+    dependencies=STAFF_ONLY,
     response_model=InboundEmailListResponse,
 )
 async def list_matter_inbound_email(
@@ -706,6 +722,7 @@ async def _pending_inbound_or_404(
 
 @router.post(
     "/matters/{matter_id}/inbound-email/{inbound_id}/accept",
+    dependencies=STAFF_ONLY,
     response_model=InboundEmailReviewResponse,
 )
 async def accept_matter_inbound_email(
@@ -788,6 +805,7 @@ async def accept_matter_inbound_email(
 
 @router.post(
     "/matters/{matter_id}/inbound-email/{inbound_id}/expense-draft",
+    dependencies=STAFF_ONLY,
     response_model=ExpenseResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -979,6 +997,7 @@ async def create_inbound_expense_draft(
 
 @router.post(
     "/matters/{matter_id}/inbound-email/{inbound_id}/reject",
+    dependencies=STAFF_ONLY,
     response_model=InboundEmailReviewResponse,
 )
 async def reject_matter_inbound_email(

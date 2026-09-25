@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.database import async_session_maker, get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
+from app.services.access_control import require_firm_staff_user
 from app.models.matter_document import MatterDocument
 from app.models.plugin import Matter
 from app.models.signature import SignatureRequest, SignatureSigner
@@ -105,7 +106,12 @@ from app.services.provider_http import (
 from app.services.upload_guard import reject_oversized_request
 from app.utils.client_address import attributable_client_ip
 
-router = APIRouter(prefix="/api/matters", tags=["esignature"])
+router = APIRouter(
+    prefix="/api/matters",
+    tags=["esignature"],
+    # Staff-only: a client-portal login (role="client") must use /api/portal.
+    dependencies=[Depends(require_firm_staff_user)],
+)
 portal_router = APIRouter(prefix="/api/portal/client", tags=["esignature-portal"])
 logger = logging.getLogger(__name__)
 matter_file_store = MatterFileStore()

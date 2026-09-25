@@ -42,6 +42,17 @@ def require_firm_staff(
         )
 
 
+async def require_firm_staff_user(user=Depends(get_current_user)):
+    """Router dependency: the signed-in user, refused if a client-portal login.
+
+    Put it on a staff router's ``dependencies`` so every route refuses a
+    client before its body runs, including routes added later. It shares the
+    request's cached ``get_current_user`` result with handlers that declare it.
+    """
+    require_firm_staff(user, "Only firm staff can use the matters API.")
+    return user
+
+
 def can_manage_finance(role: str | None) -> bool:
     return normalize_role(role) in FINANCE_ROLES
 
