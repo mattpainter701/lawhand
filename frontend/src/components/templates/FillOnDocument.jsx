@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Link2 } from 'lucide-react'
 import { PdfPageCanvas, useTemplatePdfDocument } from './PdfDocumentCanvas'
 import { overlayToCanvasRect, placementsFor } from './pdfFieldGeometry'
 
@@ -8,7 +8,9 @@ import { overlayToCanvasRect, placementsFor } from './pdfFieldGeometry'
 // guided bar underneath always shows the active question at a readable size,
 // so a small screen or a tiny form box never decides whether you can type.
 //
-// Shared by the sample Fill dialog and the matter Prepare/Generate flow. Hosts
+// Shared by the sample Fill dialog, the matter Prepare/Generate flow and the
+// packet Prepare flow (which also marks answers shared across documents and
+// walks "Next required" across its documents). Hosts
 // supply the bar's editor (`renderInput`) and, optionally, their own field
 // status so review state (needs review, verified) shows on the page too.
 
@@ -70,7 +72,7 @@ const defaultStatus = (field, value, suggestedNames) => {
 }
 const defaultMarker = (field) => (field.field_type === 'signature' ? 'Signed later' : null)
 
-function FieldOverlay({ field, placementIndex, rect, zoom, value, active, status, marker, checkbox, disabled, onChange, onFocus }) {
+function FieldOverlay({ field, placementIndex, rect, zoom, value, active, status, marker, shared, checkbox, disabled, onChange, onFocus }) {
   const label = fieldLabel(field)
   const type = field.field_type || 'text'
   const fontSize = Math.max(7, Math.min(rect.height * 0.68, 13 * zoom))
@@ -79,7 +81,7 @@ function FieldOverlay({ field, placementIndex, rect, zoom, value, active, status
   const common = {
     'data-fill-field': field.name,
     'data-fill-placement': placementIndex,
-    title: `${label}${isFieldRequired(field) ? ' (required)' : ''}`,
+    title: `${label}${isFieldRequired(field) ? ' (required)' : ''}${shared ? ' · also fills other documents' : ''}`,
     onFocus: () => onFocus(field.name),
     style,
   }
@@ -126,7 +128,7 @@ function FieldOverlay({ field, placementIndex, rect, zoom, value, active, status
   return <input {...common} type="text" aria-label={label} disabled={disabled} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={`${base} px-1 py-0`} />
 }
 
-function DocumentPage({ document, page, zoom, placements, values, activeName, statusOf, markerFor, checkbox, disabled, onChange, onFocus, onError }) {
+function DocumentPage({ document, page, zoom, placements, values, activeName, statusOf, markerFor, isShared, checkbox, disabled, onChange, onFocus, onError }) {
   const [wrapper, setWrapper] = useState(null)
   const [visible, setVisible] = useState(page.page === 1)
   const [viewport, setViewport] = useState(null)
@@ -158,23 +160,40 @@ function DocumentPage({ document, page, zoom, placements, values, activeName, st
       {visible
         ? <PdfPageCanvas document={document} pageNumber={page.page} zoom={zoom} onViewport={onViewport} onError={onError} />
         : <span className="absolute inset-0 flex items-center justify-center text-xs text-brand-muted">Page {page.page}</span>}
-      {placements.map(({ field, placementIndex, overlay }) => (
-        <FieldOverlay
-          key={`${field.name}:${placementIndex}`}
-          field={field}
-          placementIndex={placementIndex}
-          rect={overlayToCanvasRect(overlay, page, viewport, zoom)}
-          zoom={zoom}
-          value={values[field.name]}
-          active={activeName === field.name}
-          status={statusOf(field)}
-          marker={markerFor(field)}
-          checkbox={checkbox}
-          disabled={disabled}
-          onChange={(value) => onChange(field.name, value)}
-          onFocus={onFocus}
-        />
-      ))}
+      {placements.map(({ field, placementIndex, overlay }) => {
+        const rect = overlayToCanvasRect(overlay, page, viewport, zoom)
+        const shared = Boolean(isShared?.(field))
+        return (
+          <Fragment key={`${field.name}:${placementIndex}`}>
+            <FieldOverlay
+              field={field}
+              placementIndex={placementIndex}
+              rect={rect}
+              zoom={zoom}
+              value={values[field.name]}
+              active={activeName === field.name}
+              status={statusOf(field)}
+              marker={markerFor(field)}
+              shared={shared}
+              checkbox={checkbox}
+              disabled={disabled}
+              onChange={(value) => onChange(field.name, value)}
+              onFocus={onFocus}
+            />
+            {/* One answer fills this box in other documents too. */}
+            {shared && (
+              <span
+                aria-hidden="true"
+                data-fill-shared={field.name}
+                className="pointer-events-none absolute z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-brand-accent/50 bg-white text-brand-accent shadow-sm"
+                style={{ left: rect.x + rect.width - 7, top: rect.y - 7 }}
+              >
+                <Link2 size={9} strokeWidth={2.5} />
+              </span>
+            )}
+          </Fragment>
+        )
+      })}
     </div>
   )
 }
@@ -254,6 +273,10 @@ export default function FillOnDocument({
   legend = DEFAULT_LEGEND,
   checkboxValues = { on: 'Yes', off: '' },
   disabled = false,
+  isShared,
+  onNextRequired,
+  requiredMissing,
+  scrollToActiveOnOpen = false,
 }) {
   const { document, pages, error } = useTemplatePdfDocument(source)
   const [container, setContainer] = useState(null)
@@ -262,7 +285,9 @@ export default function FillOnDocument({
   const [renderError, setRenderError] = useState('')
   const ordered = useMemo(() => orderFieldsForDocument(fields), [fields])
   const guided = useGuidedFields(ordered, { values, activeName, onActiveChange, isMissing })
-  const lastActive = useRef(guided.active)
+  // A host that opens the document on a chosen field (a packet walking to
+  // its next document) asks for that field to be brought into view.
+  const lastActive = useRef(scrollToActiveOnOpen ? '' : guided.active)
   const focusedFromPage = useRef('')
   const pendingScroll = useRef('')
   const onError = useCallback(() => setRenderError('A page could not be drawn. Switch to Questions to keep answering, or check the preview.'), [])
@@ -358,6 +383,7 @@ export default function FillOnDocument({
                 activeName={guided.active}
                 statusOf={statusOf}
                 markerFor={markerFor}
+                isShared={isShared}
                 checkbox={checkboxValues}
                 disabled={disabled}
                 onChange={onChange}
@@ -374,8 +400,8 @@ export default function FillOnDocument({
         total={ordered.length}
         onPrevious={() => guided.step(-1)}
         onNext={() => guided.step(1)}
-        onNextRequired={guided.nextRequired}
-        requiredMissing={guided.missing.length}
+        onNextRequired={onNextRequired || guided.nextRequired}
+        requiredMissing={requiredMissing ?? guided.missing.length}
         placed={activeField ? placedNames.has(activeField.name) : true}
       >
         {activeField && renderInput(activeField, values[activeField.name], (value) => onChange(activeField.name, value))}

@@ -32,7 +32,9 @@ async def _matter(db_session, tenant_id, user_id):
 def test_answers_round_trip_through_the_vault_and_digest_deterministically():
     answers = {"defendant.full_name": "Ada Lovelace", "manual:x:note": "typed"}
     sealed = fill_sessions.encrypt_answers(answers)
-    assert sealed and "Ada" not in sealed
+    # Fernet tokens are base64url, so a short name can appear in one by chance;
+    # a space, a dot or a quote cannot, which makes these plaintext checks exact.
+    assert sealed and "Ada Lovelace" not in sealed and "defendant.full_name" not in sealed
     assert fill_sessions.decrypt_answers(sealed) == answers
     assert fill_sessions.decrypt_answers("") == {}
     assert fill_sessions.decrypt_answers("not-a-token") == {}
@@ -74,7 +76,7 @@ async def test_a_session_is_created_resumed_listed_without_answers_and_owned(
     # The stored answers are ciphertext, and the row belongs to its owner only.
     await set_tenant_context(db_session, str(test_tenant.id))
     row = await db_session.scalar(select(DocumentFillSession).where(DocumentFillSession.id == uuid.UUID(session_id)))
-    assert "Ada" not in row.answers_ciphertext
+    assert '"Ada"' not in row.answers_ciphertext and "defendant.full_name" not in row.answers_ciphertext
     other = SimpleNamespace(id=uuid.uuid4(), tenant_id=test_tenant.id)
     with pytest.raises(HTTPException) as caught:
         await fill_sessions._own_session(db_session, other, uuid.UUID(session_id))
