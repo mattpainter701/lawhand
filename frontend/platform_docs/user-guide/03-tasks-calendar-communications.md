@@ -67,6 +67,13 @@ Drag a card to another column to move it. LawHand asks you to confirm the move, 
 
 Tasks in **Review** can carry work that needs approval before anything is sent, such as an assistant-drafted client email, text message, or document. Open the card to read the exact draft and approve it; nothing is sent or filed until a person approves it.
 
+An assistant-drafted document is a Word file in your firm's OneDrive, SharePoint, or Google Drive. Open it from the card with **Open draft workspace**, and edit it in one of two places:
+
+- **In Word or Google Docs**, with **Open cloud working copy**. Then select **Refresh edits from cloud** so the review uses your edited file. Drafts made from a Word template or an uploaded Word file are always edited this way, so their letterhead, tables, and headers are kept. Very long drafts are also edited this way, because the workspace shows only the start of them.
+- **In LawHand**, for drafts written as plain text. **Save as new cloud revision** writes a new Word file.
+
+If the Word file was edited in Word or Google Docs after it was last saved, LawHand stops the save instead of leaving those edits behind. Choose **Refresh edits from cloud** to bring them in (your unsaved LawHand text is replaced), or **Discard cloud edits and save** to keep your LawHand text. Discarding is recorded in the document's history, and the edited file stays in your firm's storage.
+
 **LawHand Tasks is the source of truth for work state.** Outlook and Google calendar entries are projections that help you work in your usual calendar. Change the owner, due date, or status in LawHand: an edit or deletion made only in Outlook or Google does not update the task.
 
 ## Calendar

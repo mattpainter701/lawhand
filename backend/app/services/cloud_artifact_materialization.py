@@ -14,6 +14,7 @@ from docx import Document
 from sqlalchemy import select
 
 from app.database import async_session_maker, set_tenant_context
+from app.models.document_integrity_event import DocumentIntegrityEvent
 from app.models.document_storage_operation import DocumentStorageOperation
 from app.models.generated_artifact import GeneratedArtifact, GeneratedArtifactRevision
 from app.models.matter_document import MatterDocument
@@ -64,6 +65,39 @@ class CloudIntegrityError(CloudArtifactMaterializationError):
 class CloudReconciliationRequired(CloudArtifactMaterializationError):
     code = "cloud_reconciliation_required"
     retryable = False
+
+
+class OfficeSnapshotTextRenderRefused(CloudIntegrityError):
+    code = "office_snapshot_text_render_refused"
+
+
+OFFICE_SNAPSHOT_SOURCE_MODE = "external_cloud_docx_snapshot"
+
+
+async def document_has_office_source(
+    db: Any,
+    *,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> bool:
+    """Whether a working copy's bytes came from a real DOCX, not the text renderer.
+
+    Such a copy carries formatting (letterhead, tables, headers) that
+    ``render_revision_docx`` cannot reproduce, so it must never be regenerated
+    from its extracted, possibly truncated, preview text.
+    """
+    rows = await db.scalars(
+        select(DocumentIntegrityEvent.metadata_json).where(
+            DocumentIntegrityEvent.tenant_id == tenant_id,
+            DocumentIntegrityEvent.document_id == document_id,
+            DocumentIntegrityEvent.event_type == "cloud_working_copy_verified",
+        )
+    )
+    return any(
+        isinstance(metadata, dict)
+        and metadata.get("source_mode") == OFFICE_SNAPSHOT_SOURCE_MODE
+        for metadata in rows.all()
+    )
 
 
 @dataclass(frozen=True)
@@ -434,6 +468,12 @@ class CloudArtifactMaterializer:
 
         source_mode = "lawhand_text_renderer"
         if source_docx_bytes is None:
+            if supersedes_document_id is not None and await document_has_office_source(
+                db, tenant_id=tenant_id, document_id=supersedes_document_id
+            ):
+                raise OfficeSnapshotTextRenderRefused(
+                    "A formatted DOCX cannot be regenerated from its extracted text"
+                )
             content = render_revision_docx(
                 title=artifact.title,
                 content=revision.content_text,
@@ -448,7 +488,7 @@ class CloudArtifactMaterializer:
                     "The artifact preview does not match the source DOCX snapshot"
                 )
             content = source_docx_bytes
-            source_mode = "external_cloud_docx_snapshot"
+            source_mode = OFFICE_SNAPSHOT_SOURCE_MODE
         digest = hashlib.sha256(content).hexdigest()
         filename = canonical_docx_filename(
             artifact.title,

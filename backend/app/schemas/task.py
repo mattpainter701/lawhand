@@ -110,6 +110,10 @@ class PendingActionEdit(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=300)
     category: Optional[str] = Field(None, min_length=1, max_length=50)
     expected_version: int = Field(ge=1)
+    # Only for cloud-backed document drafts: save over a cloud working copy
+    # that was edited outside LawHand. The discarded edits stay in the
+    # superseded cloud file and the override is recorded as an integrity event.
+    discard_cloud_edits: bool = False
 
     @field_validator("subject")
     @classmethod
