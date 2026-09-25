@@ -557,6 +557,7 @@ describe('MatterDocumentsTab prepared documents', () => {
     const preview = await screen.findByRole('region', { name: 'Document preview' })
     expect(preview).toHaveTextContent('Filed pleading.pdf')
     expect(preview).toHaveTextContent('17 of 19 fields filled, 12 verified when generated · from Pleading form v2')
+    expect(within(preview).queryByRole('button', { name: /^Open Filed pleading.pdf in/ })).not.toBeInTheDocument()
     expect(screen.getByTestId('location-search')).toHaveTextContent('?tab=documents')
   })
 
@@ -624,6 +625,23 @@ describe('MatterDocumentsTab Word and Google Docs editing', () => {
     await waitFor(() => expect(popup.location.href).toBe('https://firm.sharepoint.com/edit'))
     expect(await within(table).findByText(/Being edited in Word by Test Attorney/)).toBeInTheDocument()
     expect(within(table).getByRole('button', { name: 'Bring back changes to Engagement.docx' })).toBeInTheDocument()
+    window.open.mockRestore()
+  })
+
+  it('offers Open in Word on the preview a saved document lands on, and follows the edit marker', async () => {
+    const popup = { location: { href: '' }, close: vi.fn() }
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    apiMocks.startMatterDocumentCloudEdit.mockResolvedValue({
+      document: { ...cloudDoc, external_edit_started_at: RECENT, external_edit_app: 'word_web' },
+      links: { word_web: 'https://firm.sharepoint.com/edit' },
+      app: 'word_web',
+    })
+    renderDocuments(vi.fn(), { initialEntries: ['/matters/matter-1?tab=documents&document=cloud-1'] })
+    const preview = await screen.findByRole('region', { name: 'Document preview' })
+    fireEvent.click(within(preview).getByRole('button', { name: 'Open Engagement.docx in Word' }))
+    await waitFor(() => expect(popup.location.href).toBe('https://firm.sharepoint.com/edit'))
+    expect(apiMocks.startMatterDocumentCloudEdit).toHaveBeenCalledWith('matter-1', 'cloud-1', 'word_web')
+    expect(await within(preview).findByText(/Being edited in Word/)).toBeInTheDocument()
     window.open.mockRestore()
   })
 })

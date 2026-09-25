@@ -179,6 +179,30 @@ describe('usePrepareFill automatic fill and preview', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview')
   })
 
+  it('keeps the saved document the server returned until an answer changes', async () => {
+    const saved = { id: 'document-1', filename: 'form.docx', storage_backend: 'onedrive' }
+    renderTemplate.mockResolvedValueOnce({ matter_document_id: 'document-1', matter_document: saved })
+    const view = renderFill()
+    await pause(0)
+    act(() => view.result.current.setVariable('client_name', 'First answer'))
+    await pause(700)
+    await act(async () => view.result.current.handleSave())
+    expect(view.result.current.savedDocument).toEqual(saved)
+    act(() => view.result.current.setVariable('client_name', 'Changed answer'))
+    expect(view.result.current.savedDocument).toBe(null)
+  })
+
+  it('ignores a returned document that is not the one saved', async () => {
+    renderTemplate.mockResolvedValueOnce({ matter_document_id: 'document-1', matter_document: { id: 'other' } })
+    const view = renderFill()
+    await pause(0)
+    act(() => view.result.current.setVariable('client_name', 'First answer'))
+    await pause(700)
+    await act(async () => view.result.current.handleSave())
+    expect(view.result.current.saved).toBe(true)
+    expect(view.result.current.savedDocument).toBe(null)
+  })
+
   it('recovers expired save evidence with an explicit preview retry, preserving answers', async () => {
     const { result } = renderFill()
     await pause(0)

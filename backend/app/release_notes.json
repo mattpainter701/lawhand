@@ -23,6 +23,27 @@
       ]
     },
     {
+      "id": "2026.09.25.04",
+      "version": "2026.09.25.04",
+      "title": "Finish a prepared document in Word or Google Docs",
+      "published_at": "2026-09-25",
+      "summary": "Save a Word document to a matter from Prepare or Generate, then open it in Word or Google Docs straight away. Edits come back to the same matter document.",
+      "highlights": [
+        {
+          "title": "Open in Word right after saving",
+          "description": "When a Word document is saved to a matter stored in your firm's OneDrive, SharePoint or Google Drive, the saved notice offers Open in Word, Word app or Open in Google Docs."
+        },
+        {
+          "title": "On the document you land on",
+          "description": "Saving from the Prepare page opens the new document on the matter's Documents tab, and its preview now carries the same buttons."
+        },
+        {
+          "title": "Edits come back as before",
+          "description": "Returning to LawHand, or Bring back changes, saves your edits as the document's current version. PDFs for signature and documents kept in LawHand storage are unchanged."
+        }
+      ]
+    },
+    {
       "id": "2026.09.25.01",
       "version": "2026.09.25.01",
       "title": "Edit matter documents in Word or Google Docs",

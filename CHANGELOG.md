@@ -11,6 +11,16 @@
 - **Frontend:** `DocumentDraftWorkspace` shows the `cloud_copy_changed` 409 with **Refresh edits from cloud** and **Discard cloud edits and save** (TaskBoard and the chat `ActionProposalCard`). A truncated preview is read-only.
 - Tests: `test_assistant_draft_cloud_guards.py` covers the D34 409 and override, the D09 guards, and the first backend tests for `POST /tasks/{id}/pending-action/sync-cloud` (unchanged and changed). No migration.
 
+## 2026.09.25.04 — Finish a prepared document in Word or Google Docs
+
+- `DocumentTemplateRenderResponse` gains `matter_document`: the saved row serialized with `serialize_document`, exactly as `GET /api/matters/{m}/documents` lists it (folder path, tags, signing access, `external_edit_*`).
+  - Filled only after a confirmed commit and refresh. It is absent on idempotent replays and when the commit was only confirmed independently.
+  - The read-back is best effort: a failure is logged and the field is left out, so a committed save never turns into an error the caller retries into a duplicate.
+  - No migration and no new endpoint.
+- **Generate dialog and Prepare saved notice:** `usePrepareFill` keeps the returned document as `savedDocument` (cleared on any change that clears `matterDocId`). `PrepareDocumentBody` renders `OfficeEditControls` under "Saved to the matter…" when `officeEditState(doc).canOpen`: a DOCX in OneDrive, SharePoint or Google Drive that is not locked or an assistant draft. PDF output and local storage show nothing new.
+- **Prepare route:** a non-signing save already lands on the matter's Documents tab with `?document=` opening its preview. That preview now carries `OfficeEditControls` too, following the live row so the editing marker and brought-back versions show there.
+- Edits come back through the existing reconcile flow (return-to-tab and **Bring back changes**).
+
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
 
 - New endpoints on matter documents:

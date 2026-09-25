@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Download, Eye, Save, Wand2 } from 'lucide-react'
 import MatterPicker from './MatterPicker'
 import StorageReadinessNotice from './StorageReadinessNotice'
+import OfficeEditControls, { officeEditState } from '../documents/OfficeEditControls'
 import TemplateFactReview from '../templates/TemplateFactReview'
 import TemplateFillProgress from '../templates/TemplateFillProgress'
 import TemplateFillSource from '../templates/TemplateFillSource'
@@ -36,6 +37,8 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
     matterId,
     rendered,
     matterDocId,
+    savedDocument,
+    setSavedDocument,
     savedDownloadUrl,
     outputFilename,
     outputFormat,
@@ -546,6 +549,11 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
           </div>
         )}
   </>
+  // A Word document in the firm's OneDrive, SharePoint or Google Drive can be
+  // finished in the firm's own editor straight from here; the controls decide
+  // (PDF output, local storage and locked documents are left out).
+  const editableSaved = Boolean(savedDocument && String(savedDocument.id) === String(matterDocId)
+    && officeEditState(savedDocument).canOpen)
   const savedSection = <>
         {matterDocId && (
           <div className="space-y-2">
@@ -560,6 +568,18 @@ export default function PrepareDocumentBody({ fill, template, matters = [], matt
             {storageWarning && (
               <div role="alert" className="rounded border border-brand-amber/40 bg-brand-amber/10 px-3 py-2 text-xs text-brand-ink">
                 {storageWarning}
+              </div>
+            )}
+            {editableSaved && (
+              <div className="rounded border border-brand-line px-3 py-2">
+                <p className="text-xs text-brand-muted">
+                  Finish it in {officeEditState(savedDocument).suite === 'google' ? 'Google Docs' : 'Word'}. Your edits come back to this matter document.
+                </p>
+                <OfficeEditControls
+                  matterId={savedDocument.matter_id || matterId.trim()}
+                  doc={savedDocument}
+                  onDocumentChange={(next) => { if (next) setSavedDocument(next) }}
+                />
               </div>
             )}
           </div>
