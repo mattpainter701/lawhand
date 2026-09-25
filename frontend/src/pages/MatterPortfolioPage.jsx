@@ -911,12 +911,14 @@ export default function MatterPortfolioPage() {
       root.removeEventListener('scroll', onScroll)
     }
   }, [listUrl])
+  // Restore only once both lists have rendered: My Matters sits above the
+  // all-matters list, so restoring while it is still loading lands short.
   useEffect(() => {
-    if (loading) return
+    if (loading || myLoading) return
     const root = document.querySelector('[data-app-scroll]')
     const saved = readListScroll(listUrl)
     if (root && saved != null) root.scrollTop = saved
-  }, [loading, listUrl])
+  }, [loading, myLoading, listUrl])
 
   const handleToggleActive = async (assignmentId, matterId, active) => {
     setTogglingId(assignmentId)
