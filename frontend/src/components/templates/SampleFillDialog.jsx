@@ -375,7 +375,7 @@ export default function SampleFillDialog({ sample, onClose }) {
                         {field.source_label && !isPlaceholderSourceLabel(field.source_label) && field.source_label !== field.label && (
                           <p className="mt-1 text-[11px] text-brand-muted">Source label: {field.source_label}</p>
                         )}
-                        {field.source_label && isPlaceholderSourceLabel(field.source_label) && (
+                        {field.source_label && isPlaceholderSourceLabel(field.source_label) && field.label_source !== 'curated' && (
                           <p className="mt-1 text-[11px] text-brand-muted">Source label unavailable; check this field in the source PDF before filling.</p>
                         )}
                       </div>

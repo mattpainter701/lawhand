@@ -89,6 +89,11 @@ The **Test** view shows the result: **Version 4 passed** (for example), **Latest
 
 When the tested version is right, select **Publish tested version**. Your team can then use it with **Use on a matter**. If you edit a published template later, the published version stays available to your team until you test and publish the new one.
 
+**Field checks** on the workspace lists fields that need attention before your team relies on the template:
+
+- A PDF field with a generic name such as "Email", "Address", "Phone" or "Name" and no data source would fill with the client's details, even when the box belongs to someone else, such as the attorney, a landlord or a witness. A PDF template with such a field can't be published. In the field editor, bind the field to the record it belongs to (the client, if that is right), or mark it as entered by hand.
+- Labels that don't say what goes in a field ("Text3", "undefined 2"), labels shared by several fields, very long labels, and choices named like "Choice 1" are listed as warnings. They don't block publishing, but renaming them makes the template much easier to fill.
+
 **Versions** lists every saved draft and published state, newest first, and can restore an earlier one without retyping it. **Activity** shows what changed and when. Record why you changed a template, and never replace a source file in a way that makes earlier documents impossible to explain.
 
 ### Plaintiff and defendant fields
@@ -207,6 +212,7 @@ If a document changes after you send it, never ask anyone to sign the superseded
 | What you notice | Likely cause | What to do |
 | --- | --- | --- |
 | **Use on a matter** is disabled | The template has no published version, its source is missing, or you have unsaved changes | Save, test, and select **Publish tested version**. |
+| Publishing says a field "would fill with the client's" details | A PDF field has a generic name and no data source | In the field editor, bind the field to the right record, or mark it as entered by hand, then save, test and publish again. |
 | **Publish tested version** is missing | The current version has not passed a test, or it is already published | Open **Test** and run **Open test values and preview**. |
 | A template shows **Needs source** | The original sample file is no longer retained | Recreate the template from the original document. |
 | An upload is rejected | The file is protected, dynamic, scripted, has attachments, or is over 50 MB | Export a standard static PDF or DOCX and upload that. |

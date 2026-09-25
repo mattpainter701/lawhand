@@ -7,7 +7,9 @@ no ``tenant_id`` column and no tenant mutation endpoints.
 """
 
 import hashlib
+import io
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -311,21 +313,291 @@ def test_the_seeder_rejects_an_unknown_provenance_field():
         _provenance({"slug": "x", "provenance": "Example Courts"})
 
 
-def test_duplicate_titles_are_distinct_files_not_byte_duplicates():
-    """#504: the repeated titles cannot be mechanically de-duplicated.
+def test_titles_are_unique_and_read_from_the_document_where_curated():
+    """#504: several distinct files shared a scraped title ("ND Divorce" x3).
 
-    If this ever fails because two same-titled forms share a digest, the right
-    fix is to drop one from the manifest — not to label them apart.
+    Curation replaced each with the title the form prints ("Summons",
+    "Complaint"), so a paralegal picking a form sees which one it is.
     """
 
-    by_title: dict[str, list[dict]] = {}
-    for form in _manifest()["forms"]:
-        by_title.setdefault(form["title"].strip().lower(), []).append(form)
+    forms = _manifest()["forms"]
+    titles = [form["title"].strip().lower() for form in forms]
+    assert len(titles) == len(set(titles))
+    for form in forms:
+        assert form.get("title_source") in (None, "document"), form["slug"]
+        if form.get("title_source") == "document":
+            assert form["description"].startswith(form["title"]), form["slug"]
 
-    duplicates = {
-        title: forms for title, forms in by_title.items() if len(forms) > 1
+
+# ── Curated court forms: bindings and option labels ─────────────────────────
+
+
+def _seeder():
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "scripts"))
+    import seed_sample_templates
+
+    return seed_sample_templates
+
+
+def _seeded_schema(slug: str) -> dict:
+    form = next(form for form in _manifest()["forms"] if form["slug"] == slug)
+    return _seeder()._variable_schema(
+        (SEED_DIR / form["filename"]).read_bytes(),
+        form.get("bindings"),
+        form.get("option_labels"),
+        form.get("field_labels"),
+    )
+
+
+_OHIO_DIVORCE = (
+    "ohio-divorce-no-children",
+    "ohio-divorce-with-children",
+    "ohio-divorce-with-children-2",
+)
+
+
+def test_every_manifest_form_seeds_with_its_curation():
+    # The seeder refuses a binding or option label naming something the PDF
+    # lacks, so this is the check that no curated entry has drifted.
+    for form in _manifest()["forms"]:
+        _seeded_schema(form["slug"])
+
+
+@pytest.mark.parametrize("slug", _OHIO_DIVORCE)
+def test_ohio_divorce_caption_and_signature_block_fill_from_the_right_records(slug):
+    from app.services import template_fill_engine as engine
+    from app.services import template_firm_fields
+    from tests.fill_campaign import probe
+
+    fields = _seeded_schema(slug)["fields"]
+    bindings = {field["name"]: field["binding"] for field in fields if field.get("binding")}
+    records = probe.probe_records()
+    records.matter.client.email = "client@example.com"
+    records.matter.client.phone = "555-0199"
+    candidates = engine.collect(records)
+    firm = template_firm_fields.resolve(
+        {"firm_phone": "555-0000"}, uuid.uuid4(), bindings
+    )
+    resolved = {
+        item.variable: item
+        for item in engine.resolve_variables(
+            [field["name"] for field in fields],
+            bindings=bindings,
+            candidates=candidates,
+            firm=firm,
+            custom={},
+        )
     }
-    assert duplicates, "expected the known duplicate-titled variants"
-    for title, forms in duplicates.items():
-        digests = {form["sha256"] for form in forms}
-        assert len(digests) == len(forms), f"{title} has byte-identical variants"
+    by_path = {path: name for name, path in bindings.items()}
+
+    assert resolved[by_path["matter.judge"]].suggested_value == "Probe Judge"
+    assert resolved[by_path["matter.case_number"]].suggested_value == "PR-0"
+    assert resolved[by_path["party.plaintiff.name"]].suggested_value
+    assert resolved[by_path["party.defendant.name"]].suggested_value
+    assert resolved[by_path["attorney.name"]].suggested_value == "Probe Attorney"
+    # The signature block is the filer's: before curation "Email" and
+    # "Phone Number" matched the client's details by name.
+    assert resolved[by_path["attorney.email"]].suggested_value == "probe@firm.com"
+    assert resolved[by_path["firm.phone"]].suggested_value == "555-0000"
+    values = {item.suggested_value for item in resolved.values()}
+    assert "client@example.com" not in values
+    assert "555-0199" not in values
+    for name, path in bindings.items():
+        if path == "manual":
+            assert resolved[name].suggested_value is None
+            assert resolved[name].provenance["status"] == "manual_entry"
+
+
+def test_radio_options_follow_the_page_and_carry_readable_labels():
+    for slug, name in (
+        ("ohio-divorce-with-children", "pregnancy"),
+        ("ohio-divorce-with-children-2", "neither_party_is_pregnant_or_a_party_is_pregnant"),
+    ):
+        form = next(form for form in _manifest()["forms"] if form["slug"] == slug)
+        discovered = {
+            field["name"]: field
+            for field in discover_pdf_fields((SEED_DIR / form["filename"]).read_bytes())
+        }
+        # The PDF's own state list reads "Choice 2" first for the -2 variant;
+        # discovery offers the buttons in the order the page shows them.
+        assert discovered[name]["options"] == ["Choice 1", "Choice 2"]
+        seeded = {field["name"]: field for field in _seeded_schema(slug)["fields"]}
+        assert seeded[name]["options"] == [
+            {"value": "Choice 1", "label": "Neither party is pregnant"},
+            {"value": "Choice 2", "label": "A party is pregnant"},
+        ]
+
+
+def test_labelled_radio_values_still_fill_the_pdf():
+    from app.services.pdf_templates import fill_pdf_template
+
+    form = next(
+        form
+        for form in _manifest()["forms"]
+        if form["slug"] == "ohio-divorce-with-children-2"
+    )
+    content = (SEED_DIR / form["filename"]).read_bytes()
+    output = fill_pdf_template(
+        content,
+        variable_schema=_seeded_schema(form["slug"]),
+        variables={"neither_party_is_pregnant_or_a_party_is_pregnant": "Choice 2"},
+        flatten=False,
+        enforce_required=False,
+    )
+    fields = PdfReader(io.BytesIO(output)).get_fields()
+    assert (
+        str(fields["Neither party is pregnant or a party is pregnant"]["/V"])
+        == "/Choice 2"
+    )
+
+
+def test_the_seeder_rejects_curation_the_pdf_does_not_support():
+    seeder = _seeder()
+    content = (
+        SEED_DIR / "court_form" / "ohio-divorce-with-children-2.pdf"
+    ).read_bytes()
+    with pytest.raises(SystemExit, match="unknown field"):
+        seeder._variable_schema(content, {"no_such_field": "matter.judge"})
+    with pytest.raises(SystemExit, match="Unknown binding path"):
+        seeder._variable_schema(content, {"judge_name": "matter.nope"})
+    with pytest.raises(SystemExit, match="non-option field"):
+        seeder._variable_schema(content, None, {"judge_name": {"A": "B"}})
+    with pytest.raises(SystemExit, match="labels unknown field"):
+        seeder._variable_schema(content, None, None, {"no_such_field": "Judge"})
+    with pytest.raises(SystemExit, match="non-empty text"):
+        seeder._variable_schema(content, None, None, {"judge_name": "  "})
+    labelled = seeder._variable_schema(content, None, None, {"judge_name": " Judge "})
+    judge = next(field for field in labelled["fields"] if field["name"] == "judge_name")
+    assert (judge["label"], judge["label_source"]) == ("Judge", "curated")
+    assert judge["source_label"] == "Insert name of Judge"
+    with pytest.raises(SystemExit, match="unknown option"):
+        seeder._variable_schema(
+            content,
+            None,
+            {"neither_party_is_pregnant_or_a_party_is_pregnant": {"Choice 3": "x"}},
+        )
+    schema = seeder._variable_schema(
+        content,
+        None,
+        {"neither_party_is_pregnant_or_a_party_is_pregnant": {"Choice 1": "Neither"}},
+    )
+    radio = next(field for field in schema["fields"] if field["field_type"] == "radio")
+    # An option left unlabelled keeps its export value as the label.
+    assert radio["options"] == [
+        {"value": "Choice 1", "label": "Neither"},
+        {"value": "Choice 2", "label": "Choice 2"},
+    ]
+
+
+def test_a_rebuild_carries_curation_only_to_unchanged_files(tmp_path):
+    import importlib.util
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "build_sample_template_library.py"
+    spec = importlib.util.spec_from_file_location("build_sample_library", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "forms": [
+                    {"slug": "a", "sha256": "aa", "bindings": {"x": "matter.judge"},
+                     "option_labels": {"r": {"1": "One"}}},
+                    {"slug": "b", "sha256": "bb", "title": "Scraped"},
+                    {"slug": "d", "sha256": "dd", "title": "Summons",
+                     "description": "Summons.", "title_source": "document"},
+                    {"slug": "c", "sha256": "cc", "origin": "authored",
+                     "bindings": {"y": "client.name"}},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert module._curation_by_digest(tmp_path) == {
+        "aa": {"bindings": {"x": "matter.judge"}, "option_labels": {"r": {"1": "One"}}},
+        "dd": {"title": "Summons", "description": "Summons.", "title_source": "document"},
+    }
+    assert module._curation_by_digest(tmp_path / "missing") == {}
+
+
+# ── Catalog-wide curation invariants ────────────────────────────────────────
+
+def _curated_forms() -> list[dict]:
+    # Authored forms are generated in-repo with field names that already are the
+    # platform's variables; everything else arrives with a stranger's PDF names.
+    return [form for form in _manifest()["forms"] if form.get("origin") != "authored"]
+
+
+def test_every_shared_form_passes_the_studio_field_checks():
+    # The same checks the Studio shows a firm before it publishes a template;
+    # the shared library holds itself to all of them, warnings included.
+    from app.services import template_field_quality
+
+    problems = []
+    for form in _curated_forms():
+        schema = _seeded_schema(form["slug"])
+        problems.extend(
+            f"{form['slug']}: {finding.name}: {finding.message}"
+            for finding in template_field_quality.accidental_fills(schema)
+            + template_field_quality.warnings(schema)
+        )
+    assert problems == [], "\n".join(problems[:40])
+
+
+def test_no_shared_form_fills_a_field_by_name_alone():
+    # Stricter than the Studio gate: a curated form names the source of every
+    # field Smart Fill would fill by name, including exact variable names such
+    # as "case_number", because a stranger's PDF chose them.
+    from app.services.template_fill_engine import normalize_variable_name, vocabulary
+
+    names = vocabulary()
+    unbound = [
+        f"{form['slug']}: {field['name']}"
+        for form in _curated_forms()
+        for field in _seeded_schema(form["slug"])["fields"]
+        if normalize_variable_name(field["name"]) in names and not field.get("binding")
+    ]
+    assert unbound == []
+
+
+def test_a_builder_rewrite_keeps_curation_for_the_same_bytes(tmp_path):
+    from scripts.build_library_intake_forms import update_manifest
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "forms": [
+                    {"slug": "same", "sha256": "aa", "category": "c", "title": "A",
+                     "bindings": {"x": "matter.judge"},
+                     "field_labels": {"x": "Judge"}},
+                    {"slug": "moved", "sha256": "bb", "category": "c", "title": "B",
+                     "field_labels": {"y": "Old"}},
+                    {"slug": "owned", "sha256": "cc", "category": "c", "title": "C",
+                     "bindings": {"z": "client.name"}},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    update_manifest(
+        [
+            {"slug": "same", "sha256": "aa", "category": "c", "title": "A", "bindings": {}},
+            {"slug": "moved", "sha256": "b2", "category": "c", "title": "B"},
+            {"slug": "owned", "sha256": "cc", "category": "c", "title": "C",
+             "bindings": {"z": "client.email"}},
+        ],
+        tmp_path,
+    )
+    by_slug = {
+        form["slug"]: form
+        for form in json.loads((tmp_path / "manifest.json").read_text())["forms"]
+    }
+    assert by_slug["same"]["bindings"] == {"x": "matter.judge"}
+    assert by_slug["same"]["field_labels"] == {"x": "Judge"}
+    # New bytes may have new field names, so their curation does not carry.
+    assert "field_labels" not in by_slug["moved"]
+    # A builder that declares bindings owns them.
+    assert by_slug["owned"]["bindings"] == {"z": "client.email"}

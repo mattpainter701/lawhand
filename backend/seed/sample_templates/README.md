@@ -18,10 +18,42 @@ source of truth for what is in a form.
 | `sha256` | yes | Digest of the shipped bytes; the seeder refuses a mismatch. |
 | `size_bytes` | yes | Size of the shipped bytes. |
 | `field_count` | yes | AcroForm fields the studio can render. |
-| `bindings` | no | `{field name: platform variable path}` for authored forms. |
+| `bindings` | no | `{field name: platform variable path}` for authored forms and curated imports. `"manual"` marks a field a person must type, so it never fills from a same-named client value. |
+| `field_labels` | no | `{field name: label}` replacing a label the PDF left meaningless ("Text3", "undefined 2") or ambiguous; the PDF's own label stays as `source_label`. |
+| `title_source` | no | `"document"` when `title` (and `description`) were read from the form's own printed title rather than the scraped catalog's name; a rebuild keeps them. |
+| `option_labels` | no | `{field name: {export value: label}}` for radio/choice options the PDF names only by export value ("Choice 1"). Filling still writes the export value. |
 | `origin` | no | `"authored"` marks a form written in-repo rather than imported; `"court_form"` marks a court packet shipped whole by `backend/scripts/build_nd_probate_guidebook.py`. Both survive a scraped-library rebuild. |
 | `page_ranges` | no | `{"<form number>": [first, last]}` for a packet that holds several court forms in one PDF. Read from the PDF's own page headers at build time and re-checked by `tests/test_nd_probate_forms.py`; the Probate tab uses it to tell staff which pages to print. |
 | `provenance` | no | Where the form came from — see below. |
+
+## Curated imports
+
+Imported forms arrive with only their PDF field names. Many are meaningless
+("Text3", "Check Box4", "undefined 2"), some PDFs' own tooltips are copy-paste
+errors, and Smart Fill can only match a field whose name happens to equal a
+platform variable — so generic names such as "Address", "Phone Number" and
+"Email" matched the *client's* details even in a landlord's, witness's or the
+filing attorney's block. Every form that is not `origin: "authored"` is
+therefore curated:
+
+- `field_labels` gives each field a specific, unique label read from the page;
+- `bindings` says where a value comes from — parties, case number and judge on
+  pleadings; the maker (testator, declarant, principal, taxpayer) as the client
+  on estate-planning and POA forms; the attorney and firm on attorney signature
+  blocks — and marks `"manual"` any field that would otherwise fill by name from
+  an unrelated record. Leases, bills of sale and contracts bind no person to the
+  client, because the client may be either side;
+- `option_labels` names radio/choice options the PDF calls "Choice 1".
+
+`tests/test_sample_template_library.py` enforces this catalog-wide: no
+placeholder, over-long or duplicate label, no field that fills by accidental
+name match, and no unreadable option. The seeder rejects curation naming a
+field or option the PDF does not have.
+
+`scripts/build_sample_template_library.py` carries the curated keys over to the
+rebuilt entry with the same `sha256`, and drops them when the file changed;
+`update_manifest` (used by the ND probate and intake builders) keeps them for a
+byte-identical file unless the builder declares its own.
 
 ## `provenance`
 
@@ -52,20 +84,12 @@ recorded, rather than implying one.
 
 ## Duplicate titles
 
-Four titles repeat across the imported catalog:
-
-| Title | Variants (slug · fields · bytes) |
-| --- | --- |
-| ND Divorce | `nd-divorce` 9 · 344,984 · `nd-divorce-2` 18 · 202,367 · `nd-divorce-3` 91 · 1,540,490 |
-| ND Divorce Start | `nd-divorce-start` 122 · 1,401,111 · `-2` 10 · 1,204,654 · `-3` 58 · 1,209,801 |
-| ND General | `nd-general` 10 · 1,215,900 · `-2` 74 · 1,468,220 |
-| Ohio Divorce With Children | `ohio-divorce-with-children` 94 · 1,383,544 · `-2` 88 · 651,480 |
-
-These are distinct files — different hashes, sizes, and field counts — so they
-cannot be de-duplicated mechanically. They are not labelled either: a
-distinguishing label invented after the fact would render as authoritative on
-the page where a paralegal picks a form to file. The library instead shows the
-objective differences it has (field count, and provenance once recorded) and
-says plainly that several forms share the title. Deciding per variant — label
-them as editions, or curate the catalog down — is a data decision for a human
-once provenance is backfilled.
+The scraped catalog repeated four titles ("ND Divorce" three times, "ND
+Divorce Start" three times, "ND General" twice, "Ohio Divorce With Children"
+twice) over distinct files, and some titles named the wrong document: the file
+called "Ohio Divorce No Children" is Ohio Domestic Relations Form 31, a Request
+for Service. Curation read each form's own printed title — "Summons",
+"Complaint", "Settlement Agreement", "Counterclaim for Divorce With Children
+(Form 9)" — and marks those entries `title_source: "document"`. No invented
+label: the new title is what the page itself says. Titles are now unique, and
+`tests/test_sample_template_library.py` keeps them so.
