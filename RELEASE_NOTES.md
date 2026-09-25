@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.25.08 — Use a global library form on a matter without importing it
+
+Released September 25, 2026.
+
+From a matter's Documents tab, Attach template now lets you fill a global library form and save it straight to the matter. You no longer have to add the form to your firm's templates, review its fields, test and publish it first.
+
+- **Use on this matter.** Global library forms have a Use on this matter button. The form opens already filled from the matter, so you review the answers and fill in the rest.
+- **Review, save, share.** Review final PDF shows exactly what will be saved. Save to matter files it in the folder you started from, and Share with client puts it in the client portal in one click.
+- **Firm library stays optional.** Add to firm library is still there for forms you want to customize and reuse.
+
 ## 2026.09.25.07 — Fill a whole packet on its documents
 
 Released September 25, 2026.

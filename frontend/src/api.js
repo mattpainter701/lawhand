@@ -2509,6 +2509,9 @@ export const getSampleTemplateSource = (id) =>
 export const previewSampleTemplateSmartFill = (id, data) =>
   api.post(`/templates/library/${id}/smart-fill-preview`, data).then(r => r.data)
 
+export const saveSampleTemplateToMatter = (id, data) =>
+  api.post(`/templates/library/${id}/save-to-matter`, data).then(r => r.data)
+
 export const renderSampleTemplateFile = (id, data) =>
   api.post(`/templates/library/${id}/render-file`, data, { responseType: 'blob' }).then((r) => {
     const disposition = r.headers?.['content-disposition'] || ''

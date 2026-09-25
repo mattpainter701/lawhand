@@ -2,9 +2,13 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getSampleTemplateSource, getSampleTemplates, getTemplate, getTemplates } from '../../api'
 import PdfPreviewDialog from './PdfPreviewDialog'
+import SampleFillDialog from './SampleFillDialog'
 
 const RenderModal = lazy(() => import('../../pages/TemplatesPage').then(module => ({ default: module.RenderModal })))
 const PAGE_SIZE = 20
+// A library form can be filled straight onto the matter once it carries a
+// field schema; otherwise the only way in is adding it to the firm library.
+const canFillOnMatter = (sample) => (sample.variable_schema?.fields || []).some((field) => field?.name)
 const PREPARATION_CONTEXT = (matterId, folderId) => ({
   preparationContext: {
     matterId,
@@ -34,6 +38,8 @@ export default function MatterTemplatePicker({ matterId, folderId, onClose, onSa
   const [directOpenFailed, setDirectOpenFailed] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const [preview, setPreview] = useState(null)
+  const [filling, setFilling] = useState(null)
+  const filledSaved = useRef(false)
   const previewRequest = useRef(0)
 
   useEffect(() => { const previous = document.activeElement; return () => previous?.focus?.() }, [])
@@ -118,12 +124,22 @@ export default function MatterTemplatePicker({ matterId, folderId, onClose, onSa
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
   }
 
+  if (filling) {
+    return <SampleFillDialog
+      sample={filling}
+      fixedMatterId={matterId}
+      folderId={folderId}
+      onSaved={(result) => { filledSaved.current = true; return onSaved?.(result) }}
+      onClose={() => { if (filledSaved.current) onClose(); else setFilling(null) }}
+    />
+  }
+
   if (selected) return <Suspense fallback={<p role="status">Opening document editor…</p>}><RenderModal key={`${matterId}:${selected.id}`} template={selected} fixedMatterId={matterId} folderId={folderId} onSaved={onSaved} onClose={onClose} /></Suspense>
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <section ref={dialog} onKeyDown={handleKey} role="dialog" aria-modal="true" aria-label="Attach template" className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-brand-surface p-5 shadow-xl">
       <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Attach template</h2><button type="button" onClick={onClose} disabled={selecting}>Close</button></div>
-      <p className="my-2 text-sm text-brand-muted">Search your firm’s templates and the global library. Firm templates must be published before they can be used on a matter. Global samples need firm review before use.</p>
+      <p className="my-2 text-sm text-brand-muted">Search your firm’s templates and the global library. Global library forms can be filled and saved to this matter directly; add one to your firm library only if you want to customize and reuse it.</p>
       <label className="block text-sm">Search templates<input autoFocus value={query} onChange={event => { setQuery(event.target.value); setPage(0); setGlobalPage(0) }} className="my-2 w-full rounded border border-brand-line p-2" /></label>
       <div role="group" aria-label="Template source" className="mb-4 flex flex-wrap gap-2">
         {[['all', 'All'], ['firm', 'Firm templates'], ['global', 'Global library']].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={`rounded border px-3 py-1.5 text-sm font-semibold ${filter === value ? 'border-brand-ink bg-brand-ink text-white' : 'border-brand-line text-brand-muted hover:bg-brand-bg'}`}>{label}</button>)}
@@ -139,11 +155,15 @@ export default function MatterTemplatePicker({ matterId, folderId, onClose, onSa
       </section>}
       {showGlobal && <section aria-labelledby="global-library-heading" className="mb-2 border-t border-brand-line pt-4">
         <h3 id="global-library-heading" className="mb-2 font-semibold">Global library <span className="text-xs font-normal text-brand-muted">Shared reference forms</span></h3>
-        <p className="mb-2 text-xs text-brand-muted">Global library items are read-only references. Review jurisdiction, source, and wording before bringing one into your firm templates.</p>
+        <p className="mb-2 text-xs text-brand-muted">Shared reference forms. Check the jurisdiction and edition, fill it from this matter, and review every answer before saving.</p>
         {global.error && <div><p role="alert">{global.error}</p><button type="button" onClick={() => setGlobalRetry(value => value + 1)} className="mt-2 rounded border px-3 py-1.5">Retry global library</button></div>}
         {global.loading ? <p role="status">Loading global library…</p> : visibleGlobal.length ? <ul className="divide-y divide-brand-line">{pagedGlobal.map(sample => <li key={sample.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-          <div className="min-w-0"><strong>{sample.title}</strong><p className="text-xs text-brand-muted">{sample.category || 'General'} · {(sample.jurisdictions || []).join(', ') || 'Jurisdiction not specified'} · {sample.provenance?.source_name || sample.source_name || 'Source not recorded'}{(sample.provenance?.edition || sample.edition) ? ` · ${sample.provenance?.edition || sample.edition}` : ''}</p><p className="mt-1 text-xs"><span className="rounded bg-brand-bg px-1.5 py-0.5">Global library</span> <span className="text-brand-muted">Needs firm review</span></p></div>
-          <div className="flex shrink-0 gap-2"><button type="button" onClick={() => openPreview(sample)} className="rounded border px-3 py-2">Preview</button><button type="button" onClick={() => navigate(`/templates/new?sample=${encodeURIComponent(sample.id)}`, { state: PREPARATION_CONTEXT(matterId, folderId) })} className="rounded border px-3 py-2">Add to firm</button></div>
+          <div className="min-w-0"><strong>{sample.title}</strong><p className="text-xs text-brand-muted">{sample.category || 'General'} · {(sample.jurisdictions || []).join(', ') || 'Jurisdiction not specified'} · {sample.provenance?.source_name || sample.source_name || 'Source not recorded'}{(sample.provenance?.edition || sample.edition) ? ` · ${sample.provenance?.edition || sample.edition}` : ''}</p><p className="mt-1 text-xs"><span className="rounded bg-brand-bg px-1.5 py-0.5">Global library</span></p></div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button type="button" onClick={() => openPreview(sample)} className="rounded border px-3 py-2">Preview</button>
+            {canFillOnMatter(sample) && <button type="button" onClick={() => setFilling(sample)} aria-label={`Use ${sample.title} on this matter`} className="rounded bg-brand-ink px-3 py-2 font-semibold text-white">Use on this matter</button>}
+            <button type="button" onClick={() => navigate(`/templates/new?sample=${encodeURIComponent(sample.id)}`, { state: PREPARATION_CONTEXT(matterId, folderId) })} className={canFillOnMatter(sample) ? 'px-2 py-2 text-sm text-brand-muted underline-offset-2 hover:text-brand-ink hover:underline' : 'rounded border px-3 py-2'}>Add to firm library</button>
+          </div>
         </li>)}</ul> : !global.error && <p className="text-sm text-brand-muted">No matching global library items.</p>}
         {!global.loading && globalPages > 1 && <div className="mt-2 flex justify-between"><button type="button" disabled={globalPage === 0} onClick={() => setGlobalPage(value => value - 1)}>Previous global results</button><span aria-live="polite">Page {globalPage + 1} of {globalPages} · {visibleGlobal.length} matches</span><button type="button" disabled={globalPage + 1 >= globalPages} onClick={() => setGlobalPage(value => value + 1)}>Next global results</button></div>}
       </section>}

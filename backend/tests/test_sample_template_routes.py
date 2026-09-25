@@ -338,3 +338,266 @@ def test_sample_library_route_is_not_shadowed_by_tenant_templates():
                 "detail route; register sample_templates_router first"
             )
     raise AssertionError("GET /api/templates/library is not registered")
+
+
+def _save_fixture(monkeypatch, *, fields=None, folder=None):
+    pdf = _fillable_pdf()
+    fields = fields if fields is not None else discover_pdf_fields(pdf)
+    tenant_id = uuid.uuid4()
+    matter = SimpleNamespace(id=uuid.uuid4(), slug="smith-divorce", cloud_folder=None)
+    sample = _sample(
+        variable_schema={"version": 1, "fields": fields},
+        provenance={"source_name": "ND Courts", "edition": "May 2023"},
+    )
+    added = []
+    db = AsyncMock()
+    db.scalar = AsyncMock(side_effect=[sample, None])  # sample, tenant settings
+    db.add_all = lambda rows: added.extend(rows)
+    storage = SimpleNamespace(
+        backend="local",
+        provider=None,
+        storage_path="/data/smith/generated/form.pdf",
+        provider_item_id=None,
+        drive_id=None,
+        parent_id=None,
+        error=None,
+    )
+    store = AsyncMock(return_value=storage)
+    monkeypatch.setattr(sample_templates, "set_tenant_context", AsyncMock())
+    monkeypatch.setattr(sample_templates, "_verified_source", lambda s: pdf)
+    monkeypatch.setattr(sample_templates, "_load_render_matter", AsyncMock(return_value=matter))
+    monkeypatch.setattr(
+        sample_templates, "get_folder_or_404", AsyncMock(return_value=folder)
+    )
+    monkeypatch.setattr(
+        sample_templates.matter_file_store, "store_matter_file_result", store
+    )
+    monkeypatch.setattr(
+        sample_templates,
+        "_saved_document_response",
+        AsyncMock(return_value=None),
+    )
+    compensate = AsyncMock(return_value=True)
+    monkeypatch.setattr(sample_templates, "_compensate_staged_document", compensate)
+    monkeypatch.setattr(sample_templates, "_rollback_quietly", AsyncMock(return_value=True))
+    user = SimpleNamespace(id=uuid.uuid4(), tenant_id=tenant_id)
+    return SimpleNamespace(
+        db=db, sample=sample, matter=matter, fields=fields, added=added,
+        store=store, user=user, compensate=compensate, tenant_id=tenant_id,
+    )
+
+
+def _blank(ctx):
+    return {field["name"]: "" for field in ctx.fields}
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_files_filled_pdf_with_library_provenance(monkeypatch):
+    ctx = _save_fixture(monkeypatch)
+    name = ctx.fields[0]["name"]
+
+    response = await sample_templates.save_sample_to_matter(
+        ctx.sample.id,
+        sample_templates.SampleTemplateSaveToMatterRequest(
+            matter_id=str(ctx.matter.id),
+            variables={name: "Ada Example"},
+            verified_fields=[name, "not_filled"],
+        ),
+        current_user=ctx.user,
+        db=ctx.db,
+    )
+
+    doc, event = ctx.added
+    assert response.matter_document_id == str(doc.id)
+    assert response.matter_id == str(ctx.matter.id)
+    assert response.output_filename.startswith("Last Will and Testament-")
+    assert response.output_filename.endswith(".pdf")
+    assert doc.matter_id == ctx.matter.id
+    assert doc.tenant_id == ctx.tenant_id
+    assert doc.document_category == "generated"
+    assert doc.content_type == "application/pdf"
+    assert doc.folder_id is None
+    assert doc.description == "Filled from global library form: Last Will and Testament"
+    assert doc.generation_summary["sample_template_id"] == str(ctx.sample.id)
+    assert doc.generation_summary["source"] == "global_library"
+    assert doc.generation_summary["filled"] == 1
+    assert doc.generation_summary["verified_fields"] == [name]
+    assert event.event_type == "document_generated"
+    assert event.metadata_json["output_document_id"] == str(doc.id)
+    assert event.metadata_json["sample_source_name"] == "ND Courts"
+    stored = ctx.store.await_args.kwargs
+    assert stored["content"].startswith(b"%PDF-")
+    assert stored["category"] == "generated"
+    assert stored["matter_slug"] == "smith-divorce"
+    ctx.db.commit.assert_awaited_once()
+    sample_templates.set_tenant_context.assert_awaited_with(ctx.db, str(ctx.tenant_id))
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_routes_into_the_chosen_folder(monkeypatch):
+    folder = SimpleNamespace(id=uuid.uuid4())
+    ctx = _save_fixture(monkeypatch, folder=folder)
+    monkeypatch.setattr(
+        sample_templates,
+        "storage_routing_for_folder",
+        lambda chosen: ("pleadings", ["Pleadings"]) if chosen is folder else (None, None),
+    )
+
+    await sample_templates.save_sample_to_matter(
+        ctx.sample.id,
+        sample_templates.SampleTemplateSaveToMatterRequest(
+            matter_id=str(ctx.matter.id), variables=_blank(ctx), folder_id=folder.id
+        ),
+        current_user=ctx.user,
+        db=ctx.db,
+    )
+
+    assert ctx.added[0].folder_id == folder.id
+    assert ctx.store.await_args.kwargs["category"] == "pleadings"
+    assert ctx.store.await_args.kwargs["folder_path"] == ["Pleadings"]
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_rejects_a_folder_from_another_matter(monkeypatch):
+    from app.services.matter_document_organization import DocumentOrganizationError
+
+    ctx = _save_fixture(monkeypatch)
+    monkeypatch.setattr(
+        sample_templates,
+        "get_folder_or_404",
+        AsyncMock(side_effect=DocumentOrganizationError(404, "folder_not_found", "Folder not found")),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.save_sample_to_matter(
+            ctx.sample.id,
+            sample_templates.SampleTemplateSaveToMatterRequest(
+                matter_id=str(ctx.matter.id), variables={}, folder_id=uuid.uuid4()
+            ),
+            current_user=ctx.user,
+            db=ctx.db,
+        )
+    assert exc_info.value.status_code == 404
+    ctx.store.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_enforces_required_answers(monkeypatch):
+    pdf_fields = discover_pdf_fields(_fillable_pdf())
+    required = [{**pdf_fields[0], "required": True}]
+    ctx = _save_fixture(monkeypatch, fields=required)
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.save_sample_to_matter(
+            ctx.sample.id,
+            sample_templates.SampleTemplateSaveToMatterRequest(
+                matter_id=str(ctx.matter.id), variables={}
+            ),
+            current_user=ctx.user,
+            db=ctx.db,
+        )
+    assert exc_info.value.status_code == 422
+    ctx.store.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_requires_seeded_schema(monkeypatch):
+    ctx = _save_fixture(monkeypatch)
+    ctx.sample.variable_schema = None
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.save_sample_to_matter(
+            ctx.sample.id,
+            sample_templates.SampleTemplateSaveToMatterRequest(matter_id="m-1"),
+            current_user=ctx.user,
+            db=ctx.db,
+        )
+    assert exc_info.value.status_code == 409
+    ctx.store.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_removes_the_staged_file_when_the_row_cannot_flush(monkeypatch):
+    ctx = _save_fixture(monkeypatch)
+    ctx.db.flush = AsyncMock(side_effect=RuntimeError("db down"))
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.save_sample_to_matter(
+            ctx.sample.id,
+            sample_templates.SampleTemplateSaveToMatterRequest(
+                matter_id=str(ctx.matter.id), variables=_blank(ctx)
+            ),
+            current_user=ctx.user,
+            db=ctx.db,
+        )
+    assert exc_info.value.status_code == 500
+    assert "staged file was removed" in exc_info.value.detail
+    ctx.compensate.assert_awaited_once()
+    ctx.db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_keeps_the_file_when_the_commit_outcome_is_unknown(monkeypatch):
+    ctx = _save_fixture(monkeypatch)
+    ctx.db.commit = AsyncMock(side_effect=RuntimeError("ack lost"))
+    monkeypatch.setattr(
+        sample_templates, "_matter_document_commit_outcome", AsyncMock(return_value=None)
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await sample_templates.save_sample_to_matter(
+            ctx.sample.id,
+            sample_templates.SampleTemplateSaveToMatterRequest(
+                matter_id=str(ctx.matter.id), variables=_blank(ctx)
+            ),
+            current_user=ctx.user,
+            db=ctx.db,
+        )
+    assert exc_info.value.status_code == 500
+    ctx.compensate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_removes_the_file_when_the_commit_definitely_failed(monkeypatch):
+    ctx = _save_fixture(monkeypatch)
+    ctx.db.commit = AsyncMock(side_effect=RuntimeError("ack lost"))
+    monkeypatch.setattr(
+        sample_templates, "_matter_document_commit_outcome", AsyncMock(return_value=False)
+    )
+    with pytest.raises(HTTPException):
+        await sample_templates.save_sample_to_matter(
+            ctx.sample.id,
+            sample_templates.SampleTemplateSaveToMatterRequest(
+                matter_id=str(ctx.matter.id), variables=_blank(ctx)
+            ),
+            current_user=ctx.user,
+            db=ctx.db,
+        )
+    ctx.compensate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_to_matter_succeeds_when_a_lost_commit_ack_is_confirmed(monkeypatch):
+    ctx = _save_fixture(monkeypatch)
+    ctx.db.commit = AsyncMock(side_effect=RuntimeError("ack lost"))
+    monkeypatch.setattr(
+        sample_templates, "_matter_document_commit_outcome", AsyncMock(return_value=True)
+    )
+    persisted = SimpleNamespace(id="persisted")
+    ctx.db.scalar = AsyncMock(side_effect=[ctx.sample, None, persisted])
+    response = await sample_templates.save_sample_to_matter(
+        ctx.sample.id,
+        sample_templates.SampleTemplateSaveToMatterRequest(
+            matter_id=str(ctx.matter.id), variables=_blank(ctx)
+        ),
+        current_user=ctx.user,
+        db=ctx.db,
+    )
+    assert response.matter_document_id == str(ctx.added[0].id)
+    ctx.compensate.assert_not_awaited()
+    sample_templates._saved_document_response.assert_awaited_once_with(
+        ctx.db, tenant_id=ctx.tenant_id, document=persisted
+    )
+
+
+def test_save_to_matter_route_is_registered():
+    for path, methods in _effective_routes():
+        if path == "/api/templates/library/{sample_id}/save-to-matter":
+            assert "POST" in methods
+            return
+    raise AssertionError("save-to-matter route is not registered")
