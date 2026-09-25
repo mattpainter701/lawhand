@@ -99,7 +99,9 @@ class FakeMaterializer:
             provider_etag='"{E},2"',
             provider_version_id="2",
         )
-        return NS(document=document, sha256=_sha(content), operation=NS(id=uuid.uuid4()))
+        return NS(
+            document=document, sha256=_sha(content), operation=NS(id=uuid.uuid4())
+        )
 
 
 def _binding(*, backend="onedrive", preview_truncated=False, edit_mode=None):
