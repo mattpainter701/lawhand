@@ -1,3 +1,8 @@
+## Unreleased — Provider-aligned cloud upload chunk sizes
+
+- `app/services/matter_file_store.py`: the shared 2 MiB `_CHUNK_SIZE` is replaced by one constant per provider. Microsoft Graph upload sessions require every fragment except the last to be a multiple of 320 KiB, and 2 MiB is 6.4 × 320 KiB, so new OneDrive files over 4 MiB could fail to commit. `_GRAPH_CHUNK_SIZE = 10 * 320 * 1024` (3.125 MiB) now drives both `_upload_large_onedrive` and in-place replacement (`_replace_graph_item`, previously `_REPLACE_CHUNK_SIZE`). `_GOOGLE_CHUNK_SIZE = 8 * 256 * 1024` (2 MiB, unchanged) drives Drive resumable uploads, which need 256 KiB multiples. SharePoint stores still use a single `PUT …/content` and are not chunked.
+- Tests: `test_matter_file_store.py` uploads a >10 MiB file through the OneDrive and Google Drive chunked paths and checks that each non-final `Content-Range` span is a multiple of the provider's unit and that the ranges are contiguous.
+
 ## 2026.09.25.06 — Shared library forms fill the right boxes
 
 - Every shared sample form not generated in-repo (76 forms, ~3,600 fields) is curated in `backend/seed/sample_templates/manifest.json` from its page images: `field_labels` (new; seeded as `label` with `label_source: "curated"`, the PDF's own label kept in `source_label`), `bindings`, and `option_labels` (new; radio/choice options become `{value, label}`, export values unchanged). `seed_sample_templates._variable_schema` rejects curation naming a field or option the PDF lacks.
@@ -173,6 +178,13 @@
 - Prepare restores sessions before auto-fill and serializes document draft writes with visible save/retry state and a recoverable URL. Matter changes and answer edits invalidate old preview evidence. Packet interviews include Markdown body placeholders, preserve choice controls, and resolve local aliases in bounded batches without treating an explicit manual binding as an alias.
 - Studio field discovery and paused-template counts are consistent. The selected cloud provider's credential health is reflected in storage setup status. Matter search includes client names and matter numbers without widening tenant access.
 - Validation and remaining production acceptance requirements are recorded in `docs/pdf-release-acceptance-2026-09-22.md`. Cloud grant reauthorization and actual save/reopen checks remain operational acceptance, not a claim made by the code change.
+
+## Unreleased — Matter document routes refuse client-portal logins
+
+- Security: a client-portal login (`User.role == "client"`) is a real user whose JWT `get_current_user` accepts, and portal responses expose shared document IDs. Replayed as `Authorization: Bearer …`, it could list, download, open, search, edit, delete, file and tag firm documents in its own matter through the staff API.
+- `app/services/access_control.py` gains `is_client_portal_user` and `require_firm_staff`, which raise `403 {"code": "staff_only"}`. Every route in `app/routers/matter_documents.py` (list, upload, patch, delete, `/open`, `/download`, `/search`, facts, form reading, fact accept, `cloud-edit`, `reconcile`, `revised-version`) and `app/routers/matter_document_folders.py` (folders, move, copy, `/api/document-tags`, per-document tags) calls it right after `get_current_user`, before any database or storage-provider work. The router-local `_require_firm_staff` from the Word/Google Docs routes is replaced by the shared helper.
+- Document revisions already require the `manage_documents` capability, which portal clients never hold. Clients keep using `/api/portal/client/...`; no portal page calls the staff routes. No migration.
+- Tests: `test_matter_document_staff_only.py` (every route refuses a client with no storage call and no row change; staff still list, edit, create folders and move documents).
 
 ## Unreleased — Research MCP request-level idempotency and billing visibility
 
