@@ -266,6 +266,8 @@ The UX findings in `ux.json` and `clusters-ux.json` (102 clusters) were reported
 
 ## Decisions needed
 
+Decisions 1–3 are settled in [the permissions and visibility model](./permissions-and-visibility-model-2026-09-25.md) (25 September 2026): an org-level firm connection replaces the admin-token fallback, firm storage is firm-owned, and a LawHand deactivation holds against directory sync.
+
 1. **Admin-token fallback.** Should staff without a personal connection lose cloud mail and file search, and calendar pushes? The recommendation is yes:
    - search only the firm's own storage roots
    - index mail per user, filtered by owner
