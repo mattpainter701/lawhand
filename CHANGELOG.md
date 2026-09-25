@@ -1,3 +1,16 @@
+## 2026.09.25.05 — Assistant Word drafts keep your cloud edits and formatting
+
+- **D34: a LawHand text save no longer orphans Word Online / Google Docs edits.** `PATCH /api/tasks/{id}/pending-action` on an artifact-bound `matter_document_draft` now reads the bound working copy (`read_current_cloud_bytes`) and compares its SHA-256 with the recorded `document_sha256` before writing a revision or superseding anything.
+  - A mismatch (or a copy grown past the DOCX size cap) returns 409 with `detail.code = "cloud_copy_changed"` and nothing is written.
+  - An unreadable copy returns 503 rather than being assumed unchanged.
+  - New `discard_cloud_edits: true` on `PendingActionEdit` overrides the check and writes a `cloud_edits_discarded` integrity event (recorded and observed hashes, `check` = `changed` / `too_large` / `unreadable`). The edited file stays in the superseded cloud document.
+- **D09: AI Word drafts are never flattened.**
+  - `_propose_matter_document_impl` sets `document_edit_mode="office_snapshot"` whenever the draft has real DOCX bytes (`propose_document_from_template` with a DOCX template, `propose_matter_document_file`); text-only drafts stay `lawhand_text`.
+  - The text-save path refuses a draft whose `document_preview_truncated` is set, and a legacy `lawhand_text` draft whose working copy was verified from DOCX bytes (`source_mode = external_cloud_docx_snapshot`).
+  - `CloudArtifactMaterializer.materialize` refuses to regenerate a superseding revision from text over such a copy (`OfficeSnapshotTextRenderRefused`, code `office_snapshot_text_render_refused`); helper `document_has_office_source`.
+- **Frontend:** `DocumentDraftWorkspace` shows the `cloud_copy_changed` 409 with **Refresh edits from cloud** and **Discard cloud edits and save** (TaskBoard and the chat `ActionProposalCard`). A truncated preview is read-only.
+- Tests: `test_assistant_draft_cloud_guards.py` covers the D34 409 and override, the D09 guards, and the first backend tests for `POST /tasks/{id}/pending-action/sync-cloud` (unchanged and changed). No migration.
+
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
 
 - New endpoints on matter documents:

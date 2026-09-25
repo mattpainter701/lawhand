@@ -359,6 +359,7 @@ export default function ActionProposalCard({
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentNotice, setDocumentNotice] = useState(null)
   const [cloudSyncing, setCloudSyncing] = useState(false)
+  const [cloudConflict, setCloudConflict] = useState(false)
   const [editing, setEditing] = useState(false)
   const [state, setState] = useState('proposed')
   const [delivery, setDelivery] = useState(currentProposal?.delivery || null)
@@ -515,7 +516,7 @@ export default function ActionProposalCard({
     }
   }
 
-  const handleSaveDocument = async () => {
+  const handleSaveDocument = async ({ discardCloudEdits = false } = {}) => {
     const cleanTitle = documentTitle.trim()
     if (!cleanTitle || !draft.trim()) {
       setError('A document title and text are required.')
@@ -529,16 +530,21 @@ export default function ActionProposalCard({
     setDocumentNotice(null)
     setError(null)
     try {
-      const updated = await updateTaskPendingAction(currentProposal.task_id, {
+      const payload = {
         title: cleanTitle,
         body: draft,
         expected_version: currentProposal.version,
-      })
+      }
+      if (discardCloudEdits) payload.discard_cloud_edits = true
+      const updated = await updateTaskPendingAction(currentProposal.task_id, payload)
+      setCloudConflict(false)
       setLiveTask(updated)
       setDocumentTitle(updated.pending_action?.title || cleanTitle)
       setDraft(updated.pending_action?.body || draft)
       setDocumentNotice('New DOCX revision saved to tenant cloud; review reset.')
     } catch (saveError) {
+      setCloudConflict(saveError?.response?.status === 409
+        && saveError?.response?.data?.detail?.code === 'cloud_copy_changed')
       setError(renderSafeError(saveError, 'The document draft could not be saved.'))
     } finally {
       setDocumentSaving(false)
@@ -552,6 +558,7 @@ export default function ActionProposalCard({
     try {
       const response = await syncTaskCloudDocument(currentProposal.task_id, currentProposal.version)
       const updated = response?.task || response
+      setCloudConflict(false)
       setLiveTask(updated)
       setDelivery(updated.delivery || null)
       setDocumentTitle(updated.pending_action?.title || documentTitle)
@@ -640,8 +647,12 @@ export default function ActionProposalCard({
           error={error}
           onTitleChange={(value) => { setDocumentTitle(value); setDocumentNotice(null) }}
           onBodyChange={(value) => { setDraft(value); setDocumentNotice(null) }}
-          onSave={handleSaveDocument}
-          onClose={() => setDocumentWorkspaceOpen(false)}
+          onSave={() => handleSaveDocument()}
+          cloudConflict={cloudConflict}
+          refreshing={cloudSyncing}
+          onRefreshFromCloud={handleSyncCloudDocument}
+          onDiscardCloudEdits={() => handleSaveDocument({ discardCloudEdits: true })}
+          onClose={() => { setCloudConflict(false); setDocumentWorkspaceOpen(false) }}
         />
       </>
     )

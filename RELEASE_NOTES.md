@@ -5,6 +5,16 @@ security, and migration details, see the [technical changelog](CHANGELOG.md).
 
 <!-- Generated from backend/app/release_notes.json. Do not edit by hand. -->
 
+## 2026.09.25.05 — Assistant Word drafts keep your cloud edits and formatting
+
+Released September 25, 2026.
+
+Saving an assistant document draft in LawHand no longer leaves Word Online or Google Docs edits behind, and drafts made from a Word file keep their formatting.
+
+- **Cloud edits are not left behind.** If the draft changed in Word or Google Docs since its last save, LawHand stops the save. Refresh edits from cloud, or discard them and save; discarding is recorded.
+- **Formatting is kept.** Drafts made from a Word template or an uploaded Word file are edited in Word or Google Docs, so letterhead, tables and headers are never flattened to plain text.
+- **Long drafts stay whole.** A draft too long to show in full is read-only in LawHand, so a save can never cut off the rest of the document.
+
 ## 2026.09.25.01 — Edit matter documents in Word or Google Docs
 
 Released September 25, 2026.

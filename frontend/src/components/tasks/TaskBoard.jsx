@@ -100,6 +100,10 @@ const PRIORITY = {
   low: 'border-slate-200 bg-slate-50 text-slate-600',
 }
 
+function isCloudCopyChanged(error) {
+  return error?.response?.status === 409 && error?.response?.data?.detail?.code === 'cloud_copy_changed'
+}
+
 function apiError(error, fallback) {
   const detail = error?.response?.data?.detail
   if (typeof detail === 'string') return detail
@@ -1016,6 +1020,7 @@ function TaskDetailDrawer({ taskId, card, onClose, onMoveRequest, onApproveDocum
   const [draftNotice, setDraftNotice] = useState(null)
   const [documentWorkspaceOpen, setDocumentWorkspaceOpen] = useState(false)
   const [cloudSyncing, setCloudSyncing] = useState(false)
+  const [cloudConflict, setCloudConflict] = useState(false)
   const drawerRef = useRef(null)
   useEffect(() => {
     let active = true
@@ -1060,7 +1065,7 @@ function TaskDetailDrawer({ taskId, card, onClose, onMoveRequest, onApproveDocum
   ) || null
   const draftSmsEditable = Boolean(livePendingSms) && task?.status === 'review'
   const officeSnapshot = livePendingDocument?.document_edit_mode === 'office_snapshot'
-  const draftDocumentEditable = Boolean(livePendingDocument) && task?.status === 'review' && !officeSnapshot
+  const draftDocumentEditable = Boolean(livePendingDocument) && task?.status === 'review' && !officeSnapshot && !livePendingDocument?.document_preview_truncated
   const pendingDocumentStorageState = task?.delivery?.status === 'failed' ? 'conflict' : (livePendingDocument?.document_id ? 'verified' : 'pending')
   const pendingDocumentId = livePendingDocument?.document_id
   const pendingDocumentOpenUrl = pendingDocumentId && task?.matter_id
@@ -1126,15 +1131,21 @@ function TaskDetailDrawer({ taskId, card, onClose, onMoveRequest, onApproveDocum
       setDraftSaving(false)
     }
   }
-  const savePendingDocumentDraft = async () => {
+  const savePendingDocumentDraft = async ({ discardCloudEdits = false } = {}) => {
     const title = draftSubject.trim()
     if (!title || !draftBody.trim()) { setDraftError('A document title and text are required before this draft can be saved.'); return }
     if (!Number.isInteger(task?.version) || task.version < 1) { setDraftError('The live task version is unavailable. Close and reopen the task before editing.'); return }
     setDraftSaving(true); setDraftError(null); setDraftNotice(null)
     try {
-      const updated = await updateTaskPendingAction(task.id, { title, body: draftBody, expected_version: task.version })
+      const payload = { title, body: draftBody, expected_version: task.version }
+      if (discardCloudEdits) payload.discard_cloud_edits = true
+      const updated = await updateTaskPendingAction(task.id, payload)
+      setCloudConflict(false)
       applyUpdatedTask(updated); setDraftEditing(false); setDraftNotice('New DOCX revision saved to tenant cloud; review reset.')
-    } catch (err) { setDraftError(apiError(err, 'The document draft could not be saved.')) } finally { setDraftSaving(false) }
+    } catch (err) {
+      setCloudConflict(isCloudCopyChanged(err))
+      setDraftError(apiError(err, 'The document draft could not be saved.'))
+    } finally { setDraftSaving(false) }
   }
   const savePendingSmsDraft = async () => {
     const category = draftCategory.trim()
@@ -1159,6 +1170,7 @@ function TaskDetailDrawer({ taskId, card, onClose, onMoveRequest, onApproveDocum
     try {
       const response = await syncTaskCloudDocument(task.id, task.version)
       const updated = response?.task || response
+      setCloudConflict(false)
       applyUpdatedTask(updated)
       setDraftNotice(response?.changed === false
         ? 'No cloud edits were found; this review is unchanged.'
@@ -1312,14 +1324,18 @@ function TaskDetailDrawer({ taskId, card, onClose, onMoveRequest, onApproveDocum
           previewTruncated={Boolean(livePendingDocument?.document_preview_truncated)}
           onTitleChange={(value) => { setDraftSubject(value); setDraftNotice(null) }}
           onBodyChange={(value) => { setDraftBody(value); setDraftNotice(null) }}
-          onSave={savePendingDocumentDraft}
+          onSave={() => savePendingDocumentDraft()}
+          cloudConflict={cloudConflict}
+          refreshing={cloudSyncing}
+          onRefreshFromCloud={syncCloudDocument}
+          onDiscardCloudEdits={() => savePendingDocumentDraft({ discardCloudEdits: true })}
           onApprove={() => {
             setDocumentWorkspaceOpen(false)
             if (['staff_then_attorney', 'attorney_only'].includes(task.review_policy)) {
               window.setTimeout(() => document.getElementById('artifact-review-panel')?.scrollIntoView({ block: 'center' }), 0)
             } else onApproveDocument(task)
           }}
-          onClose={() => { resetDraft(); setDocumentWorkspaceOpen(false) }}
+          onClose={() => { resetDraft(); setCloudConflict(false); setDocumentWorkspaceOpen(false) }}
         />
       )}
     </div>

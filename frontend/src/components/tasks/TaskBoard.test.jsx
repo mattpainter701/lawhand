@@ -3,13 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TaskBoard from './TaskBoard'
-import { getTask, getTaskEvents, updateTaskPendingAction } from '../../api'
+import { getTask, getTaskEvents, syncTaskCloudDocument, updateTaskPendingAction } from '../../api'
 
 vi.mock('../../api', () => ({
   API_BASE_URL: '/api',
   getTask: vi.fn(),
   getTaskEvents: vi.fn(),
   searchUsers: vi.fn().mockResolvedValue([]),
+  syncTaskCloudDocument: vi.fn(),
   updateTaskPendingAction: vi.fn(),
 }))
 
@@ -94,6 +95,8 @@ const smsConsentEvidence = {
 describe('TaskBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    updateTaskPendingAction.mockReset()
+    syncTaskCloudDocument.mockReset()
     getTask.mockResolvedValue({ ...task, description: 'Privileged work notes.' })
     getTaskEvents.mockResolvedValue({ items: [], total: 0 })
   })
@@ -318,6 +321,158 @@ describe('TaskBoard', () => {
       'in_progress',
       expect.any(Object),
     ))
+  })
+
+  it('stops a LawHand save that would orphan cloud edits and offers refresh or discard', async () => {
+    const user = userEvent.setup()
+    let current = {
+      ...task,
+      id: 'task-document-conflict',
+      title: 'Review document: Client status letter',
+      status: 'review',
+      version: 2,
+      source: 'assistant',
+      pending_action: {
+        type: 'matter_document_draft',
+        title: 'Client status letter',
+        body: 'Dear Client,\n\nStatus.',
+        document_id: 'document-cloud-1',
+        document_sha256: 'b'.repeat(64),
+        document_storage_backend: 'onedrive',
+        sources: [],
+      },
+    }
+    getTask.mockImplementation(async () => current)
+    const conflict = Object.assign(new Error('Conflict'), {
+      response: {
+        status: 409,
+        data: { detail: { code: 'cloud_copy_changed', message: 'Word Online edits are newer than this revision.' } },
+      },
+    })
+    updateTaskPendingAction.mockImplementation(async (_id, payload) => {
+      if (!payload.discard_cloud_edits) throw conflict
+      current = { ...current, version: 3, pending_action: { ...current.pending_action, body: payload.body } }
+      return current
+    })
+    const draftedData = {
+      ...data,
+      columns: data.columns.map((column) => (
+        column.status === 'review'
+          ? { ...column, total: 1, items: [current] }
+          : { ...column, total: 0, items: [] }
+      )),
+    }
+
+    render(<TaskBoard {...props} data={draftedData} taskId="task-document-conflict" />)
+
+    await user.click(await screen.findByRole('button', { name: 'Open draft workspace' }))
+    await user.type(screen.getByRole('textbox', { name: 'Document text' }), ' More.')
+    await user.click(screen.getByRole('button', { name: 'Save as new cloud revision' }))
+
+    expect(await screen.findByText('Word Online edits are newer than this revision.')).toBeInTheDocument()
+    expect(screen.getByText('The cloud working copy was edited outside LawHand.')).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Client status letter' })
+    expect(within(dialog).getByRole('button', { name: 'Refresh edits from cloud' })).toBeEnabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Discard cloud edits and save' }))
+
+    await waitFor(() => expect(updateTaskPendingAction).toHaveBeenLastCalledWith(
+      'task-document-conflict',
+      expect.objectContaining({ discard_cloud_edits: true, expected_version: 2 }),
+    ))
+    await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Discard cloud edits and save' })).not.toBeInTheDocument())
+    expect(screen.getByRole('textbox', { name: 'Document text' })).toHaveValue('Dear Client,\n\nStatus. More.')
+  })
+
+  it('refreshes cloud edits from the conflict prompt', async () => {
+    const user = userEvent.setup()
+    let current = {
+      ...task,
+      id: 'task-document-refresh',
+      title: 'Review document: Client status letter',
+      status: 'review',
+      version: 2,
+      source: 'assistant',
+      pending_action: {
+        type: 'matter_document_draft',
+        title: 'Client status letter',
+        body: 'Dear Client,\n\nStatus.',
+        document_id: 'document-cloud-1',
+        document_sha256: 'b'.repeat(64),
+        document_storage_backend: 'google_drive',
+        sources: [],
+      },
+    }
+    getTask.mockImplementation(async () => current)
+    updateTaskPendingAction.mockRejectedValue(Object.assign(new Error('Conflict'), {
+      response: { status: 409, data: { detail: { code: 'cloud_copy_changed', message: 'Edited outside LawHand.' } } },
+    }))
+    syncTaskCloudDocument.mockImplementation(async () => {
+      current = {
+        ...current,
+        version: 3,
+        pending_action: { ...current.pending_action, body: 'Edited in Docs.', document_edit_mode: 'office_snapshot' },
+      }
+      return { task: current, changed: true, message: 'Cloud edits were preserved.' }
+    })
+    const draftedData = {
+      ...data,
+      columns: data.columns.map((column) => (
+        column.status === 'review'
+          ? { ...column, total: 1, items: [current] }
+          : { ...column, total: 0, items: [] }
+      )),
+    }
+
+    render(<TaskBoard {...props} data={draftedData} taskId="task-document-refresh" />)
+
+    await user.click(await screen.findByRole('button', { name: 'Open draft workspace' }))
+    await user.type(screen.getByRole('textbox', { name: 'Document text' }), ' More.')
+    await user.click(screen.getByRole('button', { name: 'Save as new cloud revision' }))
+    const dialog = screen.getByRole('dialog', { name: 'Client status letter' })
+    await user.click(await within(dialog).findByRole('button', { name: 'Refresh edits from cloud' }))
+
+    await waitFor(() => expect(syncTaskCloudDocument).toHaveBeenCalledWith('task-document-refresh', 2))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Document text' })).toHaveValue('Edited in Docs.'))
+    expect(screen.getByRole('textbox', { name: 'Document text' })).toBeDisabled()
+    expect(within(dialog).queryByRole('button', { name: 'Discard cloud edits and save' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a truncated document preview read-only', async () => {
+    const user = userEvent.setup()
+    const current = {
+      ...task,
+      id: 'task-document-truncated',
+      title: 'Review document: Long brief',
+      status: 'review',
+      version: 2,
+      source: 'assistant',
+      pending_action: {
+        type: 'matter_document_draft',
+        title: 'Long brief',
+        body: 'Part one…',
+        document_id: 'document-cloud-2',
+        document_sha256: 'c'.repeat(64),
+        document_storage_backend: 'sharepoint',
+        document_preview_truncated: true,
+        sources: [],
+      },
+    }
+    getTask.mockResolvedValue(current)
+    const draftedData = {
+      ...data,
+      columns: data.columns.map((column) => (
+        column.status === 'review'
+          ? { ...column, total: 1, items: [current] }
+          : { ...column, total: 0, items: [] }
+      )),
+    }
+
+    render(<TaskBoard {...props} data={draftedData} taskId="task-document-truncated" />)
+
+    await user.click(await screen.findByRole('button', { name: 'View document draft' }))
+    expect(screen.getByText('Read-only preview')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Document text' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Save as new cloud revision/ })).not.toBeInTheDocument()
   })
 
   it('shows consent evidence and resets review identity when an SMS draft is edited', async () => {
