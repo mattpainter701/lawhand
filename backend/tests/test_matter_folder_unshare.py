@@ -505,6 +505,50 @@ async def test_folder_linked_to_two_matters_stays_shared_until_both_end(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("provider", PROVIDERS)
+async def test_legacy_context_folder_stays_shared_while_another_matter_needs_it(
+    client, db_session, test_tenant, test_user, drives, provider
+):
+    """Two matters from before ids were stored link one context folder.
+
+    Neither has grant rows, so leaving the first must still keep the read
+    share the second matter relies on, and leaving both removes it.
+    """
+    assignee = await _user(db_session, test_tenant, ASSIGNEE)
+    first = await _matter(
+        db_session, test_tenant, test_user, _folder(provider, "f1", "shared")
+    )
+    second = await _matter(
+        db_session, test_tenant, test_user, _folder(provider, "f2", "shared")
+    )
+    first_id, second_id = first.id, second.id
+    drives.seed(provider, "f1", ASSIGNEE, LAWHAND_ROLE[provider])
+    drives.seed(provider, "f2", ASSIGNEE, LAWHAND_ROLE[provider])
+    drives.seed(provider, "shared", ASSIGNEE, CONTEXT_ROLE[provider])
+    a1 = MatterAssignment(
+        tenant_id=test_tenant.id, matter_id=first_id, user_id=assignee.id
+    )
+    a2 = MatterAssignment(
+        tenant_id=test_tenant.id, matter_id=second_id, user_id=assignee.id
+    )
+    db_session.add_all([a1, a2])
+    await db_session.commit()
+    a1_id, a2_id = a1.id, a2.id
+
+    resp = await client.delete(f"/api/matters/{first_id}/assignments/{a1_id}")
+
+    assert resp.status_code == 204
+    assert drives.holders(provider, "f1") == {}
+    assert drives.holders(provider, "shared") == {ASSIGNEE: CONTEXT_ROLE[provider]}
+
+    resp = await client.delete(f"/api/matters/{second_id}/assignments/{a2_id}")
+
+    assert resp.status_code == 204
+    assert drives.holders(provider, "f2") == {}
+    assert drives.holders(provider, "shared") == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", PROVIDERS)
 async def test_share_failure_never_blocks_the_assignment(
     client, db_session, test_tenant, test_user, drives, provider
 ):

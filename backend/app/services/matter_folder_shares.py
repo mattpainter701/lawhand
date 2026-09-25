@@ -25,7 +25,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.durable_job import DurableJob
@@ -368,7 +368,37 @@ async def _shared_by_another_matter(
             MatterFolderShareGrant.id != grant.id,
         )
     )
-    return other is not None
+    if other is not None:
+        return True
+    # Matters shared before ids were stored have no grant rows, so a context
+    # folder they also link would look unclaimed. Ask the live assignments:
+    # any other matter the person is still on whose folders include this one
+    # keeps the share.
+    other_folders = select(Matter.cloud_folder).where(
+        Matter.tenant_id == tenant_id,
+        Matter.id.in_(
+            select(MatterAssignment.matter_id)
+            .join(User, User.id == MatterAssignment.user_id)
+            .where(
+                MatterAssignment.tenant_id == tenant_id,
+                User.tenant_id == tenant_id,
+                User.is_active.is_(True),
+                func.lower(User.email) == grant.email,
+            )
+        ),
+    )
+    if grant.matter_id is not None:
+        other_folders = other_folders.where(Matter.id != grant.matter_id)
+    target = (grant.provider, grant.folder_id)
+    for cloud_folder in (await db.scalars(other_folders)).all():
+        if any(
+            (provider, folder_id) == target
+            for provider, folder_id, _role in cloud_init.matter_folder_share_targets(
+                cloud_folder
+            )
+        ):
+            return True
+    return False
 
 
 async def _remove_from_provider(token, grant: _PendingGrant) -> int:
