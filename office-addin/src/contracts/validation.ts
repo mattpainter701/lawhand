@@ -64,6 +64,29 @@ function validateAnchor(raw: unknown, name: string): ActionAnchor {
   return result
 }
 
+// Excel parses a string written through range.values as a formula when it
+// starts with one of these, so "=WEBSERVICE(...)" as a value would skip the
+// formula checks. Plain numbers such as "-5" stay allowed; the server applies
+// the same rule, and this copy guards against a stale or compromised backend.
+const FORMULA_PREFIXES = ['=', '+', '-', '@']
+const PLAIN_NUMBER_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+
+function assertNoFormulaValues(values: unknown[][], name: string): unknown[][] {
+  values.forEach((row, rowIndex) => {
+    row.forEach((cell, columnIndex) => {
+      if (typeof cell !== 'string') return
+      const text = cell.trimStart()
+      if (FORMULA_PREFIXES.some((prefix) => text.startsWith(prefix)) && !PLAIN_NUMBER_RE.test(text.trimEnd())) {
+        throw new PlanValidationError(
+          'formula_in_values',
+          `${name}[${rowIndex}][${columnIndex}] must not start with =, +, - or @; use set_selected_formulas`,
+        )
+      }
+    })
+  })
+  return values
+}
+
 function validateMatrix(raw: unknown, name: string): unknown[][] {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > 10_000) {
     throw new PlanValidationError('invalid_matrix', `${name} must be a non-empty bounded matrix`)
@@ -99,7 +122,8 @@ function validateAction(raw: unknown, surface: OfficeSurface, index: number): Of
   if (type === 'set_selected_values') {
     assertKeys(content, ['values'], ['values'], `${name}.content`)
     if (!anchor.address) throw new PlanValidationError('missing_address', `${name}.anchor.address is required`)
-    return { type, anchor: { ...anchor, address: anchor.address }, content: { values: validateMatrix(content.values, `${name}.content.values`) } }
+    const values = assertNoFormulaValues(validateMatrix(content.values, `${name}.content.values`), `${name}.content.values`)
+    return { type, anchor: { ...anchor, address: anchor.address }, content: { values } }
   }
 
   if (type === 'set_selected_formulas') {
