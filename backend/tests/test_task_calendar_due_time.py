@@ -97,15 +97,134 @@ def test_google_event_is_timed_when_the_task_has_a_due_time():
 def test_google_event_stays_a_date_without_a_due_time():
     schedule = _google_schedule("2026-09-18", None, CHICAGO)
 
+    # Google's end.date is exclusive: a one-day event ends the next day. An end
+    # equal to the start is an empty range Google rejects (timeRangeEmpty).
     assert schedule == {
         "start": {"date": "2026-09-18"},
-        "end": {"date": "2026-09-18"},
+        "end": {"date": "2026-09-19"},
     }
+
+
+@pytest.mark.parametrize(
+    ("due_date", "next_day"),
+    [
+        ("2026-09-30", "2026-10-01"),
+        ("2026-12-31", "2027-01-01"),
+        ("2028-02-28", "2028-02-29"),
+    ],
+)
+def test_google_all_day_end_rolls_over_month_year_and_leap_day(due_date, next_day):
+    schedule = _google_schedule(due_date, None, CHICAGO)
+
+    assert schedule["start"] == {"date": due_date}
+    assert schedule["end"] == {"date": next_day}
 
 
 def test_an_empty_timezone_falls_back_to_utc_rather_than_crashing():
     assert _google_schedule("2026-09-18", "09:00:00", "")["start"]["timeZone"] == "UTC"
     assert _graph_schedule("2026-09-18", "09:00:00", "")["start"]["timeZone"] == "UTC"
+
+
+def _google_http(monkeypatch, *, existing_event_id=None):
+    """Record the write ``upsert_task_event`` sends to Google."""
+    sent = []
+
+    class _Response:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = ""
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, headers=None, params=None):
+            items = [{"id": existing_event_id}] if existing_event_id else []
+            return _Response(200, {"items": items})
+
+        async def post(self, url, headers=None, json=None):
+            sent.append(("POST", url, json))
+            return _Response(201, {"id": "new-event"})
+
+        async def patch(self, url, headers=None, json=None):
+            sent.append(("PATCH", url, json))
+            return _Response(200, {"id": existing_event_id})
+
+    async def _token(*args, **kwargs):
+        return "token"
+
+    monkeypatch.setattr(google_calendar.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(google_calendar, "_get_token", _token)
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_google_creates_a_date_only_task_as_a_one_day_all_day_event(monkeypatch):
+    sent = _google_http(monkeypatch)
+
+    result = await google_calendar.upsert_task_event(
+        "tenant-1", "task-1", "File response brief", "2026-09-18"
+    )
+
+    assert result == {"id": "new-event"}
+    [(method, _url, body)] = sent
+    assert method == "POST"
+    assert body["start"] == {"date": "2026-09-18"}
+    assert body["end"] == {"date": "2026-09-19"}
+
+
+@pytest.mark.asyncio
+async def test_google_patch_to_date_only_clears_the_stale_timed_fields(monkeypatch):
+    # PATCH merges nested objects, so a task whose due time was cleared must
+    # null the old dateTime/timeZone or Google keeps a mixed start/end.
+    sent = _google_http(monkeypatch, existing_event_id="evt-1")
+
+    await google_calendar.upsert_task_event(
+        "tenant-1", "task-1", "File response brief", "2026-09-18"
+    )
+
+    [(method, url, body)] = sent
+    assert method == "PATCH"
+    assert url.endswith("/events/evt-1")
+    assert body["start"] == {"date": "2026-09-18", "dateTime": None, "timeZone": None}
+    assert body["end"] == {"date": "2026-09-19", "dateTime": None, "timeZone": None}
+
+
+@pytest.mark.asyncio
+async def test_google_patch_to_timed_clears_the_stale_date(monkeypatch):
+    sent = _google_http(monkeypatch, existing_event_id="evt-1")
+
+    await google_calendar.upsert_task_event(
+        "tenant-1",
+        "task-1",
+        "File response brief",
+        "2026-09-18",
+        due_time="14:30:00",
+        timezone_name=CHICAGO,
+    )
+
+    [(method, _url, body)] = sent
+    assert method == "PATCH"
+    assert body["start"] == {
+        "dateTime": "2026-09-18T14:30:00",
+        "timeZone": CHICAGO,
+        "date": None,
+    }
+    assert body["end"] == {
+        "dateTime": "2026-09-18T15:00:00",
+        "timeZone": CHICAGO,
+        "date": None,
+    }
 
 
 # ── The push actually carries it ─────────────────────────────────────────────
@@ -258,7 +377,9 @@ async def test_calendar_read_falls_back_when_graph_rejects_the_expansion(monkeyp
             requests.append(params)
             if "$expand" in (params or {}):
                 return _Response(400)
-            return _Response(200, {"value": [{"id": "evt-1", "subject": "Client call"}]})
+            return _Response(
+                200, {"value": [{"id": "evt-1", "subject": "Client call"}]}
+            )
 
     async def _token(*args, **kwargs):
         return "token"
@@ -279,7 +400,9 @@ async def test_calendar_read_falls_back_when_graph_rejects_the_expansion(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_calendar_read_still_fails_loudly_when_graph_is_really_broken(monkeypatch):
+async def test_calendar_read_still_fails_loudly_when_graph_is_really_broken(
+    monkeypatch,
+):
     class _Response:
         status_code = 503
 

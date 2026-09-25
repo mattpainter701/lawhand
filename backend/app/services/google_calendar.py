@@ -1,6 +1,6 @@
 """Push-sync tasks and matter key-dates to Google Calendar."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 
 import httpx
@@ -48,9 +48,17 @@ def _google_schedule(due_date: str, due_time: str | None, timezone_name: str) ->
 
     Google pairs a timezone-less ``dateTime`` with a separate IANA ``timeZone``,
     so the wall-clock value must not carry an offset of its own.
+
+    A date-only task is an all-day event. Google treats ``end.date`` as
+    exclusive, so a one-day event ends on the following day; an end equal to
+    the start is an empty range that Google rejects (``timeRangeEmpty``).
     """
     if not due_time:
-        return {"start": {"date": due_date}, "end": {"date": due_date}}
+        start_day = date.fromisoformat(due_date)
+        return {
+            "start": {"date": start_day.isoformat()},
+            "end": {"date": (start_day + timedelta(days=1)).isoformat()},
+        }
 
     start = datetime.fromisoformat(f"{due_date}T{due_time}")
     end = start + TASK_EVENT_DURATION
@@ -59,6 +67,25 @@ def _google_schedule(due_date: str, due_time: str | None, timezone_name: str) ->
         "start": {"dateTime": start.isoformat(), "timeZone": zone},
         "end": {"dateTime": end.isoformat(), "timeZone": zone},
     }
+
+
+def _google_patch_schedule(schedule: dict) -> dict:
+    """``schedule`` made safe for a PATCH of an existing event.
+
+    Google's PATCH merges nested objects, so switching an event between timed
+    and all-day has to null out the form it no longer uses. Otherwise a task
+    whose due time was cleared would keep its stale ``dateTime`` next to the
+    new ``date``, and Google would reject the mixed pair.
+    """
+    patched = {}
+    for edge in ("start", "end"):
+        value = dict(schedule[edge])
+        if "date" in value:
+            value.update(dateTime=None, timeZone=None)
+        else:
+            value["date"] = None
+        patched[edge] = value
+    return patched
 
 
 async def upsert_task_event(
@@ -119,10 +146,11 @@ async def upsert_task_event(
     else:
         summary = title
 
+    schedule = _google_schedule(due_date, due_time, timezone_name)
     event_body = {
         "summary": summary,
         "description": description or title,
-        **_google_schedule(due_date, due_time, timezone_name),
+        **schedule,
         "extendedProperties": {
             "private": {
                 "clarity_task_id": task_id,
@@ -138,7 +166,7 @@ async def upsert_task_event(
             resp = await client.patch(
                 f"{CALENDAR_BASE}/calendars/primary/events/{event_id}",
                 headers=headers,
-                json=event_body,
+                json={**event_body, **_google_patch_schedule(schedule)},
             )
         else:
             resp = await client.post(

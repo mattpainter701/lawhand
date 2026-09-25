@@ -37,6 +37,7 @@ Return a single JSON object and no Markdown or commentary. The object must conta
 Allowed actions are determined by the supplied surface and host capabilities:
 - Word: {"type":"replace_selection","content":{"text":"...","format":"text"}}
 - Excel values: {"type":"set_selected_values","content":{"values":[[...]]}}
+  (a text value must not start with =, +, - or @; send numbers as JSON numbers)
 - Excel formulas: {"type":"set_selected_formulas","content":{"formulas":[["=..."]]}}
 - Outlook compose subject: {"type":"set_subject","content":{"subject":"..."}}
 
