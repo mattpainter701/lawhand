@@ -237,7 +237,7 @@ async def test_graph_replace_of_a_large_file_uses_320k_multiple_chunks(monkeypat
     _token(monkeypatch)
     store = MatterFileStore()
     monkeypatch.setattr(store, "_CHUNK_THRESHOLD_ONEDRIVE", 10)
-    monkeypatch.setattr(store, "_REPLACE_CHUNK_SIZE", 327680)
+    monkeypatch.setattr(store, "_GRAPH_CHUNK_SIZE", 327680)
     content = b"a" * (327680 + 5)
     ranges = []
 

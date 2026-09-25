@@ -425,8 +425,6 @@ class MatterFileStore:
             ),
         )
 
-    _REPLACE_CHUNK_SIZE = 10 * 320 * 1024  # Graph byte ranges must be 320 KiB multiples
-
     async def replace_matter_file_content(
         self,
         *,
@@ -524,7 +522,7 @@ class MatterFileStore:
                 offset = 0
                 response = None
                 while offset < total:
-                    end = min(offset + self._REPLACE_CHUNK_SIZE, total)
+                    end = min(offset + self._GRAPH_CHUNK_SIZE, total)
                     response = await client.put(
                         upload_url,
                         content=content[offset:end],
@@ -938,8 +936,12 @@ class MatterFileStore:
     # Files larger than this use chunked/resumable upload to avoid timeouts.
     _CHUNK_THRESHOLD_ONEDRIVE = 4 * 1024 * 1024  # 4 MiB
     _CHUNK_THRESHOLD_GOOGLE = 5 * 1024 * 1024  # 5 MiB
-    # Chunk size for upload sessions.
-    _CHUNK_SIZE = 2 * 1024 * 1024  # 2 MiB
+    # Chunk sizes for upload sessions. Each provider rejects or mis-commits
+    # non-final fragments that are not a multiple of its unit:
+    # Microsoft Graph upload sessions need 320 KiB multiples, Google Drive
+    # resumable uploads need 256 KiB multiples. The final chunk may be shorter.
+    _GRAPH_CHUNK_SIZE = 10 * 320 * 1024  # 3.125 MiB
+    _GOOGLE_CHUNK_SIZE = 8 * 256 * 1024  # 2 MiB
 
     async def _ready_cloud_binding(self, db, tenant_id, matter_slug, metadata):
         from app.models.plugin import Matter
@@ -1164,7 +1166,7 @@ class MatterFileStore:
             total = len(content)
             offset = 0
             while offset < total:
-                end = min(offset + self._CHUNK_SIZE, total)
+                end = min(offset + self._GRAPH_CHUNK_SIZE, total)
                 chunk = content[offset:end]
                 content_range = f"bytes {offset}-{end - 1}/{total}"
 
@@ -1474,7 +1476,7 @@ class MatterFileStore:
             total = len(content)
             offset = 0
             while offset < total:
-                end = min(offset + self._CHUNK_SIZE, total)
+                end = min(offset + self._GOOGLE_CHUNK_SIZE, total)
                 chunk = content[offset:end]
                 content_range = f"bytes {offset}-{end - 1}/{total}"
 
