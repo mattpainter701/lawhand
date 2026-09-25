@@ -1,5 +1,68 @@
 # TASKS.md
 
+## Email-to-matter association — review follow-ups — 2026-09-25
+
+From a review of how email and other communications are associated with
+matters (correspondence capture, mailbox triage, the Communications page).
+The worst over-matching and the Communications page edit/navigation problems
+were fixed in the same change (release 2026.09.25.09). What is left is queued
+here with enough context to start cold.
+
+**Where the logic lives.** Scheduled and "Scan now" capture:
+`backend/app/services/correspondence_capture.py` (`scan_and_capture`,
+`evaluate_matter_rules`, `narrow_to_case_number_matches`), run from
+`Scheduler.run_correspondence_capture` in `backend/app/services/scheduler.py`.
+Mailbox triage: `backend/app/services/email_agent.py`
+(`_match_email_to_matters`, `_auto_log_and_task`). Provider readers:
+`ms_read_mail_user` (`microsoft_mail.py`) and `gmail_read_mail`
+(`google_mail.py`). Communications API: `backend/app/routers/communications.py`.
+
+### Known behaviour — accepted for now
+- [ ] **A client email with no case number is filed to every matter that
+  client has.** Decision 2026-09-25: keep filing to all matters for now. When
+  one email party-matches several open matters and names none of their case
+  numbers, `scan_and_capture` still captures it into each of them, and mailbox
+  triage still writes a note on each. This is the largest remaining source of
+  "why is this email on my matter" noise. Preferred future fix: hold ambiguous
+  matches in a "needs review" queue that shows the suggested matters, modelled
+  on the firm email intake queue (`routers/firm_email_intake.py`,
+  `FirmEmailIntake.jsx`). Alternatives considered: file only to the most
+  recently active matter (quiet, but wrong without any signal).
+
+### Open gaps
+- [ ] **Visibility: capture scans every connected staff mailbox against every
+  matter with capture enabled.** `run_correspondence_capture` iterates every
+  user with a Google/Microsoft token, and `scan_and_capture` checks their mail
+  against all open matters whose rules are enabled, including matters that
+  user is not assigned to. A staff member's own exchange with a client can
+  therefore be filed onto a matter they are not on and shown to that matter's
+  team. Decide whether a mailbox should only feed matters its owner can access
+  (`services/matter_access.py`), or whether firm-wide capture is intended and
+  should be disclosed in the capture rules panel.
+- [ ] **Communications page access: every firm user sees every
+  communication, except SMS.** `list_communications` (and detail/PATCH/DELETE)
+  apply `matter_access_predicate` only to `channel == "sms"`. Email, portal,
+  call and letter entries on matters a user cannot open are listed and
+  readable. Apply the matter access predicate to all matter-linked rows (and
+  decide what unlinked rows should show), matching how SMS is handled.
+- [ ] **Court notices get missed: only the subject and a short preview are
+  searched.** Case-number matching reads `subject` plus `body_preview`: up to
+  2,000 characters from Outlook's `bodyPreview`, but only Gmail's ~200
+  character `snippet`. A case number deeper in the body or only inside a PDF
+  attachment (typical for court e-filing notices) is never seen. Options: fetch
+  the plain-text body for candidate messages, or extract text from
+  attachments of messages from known court/e-filing senders.
+- [ ] **Cc matching never works.** `evaluate_matter_rules` matches on
+  from/to/cc, but neither reader fetches Cc: `ms_read_mail_user` selects only
+  `toRecipients` and `gmail_read_mail` requests only the From/To/Subject/Date
+  (and now Message-ID) headers. Either fetch Cc (`ccRecipients` / the `Cc`
+  header) deliberately, or drop cc from the matcher so the code states what it
+  does. Note that enabling it widens capture.
+- [ ] **Duplicate notes from mailbox triage.** `_auto_log_and_task` writes
+  one `CommunicationLog` (on the first matched matter) but a `MatterNote` on
+  every matched matter, so a client with several matters gets the same email
+  note on each. Resolve alongside the "file to all" decision above.
+
 ## Performance and scalability — 50-seat firm readiness — 2026-09-12
 
 From a database/performance review of the 50-concurrent-user case. Two items
