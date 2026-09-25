@@ -71,6 +71,7 @@ def _variable_schema(
     content: bytes,
     bindings: dict | None = None,
     option_labels: dict | None = None,
+    field_labels: dict | None = None,
 ) -> dict:
     """Derive the field schema from the PDF, carrying the manifest's curation.
 
@@ -82,7 +83,9 @@ def _variable_schema(
     without a firm re-declaring anything. ``option_labels`` gives a radio or
     choice option a readable label when the PDF only carries an export value
     such as "Choice 1"; the export value itself is unchanged, so filling writes
-    exactly what the PDF expects.
+    exactly what the PDF expects. ``field_labels`` replaces a label the PDF
+    left meaningless ("Text3", "undefined 2", "Check Box4") with what the page
+    prints beside the box; the PDF's own label stays in ``source_label``.
 
     A path the catalogue does not recognise, or curation naming a field or
     option the PDF does not have, is a build error rather than a declaration
@@ -104,6 +107,14 @@ def _variable_schema(
         binding = declared.get(field["name"])
         if binding:
             field["binding"] = binding
+    for name, label in (field_labels or {}).items():
+        field = by_name.get(name)
+        if field is None:
+            raise SystemExit(f"Manifest labels unknown field: {name}")
+        if not isinstance(label, str) or not label.strip():
+            raise SystemExit(f"Manifest label for {name} must be non-empty text")
+        field["label"] = label.strip()
+        field["label_source"] = "curated"
     for name, labels in (option_labels or {}).items():
         field = by_name.get(name)
         if field is None or field["field_type"] not in {"radio", "choice"}:
@@ -152,7 +163,10 @@ async def seed(prune: bool = False) -> None:
                 )
             try:
                 schema = _variable_schema(
-                    content, form.get("bindings"), form.get("option_labels")
+                    content,
+                    form.get("bindings"),
+                    form.get("option_labels"),
+                    form.get("field_labels"),
                 )
             except TemplatePdfError as exc:
                 print(f"SKIP {form['slug']}: {exc}")

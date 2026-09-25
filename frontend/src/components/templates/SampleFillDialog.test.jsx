@@ -39,6 +39,15 @@ afterEach(() => { cleanup(); vi.clearAllMocks() })
 beforeEach(() => { getSampleTemplateSource.mockResolvedValue(new Blob(['source'], { type: 'application/pdf' })) })
 
 describe('SampleFillDialog Smart Fill', () => {
+  it('trusts a curated label over a placeholder source label', () => {
+    const curated = { ...sample, variable_schema: { fields: [
+      { name: 'landlord_name', label: 'Landlord name', label_source: 'curated', source_label: 'undefined 2', field_type: 'text', page: 1 },
+    ] } }
+    render(<SampleFillDialog sample={curated} onClose={vi.fn()} />)
+    expect(screen.getByText('Landlord name')).toBeInTheDocument()
+    expect(screen.queryByText(/Source label unavailable/)).not.toBeInTheDocument()
+  })
+
   it('loads matter suggestions and shows filled and attention counts', async () => {
     previewSampleTemplateSmartFill.mockResolvedValue({ variables: [{ variable: 'client_name', suggested_value: 'Ada Example' }] })
     render(<SampleFillDialog sample={sample} onClose={vi.fn()} />)

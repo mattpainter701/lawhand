@@ -55,11 +55,12 @@ SEED_DIR = REPO_ROOT / "backend" / "seed" / "sample_templates"
 _PRESERVED_ORIGINS = {"authored", "court_form"}
 
 # Hand-curated keys an imported form may carry: where a field's value comes
-# from, and readable labels for options the PDF only names "Choice 1". The
+# from, readable labels for fields the PDF left as "Text3", and readable labels
+# for options the PDF only names "Choice 1". The
 # scraped catalog cannot regenerate them, so a rebuild carries them over to the
 # entry with the same digest -- the same bytes, hence the same field names --
 # and drops them when the file itself changed.
-_CURATED_KEYS = ("bindings", "option_labels")
+_CURATED_KEYS = ("bindings", "field_labels", "option_labels")
 
 # "Fillable" is not enough: the template studio also rejects PDFs with active
 # content (embedded files, /URI links, /OpenAction, /AA, XFA, etc.). Use the

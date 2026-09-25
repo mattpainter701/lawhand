@@ -9,6 +9,7 @@ no ``tenant_id`` column and no tenant mutation endpoints.
 import hashlib
 import io
 import json
+import re
 import uuid
 from pathlib import Path
 
@@ -352,6 +353,7 @@ def _seeded_schema(slug: str) -> dict:
         (SEED_DIR / form["filename"]).read_bytes(),
         form.get("bindings"),
         form.get("option_labels"),
+        form.get("field_labels"),
     )
 
 
@@ -468,6 +470,14 @@ def test_the_seeder_rejects_curation_the_pdf_does_not_support():
         seeder._variable_schema(content, {"judge_name": "matter.nope"})
     with pytest.raises(SystemExit, match="non-option field"):
         seeder._variable_schema(content, None, {"judge_name": {"A": "B"}})
+    with pytest.raises(SystemExit, match="labels unknown field"):
+        seeder._variable_schema(content, None, None, {"no_such_field": "Judge"})
+    with pytest.raises(SystemExit, match="non-empty text"):
+        seeder._variable_schema(content, None, None, {"judge_name": "  "})
+    labelled = seeder._variable_schema(content, None, None, {"judge_name": " Judge "})
+    judge = next(field for field in labelled["fields"] if field["name"] == "judge_name")
+    assert (judge["label"], judge["label_source"]) == ("Judge", "curated")
+    assert judge["source_label"] == "Insert name of Judge"
     with pytest.raises(SystemExit, match="unknown option"):
         seeder._variable_schema(
             content,
@@ -513,3 +523,116 @@ def test_a_rebuild_carries_curation_only_to_unchanged_files(tmp_path):
         "aa": {"bindings": {"x": "matter.judge"}, "option_labels": {"r": {"1": "One"}}}
     }
     assert module._curation_by_digest(tmp_path / "missing") == {}
+
+
+# ── Catalog-wide curation invariants ────────────────────────────────────────
+
+#: Labels that tell a person nothing about what goes in the box: the PDF's own
+#: tool-generated names ("Text3", "Check Box4", "undefined 2"), the discovery
+#: fallback ("Source field 12 (page 1)"), bare numbers, and one- or two-letter
+#: fragments.
+_PLACEHOLDER_LABEL = re.compile(
+    r"^(source field \d+.*|undefined[\s_]*\d*|text[\s_]*(field)?[\s_]*\d*"
+    r"|check[\s_]*box[\s_]*\d*|field[\s_]*\d+|fill[\s_]*\d+|group[\s_]*\d+"
+    r"|radio[\s_]*button[\s_]*\d*|toggle[\s_]*\d*|dropdown[\s_]*\d*"
+    r"|button[\s_]*\d*|[\d\s_.,-]+|[a-z]{1,2}[\s_]*\d*)$",
+    re.I,
+)
+_MAX_LABEL = 90
+
+
+def _curated_forms() -> list[dict]:
+    # Authored forms are generated in-repo with field names that already are the
+    # platform's variables; everything else arrives with a stranger's PDF names.
+    return [form for form in _manifest()["forms"] if form.get("origin") != "authored"]
+
+
+def test_every_shared_form_labels_each_field_readably_and_uniquely():
+    problems = []
+    for form in _curated_forms():
+        seen: dict[str, list[str]] = {}
+        for field in _seeded_schema(form["slug"])["fields"]:
+            label = field["label"].strip()
+            if _PLACEHOLDER_LABEL.match(label):
+                problems.append(f"{form['slug']}: {field['name']} is labelled {label!r}")
+            if len(label) > _MAX_LABEL:
+                problems.append(f"{form['slug']}: {field['name']} label is too long")
+            seen.setdefault(label.casefold(), []).append(field["name"])
+        problems.extend(
+            f"{form['slug']}: {names} share the label {label!r}"
+            for label, names in seen.items()
+            if len(names) > 1
+        )
+    assert problems == [], "\n".join(problems[:40])
+
+
+def test_no_shared_form_fills_a_field_by_accidental_name_match():
+    # A generic PDF name ("Address", "Email", "Full Name") matches a client
+    # alias, so an unbound field would fill with the client's details even
+    # when the box belongs to a landlord, a witness or the attorney. Every
+    # such field must say where its value comes from, or that it is typed.
+    from app.services.template_fill_engine import normalize_variable_name, vocabulary
+
+    names = vocabulary()
+    unbound = [
+        f"{form['slug']}: {field['name']}"
+        for form in _curated_forms()
+        for field in _seeded_schema(form["slug"])["fields"]
+        if normalize_variable_name(field["name"]) in names and not field.get("binding")
+    ]
+    assert unbound == []
+
+
+def test_every_shared_option_reads_as_what_the_page_prints():
+    unreadable = []
+    for form in _curated_forms():
+        for field in _seeded_schema(form["slug"])["fields"]:
+            for option in field["options"]:
+                label = str(option["label"] if isinstance(option, dict) else option)
+                if label.strip().lower() in {"yes", "no"}:
+                    continue
+                if _PLACEHOLDER_LABEL.match(label) or re.fullmatch(
+                    r"choice\s*\d+", label, re.I
+                ):
+                    unreadable.append(f"{form['slug']}: {field['name']} -> {label!r}")
+    assert unreadable == []
+
+
+def test_a_builder_rewrite_keeps_curation_for_the_same_bytes(tmp_path):
+    from scripts.build_library_intake_forms import update_manifest
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "forms": [
+                    {"slug": "same", "sha256": "aa", "category": "c", "title": "A",
+                     "bindings": {"x": "matter.judge"},
+                     "field_labels": {"x": "Judge"}},
+                    {"slug": "moved", "sha256": "bb", "category": "c", "title": "B",
+                     "field_labels": {"y": "Old"}},
+                    {"slug": "owned", "sha256": "cc", "category": "c", "title": "C",
+                     "bindings": {"z": "client.name"}},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    update_manifest(
+        [
+            {"slug": "same", "sha256": "aa", "category": "c", "title": "A", "bindings": {}},
+            {"slug": "moved", "sha256": "b2", "category": "c", "title": "B"},
+            {"slug": "owned", "sha256": "cc", "category": "c", "title": "C",
+             "bindings": {"z": "client.email"}},
+        ],
+        tmp_path,
+    )
+    by_slug = {
+        form["slug"]: form
+        for form in json.loads((tmp_path / "manifest.json").read_text())["forms"]
+    }
+    assert by_slug["same"]["bindings"] == {"x": "matter.judge"}
+    assert by_slug["same"]["field_labels"] == {"x": "Judge"}
+    # New bytes may have new field names, so their curation does not carry.
+    assert "field_labels" not in by_slug["moved"]
+    # A builder that declares bindings owns them.
+    assert by_slug["owned"]["bindings"] == {"z": "client.email"}
