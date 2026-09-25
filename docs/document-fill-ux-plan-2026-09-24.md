@@ -1,6 +1,6 @@
 # Document fill UX: document-first filling, parity, and "fill where they work"
 
-Status: phases 1 and 2 shipped (sample Fill dialog; Prepare and Generate). Phases 3–6 are proposals. Section 8 lays out the Microsoft 365 / Google Workspace options, and section 9 how LawHand's own editor sits beside them.
+Status: phases 1 and 2 shipped (sample Fill dialog; Prepare and Generate). Option A (open in the firm's Word or Google Docs, sync back) is in progress; section 10 tracks it. Phases 3–6 are proposals. Section 9 records why LawHand does not host its own editor for now.
 Date: 2026-09-24
 
 ## 1. Why
@@ -214,17 +214,18 @@ Options for editing in the browser inside LawHand:
 | ONLYOFFICE Docs | Similar embedded editor | A commercial licence is needed to embed it in a proprietary product (`template-studio-document-workflow.md:135`). |
 | **The firm's own Word or Google Docs** (phases 5–6) | Editing where lawyers already work, with their fonts, styles and tracked changes | No new server to run. Needs the D08/D34/D09 fixes and, for phase 6, the add-in content-control work. |
 
-**Decision (2026-09-25).** LawHand keeps and grows its **own editor**, and
-also adds Option A (open in the firm's Word or Docs). The two are not
-alternatives; section 9 explains how they share one document. The first
-decision (2026-09-24) to drop an in-app editor is withdrawn.
+**Decision (2026-09-25, final).** Option A only: people edit in the firm's
+own Word or Google Docs, and LawHand does not host an editor for now. A
+download/upload fallback covers a missing or broken connection. LawHand's own
+editor (Collabora) stays a revisit option (section 9). This replaces the two
+earlier entries of 2026-09-24 and 2026-09-25.
 
 ## 7. Decisions
 
 1. ~~Phase 2 next?~~ Yes. Shipped.
 2. Which suite first for "fill where they work"? The options are in section 8.
-3. Embedded editor? **Yes, keep our own** (2026-09-25), alongside Option A.
-   The engine choice is in section 9.
+3. Embedded editor? **Not now** (2026-09-25). Option A only, with a
+   download/upload fallback. Revisit on the triggers in section 9.
 
 ## 8. Options: filling and editing in the firm's own suite
 
@@ -345,41 +346,47 @@ Each host adapter only knows how to find, select and write an anchor.
 3. **Treat Option C as the Google adapter of D,** not as a separate product.
    Offer native-Docs templates only to firms that want to author in Docs.
 
-## 9. LawHand's own editor beside the firm's suite
+## 9. LawHand's own editor: deferred
 
-**What exists.** Today the in-app editing is:
+**Decision.** Build Option A only. Editing happens in the firm's Word or Google
+Docs, which every customer already has. LawHand keeps filling, preview,
+review, the record and signing.
 
-- the plain-text draft editor in `DocumentDraftWorkspace.jsx`, which drops
-  Word formatting (D09);
-- the Template Studio wording editor (`WordWordingEditor.jsx`), which edits
-  paragraph spans in a template.
+**Why.**
 
-Neither is a full document editor.
+- There is no editor service to run and no licence to buy.
+- Word and Docs give the firm's real fonts, styles, tracked changes, comments
+  and co-authoring.
+- Most document-prep edits are field answers, and those already happen in
+  LawHand on the page (phases 1–2).
 
-**Why keep one.** Quick edits without leaving LawHand, the same experience for
-every firm whichever suite it runs, and a fallback when a Microsoft or Google
-connection is broken or not yet approved by the firm's administrator.
+**What we accept.**
 
-**How the two coexist.** Both editors work on the same DOCX, which lives in the
-matter's cloud folder. LawHand's revision history stays the record.
+- Editing happens in another tab.
+- It needs a working connection, which Microsoft 365 now requires an
+  administrator to approve.
+- Getting edits back depends on the round-trip fixes (D08, D34, D09).
+- Google Docs editing a DOCX directly has some formatting limits.
 
-- **One writer at a time.** Opening a document in either editor checks it out
-  (who, where, since when). The other editor's button shows who has it, and
-  offers "Open read-only" or "Take over" (take-over snapshots first).
-- **Every save is a revision.** An in-app save, or an adopted Word or Docs
-  edit through the existing snapshot path, creates a new LawHand revision and
-  resets review. Nothing is overwritten silently. This is also the fix for
-  D34.
-- **Change detection by hash.** The existing byte check
-  (`cloud_docx_snapshot.py`) compares the cloud file with the last revision
-  before any save, so an edit made elsewhere is never lost. It becomes "the
-  file changed in Word since you opened it: review the changes, or keep both".
-- **Fields should survive both editors.** Anchor template fields as Word
-  content controls. Whether they survive a round trip through Collabora
-  (LibreOffice's DOCX content-control support) must be verified in the pilot
-  before the phase 6 guided bar is offered inside our editor.
+**Mitigations.**
 
-**Engine options for our editor:**
+- A **Download / Upload revised version** fallback that saves a new version.
+- A "being edited in Word since …" marker on the document.
+- Changes are brought back when the person returns, and the hash check never
+  overwrites an edit silently.
+- LibreOffice stays the renderer for previews and PDFs.
+
+**Revisit triggers.** Measure these once Option A ships:
+
+- how often a document is opened in Word or Docs for something other than
+  answering fields;
+- how often a missing or broken connection blocks editing;
+- whether firms ask to edit without leaving LawHand.
+
+If any is significant, pilot Collabora on the same checkout and revision model.
+Option A builds that model, so nothing needs redoing.
+
+**If revisited: engine options.**
 
 | Engine | Fidelity | Cost and risk | Fit |
 | --- | --- | --- | --- |
@@ -387,12 +394,6 @@ matter's cloud folder. LawHand's revision history stays the record.
 | ONLYOFFICE Docs | High for DOCX | Commercial licence required to embed it in our product. Its own document server. | Viable if its licence cost is acceptable. |
 | Rich-text editor (e.g. ProseMirror-based) over a DOCX subset | Loses layout, tables, headers and section formatting on round trip | Cheapest, fully ours | Fine for letters and emails, not for court or agreement documents. |
 
-**Order of work.**
-
-1. Option A for both suites, with checkout and hash-checked revisions. This
-   builds the lock and revision model that both editors need.
-2. A Collabora pilot behind a feature flag. We implement the WOPI host against
-   the same revision store, and offer **Edit in LawHand** beside **Open in
-   Word/Docs**.
-3. Retire the plain-text draft editor for DOCX once Collabora covers it. Keep
-   the text editor for text-only drafts.
+If revisited, the pilot would run behind a feature flag. We would implement
+the WOPI host against the same revision store as Option A, and offer **Edit in
+LawHand** beside **Open in Word/Docs**.
