@@ -1847,6 +1847,12 @@ async def _propose_matter_document_impl(
         document_provider_etag=document.provider_etag,
         document_provider_version_id=document.provider_version_id,
         document_preview_truncated=document_preview_truncated,
+        # A draft built from real DOCX bytes (a Word template or a pushed
+        # file) keeps its formatting only if it is edited in Word or Docs;
+        # the LawHand text editor would re-render it as plain paragraphs.
+        document_edit_mode=(
+            "office_snapshot" if source_docx_bytes is not None else "lawhand_text"
+        ),
         source_ids=args.source_ids[:10],
         sources=chips,
     )

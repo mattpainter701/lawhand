@@ -17,6 +17,9 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
   const [matterId, setMatterId] = useState(initialMatterId || '')
   const [rendered, setRendered] = useState(null)
   const [matterDocId, setMatterDocId] = useState(null)
+  // The saved row as the matter's Documents tab lists it, so the saved notice
+  // can offer Open in Word / Google Docs without a second request.
+  const [savedDocument, setSavedDocument] = useState(null)
   const [savedDownloadUrl, setSavedDownloadUrl] = useState('')
   const [outputFilename, setOutputFilename] = useState('')
   const [outputFormat, setOutputFormat] = useState('')
@@ -158,6 +161,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setCompletionPending(false)
     setRendered(null)
     setMatterDocId(null)
+    setSavedDocument(null)
     setSavedDownloadUrl('')
     setOutputFilename('')
     setOutputFormat('')
@@ -205,6 +209,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setPreviewRevision(value => value + 1)
     setSaved(false)
     setMatterDocId(null)
+    setSavedDocument(null)
     setSavedDownloadUrl('')
     setStorageBackend('')
     setStorageWarning('')
@@ -254,6 +259,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     setSmartFillMessage('')
     setSaved(false)
     setMatterDocId(null)
+    setSavedDocument(null)
     setSavedDownloadUrl('')
     invalidatePreview()
   }
@@ -409,6 +415,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
         setFilePreviewUrl('')
       }
       setMatterDocId(null)
+      setSavedDocument(null)
       setSaved(false)
     } catch (err) {
       if (previewRequestGenerationRef.current === requestGeneration) {
@@ -491,6 +498,7 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
       setStorageWarning(res.storage_warning || '')
       if (res.matter_document_id) {
         setMatterDocId(res.matter_document_id)
+        setSavedDocument(res.matter_document?.id === res.matter_document_id ? res.matter_document : null)
         const completed = await onSaved?.(res)
         setCompletionPending(completed === false)
         setSaved(true)
@@ -520,6 +528,6 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
 
   return {
     autoPreviewEnabled, previewError,
-    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, completionPending, setCompletionPending, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, verifiedNames, setVerifiedNames, toggleVerified, verifyAndAdvance, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
+    variables, setVariables, matterId, setMatterId, rendered, setRendered, matterDocId, setMatterDocId, savedDocument, setSavedDocument, savedDownloadUrl, setSavedDownloadUrl, outputFilename, setOutputFilename, outputFormat, setOutputFormat, storageBackend, setStorageBackend, storageWarning, setStorageWarning, filePreview, setFilePreview, filePreviewUrl, setFilePreviewUrl, previewId, setPreviewId, previewPurpose, setPreviewPurpose, convertDocxToPdf, setConvertDocxToPdf, rendering, setRendering, renderPurpose, setRenderPurpose, saving, setSaving, saved, setSaved, completionPending, setCompletionPending, error, setError, smartFillState, setSmartFillState, smartFillMessage, setSmartFillMessage, fieldSources, setFieldSources, latestSuggestions, setLatestSuggestions, reviewedValues, setReviewedValues, verifiedNames, setVerifiedNames, toggleVerified, verifyAndAdvance, fieldFilter, setFieldFilter, focusedFillName, setFocusedFillName, pendingFocus, previewRequestGenerationRef, smartFillRequestGenerationRef, formRevisionRef, smartFillRef, smartFillAutoKeyRef, names, fieldDefinitions, isPdfTemplate, isDocxTemplate, isFileTemplate, isPdfOutput, hasSigningFields, canSaveToMatter, fillableNames, progress, hasFirmFields, filteredNames, visibleNames, lastAttentionField, nextField, requiredUnresolvedNames, optionalUnfilledNames, activationUnresolvedNames, invalidatePreview, setVariable, selectMatter, handleSmartFill, handleRender, handleSave,
   }
 }

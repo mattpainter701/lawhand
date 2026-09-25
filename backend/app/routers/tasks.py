@@ -35,6 +35,7 @@ from app.schemas.chat_action import MatterDocumentDraftAction, SmsClientAction
 from app.services.cloud_artifact_materialization import (
     CloudArtifactMaterializationError,
     cloud_artifact_materializer,
+    document_has_office_source,
 )
 from app.services.cloud_docx_snapshot import (
     CloudDocxSnapshotError,
@@ -1725,6 +1726,122 @@ async def mark_customer_contacted(
     return await _task_response_with_delivery(db, task, current_user)
 
 
+_CLOUD_WORKING_COPY_BACKENDS = frozenset({"onedrive", "sharepoint", "google_drive"})
+_OFFICE_SNAPSHOT_READ_ONLY = (
+    "Continue editing this formatted snapshot in the cloud DOCX, "
+    "then refresh it into LawHand"
+)
+_TRUNCATED_PREVIEW_READ_ONLY = (
+    "This draft is too long to show in full, so saving its text here would cut "
+    "off the rest of the document. Edit it in the cloud working copy, then use "
+    "Refresh edits from cloud"
+)
+_CLOUD_COPY_CHANGED = (
+    "The cloud working copy was edited outside LawHand since this revision was "
+    "saved. Use Refresh edits from cloud to bring those edits in first, or "
+    "choose to discard them and save your LawHand text."
+)
+
+
+async def _guard_cloud_working_copy_before_text_save(
+    db: AsyncSession,
+    *,
+    task: Task,
+    action: MatterDocumentDraftAction,
+    tenant_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    discard_cloud_edits: bool,
+) -> None:
+    """Refuse a LawHand text save that would orphan edits made in Word or Docs.
+
+    A text save writes a new revision and supersedes the bound working copy.
+    If someone edited that copy in the cloud editor meanwhile, their edits
+    would stay behind in the superseded file.  The copy is read back and its
+    hash compared with what LawHand last recorded; a mismatch is a 409 unless
+    the reviewer explicitly discards the cloud edits, which is recorded.
+    """
+    document = await db.scalar(
+        select(MatterDocument)
+        .where(
+            MatterDocument.id == action.document_id,
+            MatterDocument.tenant_id == tenant_id,
+            MatterDocument.matter_id == action.matter_id,
+            MatterDocument.generated_artifact_id == action.artifact_id,
+        )
+        .with_for_update()
+    )
+    if document is None:
+        raise HTTPException(
+            status_code=409,
+            detail="The bound tenant-cloud document is unavailable",
+        )
+    # Drafts pending from before office snapshots were marked read-only still
+    # carry lawhand_text; their formatted bytes must not be re-rendered either.
+    if await document_has_office_source(
+        db, tenant_id=tenant_id, document_id=document.id
+    ):
+        raise HTTPException(status_code=409, detail=_OFFICE_SNAPSHOT_READ_ONLY)
+    if (
+        document.storage_backend not in _CLOUD_WORKING_COPY_BACKENDS
+        or not document.provider_object_id
+    ):
+        return
+
+    recorded_sha256 = document.document_sha256 or action.document_sha256
+    observed_sha256: str | None = None
+    check = "changed"
+    try:
+        cloud_bytes = await cloud_artifact_materializer.read_current_cloud_bytes(
+            tenant_id=tenant_id,
+            document=document,
+        )
+        observed_sha256 = hashlib.sha256(cloud_bytes).hexdigest()
+    except MatterFileTooLarge:
+        # Larger than any DOCX LawHand wrote, so it has certainly changed.
+        check = "too_large"
+    except (MatterFileReadError, ProviderError) as exc:
+        if not discard_cloud_edits:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "LawHand could not check the cloud working copy for edits "
+                    "made outside LawHand. Try again, or use Refresh edits "
+                    "from cloud"
+                ),
+            ) from exc
+        check = "unreadable"
+
+    if check == "changed" and observed_sha256 == recorded_sha256:
+        return
+    if not discard_cloud_edits:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "cloud_copy_changed", "message": _CLOUD_COPY_CHANGED},
+        )
+    await append_document_integrity_event(
+        db,
+        tenant_id=tenant_id,
+        matter_id=action.matter_id,
+        task_id=task.id,
+        artifact_id=action.artifact_id,
+        artifact_revision_id=action.artifact_revision_id,
+        document_id=document.id,
+        event_type="cloud_edits_discarded",
+        actor_type="user",
+        actor_user_id=actor_user_id,
+        content_sha256=observed_sha256,
+        provider_object_id=document.provider_object_id,
+        provider_etag=document.provider_etag,
+        provider_version_id=document.provider_version_id,
+        metadata={
+            "storage_backend": document.storage_backend,
+            "recorded_sha256": recorded_sha256,
+            "observed_sha256": observed_sha256,
+            "check": check,
+        },
+    )
+
+
 @router.patch("/{task_id}/pending-action", response_model=TaskResponse)
 async def update_pending_action(
     task_id: uuid.UUID,
@@ -1772,7 +1889,9 @@ async def update_pending_action(
             status_code=conflict.status_code, detail=conflict.detail
         ) from None
 
-    updates = payload.model_dump(exclude_none=True, exclude={"expected_version"})
+    updates = payload.model_dump(
+        exclude_none=True, exclude={"expected_version", "discard_cloud_edits"}
+    )
     if not updates:
         return await _task_response_with_delivery(db, task, current_user)
 
@@ -1808,13 +1927,19 @@ async def update_pending_action(
         try:
             bound_action = MatterDocumentDraftAction.model_validate(action)
             if bound_action.document_edit_mode == "office_snapshot":
+                raise HTTPException(status_code=409, detail=_OFFICE_SNAPSHOT_READ_ONLY)
+            if bound_action.document_preview_truncated:
                 raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Continue editing this formatted snapshot in the cloud DOCX, "
-                        "then refresh it into LawHand"
-                    ),
+                    status_code=409, detail=_TRUNCATED_PREVIEW_READ_ONLY
                 )
+            await _guard_cloud_working_copy_before_text_save(
+                db,
+                task=task,
+                action=bound_action,
+                tenant_id=uuid.UUID(tenant_id),
+                actor_user_id=current_user.id,
+                discard_cloud_edits=payload.discard_cloud_edits,
+            )
             revision = await create_generated_artifact_revision(
                 db,
                 tenant_id=uuid.UUID(tenant_id),

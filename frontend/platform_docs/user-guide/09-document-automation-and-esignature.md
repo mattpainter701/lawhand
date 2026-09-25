@@ -122,6 +122,7 @@ The address suffixes are `street`, `city`, `state`, `zip`, and `country`, as in 
 4. Prefer a list? Choose **Questions** at the top for the field list beside the document. LawHand remembers your choice on this browser.
 5. Choose **Preview** to inspect the exact generated document. For a PDF, the preview updates as you type.
 6. Save. The document is saved to the matter's documents, in the folder named in the link when there is one.
+7. To finish a Word document in your own editor, choose **Open in Word**, **Word app** or **Open in Google Docs**. These appear right after saving when the output is a Word document (not **PDF for signature**) and your firm stores matter documents in OneDrive, SharePoint or Google Drive. Saving from the Prepare page opens the new document on the matter's **Documents** tab, where its preview has the same buttons. Your edits come back to the same matter document when you return to LawHand, or when you choose **Bring back changes**. See [Edit a document in Word or Google Docs](/guide/matters-and-documents#edit-a-document-in-word-or-google-docs).
 
 After saving, the same page can create an e-signature request for the new document. See [Send a document for signature](#send-a-document-for-signature).
 

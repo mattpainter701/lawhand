@@ -2393,6 +2393,8 @@ async def test_pdf_upload_preview_and_matter_render_are_binary_and_unique(
     assert first_payload["download_url"].endswith("/download")
     assert first_payload["storage_backend"] == "local"
     assert first_payload.get("storage_warning") is None
+    assert first_payload["matter_document"]["id"] == first_payload["matter_document_id"]
+    assert first_payload["matter_document"]["content_type"] == "application/pdf"
 
     replay = await client.post(
         f"/api/templates/{template_id}/render",
@@ -4617,6 +4619,107 @@ async def test_a_word_activation_test_without_conversion_still_readies_publish(
     assert current["status"] == "ready_to_publish"
     assert current["tested_version_no"] == current["current_version_no"]
     assert current["last_test_rendered_at"]
+
+
+async def _published_word_template_and_matter(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch, slug
+):
+    from app.models.plugin import Matter
+
+    await _grant_manage_documents(db_session, test_tenant, test_user)
+    template = await _docx_template_via_intake(client, monkeypatch, tmp_path)
+    tested = await client.post(
+        f"/api/templates/{template['id']}/render-file",
+        json={"variables": {"client_name": "Ada"}, "preview_purpose": "activation"},
+    )
+    assert tested.status_code == 200, tested.text
+    published = await client.post(f"/api/templates/{template['id']}/publish", json={})
+    assert published.status_code == 200, published.text
+    matter = Matter(
+        id=uuid.uuid4(),
+        tenant_id=test_tenant.id,
+        user_id=test_user.id,
+        slug=slug,
+        matter_name="Word save matter",
+        matter_type="general",
+    )
+    db_session.add(matter)
+    await db_session.commit()
+    return template["id"], str(matter.id)
+
+
+@pytest.mark.asyncio
+async def test_a_saved_word_document_comes_back_as_the_matter_lists_it(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """The caller offers "Open in Word" from the saved document itself, so the
+    save returns the row exactly as the matter's Documents tab would."""
+
+    template_id, matter_id = await _published_word_template_and_matter(
+        client, db_session, test_tenant, test_user, tmp_path, monkeypatch,
+        "word-save-document",
+    )
+
+    saved = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={
+            "variables": {"client_name": "Ada"},
+            "matter_id": matter_id,
+            "convert_to_pdf": False,
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    payload = saved.json()
+    assert payload["output_format"] == "docx"
+    document = payload["matter_document"]
+    assert document["id"] == payload["matter_document_id"]
+    assert document["matter_id"] == matter_id
+    assert document["filename"] == payload["output_filename"]
+    assert document["content_type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert document["storage_backend"] == payload["storage_backend"]
+    assert document.get("external_edit_started_at") is None
+
+    # The render response drops empty fields; everything else matches the row.
+    listed = await client.get(f"/api/matters/{matter_id}/documents")
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()
+    rows = rows.get("items", rows) if isinstance(rows, dict) else rows
+    [row] = [row for row in rows if row["id"] == document["id"]]
+    assert {key: value for key, value in row.items() if value is not None} == document
+
+
+@pytest.mark.asyncio
+async def test_a_saved_document_that_cannot_be_read_back_is_still_saved(
+    client, db_session, test_tenant, test_user, tmp_path, monkeypatch
+):
+    """The save has committed by then; a failed read-back must not become an
+    error the person retries into a duplicate document."""
+
+    template_id, matter_id = await _published_word_template_and_matter(
+        client, db_session, test_tenant, test_user, tmp_path, monkeypatch,
+        "word-save-readback",
+    )
+
+    async def failing_serialize(*args, **kwargs):
+        raise RuntimeError("tag lookup failed")
+
+    monkeypatch.setattr(document_templates, "serialize_document", failing_serialize)
+
+    saved = await client.post(
+        f"/api/templates/{template_id}/render",
+        json={
+            "variables": {"client_name": "Ada"},
+            "matter_id": matter_id,
+            "convert_to_pdf": False,
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["matter_document_id"]
+    assert "matter_document" not in saved.json()
 
 
 async def _activate_with_signing_schema(
