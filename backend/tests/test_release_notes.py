@@ -6,7 +6,7 @@ from app.release_notes import RECENT_RELEASE_DAYS, build_release_catalog
 from app.main import app_version
 
 
-LATEST_RELEASE_ID = "2026.09.25.08"
+LATEST_RELEASE_ID = "2026.09.25.09"
 LATEST_RELEASE_DATE = date(2026, 9, 25)
 
 
@@ -17,18 +17,18 @@ def test_release_catalog_returns_latest_release_and_history():
     assert latest["id"] == LATEST_RELEASE_ID
     assert latest["version"] == LATEST_RELEASE_ID
     assert latest["is_recent"] is True
-    assert len(latest["highlights"]) == 3
-    assert latest["title"] == "Use a global library form on a matter without importing it"
-    assert latest["highlights"][0]["title"] == "Use on this matter"
-    assert latest["highlights"][1]["title"] == "Review, save, share"
-    assert latest["highlights"][2]["title"] == "Firm library stays optional"
+    assert len(latest["highlights"]) == 5
+    assert latest["title"] == "Emails land on the right matter, and the log shows matter names"
+    assert latest["highlights"][0]["title"] == "Staff addresses no longer file mail"
+    assert latest["highlights"][2]["title"] == "No duplicate copies"
+    assert latest["highlights"][4]["title"] == "Captured messages are protected"
     history_ids = [release["id"] for release in catalog["release_notes"]]
     assert history_ids[:5] == [
         LATEST_RELEASE_ID,
+        "2026.09.25.08",
         "2026.09.25.07",
         "2026.09.25.06",
         "2026.09.25.05",
-        "2026.09.25.04",
     ]
     assert all(f"2026.09.07.{n}" in history_ids for n in (7, 8, 9))
     assert "2026.09.07.6" in history_ids

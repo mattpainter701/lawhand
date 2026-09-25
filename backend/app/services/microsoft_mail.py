@@ -44,7 +44,7 @@ async def ms_read_mail_user(
         "$filter": f"receivedDateTime ge {since}",
         "$top": max_results,
         "$orderby": "receivedDateTime desc",
-        "$select": "id,subject,bodyPreview,from,toRecipients,receivedDateTime,isRead,importance,hasAttachments,conversationId",
+        "$select": "id,subject,bodyPreview,from,toRecipients,receivedDateTime,isRead,importance,hasAttachments,conversationId,internetMessageId",
     }
 
     resp = await graph_request("GET", "/me/messages", token=token, params=params)
@@ -72,6 +72,9 @@ async def ms_read_mail_user(
                 "importance": msg.get("importance", "normal"),
                 "has_attachments": msg.get("hasAttachments", False),
                 "conversation_id": msg.get("conversationId"),
+                # RFC 5322 Message-ID: the same across every mailbox that holds
+                # the message, unlike the per-mailbox Graph id above.
+                "internet_message_id": msg.get("internetMessageId"),
             }
         )
     return messages

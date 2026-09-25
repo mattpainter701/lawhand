@@ -39,6 +39,7 @@ async def test_gmail_read_mail_uses_provider_client_and_skips_detail_failures(
                             {"name": "To", "value": "attorney@example.com"},
                             {"name": "Subject", "value": "Matter update"},
                             {"name": "Date", "value": "Thu, 02 Jul 2026 10:00:00 GMT"},
+                            {"name": "Message-ID", "value": "<m1@example.com>"},
                         ]
                     },
                 },
@@ -54,7 +55,9 @@ async def test_gmail_read_mail_uses_provider_client_and_skips_detail_failures(
     assert messages[0]["id"] == "m1"
     assert messages[0]["subject"] == "Matter update"
     assert messages[0]["importance"] == "high"
+    assert messages[0]["internet_message_id"] == "<m1@example.com>"
     assert calls[0][1] == "/users/me/messages"
+    assert "Message-ID" in calls[1][2]["metadataHeaders"]
 
 
 @pytest.mark.asyncio
@@ -106,6 +109,7 @@ async def test_microsoft_read_mail_user_uses_graph_client(monkeypatch):
         assert path == "/me/messages"
         assert token == "ms-token"
         assert "$filter" in params
+        assert "internetMessageId" in params["$select"]
         return httpx.Response(
             200,
             json={
@@ -128,6 +132,7 @@ async def test_microsoft_read_mail_user_uses_graph_client(monkeypatch):
                         "importance": "normal",
                         "hasAttachments": False,
                         "conversationId": "c1",
+                        "internetMessageId": "<m1@example.com>",
                     }
                 ]
             },
@@ -141,6 +146,7 @@ async def test_microsoft_read_mail_user_uses_graph_client(monkeypatch):
     assert messages[0]["id"] == "m1"
     assert messages[0]["from"] == "sender@example.com"
     assert messages[0]["to"] == ["attorney@example.com"]
+    assert messages[0]["internet_message_id"] == "<m1@example.com>"
 
 
 @pytest.mark.asyncio

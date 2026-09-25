@@ -14,21 +14,26 @@ from app.routers import user_aliases
 from app.services.email import EmailDeliveryResult
 
 
-def test_verified_alias_matches_correspondence_party():
-    matter = SimpleNamespace(correspondence_rules=None, case_number=None)
+@pytest.mark.asyncio
+async def test_staff_alias_is_not_a_correspondence_party():
+    """A staff send-as address is on almost every message in that mailbox.
+
+    Counting it as a matter party filed unrelated mail into every matter the
+    staff member was assigned to, so only contact addresses are loaded.
+    """
+    db = AsyncMock()
+    db.execute.side_effect = [SimpleNamespace(all=lambda: [("party@firm.test",)])]
+    matter = SimpleNamespace(id="matter-1", client_contact_id=None)
+    addresses = await _matter_party_addresses(db, "tenant-1", matter)
+    assert addresses == {"party@firm.test"}
+    assert db.execute.await_count == 1
+    assert "user_alias_addresses" not in str(db.execute.call_args_list[0].args[0])
     email = {"from": "send-as@firm.test", "to": [], "cc": [], "subject": "Hello"}
-    assert evaluate_matter_rules(
-        matter, email, {"send-as@firm.test"}, {"enabled": True, "match_parties": True}
-    )
-
-
-def test_unverified_alias_is_not_added_to_party_set():
-    matter = SimpleNamespace(correspondence_rules=None, case_number=None)
-    email = {"from": "pending@firm.test", "to": [], "cc": [], "subject": "Hello"}
-    # The query layer only supplies verified aliases.  An absent address must
-    # therefore behave exactly like an unknown correspondent.
     assert not evaluate_matter_rules(
-        matter, email, set(), {"enabled": True, "match_parties": True}
+        SimpleNamespace(correspondence_rules=None, case_number=None),
+        email,
+        addresses,
+        {"enabled": True, "match_parties": True},
     )
 
 
@@ -65,22 +70,6 @@ def test_alias_token_does_not_cross_match_other_token():
         verification_expires_at=now + timedelta(minutes=5),
     )
     assert not _alias_token_is_valid(row, "tenant-b-token", now)
-
-
-@pytest.mark.asyncio
-async def test_party_address_query_only_adds_verified_aliases_and_tenant_rows():
-    db = AsyncMock()
-    db.add = Mock()
-    contacts = SimpleNamespace(all=lambda: [("party@firm.test",)])
-    aliases = SimpleNamespace(all=lambda: [("verified-send-as@firm.test",)])
-    db.execute.side_effect = [SimpleNamespace(all=lambda: [("party@firm.test",)]), aliases]
-    matter = SimpleNamespace(id="matter-1", client_contact_id=None)
-    addresses = await _matter_party_addresses(db, "tenant-1", matter)
-    assert addresses == {"party@firm.test", "verified-send-as@firm.test"}
-    alias_query = db.execute.call_args_list[1].args[0]
-    sql = str(alias_query)
-    assert "is_verified" in sql
-    assert "tenant_id" in sql
 
 
 @pytest.mark.asyncio

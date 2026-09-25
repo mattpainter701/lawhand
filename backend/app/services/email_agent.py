@@ -203,9 +203,30 @@ async def _match_email_to_matters(
     )
     matter_ids_from_client = [row[0] for row in client_q.all()]
 
-    # Combine and deduplicate
-    all_ids = list(set(matter_ids_from_parties + matter_ids_from_client))
-    return all_ids
+    all_ids = set(matter_ids_from_parties + matter_ids_from_client)
+    if not all_ids:
+        return []
+
+    # Callers file the communication log and any tagged task on the first
+    # matter, so the order has to mean something. A client with several open
+    # matters matches all of them by sender; a case number named in the
+    # message is stronger evidence, so narrow to those matters when it does.
+    # Otherwise the most recently active matter leads.
+    from app.services.correspondence_capture import case_number_mentioned
+
+    matters_q = await db.execute(
+        select(Matter.id, Matter.case_number)
+        .where(Matter.tenant_id == tenant_id, Matter.id.in_(all_ids))
+        .order_by(Matter.updated_at.desc().nullslast(), Matter.id)
+    )
+    ordered = matters_q.all()
+    text = f"{email.get('subject', '')}\n{email.get('body_preview', '')}"
+    by_case = [
+        matter_id
+        for matter_id, case_number in ordered
+        if case_number and case_number_mentioned(case_number, text)
+    ]
+    return by_case or [matter_id for matter_id, _ in ordered]
 
 
 def _extract_email_addresses(text: str) -> list[str]:

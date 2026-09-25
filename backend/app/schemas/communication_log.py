@@ -65,6 +65,15 @@ class CommunicationLogResponse(BaseModel):
     external_ref: Optional[str]
     created_at: datetime
     updated_at: datetime
+    document_id: Optional[uuid.UUID] = None
+    # Resolved for display so people read "Smith Divorce (M-0042)", not a UUID.
+    matter_name: Optional[str] = None
+    matter_number: Optional[str] = None
+    contact_name: Optional[str] = None
+    # True for a record of what was actually sent or received (captured mail,
+    # portal and SMS messages, system sends). Its content cannot be edited;
+    # it can only be re-filed to a different matter or contact.
+    content_locked: bool = False
 
 
 class CommunicationLogListResponse(BaseModel):

@@ -4,7 +4,8 @@ Communications router — log inbound/outbound communications.
   GET  /api/communications       list with filters
   POST /api/communications       create log entry
   GET  /api/communications/{id}  detail
-  PATCH /api/communications/{id} update
+  PATCH /api/communications/{id} update (content of hand-logged entries only;
+                                 captured records can only be re-filed)
 """
 
 import uuid
@@ -19,6 +20,7 @@ from app.database import get_db, set_tenant_context
 from app.middleware.tenant import get_current_user
 from app.models.communication_log import CommunicationLog
 from app.models.contact import Contact
+from app.models.plugin import Matter
 from app.schemas.communication_log import (
     CommunicationLogCreate,
     CommunicationLogListResponse,
@@ -112,6 +114,76 @@ async def _invalidate_communication_context(
         return
 
 
+# Channels whose rows are always a record of a real message, never a note.
+_EVIDENCE_CHANNELS = {"sms", "portal"}
+# Fields that describe what was said; re-filing fields are handled separately.
+_CONTENT_FIELDS = {"subject", "body", "summary", "status"}
+
+
+def _content_locked(log: CommunicationLog) -> bool:
+    """Whether this row records what was actually sent or received.
+
+    Captured mail, portal and SMS messages and system sends carry a provider
+    or system reference, a stored message, or a delivery status. Editing their
+    subject or body would rewrite the firm's record of what was said, so only
+    hand-logged entries (status "logged", nothing stored behind them) are
+    editable.
+    """
+    return bool(
+        log.external_ref
+        or log.document_id
+        or log.channel in _EVIDENCE_CHANNELS
+        or (log.status or "logged") != "logged"
+    )
+
+
+async def communication_responses(
+    db: AsyncSession, tenant_id: uuid.UUID, logs
+) -> list[CommunicationLogResponse]:
+    """Serialize rows with the matter and contact names people recognise."""
+    matter_ids = {log.matter_id for log in logs if log.matter_id}
+    contact_ids = {log.contact_id for log in logs if log.contact_id}
+    matters: dict = {}
+    contacts: dict = {}
+    if matter_ids:
+        rows = await db.execute(
+            select(Matter.id, Matter.matter_name, Matter.matter_number).where(
+                Matter.tenant_id == tenant_id, Matter.id.in_(matter_ids)
+            )
+        )
+        matters = {row.id: row for row in rows.all()}
+    if contact_ids:
+        rows = await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id, Contact.id.in_(contact_ids)
+            )
+        )
+        contacts = {contact.id: contact for contact in rows.scalars().all()}
+
+    responses = []
+    for log in logs:
+        response = CommunicationLogResponse.model_validate(log)
+        matter = matters.get(log.matter_id)
+        contact = contacts.get(log.contact_id)
+        responses.append(
+            response.model_copy(
+                update={
+                    "matter_name": matter.matter_name if matter else None,
+                    "matter_number": matter.matter_number if matter else None,
+                    "contact_name": contact.display_name if contact else None,
+                    "content_locked": _content_locked(log),
+                }
+            )
+        )
+    return responses
+
+
+async def _response(
+    db: AsyncSession, tenant_id: uuid.UUID, log: CommunicationLog
+) -> CommunicationLogResponse:
+    return (await communication_responses(db, tenant_id, [log]))[0]
+
+
 @router.get("", response_model=CommunicationLogListResponse)
 async def list_communications(
     matter_id: Optional[uuid.UUID] = None,
@@ -179,7 +251,7 @@ async def list_communications(
     logs = result.scalars().all()
 
     return CommunicationLogListResponse(
-        items=[CommunicationLogResponse.model_validate(entry) for entry in logs],
+        items=await communication_responses(db, uuid.UUID(tenant_id), logs),
         total=total,
     )
 
@@ -221,7 +293,7 @@ async def create_communication_log(
     await db.commit()
     await db.refresh(log)
     await _invalidate_communication_context(tenant_id, log.matter_id)
-    return CommunicationLogResponse.model_validate(log)
+    return await _response(db, uuid.UUID(tenant_id), log)
 
 
 @router.get("/{log_id}", response_model=CommunicationLogResponse)
@@ -246,7 +318,7 @@ async def get_communication_log(
         db, current_user, log.matter_id
     ):
         raise HTTPException(status_code=404, detail="Communication log not found")
-    return CommunicationLogResponse.model_validate(log)
+    return await _response(db, uuid.UUID(tenant_id), log)
 
 
 @router.patch("/{log_id}", response_model=CommunicationLogResponse)
@@ -280,19 +352,56 @@ async def update_communication_log(
             detail="Provider SMS communication evidence is immutable",
         )
 
+    changes = payload.model_dump(exclude_none=True)
+    content_changes = {
+        field
+        for field in _CONTENT_FIELDS & changes.keys()
+        if changes[field] != getattr(log, field)
+    }
+    if content_changes and _content_locked(log):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This is a record of a message that was actually sent or "
+                "received, so its content cannot be edited. It can only be "
+                "moved to a different matter or contact."
+            ),
+        )
+
+    tid = uuid.UUID(tenant_id)
+    new_matter_id = changes.get("matter_id")
+    if new_matter_id and new_matter_id != log.matter_id:
+        # Re-filing puts the message in front of everyone on the target
+        # matter, so the person moving it must be able to see that matter.
+        if not await can_access_matter(
+            db,
+            tenant_id=tid,
+            user_id=current_user.id,
+            is_admin=current_user.role == "admin",
+            matter_id=new_matter_id,
+        ):
+            raise HTTPException(status_code=404, detail="Matter not found")
+    new_contact_id = changes.get("contact_id")
+    if new_contact_id and new_contact_id != log.contact_id:
+        contact_exists = await db.scalar(
+            select(Contact.id).where(
+                Contact.id == new_contact_id, Contact.tenant_id == tid
+            )
+        )
+        if not contact_exists:
+            raise HTTPException(status_code=404, detail="Contact not found")
+
     previous_matter_id = log.matter_id
-    for field, value in payload.model_dump(exclude_none=True).items():
+    for field, value in changes.items():
         setattr(log, field, value)
 
-    await _record_client_contact(
-        db, uuid.UUID(tenant_id), log.contact_id, log.occurred_at
-    )
+    await _record_client_contact(db, tid, log.contact_id, log.occurred_at)
     await db.commit()
     await db.refresh(log)
     await _invalidate_communication_context(tenant_id, previous_matter_id)
     if log.matter_id != previous_matter_id:
         await _invalidate_communication_context(tenant_id, log.matter_id)
-    return CommunicationLogResponse.model_validate(log)
+    return await _response(db, tid, log)
 
 
 @router.delete("/{log_id}", status_code=204)

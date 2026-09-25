@@ -262,7 +262,7 @@ async def contact_communications(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.schemas.communication_log import CommunicationLogResponse
+    from app.routers.communications import communication_responses
     from app.services.rbac_service import get_user_capabilities
     from app.services.matter_access import matter_access_predicate
 
@@ -298,6 +298,7 @@ async def contact_communications(
         .where(
             CommunicationLog.tenant_id == uuid.UUID(tenant_id),
             CommunicationLog.contact_id == contact_id,
+            CommunicationLog.status != "deleted",
             channel_visibility,
         )
         .order_by(CommunicationLog.occurred_at.desc())
@@ -310,13 +311,12 @@ async def contact_communications(
     count_stmt = select(func.count()).where(
         CommunicationLog.tenant_id == uuid.UUID(tenant_id),
         CommunicationLog.contact_id == contact_id,
+        CommunicationLog.status != "deleted",
         channel_visibility,
     )
     total = (await db.execute(count_stmt)).scalar_one()
 
     return CommunicationLogListResponse(
-        items=[
-            CommunicationLogResponse.model_validate(log_entry) for log_entry in logs
-        ],
+        items=await communication_responses(db, uuid.UUID(tenant_id), logs),
         total=total,
     )

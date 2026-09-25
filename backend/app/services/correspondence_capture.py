@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import format_datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -35,9 +35,7 @@ from app.models.communication_log import CommunicationLog
 from app.models.contact import Contact
 from app.models.matter_document import MatterDocument
 from app.models.matter_party import MatterParty
-from app.models.matter_assignment import MatterAssignment
 from app.models.plugin import Matter
-from app.models.user_alias import UserAliasAddress
 from app.services.email_agent import _extract_email_addresses
 from app.services.matter_file_store import MatterFileStore
 from app.services.matter_document_organization import autofile_folder_id
@@ -157,21 +155,11 @@ async def _matter_party_addresses(
         if client_email:
             addresses.add(client_email.lower())
 
-    # Internal staff may correspond from a verified send-as address.  Include
-    # only aliases on active assignments and only after their ownership proof
-    # has completed; pending admin-entered aliases must not match mail.
-    alias_q = await db.execute(
-        select(UserAliasAddress.normalized_address)
-        .join(MatterAssignment, MatterAssignment.user_id == UserAliasAddress.user_id)
-        .where(
-            MatterAssignment.tenant_id == tenant_id,
-            MatterAssignment.matter_id == matter.id,
-            UserAliasAddress.tenant_id == tenant_id,
-            UserAliasAddress.is_verified.is_(True),
-        )
-    )
-    addresses.update(addr for (addr,) in alias_q.all() if addr)
-
+    # Firm staff addresses (including verified send-as aliases) are deliberately
+    # not matter parties: a staff address sits on nearly every message in that
+    # person's mailbox, so matching on it filed unrelated mail into every matter
+    # they were assigned to. The firm side of a thread is never evidence of
+    # which matter the thread belongs to.
     return addresses
 
 
@@ -181,6 +169,25 @@ def _matter_case_numbers(matter: Matter, rules: dict) -> list[str]:
     if not case_numbers and matter.case_number:
         case_numbers = [matter.case_number.strip()]
     return [c for c in case_numbers if c]
+
+
+def _case_number_pattern(case_number: str) -> re.Pattern | None:
+    """Whole-token, separator-tolerant pattern for one case number.
+
+    ``2024-CV-1234`` matches "2024-CV-1234", "2024 CV 1234" and "2024.cv.1234",
+    but not "2024-CV-12345" or "12024-CV-1234": a plain substring test filed
+    mail about one case into every matter whose number was a prefix of it.
+    """
+    tokens = re.findall(r"[A-Za-z0-9]+", case_number or "")
+    if not tokens:
+        return None
+    body = r"[\s\-./:_]*".join(re.escape(token) for token in tokens)
+    return re.compile(rf"(?<![A-Za-z0-9]){body}(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+def case_number_mentioned(case_number: str, text: str) -> bool:
+    pattern = _case_number_pattern(case_number)
+    return bool(pattern and pattern.search(text or ""))
 
 
 def evaluate_matter_rules(
@@ -206,12 +213,41 @@ def evaluate_matter_rules(
     ):
         return True
 
-    text = _email_text(email)
-    for case_number in _matter_case_numbers(matter, rules):
-        if case_number.lower() in text:
-            return True
+    return matches_case_number(matter, email, rules)
 
-    return False
+
+def matches_case_number(matter: Matter, email: dict, rules: dict) -> bool:
+    """True when one of the matter's case numbers is mentioned in the email."""
+    text = _email_text(email)
+    return any(
+        case_number_mentioned(case_number, text)
+        for case_number in _matter_case_numbers(matter, rules)
+    )
+
+
+def narrow_to_case_number_matches(
+    matched: list[tuple[Matter, dict]], email: dict
+) -> list[tuple[Matter, dict]]:
+    """Prefer the matters whose case number the email names.
+
+    A client with several open matters is a party to all of them, so a party
+    match alone fans one message out to every one. When the message also names
+    a case number, that is the stronger evidence: file it only where the number
+    matches. With no case number in the message the party matches stand.
+    """
+    if len(matched) < 2:
+        return matched
+    by_case = [
+        (matter, rules)
+        for matter, rules in matched
+        if matches_case_number(matter, email, rules)
+    ]
+    return by_case or matched
+
+
+def _internet_message_id(email: dict) -> str | None:
+    value = str(email.get("internet_message_id") or "").strip()
+    return value[:500] or None
 
 
 async def _already_captured(
@@ -219,16 +255,32 @@ async def _already_captured(
     tenant_id: uuid_mod.UUID,
     matter_id: uuid_mod.UUID,
     refs: list[str],
+    internet_message_id: str | None = None,
 ) -> bool:
-    if not refs:
+    """Whether this message is already on the matter.
+
+    Provider ids are per mailbox, so when two staff members both hold a thread
+    each copy has a different ``external_ref``. The RFC Message-ID is the same
+    in every mailbox, so it catches the second copy.
+    """
+    conditions = []
+    if refs:
+        conditions.append(CommunicationLog.external_ref.in_(refs))
+    if internet_message_id:
+        conditions.append(
+            CommunicationLog.participants["message_id"].astext == internet_message_id
+        )
+    if not conditions:
         return False
     existing = await db.execute(
-        select(CommunicationLog.id).where(
+        select(CommunicationLog.id)
+        .where(
             CommunicationLog.tenant_id == tenant_id,
             CommunicationLog.matter_id == matter_id,
             CommunicationLog.channel == "email",
-            CommunicationLog.external_ref.in_(refs),
+            or_(*conditions),
         )
+        .limit(1)
     )
     return existing.scalar_one_or_none() is not None
 
@@ -260,7 +312,10 @@ async def capture_email_for_matter(
     if message_id != external_ref:
         possible_refs.append(message_id)
 
-    if await _already_captured(db, tenant_id, matter_id, possible_refs):
+    internet_message_id = _internet_message_id(email)
+    if await _already_captured(
+        db, tenant_id, matter_id, possible_refs, internet_message_id
+    ):
         logger.info(
             "Correspondence already captured for matter %s: %s",
             matter_id,
@@ -372,6 +427,7 @@ async def capture_email_for_matter(
             "from": addrs["from"],
             "to": addrs["to"],
             "cc": addrs["cc"],
+            **({"message_id": internet_message_id} if internet_message_id else {}),
         },
     )
     db.add(log)
@@ -461,9 +517,12 @@ async def scan_and_capture(
     for email in emails:
         if email.get("id") and not email.get("external_ref"):
             email["external_ref"] = f"{provider}:{email['id']}"
-        for matter, rules, addresses in matter_ctx:
-            if not evaluate_matter_rules(matter, email, addresses, rules):
-                continue
+        matched = [
+            (matter, rules)
+            for matter, rules, addresses in matter_ctx
+            if evaluate_matter_rules(matter, email, addresses, rules)
+        ]
+        for matter, rules in narrow_to_case_number_matches(matched, email):
             try:
                 did_capture = await capture_email_for_matter(
                     db,
