@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { reportError } from '../utils/reportError'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../App'
@@ -26,11 +26,16 @@ function mcpBlockedReason(user) {
   return ''
 }
 
+const PROFILE_MATTERS_PAGE_SIZE = 200
+
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth()
   const [sessionsRevoking, setSessionsRevoking] = useState(false)
   const [sessionsStatus, setSessionsStatus] = useState('')
   const [myMatters, setMyMatters] = useState([])
+  const [myMattersTotal, setMyMattersTotal] = useState(0)
+  const [myMattersError, setMyMattersError] = useState(false)
+  const loadRequest = useRef(0)
   const [timeEntries, setTimeEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [professionalContext, setProfessionalContext] = useState({
@@ -58,23 +63,42 @@ export default function ProfilePage() {
     jurisdictionText,
   ])
 
+  // Profile is a summary: it lists the most recently updated page and counts
+  // the server total, and says so when there are more. A failed load is shown
+  // as a failure, never as "You have no assigned matters". S3.03.
   const loadData = useCallback(async () => {
+    const request = ++loadRequest.current
     try {
       setLoading(true)
+      setMyMattersError(false)
       const [matters, entries] = await Promise.all([
-        getMyMattersPage({ page: 1, page_size: 200 })
-          .then((data) => data?.items || [])
-          .catch(() => []),
+        getMyMattersPage({ page: 1, page_size: PROFILE_MATTERS_PAGE_SIZE }).then((data) => {
+          if (!Array.isArray(data?.items)) throw new Error('Missing assigned-matter results')
+          return data
+        }).catch((err) => {
+          reportError('Failed to load assigned matters', err)
+          return null
+        }),
         getTimeEntries({ limit: 50 }).catch(() => []),
       ])
-      setMyMatters(matters)
+      if (request !== loadRequest.current) return
+      if (matters) {
+        setMyMatters(matters.items)
+        setMyMattersTotal(Number.isInteger(matters.total) ? matters.total : matters.items.length)
+      } else {
+        setMyMatters([])
+        setMyMattersTotal(0)
+        setMyMattersError(true)
+      }
       setTimeEntries(entries.items || entries)
     } catch (err) {
       reportError('Failed to load profile data', err)
     } finally {
-      setLoading(false)
+      if (request === loadRequest.current) setLoading(false)
     }
   }, [])
+
+  useEffect(() => () => { loadRequest.current += 1 }, [])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -86,6 +110,7 @@ export default function ProfilePage() {
   const totalBilled = timeEntries.reduce((sum, entry) => sum + asFiniteNumber(entry.amount), 0)
 
   const activeMatters = myMatters.filter((m) => !m.is_closed)
+  const myMattersPartial = myMattersTotal > myMatters.length
   const riskCounts = { critical: 0, high: 0, medium: 0, low: 0 }
   myMatters.forEach((m) => {
     if (m.risk_level && riskCounts[m.risk_level] !== undefined) riskCounts[m.risk_level]++
@@ -307,8 +332,14 @@ export default function ProfilePage() {
       }}>
         <div style={{ background: '#fff', border: '1px solid #E1D9C9', borderRadius: 8, padding: 16 }}>
           <Briefcase size={18} color="#6A7587" />
-          <p style={{ fontSize: 22, fontWeight: 700, margin: '8px 0 0' }}>{myMatters.length}</p>
-          <p style={{ fontSize: 12, color: '#6A7587', margin: 0 }}>My Matters ({activeMatters.length} active)</p>
+          <p style={{ fontSize: 22, fontWeight: 700, margin: '8px 0 0' }}>{loading || myMattersError ? '—' : myMattersTotal}</p>
+          <p style={{ fontSize: 12, color: '#6A7587', margin: 0 }}>
+            {myMattersError
+              ? 'My Matters (could not load)'
+              : myMattersPartial
+                ? 'My Matters'
+                : `My Matters (${activeMatters.length} active)`}
+          </p>
         </div>
         <div style={{ background: '#fff', border: '1px solid #E1D9C9', borderRadius: 8, padding: 16 }}>
           <Clock size={18} color="#6A7587" />
@@ -324,8 +355,19 @@ export default function ProfilePage() {
 
       {/* My Matters */}
       <h3 style={{ fontSize: 15, marginBottom: 12 }}>My Matters</h3>
+      {!loading && !myMattersError && myMattersPartial && (
+        <p style={{ color: '#6A7587', fontSize: 13, margin: '0 0 8px' }}>
+          Showing the {myMatters.length} most recently updated of your {myMattersTotal} assigned matters.{' '}
+          <Link to="/matters" className="text-brand-accent hover:underline">See them all in Matters</Link>
+        </p>
+      )}
       {loading ? (
         <p style={{ color: '#6A7587', fontSize: 13 }}>Loading...</p>
+      ) : myMattersError ? (
+        <div role="alert" style={{ color: '#9C4F3F', fontSize: 13 }}>
+          Your assigned matters could not be loaded.{' '}
+          <button type="button" onClick={loadData} className="font-medium underline">Try again</button>
+        </div>
       ) : myMatters.length === 0 ? (
         <p style={{ color: '#6A7587', fontSize: 13 }}>You have no assigned matters.</p>
       ) : (

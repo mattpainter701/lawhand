@@ -540,6 +540,34 @@ def _matter_to_response(
     )
 
 
+# Columns a matters list may be sorted by. ``sort_by`` is caller input, so it is
+# checked against this list instead of being looked up as any model attribute.
+MATTER_SORT_COLUMNS = {
+    "updated_at": Matter.updated_at,
+    "created_at": Matter.created_at,
+    "opened_on": Matter.opened_on,
+    "matter_name": Matter.matter_name,
+    "matter_number": Matter.matter_number,
+    "status": Matter.status,
+    "stage": Matter.stage,
+    "matter_type": Matter.matter_type,
+    "practice_area": Matter.practice_area,
+    "risk_level": Matter.risk_level,
+    "engagement_status": Matter.engagement_status,
+    "retention_until": Matter.retention_until,
+}
+
+
+def _matter_order_by(sort_by: str, sort_dir: str) -> tuple:
+    """Validated sort column plus ``Matter.id`` so ties keep a stable page order."""
+    column = MATTER_SORT_COLUMNS.get(sort_by)
+    if column is None:
+        raise HTTPException(status_code=422, detail="Unknown sort field")
+    if sort_dir not in ("asc", "desc"):
+        raise HTTPException(status_code=422, detail="Unknown sort direction")
+    return (column.asc() if sort_dir == "asc" else column.desc(), Matter.id.asc())
+
+
 # ── Core CRUD ─────────────────────────────────────────────────────────────────
 
 
@@ -621,17 +649,13 @@ async def list_matters(
             )
         )
 
+    order_by = _matter_order_by(sort_by, sort_dir)
+
     # Count
     count_q = select(func.count()).select_from(Matter).where(and_(*conditions))
     total = (await db.execute(count_q)).scalar() or 0
 
     # Fetch
-    sort_col = getattr(Matter, sort_by, Matter.updated_at)
-    if sort_dir == "asc":
-        sort_col = sort_col.asc()
-    else:
-        sort_col = sort_col.desc()
-
     q = (
         select(Matter)
         .options(
@@ -641,7 +665,7 @@ async def list_matters(
             selectinload(Matter.partner_attorney),
         )
         .where(and_(*conditions))
-        .order_by(sort_col)
+        .order_by(*order_by)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -1044,6 +1068,7 @@ async def _my_matters_items(
     repeat or skip rows. ``Matter.id`` is the tie-break behind the chosen sort
     column so a tie is still a stable order. Only the page's rows are enriched.
     """
+    order_by = _matter_order_by(sort_by, sort_dir)
     conditions = [
         Matter.tenant_id == tenant_id,
         Matter.is_closed.is_(False),
@@ -1084,9 +1109,6 @@ async def _my_matters_items(
         )
     ).scalar() or 0
 
-    sort_col = getattr(Matter, sort_by, Matter.updated_at)
-    sort_col = sort_col.asc() if sort_dir == "asc" else sort_col.desc()
-
     q = (
         select(Matter)
         .options(
@@ -1096,7 +1118,7 @@ async def _my_matters_items(
             selectinload(Matter.partner_attorney),
         )
         .where(and_(*conditions))
-        .order_by(sort_col, Matter.id.asc())
+        .order_by(*order_by)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

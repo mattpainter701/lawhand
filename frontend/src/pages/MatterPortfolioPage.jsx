@@ -784,10 +784,13 @@ export default function MatterPortfolioPage() {
   const accessibleTotal = matterTotal ?? matters.length
   const mattersPartial = matterTotal === null || matterTotal > matters.length
 
+  // A page-1 reload supersedes any load-more in flight. That request's finally
+  // no longer matches the token, so the reload clears its busy flag here.
   const loadMyMatters = () => {
     const request = ++myRequest.current
     setMyLoading(true)
     setMyError(false)
+    setMyLoadingMore(false)
     setMyMoreError(false)
     setMyPage(1)
     getMyMattersPage({ page: 1, page_size: MY_MATTERS_PAGE_SIZE })
@@ -838,6 +841,7 @@ export default function MatterPortfolioPage() {
     const request = ++matterRequest.current
     setLoading(true)
     setError(null)
+    setMatterLoadingMore(false)
     setMatterMoreError(false)
     setMatterPage(1)
     getMattersV2({ page: 1, page_size: ALL_MATTERS_PAGE_SIZE })
