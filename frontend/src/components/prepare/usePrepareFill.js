@@ -94,11 +94,12 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     const queue = fieldFilter === 'review' ? progress.review : fieldFilter === 'remaining' ? missing : fieldFilter === 'unverified' ? progress.unverified : [...missing, ...progress.review]
     const index = queue.findIndex(row => row.name === lastAttentionField.current)
     const name = queue[(index + 1) % queue.length]?.name
-    if (!name) return
+    if (!name) return undefined
     lastAttentionField.current = name
     const input = document.getElementById(`template-variable-${name}`)
     input?.scrollIntoView?.({ block: 'center' })
     input?.focus({ preventScroll: true })
+    return name
   }
   const toggleVerified = (name) => setVerifiedNames(prev => {
     const next = { ...prev }
@@ -115,10 +116,11 @@ export default function usePrepareFill({ template, initialMatterId, folderId, on
     const candidates = progress.unverified.map(row => row.name).filter(other => other !== name)
     const following = candidates.filter(other => order.indexOf(other) > start)
     const target = following[0] || candidates[0]
-    if (!target) return
+    if (!target) return undefined
     const control = document.getElementById(`template-verified-${target}`)
     control?.scrollIntoView?.({ block: 'center' })
     control?.focus({ preventScroll: true })
+    return target
   }
   useEffect(() => {
     if (pendingFocus.current) {

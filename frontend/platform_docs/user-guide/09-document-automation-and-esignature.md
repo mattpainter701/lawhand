@@ -114,9 +114,14 @@ The address suffixes are `street`, `city`, `state`, `zip`, and `country`, as in 
 
 1. Open a published template and select **Use on a matter**, or start from the matter or from [Prepare](/templates/prepare).
 2. Choose the matter. LawHand fills the fields it can find from the matter.
-3. Review each value, fill in anything missing, and mark values as verified.
-4. Inspect the exact preview.
-5. Save. The document is saved to the matter's documents, in the folder named in the link when there is one.
+3. Review each value, fill in anything missing, and mark values as verified. The page opens on the **Document** view:
+   - For a PDF form, type into each box on the page.
+   - For a Word or text template, select a highlighted placeholder.
+
+   The bar under the document shows the selected field at full size, with its source, **Confirm**, **Verify**, and **Next**, **Previous**, and **Next required**. Press Enter in a field to verify it and move to the next one to check. Box colours show what needs you: amber for a required answer that is missing, violet for a suggestion to check, and green for a verified value.
+4. Prefer a list? Choose **Questions** at the top for the field list beside the document. LawHand remembers your choice on this browser.
+5. Choose **Preview** to inspect the exact generated document. For a PDF, the preview updates as you type.
+6. Save. The document is saved to the matter's documents, in the folder named in the link when there is one.
 
 After saving, the same page can create an e-signature request for the new document. See [Send a document for signature](#send-a-document-for-signature).
 
@@ -153,9 +158,11 @@ A suggested dropdown answer must match one of the options. Recognized state name
 The **Sample form library** on Studio home holds reference forms, such as powers of attorney, leases, and court forms. They are reference material, not legal advice.
 
 1. Filter by **Type** or **Jurisdiction**, or search by form title. **Preview** shows the source form.
-2. Choose **Fill**, then **Fill from a matter**, and search by client name, matter name, or number. Changing to another matter clears the previous matter's answers.
-3. Use **Missing** to focus on required answers that are still empty, **Optional** or **Filled** to narrow the list, or **All** to review everything. Keep the source PDF beside the questions when a label needs context.
-4. Choose **Preview filled PDF** and review every page, then **Download filled PDF**. Changing an answer clears the preview, so the download always matches what you reviewed.
+2. Choose **Fill**. The form opens on the **Document** view: every page of the original form, with each answer box ready to type in. Required boxes that are still empty are amber, and answers taken from a matter are tinted blue until you change them.
+3. To pre-fill answers, choose **Fill from a matter** and search by client name, matter name, or number. Changing to another matter clears the previous matter's answers.
+4. Type directly on the page, or use the bar under the document. It shows the current answer at full size, with **Next**, **Previous**, and **Next required** to move through the form in reading order. This works well on a small screen, or when a box on the form is too small to read. Answers the form keeps off the page are also reached with **Next**.
+5. Prefer a list? Switch to **Questions** at the top. It shows the same answers, grouped by page. Use **Missing** to focus on required answers that are still empty, **Optional** or **Filled** to narrow the list, or **All** to review everything. You can switch between **Document** and **Questions** at any time without losing answers.
+6. Choose **Preview filled PDF** to open the **Final PDF** view, review every page, then **Download filled PDF**. Changing an answer removes the final PDF, so the download always matches what you reviewed.
 
 A sample download does not create a firm template or save anything to the matter. A numbered field label identifies a location on the form, not a verified legal meaning: check the form's issuing authority, edition, and suitability before using it. When you pick a template from a matter, **Add to firm** turns a sample into a firm template that you then set up and test.
 

@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.24.03",
+      "version": "2026.09.24.03",
+      "title": "Fill forms on the document itself",
+      "published_at": "2026-09-24",
+      "summary": "Filling a sample form or preparing a template on a matter now opens on the original document, with each answer box ready to type in. A guided bar keeps the current answer readable on any screen, and Questions lists the same answers.",
+      "highlights": [
+        {
+          "title": "The document comes first",
+          "description": "Fill and Prepare open on the original document. Type in each PDF form box where the answer will print, or select a highlighted placeholder in a Word template."
+        },
+        {
+          "title": "Review on the page",
+          "description": "Box colours show what needs you: missing, a suggestion to check, or verified. The bar keeps Confirm, Verify and each value's source; Enter still verifies and moves on."
+        },
+        {
+          "title": "Guided answers on any screen",
+          "description": "The bar shows the current answer at full size with Next, Previous and Next required, so small screens and tiny form boxes no longer get in the way."
+        },
+        {
+          "title": "Switch between Document, Questions and Preview",
+          "description": "Questions is the field list beside the document; LawHand remembers your choice on this browser. Preview shows the exact file you will download or save."
+        }
+      ]
+    },
+    {
       "id": "2026.09.24.02",
       "version": "2026.09.24.02",
       "title": "Clearer Microsoft 365 and Google connections",

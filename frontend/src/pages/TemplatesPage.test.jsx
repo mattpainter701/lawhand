@@ -87,6 +87,11 @@ const renderStudioRoute = (route) => rtlRender(
   </MemoryRouter>,
 )
 
+// These tests cover the Questions layout (field list beside the preview).
+// The Document view has its own tests in TemplatePreparePage.test.jsx.
+beforeEach(() => { localStorage.setItem('lawhand.fill.view', 'questions') })
+afterEach(() => { localStorage.clear() })
+
 describe('document template workflow', () => {
   it('prioritizes required blanks, preserves the missing filter while typing, and links to source repair without leaving the form', async () => {
     getTemplates.mockResolvedValueOnce({ items: [{ id: 'review-queue', title: 'Review queue', body: '{{firm_email}} {{review_note}}', is_active: true, variable_schema: { fields: [
