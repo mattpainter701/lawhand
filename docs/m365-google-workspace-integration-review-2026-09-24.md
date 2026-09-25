@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24
 **Scope:** How LawHand uses Microsoft 365 and Google Workspace today, what it should use, how a firm's own Copilot or Gemini could do work for LawHand, document preparation in the firm's office suite, and the UX of the integration screens.
-**Status:** The findings are verified. The code fixes listed under "Fixed on this branch" ship in PR #610; everything else is roadmap.
+**Status:** The findings are verified. The code fixes listed under "Fixed on this branch" ship in PR #610. Later fixes are marked **Fixed** in the defect tables with their PR; everything else is roadmap.
 **Evidence:** `docs/research/m365-google-workspace-review-2026-09-24/` holds the code maps, research, 119 de-duplicated defect clusters, per-claim verification verdicts and fact-check results.
 
 ## Summary
@@ -14,9 +14,10 @@
    - client email sends
 
    As a result, staff can search the administrator's mailbox and files, and other people's deadlines land on the administrator's calendar (D02, D03, D04, D25). This is the largest privacy issue in the integrations. Fixing it changes what users without their own connection can do, so it needs a product decision (see "Decisions needed").
-2. **Two security defects were confirmed and are now fixed.**
+2. **Three security defects were confirmed and are now fixed.**
    - One platform Google service account is a member of every firm's Shared Drive, and Drive search and sync ran with its token across all drives, so a firm could see another firm's files (D01).
    - `POST /api/email/scan` scanned any colleague's mailbox by `user_id` (D10).
+   - The Excel add-in's "set values" action let a formula such as `=WEBSERVICE(…)` through as a plain value, past the formula ban (D19, fixed later).
    - Firm indexes built before the Drive fix may still hold other firms' rows and need a purge.
 3. **The Microsoft integration was stuck on "account type unknown" for every tenant (D05).** Directory sync never ran, Teams read as unavailable and "Granted by" never showed. This is now fixed; each tenant recovers on its next re-authorize.
 4. **Using the firm's Copilot or Gemini is realistic, but in the inbound direction.** The firm's AI calls LawHand tools, so the firm's licence pays for the reasoning. LawHand already has the right building block, the review-first Workspace MCP server. One auth gap blocks both Microsoft 365 Copilot and Gemini Enterprise: the server supports public OAuth clients only (D21). Outbound calls from LawHand into the firm's Copilot or Gemini exist (Work IQ, StreamAssist) but are metered, licence-gated and should wait.
@@ -26,7 +27,7 @@
    - a firm template library bound to SharePoint or Drive
    - native file pickers
 
-   Today, editing a LawHand document in Word Online breaks LawHand's access to it (D08), and AI Word drafts lose their formatting on save (D09).
+   Editing a LawHand document in Word Online used to break LawHand's access to it (D08, fixed in PR #614), and AI Word drafts lost their formatting on save (D09, fixed in PR #617).
 6. **Integration UX:** the worst dead ends are fixed on this branch; see "UX and UI of the integrations" for what remains. Next steps:
    - one "Connections" information architecture
    - an admin-first consent flow
@@ -79,19 +80,19 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
 | D01 | Platform Google service account surfaces other firms' Shared Drive files | **Fixed** | Purge old index rows; assess possible exposure |
 | D10 | `/api/email/scan` scans another user's mailbox | **Fixed** | |
 | D05 | Microsoft tier stuck at "unknown"; directory sync blocked | **Fixed** | Tenants recover on re-authorize |
+| D19 | Excel `set_selected_values` bypasses the unsafe-formula ban | **Fixed** | This branch: values starting with `=`, `+`, `-` or `@` are refused unless they are plain numbers; the add-in checks the same |
+| D08 | Editing a matter document in Word/Drive, as the UI invites, breaks LawHand access (409) | **Fixed** | PR #614: open in Word/Docs and bring the edits back |
+| D09 | AI Word drafts open as plain text; saving flattens formatting and truncates | **Fixed** | PR #617: DOCX drafts are office snapshots |
+| D12 | Date-only tasks sent to Google with an empty time range | **Fixed** | This branch: all-day events end on the next day |
 | D02 | Cloud search and content fetch fall back to the admin's mailbox and files for every user | Open | Decision needed |
 | D03 | 15-minute sync indexes the admin's mailbox into the firm-wide index | Open | Decision needed; purge existing mail rows |
 | D06 | Microsoft "Auto" storage writes firm matter files to the admin's personal OneDrive | Open | Decision needed (SharePoint default) |
 | D07 | Removing a matter assignee never removes their OneDrive/SharePoint/Drive folder share | Open | Ethical-wall risk |
 | D15 | Directory sync re-activates users an admin deactivated; their mail keeps being captured | Open | Decision on source of truth |
 | D16 | Directory sync never deprovisions, and licenses guests and resource mailboxes | Open | |
-| D08 | Editing a matter document in Word/Drive, as the UI invites, breaks LawHand access (409) | Open | Needs sync-back |
-| D09 | AI Word drafts open as plain text; saving flattens formatting and truncates | Open | |
 | D11 | Moved or renamed key dates leave stale calendar events | Open | |
-| D12 | Date-only tasks sent to Google with an empty time range | Open | Small fix |
 | D13 | Per-user Microsoft tokens cannot see matter folders that live in the admin's OneDrive | Open | Follows from D06 |
 | D14 | After a storage migration, every sync re-walks the whole tree and rewrites the index | Open | |
-| D19 | Excel `set_selected_values` bypasses the unsafe-formula ban | Open | Small security fix |
 | D20 | Add-in cookie session fails in Office on the web and new Outlook | Open | Needs bearer-token path |
 | D21 | Workspace MCP OAuth supports public clients only; Copilot and Gemini Enterprise cannot connect | Open | Unblocks the Copilot/Gemini plays |
 | D24 | MCP/workflow template render ignores Studio conditional and repeating regions | Open | |
@@ -259,7 +260,7 @@ The UX findings in `ux.json` and `clusters-ux.json` (102 clusters) were reported
 
 | Horizon | Items |
 |---|---|
-| **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D19 formula ban. D07 unshare on unassign. D12 date-only events. D36 Shared Drive deletes. D37 filename encoding. D09 stop flattening Word drafts. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. Pin a current Gemini model. |
+| **Now** (security and correctness) | Purge firm indexes of foreign Drive rows (D01 follow-up) and of admin-mailbox rows once D03 is decided. D07 unshare on unassign. D36 Shared Drive deletes. D37 filename encoding. D28 drop unused Teams scopes. D81 correct consent copy and disclosures. Pin a current Gemini model. |
 | **Next** (decisions needed) | End the admin-token fallback for mail, search and calendar (D02, D03, D04, D25). SharePoint default storage instead of the admin's OneDrive (D06, D13). Directory-sync lifecycle rules (D15, D16). Confidential MCP clients (D21). "Open in Word/Docs" with sync-back (D08, D34). Admin-first Microsoft consent. Per-capability health. |
 | **Later** (growth) | Matter Agent for Microsoft 365 Copilot. Federated connector. Gemini Enterprise connector. Meeting recap. Firm template library in SharePoint/Drive. Native pickers and `drive.file`. Word add-in content controls and tracked changes. Outlook and Gmail "file to matter" add-ins. Event-driven sync. Teams tab. |
 
