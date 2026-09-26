@@ -10,6 +10,8 @@ export default function TemplateFillSource({ template, fields, values, onSelectF
   const [failed, setFailed] = useState(false)
   const [pageNumber, setPageNumber] = useState(1)
   const [viewport, setViewport] = useState(null)
+  const [container, setContainer] = useState(null)
+  const [width, setWidth] = useState(600)
   const onPageRenderError = useCallback(() => setFailed(true), [])
   const fileTemplate = ['pdf', 'docx'].includes(template.format)
   const newerDraft = Boolean(template.is_active && template.published_version_no && template.published_version_no !== template.current_version_no)
@@ -34,7 +36,16 @@ export default function TemplateFillSource({ template, fields, values, onSelectF
   }, [template.id, template.source_sha256, template.format, template.source_filename, fileTemplate, newerDraft])
   const { document, pages, error } = useTemplatePdfDocument(source)
   const page = pages[pageNumber - 1]
-  const zoom = 0.85
+  useEffect(() => {
+    if (!container || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(160, entry.contentRect.width)))
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [container])
+  const rotated = page && Math.abs(page.rotation % 180) === 90
+  const pageWidth = page ? (rotated ? page.height : page.width) : 612
+  const pageHeight = page ? (rotated ? page.width : page.height) : 792
+  const zoom = Math.min(1, width / pageWidth)
   const selectIdentity = identity => {
     const field = fields.find((item, index) => fieldIdentity(item, index) === identity)
     if (field) onSelectField(field.name)
@@ -51,7 +62,7 @@ export default function TemplateFillSource({ template, fields, values, onSelectF
   return <section aria-label="Source document reference">
     <div className="mb-3 flex items-center justify-between gap-2 text-xs"><button type="button" disabled={pageNumber <= 1} onClick={() => { setViewport(null); setPageNumber(value => value - 1) }}>Previous source page</button><span>Page {pageNumber} of {pages.length || '…'}</span><button type="button" disabled={pageNumber >= pages.length} onClick={() => { setViewport(null); setPageNumber(value => value + 1) }}>Next source page</button></div>
     {!document && <p role="status">Loading source document…</p>}
-    <div className="overflow-auto"><div className="relative mx-auto" style={{ width: viewport?.width || 612 * zoom, height: viewport?.height || 792 * zoom }}>
+    <div ref={setContainer} className="max-h-[60dvh] overflow-auto overscroll-contain"><div className="relative mx-auto" style={{ width: viewport?.width || pageWidth * zoom, height: viewport?.height || pageHeight * zoom }}>
       <PdfPageCanvas document={document} pageNumber={pageNumber} zoom={zoom} onViewport={setViewport} onError={onPageRenderError} />
       {template.format === 'docx' ? <WordPlaceholderLayer document={document} pageNumber={pageNumber} viewport={viewport} fields={fields} paragraphs={paragraphs} onSelectField={selectIdentity} /> : page && fields.flatMap(field => placementsFor(field).filter(item => Number(item.overlay.page) === pageNumber).map((item, index) => {
         const rect = overlayToCanvasRect(item.overlay, page, viewport, zoom)

@@ -56,6 +56,11 @@ def test_every_authored_form_is_in_the_manifest(builder, manifest):
         assert entry["filename"] == form.filename
         assert entry["title"] == form.title
         assert entry["category"] == form.category
+        assert entry["source_name"] == "LawHand authored sample"
+        assert entry["source_files"] == [
+            "backend/scripts/build_library_intake_forms.py",
+            f"backend/seed/sample_templates/{form.filename}",
+        ]
 
 
 def test_committed_pdf_carries_the_fields_the_module_declares(builder, manifest):
@@ -143,9 +148,7 @@ def test_authored_signature_labels_identify_the_signing_role(builder):
 
 def test_prospective_intake_yes_no_questions_are_exclusive(builder):
     radio_names = {
-        block[2]
-        for block in builder.PROSPECTIVE_INTAKE.blocks
-        if block[0] == "radio"
+        block[2] for block in builder.PROSPECTIVE_INTAKE.blocks if block[0] == "radio"
     }
     assert {
         "safe_contact",
@@ -190,9 +193,7 @@ def test_authored_forms_carry_no_required_field(builder) -> None:
     for form in _forms(builder):
         content = (SEED_DIR / form.filename).read_bytes()
         required = sorted(
-            field["name"]
-            for field in discover_pdf_fields(content)
-            if field["required"]
+            field["name"] for field in discover_pdf_fields(content) if field["required"]
         )
         assert required == [], f"{form.slug} marks fields required: {required}"
 
@@ -274,12 +275,16 @@ def test_authored_radio_tooltips_strip_markdown_markers(builder):
 
 
 def test_prospective_radio_prompts_do_not_print_authoring_markers(builder):
-    prompts = [block[1] for block in builder.PROSPECTIVE_INTAKE.blocks if block[0] == "radio"]
+    prompts = [
+        block[1] for block in builder.PROSPECTIVE_INTAKE.blocks if block[0] == "radio"
+    ]
     assert prompts
     assert all("**" not in prompt for prompt in prompts)
 
 
 def test_committed_prospective_pdf_does_not_print_markdown_markers():
     content = (SEED_DIR / "intake/prospective-client-intake-form.pdf").read_bytes()
-    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
+    text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages
+    )
     assert "**" not in text

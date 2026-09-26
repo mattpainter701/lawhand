@@ -411,6 +411,12 @@ async def enqueue_render(
         }
         for member in payload.members
     ]
+    member_ids = [member["template_id"] for member in members]
+    if len(member_ids) != len(set(member_ids)):
+        raise HTTPException(
+            status_code=422,
+            detail="A packet can save each template only once per run.",
+        )
     # Merge onto whatever is already recorded: a retry carries only the members
     # still needed, so entries from an earlier attempt (already saved) are kept
     # rather than wiped when the packet is re-queued.
@@ -457,6 +463,7 @@ async def enqueue_render(
             "user_id": str(user.id),
             "matter_id": str(session.matter_id),
             "folder_id": str(payload.folder_id) if payload.folder_id else None,
+            "session_answers_sha256": session.answers_sha256,
             # The members carry the filled field values. ``durable_jobs.payload``
             # is a plain JSON column that is not cleared on completion, so the
             # values are sealed the same way the session's answers are: the job
@@ -466,6 +473,7 @@ async def enqueue_render(
         },
     )
     session.job_id = job.id
+    job.payload = {**(job.payload or {}), "job_id": str(job.id)}
     await db.commit()
     await set_tenant_context(db, str(session.tenant_id))
     await db.refresh(session)
@@ -503,6 +511,16 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
     )
     if session is None:
         return {"outcome": "blocked", "failure_code": "session_missing"}
+    if (
+        session.status != "saving"
+        or session.job_id != job.id
+        or (payload.get("job_id") is not None and payload.get("job_id") != str(job.id))
+        or (
+            payload.get("session_answers_sha256")
+            and payload.get("session_answers_sha256") != session.answers_sha256
+        )
+    ):
+        return {"outcome": "blocked", "failure_code": "stale_job"}
     user = await db.scalar(
         select(User).where(
             User.id == uuid.UUID(str(payload.get("user_id") or uuid.uuid4())),

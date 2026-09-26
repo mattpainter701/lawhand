@@ -8,6 +8,7 @@ export default function GeneratedPdfPreview({ source, title }) {
   const [zoomMode, setZoomMode] = useState('fit')
   const [container, setContainer] = useState(null)
   const [width, setWidth] = useState(600)
+  const [height, setHeight] = useState(480)
   const [viewport, setViewport] = useState(null)
   const [renderError, setRenderError] = useState('')
   const [sourceReady, setSourceReady] = useState(false)
@@ -49,7 +50,10 @@ export default function GeneratedPdfPreview({ source, title }) {
 
   useEffect(() => {
     if (!container || typeof ResizeObserver === 'undefined') return undefined
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(160, entry.contentRect.width - 32)))
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(Math.max(160, entry.contentRect.width - 32))
+      if (entry.contentRect.height > 0) setHeight(Math.max(160, entry.contentRect.height - 32))
+    })
     observer.observe(container)
     return () => observer.disconnect()
   }, [container])
@@ -58,7 +62,11 @@ export default function GeneratedPdfPreview({ source, title }) {
   const rotated = page && Math.abs(page.rotation % 180) === 90
   const pageWidth = page ? (rotated ? page.height : page.width) : 612
   const pageHeight = page ? (rotated ? page.width : page.height) : 792
-  const zoom = zoomMode === 'fit' ? Math.min(1.5, width / pageWidth) : Number(zoomMode)
+  const zoom = zoomMode === 'fit'
+    ? Math.min(1.5, width / pageWidth)
+    : zoomMode === 'page'
+      ? Math.min(1.5, width / pageWidth, height / pageHeight)
+      : Number(zoomMode)
   const changePage = (number) => {
     setViewport(null)
     setRenderError('')
@@ -79,11 +87,11 @@ export default function GeneratedPdfPreview({ source, title }) {
         <button type="button" disabled={!page || pageNumber === pages.length} onClick={() => changePage(pageNumber + 1)} className="rounded border border-brand-line px-3 py-2 disabled:opacity-40">Next page</button>
         <label className="ml-auto flex items-center gap-2">Zoom
           <select aria-label="Preview zoom" value={zoomMode} onChange={(event) => setZoomMode(event.target.value)} className="rounded border border-brand-line bg-brand-surface p-2">
-            <option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option>
+            <option value="fit">Fit width</option><option value="page">Fit page</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option>
           </select>
         </label>
       </div>
-      <div ref={setContainer} className="max-h-[65vh] min-h-64 overflow-auto bg-brand-surface-2 p-4" aria-busy={!error && !renderError && !viewport}>
+      <div ref={setContainer} className="h-[60dvh] min-h-64 overflow-auto overscroll-contain bg-brand-surface-2 p-4" aria-busy={!error && !renderError && !viewport}>
         {(error || renderError) ? <p role="alert" className="p-4 text-brand-danger">{renderError || 'The PDF preview could not be opened. Download it to inspect every page before continuing.'}</p> : !sourceReady || !page ? <p role="status">Opening generated PDF…</p> : (
           <>
             {!viewport && <p role="status">Drawing page {pageNumber}…</p>}

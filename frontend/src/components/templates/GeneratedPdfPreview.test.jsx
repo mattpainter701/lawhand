@@ -46,6 +46,14 @@ it('fits the canvas to its container and disconnects the resize observer', () =>
   expect(disconnect).toHaveBeenCalled()
 })
 
+it('can fit the full page to the available preview pane', () => {
+  vi.stubGlobal('ResizeObserver', class { constructor(callback) { this.callback = callback } observe() { this.callback([{ contentRect: { width: 632, height: 432 } }]) } disconnect() {} })
+  render(<GeneratedPdfPreview source={source} title="Fit page" />)
+  expect(screen.getByLabelText('Rendered page')).toHaveTextContent('1 at 1')
+  fireEvent.change(screen.getByLabelText('Preview zoom'), { target: { value: 'page' } })
+  expect(screen.getByLabelText('Rendered page')).toHaveTextContent('1 at 0.5')
+})
+
 it('shows a loading state instead of an empty PDF plug-in', () => {
   useTemplatePdfDocument.mockReturnValue({ document: null, pages: [], error: '' })
   render(<GeneratedPdfPreview source={source} title="Loading" />)

@@ -72,3 +72,14 @@ it('links PDF placements and clears old source pages when switching templates', 
   view.unmount()
   await act(async () => finish(new Blob(['new pdf'])))
 })
+
+it('scales PDF placement buttons to the available source pane', async () => {
+  vi.stubGlobal('ResizeObserver', class { constructor(callback) { this.callback = callback } observe() { this.callback([{ contentRect: { width: 306 } }]) } disconnect() {} })
+  getTemplateSource.mockResolvedValue(new Blob(['pdf']))
+  const select = vi.fn()
+  const pdfFields = [{ ...fields[0], pdf_overlay: { page: 1, rect: [10, 740, 110, 780] } }]
+  render(<TemplateFillSource template={{ id: 'one', format: 'pdf' }} fields={pdfFields} values={{}} onSelectField={select} />)
+
+  const field = await screen.findByRole('button', { name: 'Fill Client name' })
+  expect(field).toHaveStyle({ left: '5px', top: '6px', width: '50px', height: '20px' })
+})

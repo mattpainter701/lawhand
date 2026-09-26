@@ -411,6 +411,7 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
   const [reviewConfirmed, setReviewConfirmed] = useState(false)
   const [aiConsent, setAiConsent] = useState(false)
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
+  const [showSourcePicker, setShowSourcePicker] = useState(!(initialFile && librarySample))
   const [aiRequirements, setAiRequirements] = useState('')
   const analysisRequestRef = useRef(0)
 
@@ -420,6 +421,9 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
 
   const fileKey = file ? `${file.name}:${file.size}:${file.lastModified}` : ''
   const isWordUpload = /\.docx$/i.test(file?.name || '')
+  const isLibrarySourceSelected = Boolean(
+    initialFile && librarySample && file === initialFile,
+  )
 
   useEffect(() => () => {
     if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl)
@@ -676,6 +680,9 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
       ? 'private local OCR'
       : ''
   const isPdfAnalysis = String(analysis?.format || '').toLowerCase() === 'pdf'
+  const isPdfProgress = isPdfAnalysis || Boolean(
+    file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')),
+  )
   const requiresHumanReview = fieldsRequireHumanReview(fields, analysis)
   const lowConfidenceFieldCount = reviewConfirmed ? 0 : fields.filter((field) => (
     field?.included !== false && (field?.review_required || Number(field?.confidence ?? 1) < 0.75 || field?.ai_suggested)
@@ -705,7 +712,9 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
     setMappedFields(nextFields)
   }
   const analysisReady = analysisFileKey === fileKey && Boolean(analysis)
-  const reviewComplete = analysisReady && (!requiresHumanReview || isPdfAnalysis || reviewConfirmed)
+  // A PDF draft can be saved before field placement is complete; the editor
+  // owns that review step so it stays visible after the scan finishes.
+  const reviewComplete = analysisReady && !isPdfAnalysis && (!requiresHumanReview || reviewConfirmed)
 
   const renameField = (index, rawName) => {
     const nextName = normalizeVariableName(rawName)
@@ -807,11 +816,18 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
       )}
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="Template setup progress">
-        {[
-          ['1', 'Choose source', file ? 'Complete' : 'Current'],
-          ['2', 'Review fields', reviewComplete ? 'Complete' : file ? 'Current' : 'Next'],
-          ['3', 'Create draft', reviewComplete ? 'Current' : 'Next'],
-        ].map(([step, label, state]) => (
+        {(isPdfProgress
+          ? [
+              ['1', 'Choose source', file ? 'Complete' : 'Current'],
+              ['2', 'Save draft', analysisReady ? 'Current' : file ? 'Current' : 'Next'],
+              ['3', 'Review fields in editor', analysisReady ? 'After draft' : 'Next'],
+            ]
+          : [
+              ['1', 'Choose source', file ? 'Complete' : 'Current'],
+              ['2', 'Review fields', reviewComplete ? 'Complete' : file ? 'Current' : 'Next'],
+              ['3', 'Save draft', reviewComplete ? 'Current' : 'Next'],
+            ]
+        ).map(([step, label, state]) => (
           <div key={step} className={`rounded border px-3 py-2 ${state === 'Current' ? 'border-brand-accent bg-brand-accent/10' : 'border-brand-line bg-brand-bg'}`}>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-brand-muted">Step {step} · {state}</p>
             <p className="mt-0.5 text-sm font-medium text-brand-ink">{label}</p>
@@ -821,14 +837,27 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
 
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_220px] gap-4">
         <div>
-          <label htmlFor="template-sample-file" className="block text-sm font-medium text-brand-ink mb-1">
-            Sample document or filled scan
-          </label>
+          {isLibrarySourceSelected && (
+            <div className="mb-2 rounded border border-brand-accent/30 bg-brand-accent/5 px-3 py-2" role="status">
+              <p className="text-xs font-semibold text-brand-ink">Shared source selected</p>
+              <p className="mt-0.5 truncate text-xs text-brand-muted">{file?.name || librarySample.source_filename || 'Global template source'}</p>
+            </div>
+          )}
+          {(!isLibrarySourceSelected || showSourcePicker) && (
+            <label htmlFor="template-sample-file" className="block text-sm font-medium text-brand-ink mb-1">
+              Sample document or filled scan
+            </label>
+          )}
+          {isLibrarySourceSelected && !showSourcePicker ? (
+            <button type="button" onClick={() => setShowSourcePicker(true)} className="text-xs font-medium text-brand-accent-2 underline">
+              Choose a different source document
+            </button>
+          ) : (
           <div
             {...getRootProps({
               role: 'button',
               'aria-label': 'Choose sample document or filled scan',
-              'aria-describedby': 'template-sample-guidance',
+              'aria-describedby': isLibrarySourceSelected ? undefined : 'template-sample-guidance',
               className: `rounded-lg border-2 border-dashed p-5 text-center transition-colors ${isDragActive ? 'border-brand-accent bg-brand-accent/10' : 'border-brand-line bg-brand-bg hover:border-brand-accent/60'} ${saving ? 'pointer-events-none opacity-60' : 'cursor-pointer'}`,
             })}
           >
@@ -839,9 +868,10 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
             <p className="text-sm font-semibold text-brand-ink">{isDragActive ? 'Drop the sample here' : 'Drop a sample here or browse'}</p>
             <p className="mt-1 text-xs text-brand-muted">One PDF, DOCX, TXT, PNG, JPEG, TIFF, BMP, or WebP · up to 50 MB</p>
           </div>
-          <p id="template-sample-guidance" className="mt-2 text-xs text-brand-muted">
+          )}
+          {!isLibrarySourceSelected && <p id="template-sample-guidance" className="mt-2 text-xs text-brand-muted">
             Upload the document your team already reuses. We read Word files, PDFs, and image-only scans while preserving the original design. Filled or handwritten entries help locate reusable details; uncertain readings are flagged for review. Image uploads are converted to a safe PDF so reviewed field locations and the page design stay together.
-          </p>
+          </p>}
           <details className="mt-2 rounded border border-brand-line bg-brand-surface-2 p-3 text-xs text-brand-muted">
             <summary className="cursor-pointer font-semibold text-brand-ink">Pro tips for reliable field detection</summary>
             <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -851,7 +881,7 @@ function UploadTemplateForm({ onCreated, onCancel, initialFile = null, librarySa
               <li>Password-protected files, dynamic XFA forms, PDF scripts/actions, and embedded attachments are not supported. Export a standard static PDF or DOCX before uploading.</li>
             </ul>
           </details>
-          {file && (
+          {file && !isLibrarySourceSelected && (
             <p className="mt-2 text-xs font-medium text-brand-accent-2" role="status">
               Current source: {file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)
               {analysisFileKey === fileKey ? ' · ready to review' : analyzing ? ' · reading now' : ' · waiting to be read'}
