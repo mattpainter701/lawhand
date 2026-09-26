@@ -514,7 +514,7 @@ async def run_set_render_job(db: AsyncSession, job) -> dict[str, Any]:
     if (
         session.status != "saving"
         or session.job_id != job.id
-        or payload.get("job_id") != str(job.id)
+        or (payload.get("job_id") is not None and payload.get("job_id") != str(job.id))
         or (
             payload.get("session_answers_sha256")
             and payload.get("session_answers_sha256") != session.answers_sha256

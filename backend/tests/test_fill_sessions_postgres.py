@@ -537,6 +537,11 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     assert retry_statuses[str(good)]["status"] == "saved"
     assert retry_statuses[str(bad)]["status"] == "queued"
     retry_job = await db_session.get(DurableJob, retry.job_id)
+    retry_job.payload = {
+        key: value for key, value in retry_job.payload.items() if key != "job_id"
+    }
+    await db_session.commit()
+    await db_session.refresh(retry_job)
     calls.clear()
     await fill_sessions.run_set_render_job(db_session, retry_job)
     assert [call[0] for call in calls] == [bad]
