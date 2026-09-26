@@ -40,11 +40,20 @@ az ad app show --id $env:MICROSOFT_CLIENT_ID --query "web.redirectUris" --output
 ```
 
 Current delegated integration scopes are broad because the full platform can
-sync users, search/read mail, read/write files, access SharePoint sites, and
-read/write calendars:
+sync users, search/read mail, send approved client email, read/write files,
+access SharePoint sites, and read/write calendars:
 
-- tenant admin: `offline_access User.Read.All Mail.Read Files.ReadWrite.All Sites.Read.All Calendars.ReadWrite`
-- individual user: `offline_access User.Read Mail.Read Files.ReadWrite.All Calendars.ReadWrite`
+- tenant admin: `offline_access User.Read.All Mail.Read Mail.Send Files.ReadWrite.All Sites.Read.All Calendars.ReadWrite`, plus `openid email profile` so the grant returns an id_token
+- individual user: `offline_access User.Read Mail.Read Mail.Send Files.Read.All Calendars.ReadWrite`
+- Teams opt-in (`&teams=1`) adds `Channel.ReadBasic.All ChannelMessage.Send Team.ReadBasic.All Channel.Create`
+- sign-in only: `openid email profile User.Read` (tokens are discarded after the id_token is verified)
+
+The individual-user grant reads files only; every matter-file write uses the
+tenant grant. A user connection made before that change holds
+`Files.ReadWrite.All`, which the scope audit accepts as covering
+`Files.Read.All`. Teams grants made before chat and activity-feed access were
+dropped (`Chat.ReadWrite`, `TeamsActivity.Send`) are a superset of today's set
+and keep working.
 
 These are not appropriate for an intake-only tenant that does not use those
 features. A future least-privilege deployment should split provider apps or use
@@ -68,8 +77,11 @@ https://<DOMAIN>/api/auth/google/callback
 https://<DOMAIN>/api/integrations/google/callback
 ```
 
-Current admin consent can request directory read, Gmail read, calendar, and
-Drive access; user consent can request Gmail read, calendar, and Drive access.
+Current admin consent requests `openid email profile`,
+`admin.directory.user.readonly`, `gmail.readonly`, `gmail.send`, `calendar` and
+`drive` (directory read, Gmail read and send, calendar, and Drive read/write).
+User consent requests `gmail.readonly`, `gmail.send`, `calendar` and `drive`.
+`gmail.send` sends approved client email as the connected account.
 As with Microsoft, do not request this bundle for the first intake-only customer
 unless those workflows are purchased and reviewed.
 

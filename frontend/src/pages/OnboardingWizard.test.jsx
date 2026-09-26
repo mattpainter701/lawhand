@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import OnboardingWizard, { STEP, normalizeStep } from './OnboardingWizard'
@@ -308,5 +308,48 @@ describe('OnboardingWizard', () => {
     expect(await screen.findByText('Personal Google / Google One')).toBeInTheDocument()
     expect(screen.getByText(/connects your Gmail, Drive, and Calendar without directory access/i)).toBeInTheDocument()
     expect(screen.queryByText(/^Google Workspace$/)).toBeNull()
+  })
+
+  it('lists send and file-write access before an administrator connects (D81)', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT, {
+      integrations: { google: { connected: false }, microsoft: { connected: false } },
+    }))
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    const microsoft = await screen.findByRole('list', { name: 'Microsoft 365 permissions' })
+    const msItems = within(microsoft).getAllByRole('listitem').map((item) => item.textContent)
+    expect(msItems).toEqual([
+      'Read staff profiles in your organization (for user sync)',
+      "Read mail in the connected account's mailbox",
+      'Send email as the connected account',
+      'Read and write every file the connected account can open (OneDrive + SharePoint)',
+      'Read every SharePoint site the connected account can open',
+      "Read and write the connected account's calendars",
+    ])
+    // The old copy said "read mail, read files" and never mentioned sending.
+    expect(screen.queryByText(/read mail, read files/i)).toBeNull()
+
+    const google = screen.getByRole('list', { name: 'Google permissions' })
+    const googleItems = within(google).getAllByRole('listitem').map((item) => item.textContent)
+    expect(googleItems).toContain('Send email as the connected account')
+    expect(googleItems).toContain('Read your Workspace user directory (for user sync)')
+    expect(googleItems).toContain('Read and write every Google Drive file the connected account can open')
+  })
+
+  it('drops the directory permission from the personal Google list', async () => {
+    getOnboardingStatus.mockResolvedValue(statusAt(STEP.CONNECT, {
+      integrations: { google: { connected: false }, microsoft: { connected: false } },
+    }))
+    const user = userEvent.setup()
+
+    render(<MemoryRouter><OnboardingWizard /></MemoryRouter>)
+
+    await user.click(await screen.findByLabelText('Personal Google / Google One'))
+
+    const google = screen.getByRole('list', { name: 'Google permissions' })
+    const googleItems = within(google).getAllByRole('listitem').map((item) => item.textContent)
+    expect(googleItems).toContain('Send email as the connected account')
+    expect(googleItems).not.toContain('Read your Workspace user directory (for user sync)')
   })
 })

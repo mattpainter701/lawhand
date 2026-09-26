@@ -37,13 +37,14 @@ GRAPH_PAGE_LIMIT = 20
 # Delegated Graph scopes required for Teams features. Kept separate from the
 # base MICROSOFT_ADMIN_SCOPES so existing cloud-only tenants are not marked as
 # scope-deficient — admins reconsent with ``&teams=1`` to add these.
-TEAMS_REQUIRED_SCOPES = (
-    "Channel.ReadBasic.All "
-    "ChannelMessage.Send "
-    "Chat.ReadWrite "
-    "Team.ReadBasic.All "
-    "TeamsActivity.Send"
-)
+#
+# Only what the code calls: ``/me/joinedTeams`` (Team.ReadBasic.All),
+# ``/teams/{id}/channels`` (Channel.ReadBasic.All) and channel ``messages``
+# (ChannelMessage.Send). ``Chat.ReadWrite`` and ``TeamsActivity.Send`` were
+# requested but never used (no ``/chats`` or ``sendActivityNotification`` call,
+# and the Teams manifest declares no activity types), so they were dropped.
+# Grants stored before that are a superset of this set and still pass the gate.
+TEAMS_REQUIRED_SCOPES = "Channel.ReadBasic.All ChannelMessage.Send Team.ReadBasic.All"
 TEAMS_CHANNEL_CREATE_SCOPE = "Channel.Create"
 TEAMS_CONNECT_SCOPES = f"{TEAMS_REQUIRED_SCOPES} {TEAMS_CHANNEL_CREATE_SCOPE}"
 

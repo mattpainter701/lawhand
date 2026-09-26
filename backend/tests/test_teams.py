@@ -138,13 +138,87 @@ class TestStatus:
         resp = await client.get("/api/integrations/status")
         ms = resp.json()["microsoft"]
         assert ms["teams_connected"] is False
-        assert "Chat.ReadWrite" in ms["teams_missing_scopes"]
+        assert "ChannelMessage.Send" in ms["teams_missing_scopes"]
 
     async def test_disconnected_reports_all_missing(self, client):
         resp = await client.get("/api/integrations/status")
         ms = resp.json()["microsoft"]
         assert ms["teams_connected"] is False
         assert set(ms["teams_missing_scopes"]) == set(TEAMS_REQUIRED_SCOPES.split())
+
+
+# ── Dropped scopes (D28) ──────────────────────────────────────────────────
+
+# The exact Teams grant stored by tenants that connected before Chat.ReadWrite
+# and TeamsActivity.Send were dropped. It is a superset of today's set.
+LEGACY_TEAMS_GRANT = (
+    "Channel.ReadBasic.All ChannelMessage.Send Chat.ReadWrite "
+    "Team.ReadBasic.All TeamsActivity.Send Channel.Create"
+)
+DROPPED_TEAMS_SCOPES = {"Chat.ReadWrite", "TeamsActivity.Send"}
+
+
+def test_teams_scopes_request_only_what_the_code_calls():
+    from app.services.teams import TEAMS_CONNECT_SCOPES
+
+    assert set(TEAMS_REQUIRED_SCOPES.split()) == {
+        "Channel.ReadBasic.All",
+        "ChannelMessage.Send",
+        "Team.ReadBasic.All",
+    }
+    assert not DROPPED_TEAMS_SCOPES & set(TEAMS_CONNECT_SCOPES.split())
+
+
+def test_legacy_superset_grant_satisfies_both_scope_checks():
+    from app.services import teams as teams_service
+    from app.services.teams_gate import missing_teams_scopes
+
+    assert missing_teams_scopes(LEGACY_TEAMS_GRANT) == []
+    # The per-user token path in teams._get_token uses its own check.
+    assert teams_service._has_required_scopes(LEGACY_TEAMS_GRANT) is True
+
+
+@pytest.mark.asyncio
+class TestLegacyTeamsGrant:
+    """Tenants connected before D28 keep Teams without re-consenting."""
+
+    @pytest_asyncio.fixture
+    async def legacy_connected(self, db_session, test_tenant):
+        return await _add_ms_credential(
+            db_session,
+            test_tenant.id,
+            f"offline_access User.Read.All {LEGACY_TEAMS_GRANT}",
+        )
+
+    async def test_gate_stays_open(self, client, legacy_connected, monkeypatch):
+        from app.services import teams as teams_service
+
+        async def fake_list(tenant_id, user_id=None):
+            return [{"id": "team-1", "display_name": "Litigation"}]
+
+        monkeypatch.setattr(teams_service, "list_joined_teams", fake_list)
+        resp = await client.get("/api/integrations/teams/teams")
+        assert resp.status_code == 200
+
+    async def test_status_reports_teams_connected(self, client, legacy_connected):
+        resp = await client.get("/api/integrations/status")
+        ms = resp.json()["microsoft"]
+        assert ms["teams_connected"] is True
+        assert ms["teams_missing_scopes"] == []
+
+    async def test_reauth_keeps_teams_but_stops_asking_for_dropped_scopes(
+        self, client, legacy_connected
+    ):
+        resp = await client.get(
+            "/api/integrations/microsoft/connect?intent=admin",
+            follow_redirects=False,
+        )
+
+        assert resp.status_code in (302, 307)
+        location = resp.headers["location"]
+        assert "ChannelMessage.Send" in location
+        for scope in DROPPED_TEAMS_SCOPES:
+            assert scope not in location
 
 
 # ── Link CRUD ─────────────────────────────────────────────────────────────

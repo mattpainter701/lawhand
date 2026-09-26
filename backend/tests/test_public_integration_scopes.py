@@ -10,6 +10,7 @@ public claim.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ from app.routers.integrations import (
     _google_account_mode_matches,
     _google_scopes_for_mode,
 )
+from app.routers.auth import MICROSOFT_SIGN_IN_SCOPE
 from app.services.teams import TEAMS_CONNECT_SCOPES
 
 SCOPE_FILE = (
@@ -36,6 +38,65 @@ SCOPE_FILE = (
 
 def _published() -> dict:
     return json.loads(SCOPE_FILE.read_text())["providers"]
+
+
+ADMIN_GUIDE = SCOPE_FILE.parents[2] / "platform_docs" / "administrative-guide"
+DATA_VISIBILITY_GUIDE = ADMIN_GUIDE / "16-integration-data-visibility.md"
+TEAMS_GUIDE = ADMIN_GUIDE / "13-microsoft-teams-administration.md"
+# A backticked Microsoft Graph permission name, e.g. `Files.Read.All`.
+GRAPH_PERMISSION = re.compile(r"`([A-Z][A-Za-z]+(?:\.[A-Za-z]+)+)`")
+
+
+def _backticked(path: Path) -> set[str]:
+    return set(re.findall(r"`([^`]+)`", path.read_text()))
+
+
+def _google_short_name(scope: str) -> str:
+    return scope.rsplit("/auth/", 1)[-1]
+
+
+def test_admin_guide_names_every_scope_the_app_requests() -> None:
+    """The data-visibility chapter is the firm's consent disclosure.
+
+    It once omitted Mail.Send and gmail.send and called Gmail read-only (D81),
+    so every requested scope must appear in it, in backticks, by name.
+    """
+    named = _backticked(DATA_VISIBILITY_GUIDE)
+    microsoft = {
+        *_admin_request_scopes(False).split(),
+        *MICROSOFT_USER_SCOPES.split(),
+        *TEAMS_CONNECT_SCOPES.split(),
+        *MICROSOFT_SIGN_IN_SCOPE.split(),
+    }
+    google = {
+        _google_short_name(scope)
+        for scopes in (GOOGLE_ADMIN_SCOPES, GOOGLE_USER_SCOPES, GOOGLE_SOLO_SCOPES)
+        for scope in scopes.split()
+    }
+    assert sorted((microsoft | google) - named) == []
+
+
+def test_admin_guides_name_no_graph_permission_the_app_does_not_request() -> None:
+    requested = {
+        *_admin_request_scopes(True).split(),
+        *MICROSOFT_USER_SCOPES.split(),
+        *MICROSOFT_SIGN_IN_SCOPE.split(),
+    }
+    # Voice capture is a separate application-only credential (teams_voice).
+    allowed = {"CallRecords.Read.All"}
+    for guide in (DATA_VISIBILITY_GUIDE, TEAMS_GUIDE):
+        named = set(GRAPH_PERMISSION.findall(guide.read_text()))
+        assert sorted(named - requested - allowed) == [], guide.name
+    assert set(TEAMS_CONNECT_SCOPES.split()) <= _backticked(TEAMS_GUIDE)
+
+
+def test_personal_google_scopes_are_workspace_scopes_without_the_directory() -> None:
+    # The onboarding wizard derives the personal-account list this way from the
+    # published Workspace matrix (frontend integrationScopeLabels.js).
+    directory = "https://www.googleapis.com/auth/admin.directory.user.readonly"
+    assert set(GOOGLE_SOLO_SCOPES.split()) == set(GOOGLE_ADMIN_SCOPES.split()) - {
+        directory
+    }
 
 
 @pytest.mark.parametrize(

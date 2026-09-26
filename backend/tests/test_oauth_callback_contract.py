@@ -629,7 +629,7 @@ PERSONAL_SCOPES = {
         "mail_read": "Mail.Read",
         "mail_send": "Mail.Send",
         "calendar": "Calendars.ReadWrite",
-        "files": "Files.ReadWrite.All",
+        "files": "Files.Read.All",
     },
     "google": {
         "mail_read": "https://www.googleapis.com/auth/gmail.readonly",
@@ -742,3 +742,122 @@ async def test_calendar_providers_reads_only_the_callers_own_grant(
 
     status = response.json()["provider_status"][provider]
     assert status["missing_features"] == ["mail_read", "mail_send", "files"]
+
+
+# ── Per-user Microsoft file access is read-only (D28) ─────────────────────
+
+# Scopes a per-user Microsoft connection made before D28 holds, and what
+# Microsoft keeps reporting on a reconnect because consent is cumulative.
+LEGACY_USER_SCOPES = (
+    "offline_access User.Read Mail.Read Mail.Send "
+    "Files.ReadWrite.All Calendars.ReadWrite"
+)
+
+
+def test_per_user_microsoft_scopes_ask_to_read_files_not_write():
+    requested = set(integrations.MICROSOFT_USER_SCOPES.split())
+    assert "Files.Read.All" in requested
+    assert "Files.ReadWrite.All" not in requested
+    # The tenant grant still writes matter files and is unchanged.
+    assert "Files.ReadWrite.All" in GRAPH_ADMIN_SCOPES
+
+
+@pytest.mark.parametrize(
+    ("required", "granted", "expected"),
+    [
+        pytest.param("Files.Read.All", {"Files.ReadWrite.All"}, True, id="rw-read"),
+        pytest.param("Files.Read.All", {"Files.Read.All"}, True, id="read-read"),
+        pytest.param(
+            "Files.ReadWrite.All", {"Files.Read.All"}, False, id="read-not-rw"
+        ),
+        pytest.param("Files.Read.All", {"Sites.Read.All"}, False, id="unrelated"),
+    ],
+)
+def test_broader_microsoft_file_scope_satisfies_the_narrower_one(
+    required, granted, expected
+):
+    assert integrations._scope_is_granted(required, granted, "microsoft") is expected
+    # Aliases are provider specific.
+    assert integrations._scope_is_granted(required, granted, "zoom") is (
+        required in granted
+    )
+
+
+def test_legacy_per_user_grant_passes_the_audit_and_read_only_fails_admin():
+    assert (
+        integrations._missing_scopes(
+            "microsoft", LEGACY_USER_SCOPES, integrations.MICROSOFT_USER_SCOPES
+        )
+        == []
+    )
+    # A read-only grant never satisfies the tenant set, which writes files.
+    assert integrations._missing_scopes(
+        "microsoft",
+        integrations.MICROSOFT_USER_SCOPES,
+        "Files.ReadWrite.All",
+    ) == ["Files.ReadWrite.All"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("granted", "missing"),
+    [
+        pytest.param(integrations.MICROSOFT_USER_SCOPES, None, id="new-grant"),
+        pytest.param(LEGACY_USER_SCOPES, None, id="cumulative-legacy-grant"),
+        pytest.param(
+            "offline_access User.Read Mail.Read Mail.Send Calendars.ReadWrite",
+            "Files.Read.All",
+            id="files-declined",
+        ),
+    ],
+)
+async def test_microsoft_per_user_callback_audits_read_only_file_scope(
+    client, db_session, test_user, monkeypatch, granted, missing
+):
+    state = await _start(client, "microsoft", intent="user")
+    endpoint = _token_endpoint(
+        monkeypatch,
+        {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "expires_in": 3600,
+            "scope": granted,
+        },
+    )
+
+    response = await _callback(client, "microsoft", state=state, code="auth-code")
+
+    assert response.status_code == 302
+    [(_url, sent)] = endpoint.requests
+    assert sent["scope"] == integrations.MICROSOFT_USER_SCOPES
+    credentials, [row] = await _stored_grants(db_session)
+    assert credentials == []
+    assert row.user_id == test_user.id
+    assert row.scopes == granted
+    assert row.missing_scopes == missing
+    assert row.health == ("healthy" if missing is None else "missing_scopes")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "file_scope", ["Files.Read.All", "Files.ReadWrite.All"], ids=["new", "legacy"]
+)
+async def test_calendar_providers_accepts_either_microsoft_file_scope(
+    client, db_session, test_tenant, test_user, fresh_personal_token, file_scope
+):
+    db_session.add(
+        _personal_token(
+            test_tenant.id,
+            test_user.id,
+            "microsoft",
+            ["mail_read", "mail_send", "calendar"],
+            extra=("offline_access", file_scope),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get("/api/auth/calendar-providers")
+
+    status = response.json()["provider_status"]["microsoft"]
+    assert status["connected"] is True
+    assert status["missing_features"] == []

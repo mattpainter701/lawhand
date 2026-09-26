@@ -11,6 +11,27 @@ from app.models.integration_sync_run import IntegrationSyncRun
 from app.services.error_tracker import capture_error
 
 
+# A broader Microsoft permission that also satisfies a narrower one. Per-user
+# Microsoft connections made before the file scope was narrowed to
+# ``Files.Read.All`` hold ``Files.ReadWrite.All``, and Microsoft returns every
+# scope an account has already consented to, so a reconnect can still report
+# the old scope. The scope audit is an exact string match, so without this
+# every such connection would be flagged "missing scopes". The alias only
+# widens in the safe direction: ``Files.Read.All`` never satisfies a
+# ``Files.ReadWrite.All`` requirement.
+MICROSOFT_SCOPE_ALIASES: dict[str, frozenset[str]] = {
+    "Files.Read.All": frozenset({"Files.Read.All", "Files.ReadWrite.All"}),
+}
+
+
+def microsoft_scope_granted(required_scope: str, granted: Iterable[str]) -> bool:
+    """True when ``granted`` holds ``required_scope`` or a broader alias of it."""
+    granted_set = set(granted)
+    if required_scope in granted_set:
+        return True
+    return bool(MICROSOFT_SCOPE_ALIASES.get(required_scope, frozenset()) & granted_set)
+
+
 def normalize_scope_list(scopes: str | Iterable[str] | None) -> list[str]:
     if scopes is None:
         return []

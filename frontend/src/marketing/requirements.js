@@ -69,8 +69,8 @@ export const CLOUD_PROVIDERS = Object.freeze([
       'Calendar read/write for deadlines and matter events',
     ]),
     perUserAlternative:
-      'A firm that does not want tenant-wide consent can have each user connect individually. Per-user consent drops the directory scope, so user matching becomes manual.',
-    optional: 'Microsoft Teams scopes are added only when a firm explicitly opts in.',
+      'A firm that does not want tenant-wide consent can have each user connect individually. Per-user consent drops the directory scope, so user matching becomes manual, and asks only to read files, not write them.',
+    optional: 'Microsoft Teams scopes (read teams and channels, post channel messages) are added only when a firm explicitly opts in.',
   }),
   Object.freeze({
     id: 'google',

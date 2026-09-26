@@ -13,6 +13,7 @@ import {
 import { AgreementAcceptancePanel } from '../components/CompliancePanel'
 import WorkflowSynthesisPanel from '../components/workflows/WorkflowSynthesisPanel'
 import { oauthErrorMessage } from '../utils/oauthErrors'
+import { firmConsentLabels } from '../components/integrationScopeLabels'
 
 // Step numbers are shared with backend/app/routers/onboarding.py.
 export const STEP = {
@@ -22,6 +23,20 @@ export const STEP = {
   SYNC: 3,
   REVIEW: 4,
   COMPLETE: 5,
+}
+
+// What the provider consent screen will ask for, from the same labels the
+// admin integrations card uses, so onboarding cannot understate it.
+function ConsentList({ provider, googleAccountMode }) {
+  const labels = firmConsentLabels(provider, { googleAccountMode })
+  return (
+    <div className="mt-2 text-brand-ink-2 font-sans text-xs leading-relaxed">
+      <p>Connecting lets LawHand:</p>
+      <ul className="mt-1 list-disc pl-5" aria-label={`${provider === 'google' ? 'Google' : 'Microsoft 365'} permissions`}>
+        {labels.map((label) => <li key={label}>{label}</li>)}
+      </ul>
+    </div>
+  )
 }
 
 const STEPS = [
@@ -411,9 +426,7 @@ export default function OnboardingWizard() {
                       </button>
                     )}
                   </div>
-                  <p className="text-brand-ink-2 font-sans text-xs leading-relaxed">
-                    Required: Read all users, read mail, read files (OneDrive + SharePoint), read/write calendars.
-                  </p>
+                  <ConsentList provider="microsoft" />
                 </div>
 
                 {/* Google */}
@@ -442,6 +455,7 @@ export default function OnboardingWizard() {
                       ? 'Personal Google / Google One: connects your Gmail, Drive, and Calendar without directory access. Invite teammates from Admin instead.'
                       : 'Google Workspace: administrator consent enables directory sync, Gmail, Drive, and Calendar.'}
                   </p>
+                  <ConsentList provider="google" googleAccountMode={googleAccountMode} />
                   {!googleConnected && (
                     <div className="mt-3 flex flex-wrap gap-3 text-xs text-brand-ink-2">
                       <label><input type="radio" name="google-account-mode" checked={googleAccountMode === 'workspace'} onChange={() => setGoogleAccountMode('workspace')} /> <span className="ml-1">Google Workspace administrator</span></label>

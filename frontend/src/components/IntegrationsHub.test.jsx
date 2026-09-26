@@ -113,6 +113,9 @@ describe('IntegrationsHub', () => {
     const cloud = screen.getByTestId('integration-card-cloud')
     await userEvent.click(within(cloud).getByText('Permissions & setup'))
     expect(screen.getByText('Directory profiles for user provisioning')).toBeVisible()
+    // D81: the card discloses sending and file writes, not just "access".
+    expect(within(cloud).getByText('Read mail, and send approved client email as the connected account')).toBeVisible()
+    expect(within(cloud).getByText(/Read and write every OneDrive, SharePoint, or Google Drive file/)).toBeVisible()
     expect(within(cloud).getByRole('link', { name: /Integration setup guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integrations#connect-microsoft-365-or-google-workspace')
     expect(screen.getByRole('link', { name: /Full data visibility guide/ })).toHaveAttribute('href', '/admin?tab=guide&chapter=integration-data-visibility')
 

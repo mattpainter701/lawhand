@@ -23,8 +23,8 @@ A provider's permission can be broader than a single workflow. Access occurs onl
 
 | Provider | Primary LawHand use cases | What LawHand currently reads or sends | What may be retained in LawHand |
 | --- | --- | --- | --- |
-| Microsoft 365 | Sign-in, Outlook search and capture, OneDrive and SharePoint documents, calendar events, Teams collaboration | Account identity; permitted directory profiles; recent message metadata, previews, and selected message content; file metadata and selected files; calendar events; configured Teams and channels | Connection status; lightweight message and file metadata; captured email; synchronized documents and search text; LawHand-created calendar identifiers; Teams delivery records |
-| Google Workspace | Sign-in, Gmail search and capture, Drive documents, calendar events | Account identity; permitted directory profiles; recent Gmail headers and snippets; selected message content; Drive file metadata and selected files; calendar events | Connection status; lightweight message and file metadata; captured email; synchronized documents and search text; LawHand-created calendar identifiers |
+| Microsoft 365 | Sign-in, Outlook search and capture, sending approved client email, OneDrive and SharePoint documents, calendar events, Teams collaboration | Account identity; permitted directory profiles; recent message metadata, previews, and selected message content; approved client email it sends; file metadata and selected files; matter files it saves; calendar events; configured Teams and channels | Connection status; lightweight message and file metadata; captured email; synchronized documents and search text; LawHand-created calendar identifiers; Teams delivery records |
+| Google Workspace | Sign-in, Gmail search and capture, sending approved client email, Drive documents, calendar events | Account identity; permitted directory profiles; recent Gmail headers and snippets; selected message content; approved client email it sends; Drive file metadata and selected files; matter files it saves; calendar events | Connection status; lightweight message and file metadata; captured email; synchronized documents and search text; LawHand-created calendar identifiers |
 | Zoom Phone | Bring completed calls into intake and communication history | Call identifiers, caller and recipient details, direction, result, duration, time, and—when Zoom supplies them—summaries, transcript text, and recording or transcript links | An imported communication record, participants, normalized call details, provider reference, and provider payload needed for reconciliation |
 | Zoom Meetings | Create and manage meeting links | Connected Zoom user profile and meeting details; LawHand may create, update, and read meetings under the separate Meetings grant | Connection state and meeting details associated with the LawHand workflow |
 | QuickBooks Online | Export clients/matters, time, invoices, and payments; map service items | QuickBooks company identity, service items, matching customers, and existing synced transaction state; LawHand sends configured customer, time, invoice, and payment data | Connection and sync status, QuickBooks object identifiers, mapping choices, and synchronization errors/history |
@@ -41,16 +41,21 @@ Depending on the enabled features, the requested Microsoft permissions can allow
 - read the signed-in user's profile;
 - read permitted organization directory profiles;
 - read mail in the signed-in mailbox;
-- read and write files the signed-in account is allowed to access;
+- send email as the signed-in account (LawHand uses this to send client email a person has approved);
+- read files the signed-in account is allowed to access, and, for the organization connection only, write them;
 - read SharePoint sites available to the signed-in account;
 - read and write calendar events;
-- access Teams information and send collaboration messages when Teams is separately enabled.
+- read basic team and channel information and post channel messages when Teams is separately enabled.
+
+Your personal Microsoft connection can read your files but not write them. LawHand saves matter files through the organization connection instead.
 
 ### What LawHand reads from Microsoft 365
 
 For mailbox lists and searches, LawHand reads fields such as sender, recipients, subject, received time, read/importance state, attachment presence, conversation identifier, and a short message preview. When you capture or open a selected message through an enabled workflow, LawHand can retrieve the full message, including its raw email content, so it can be preserved with the matter.
 
-For OneDrive and SharePoint, LawHand reads file names, paths, owners, web links, types, sizes, and modification times. Search and synchronization can download supported legal-document files so their text can be indexed and the document can be stored in the tenant's LawHand document area. File-write permission also supports creating matter folders and uploading or updating files through configured workflows.
+For OneDrive and SharePoint, LawHand reads file names, paths, owners, web links, types, sizes, and modification times. Search and synchronization can download supported legal-document files so their text can be indexed and the document can be stored in the tenant's LawHand document area. The organization connection's file-write permission also supports creating matter folders and uploading, updating, sharing, or deleting matter files through configured workflows.
+
+When you send approved client email and your own Microsoft account is connected, it is sent from your own mailbox.
 
 For Calendar, LawHand can create and maintain events tied to tasks and key dates. Those events can contain the task title, matter name, description, due date, and an internal LawHand reference.
 
@@ -65,6 +70,7 @@ Depending on the enabled features, Google permissions can allow LawHand to:
 - read the connected account's identity and profile;
 - read organization directory users under an administrator grant;
 - read Gmail messages and metadata;
+- send email as the connected account (LawHand uses this to send client email a person has approved), without being able to modify or delete existing messages;
 - read and write Drive files available to the connected account; and
 - read and write Google Calendar events.
 
@@ -116,7 +122,7 @@ Access and refresh tokens are stored encrypted. Ordinary guide and status screen
 
 Disconnecting or revoking a provider connection prevents future successful API access after revocation takes effect. It does not necessarily remove documents, captured messages, call records, accounting mappings, or audit history that were already imported or created in LawHand. Existing LawHand records remain subject to your organization's retention and deletion process.
 
-Your matter documents are stored in your **own** cloud account, not copied into a LawHand datastore. On Google Workspace, LawHand creates an organisation-owned Shared Drive (`LawHand Firm Records`) and keeps the matter root inside it, so the folders remain with the firm even if an administrator leaves. On Microsoft 365, the root belongs in a SharePoint site library. LawHand never deletes or renames your cloud folders — on disconnect, matter close, or when your firm leaves, the folders stay in your account. Before any cleanup, ask your administrator to inventory your roots and matter folders; a one-click handoff export is planned.
+Your firm's cloud account is the system of record for matter documents: LawHand saves them there rather than keeping its own master copy. LawHand does keep copies of some content, though. Documents brought in by search or synchronization, and their extracted text, are stored in the tenant's LawHand document area so they can be searched and used in matters. When a matter has no writable cloud folder, an upload is kept in LawHand's own storage instead; the document list marks it **Local** and the upload says "Saved locally because no writable cloud folder was available." Those copies follow your firm's retention and deletion process, and they stay in LawHand after a disconnect. On Google Workspace, LawHand creates an organisation-owned Shared Drive (`LawHand Firm Records`) and keeps the matter root inside it, so the folders remain with the firm even if an administrator leaves. On Microsoft 365, the root belongs in a SharePoint site library. LawHand never deletes or renames your cloud folders — on disconnect, matter close, or when your firm leaves, the folders stay in your account. Before any cleanup, ask your administrator to inventory your roots and matter folders; a one-click handoff export is planned.
 
 If you are unsure which organization or personal connections are enabled, ask your LawHand administrator before using a workflow that searches, captures, synchronizes, or exports provider data.
 
