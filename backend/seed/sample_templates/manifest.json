@@ -2625,6 +2625,11 @@
       "sha256": "e5b2c032c0df29558258158cc008f071dcfffc46c8ab9962d654028a80e4c555",
       "size_bytes": 97492,
       "slug": "general-legal-services-fee-agreement",
+      "source_files": [
+        "backend/scripts/build_library_intake_forms.py",
+        "backend/seed/sample_templates/engagement_letter/general-legal-services-fee-agreement.pdf"
+      ],
+      "source_name": "LawHand authored sample",
       "title": "Fee Agreement \u2014 Legal Services (All Matter Types)"
     },
     {
@@ -2650,6 +2655,11 @@
       "sha256": "3bdee85a548a67c9334fffb4e611d71ed9a5026e7ab01fa0eeb3bd95c489554e",
       "size_bytes": 92050,
       "slug": "client-questionnaire",
+      "source_files": [
+        "backend/scripts/build_library_intake_forms.py",
+        "backend/seed/sample_templates/intake/client-questionnaire.pdf"
+      ],
+      "source_name": "LawHand authored sample",
       "title": "Client Questionnaire \u2014 All Matter Types"
     },
     {
@@ -2673,6 +2683,11 @@
       "sha256": "87f22623da5b38f183536fe9935c21511f793fca31ca02f22ca5938baef36c4e",
       "size_bytes": 46726,
       "slug": "nd-probate-intake-questionnaire",
+      "source_files": [
+        "backend/scripts/build_library_intake_forms.py",
+        "backend/seed/sample_templates/intake/nd-probate-intake-questionnaire.pdf"
+      ],
+      "source_name": "LawHand authored sample",
       "title": "Probate Intake Questionnaire \u2014 North Dakota"
     },
     {
@@ -2700,6 +2715,11 @@
       "sha256": "e07d4bde1dac6d4791536f5d323940672f408c4cc143c993e4a23ee37e9204cd",
       "size_bytes": 59519,
       "slug": "prospective-client-intake-form",
+      "source_files": [
+        "backend/scripts/build_library_intake_forms.py",
+        "backend/seed/sample_templates/intake/prospective-client-intake-form.pdf"
+      ],
+      "source_name": "LawHand authored sample",
       "title": "Prospective Client Intake Form"
     },
     {

@@ -2,6 +2,31 @@
   "recent_release_days": 30,
   "releases": [
     {
+      "id": "2026.09.26.01",
+      "version": "2026.09.26.01",
+      "title": "Smoother PDF review and safer packet retries",
+      "published_at": "2026-09-26",
+      "summary": "Template Studio and Prepare now make PDF review less cramped, global-library imports clearer, and packet retries safer when an old save job replays after a newer save starts.",
+      "highlights": [
+        {
+          "title": "Fit the whole PDF page",
+          "description": "PDF previews now include Fit page and use a stable review pane, so reviewing the generated document is less cramped."
+        },
+        {
+          "title": "Source pages scale with the workspace",
+          "description": "The source document reference resizes to the available pane and keeps clickable field boxes aligned on narrower screens."
+        },
+        {
+          "title": "Global imports are clearer",
+          "description": "Adding a shared library template shows the selected shared source directly and only opens the file picker when you choose a different source."
+        },
+        {
+          "title": "Packet retries avoid stale writes",
+          "description": "A replayed packet-save job no longer overwrites a newer or completed fill session, and a packet save rejects duplicate template members before it queues."
+        }
+      ]
+    },
+    {
       "id": "2026.09.25.09",
       "version": "2026.09.25.09",
       "title": "Emails land on the right matter, and the log shows matter names",

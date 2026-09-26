@@ -1864,6 +1864,11 @@ def build_form(form: LibraryForm, out_dir: Path) -> dict:
         "filename": form.filename,
         "jurisdictions": list(form.jurisdictions),
         "origin": "authored",
+        "source_files": [
+            "backend/scripts/build_library_intake_forms.py",
+            f"backend/seed/sample_templates/{form.filename}",
+        ],
+        "source_name": "LawHand authored sample",
         "bindings": dict(sorted(declared.items())),
         "sha256": hashlib.sha256(content).hexdigest(),
         "size_bytes": len(content),
