@@ -549,6 +549,7 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     row.last_error = "owned by a newer save"
     current_members = list(row.members_json)
     await db_session.commit()
+    await db_session.refresh(retry_job)
     stale = await fill_sessions.run_set_render_job(db_session, retry_job)
     assert stale["failure_code"] == "stale_job"
     await db_session.refresh(row)
@@ -558,8 +559,9 @@ async def test_background_save_calls_the_render_endpoint_as_the_owner_and_report
     # The same replay after completion leaves the final saved result intact.
     row.status = "saved"
     row.last_error = "completed"
-    await db_session.commit()
     completed_members = list(row.members_json)
+    await db_session.commit()
+    await db_session.refresh(retry_job)
     stale_completed = await fill_sessions.run_set_render_job(db_session, retry_job)
     assert stale_completed["failure_code"] == "stale_job"
     await db_session.refresh(row)
