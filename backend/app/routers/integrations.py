@@ -34,6 +34,7 @@ from app.services.token_vault import decrypt_token, encrypt_token, revoke_provid
 from app.services.integration_observability import (
     apply_scope_audit,
     clear_refresh_failure,
+    microsoft_scope_granted,
     missing_scopes,
     summarize_user_tokens,
 )
@@ -259,9 +260,14 @@ GOOGLE_ADMIN_SCOPES = (
 
 # Per-user (intent=user) scopes. These MUST be used for both the authorize URL
 # and the token exchange so the two can never drift apart.
+#
+# Files are read-only here. A per-user Microsoft token only lists, searches and
+# downloads files (document_sync, cloud_search, cloud_sync); every Graph file
+# write (matter uploads, replace, delete, folder creation, markers and folder
+# shares) goes through the tenant credential via ``get_fresh_token``.
 MICROSOFT_USER_SCOPES = (
     f"offline_access User.Read Mail.Read {MICROSOFT_MAIL_SEND_SCOPE} "
-    "Files.ReadWrite.All Calendars.ReadWrite"
+    "Files.Read.All Calendars.ReadWrite"
 )
 GOOGLE_USER_SCOPES = (
     "https://www.googleapis.com/auth/gmail.readonly "
@@ -341,6 +347,9 @@ def _scope_is_granted(required_scope: str, granted: set[str], provider: str) -> 
         return True
     if provider == "google":
         return bool(SCOPE_ALIASES_GOOGLE.get(required_scope, set()) & granted)
+    if provider == "microsoft":
+        # A stored Files.ReadWrite.All satisfies the per-user Files.Read.All.
+        return microsoft_scope_granted(required_scope, granted)
     return False
 
 

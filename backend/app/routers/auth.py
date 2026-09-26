@@ -79,6 +79,7 @@ from app.services.connected_mail import (
     GOOGLE_MAIL_SEND_SCOPE,
     MICROSOFT_MAIL_SEND_SCOPE,
 )
+from app.services.integration_observability import microsoft_scope_granted
 from app.services.user_invitations import (
     InvitationRefusal,
     claim_invitation,
@@ -97,12 +98,22 @@ CALENDAR_REQUIRED_SCOPES = {
     "google": {"https://www.googleapis.com/auth/calendar"},
 }
 
+# Microsoft sign-in only needs the verified id_token. The access token is
+# checked for presence and then discarded, and no refresh token is ever used,
+# so ``offline_access`` is not requested. ``User.Read`` stays: it is the
+# minimal Graph permission that guarantees Microsoft issues the access token
+# the callback checks for, and it adds nothing to the "sign you in and read
+# your profile" consent that openid/profile already show.
+MICROSOFT_SIGN_IN_SCOPE = "openid email profile User.Read"
+
 PERSONAL_CONNECTION_SCOPES = {
     "microsoft": {
         "mail_read": "Mail.Read",
         "mail_send": MICROSOFT_MAIL_SEND_SCOPE,
         "calendar": "Calendars.ReadWrite",
-        "files": "Files.ReadWrite.All",
+        # Per-user file access is read-only; a connection made before that
+        # holds Files.ReadWrite.All, which microsoft_scope_granted accepts.
+        "files": "Files.Read.All",
     },
     "google": {
         "mail_read": "https://www.googleapis.com/auth/gmail.readonly",
@@ -1340,7 +1351,7 @@ async def microsoft_login(
         f"?client_id={settings.MICROSOFT_CLIENT_ID}"
         f"&response_type=code"
         f"&redirect_uri={redirect_uri}"
-        f"&scope=openid+email+profile+User.Read+offline_access"
+        f"&scope={MICROSOFT_SIGN_IN_SCOPE.replace(' ', '+')}"
         f"&state={state}"
         f"&response_mode=query"
         f"&prompt=select_account"
@@ -1388,7 +1399,7 @@ async def microsoft_callback(
         "code": code,
         "redirect_uri": redirect_uri,
         "grant_type": "authorization_code",
-        "scope": "openid email profile User.Read offline_access",
+        "scope": MICROSOFT_SIGN_IN_SCOPE,
     }
     if code_verifier:
         token_data_payload["code_verifier"] = code_verifier
@@ -2799,7 +2810,11 @@ async def get_calendar_providers(
             "missing_features": [
                 feature
                 for feature, scope in PERSONAL_CONNECTION_SCOPES[provider].items()
-                if scope not in granted_scopes
+                if not (
+                    microsoft_scope_granted(scope, granted_scopes)
+                    if provider == "microsoft"
+                    else scope in granted_scopes
+                )
             ]
             if row
             else [],

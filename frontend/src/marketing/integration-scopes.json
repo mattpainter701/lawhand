@@ -1,6 +1,6 @@
 {
   "$comment": "Canonical OAuth scope lists published on the public /requirements page. Lives inside the frontend so the frontend Docker build context is self-contained; backend/tests/test_public_integration_scopes.py reads it from here and asserts it matches the constants in backend/app/routers/integrations.py and backend/app/services/teams.py, so narrowing a scope fails a test instead of leaving a stale public claim.",
-  "reviewedAt": "2026-09-24",
+  "reviewedAt": "2026-09-25",
   "providers": {
     "microsoft": {
       "admin": [
@@ -20,15 +20,13 @@
         "User.Read",
         "Mail.Read",
         "Mail.Send",
-        "Files.ReadWrite.All",
+        "Files.Read.All",
         "Calendars.ReadWrite"
       ],
       "teamsOptIn": [
         "Channel.ReadBasic.All",
         "ChannelMessage.Send",
-        "Chat.ReadWrite",
         "Team.ReadBasic.All",
-        "TeamsActivity.Send",
         "Channel.Create"
       ]
     },

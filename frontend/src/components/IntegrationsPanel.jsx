@@ -17,48 +17,7 @@ import { useConfirm } from './dialog/ConfirmProvider'
 import { Disclosure } from './ui'
 import { oauthErrorMessage, oauthProviderLabel } from '../utils/oauthErrors'
 import { deriveStorageReadiness, STORAGE_PROVIDER_LABELS } from './storageReadiness'
-
-// Firm connections are delegated grants: every call acts as the account that
-// connected, so the labels say "the connected account" rather than implying
-// organization-wide mailbox access.
-const SCOPE_LABELS_MS = {
-  offline_access: 'Stay connected without signing in again',
-  'User.Read.All': 'Read staff profiles in your organization (for user sync)',
-  'Mail.Read': "Read mail in the connected account's mailbox",
-  'Mail.Send': 'Send email as the connected account',
-  'Files.Read.All': 'Read every file the connected account can open (OneDrive + SharePoint)',
-  'Files.ReadWrite.All': 'Read and write every file the connected account can open (OneDrive + SharePoint)',
-  'Sites.Read.All': 'Read every SharePoint site the connected account can open',
-  'Calendars.ReadWrite': "Read and write the connected account's calendars",
-  openid: 'Confirm who signed in',
-  email: 'Email address',
-  profile: 'Profile info',
-}
-
-const SCOPE_LABELS_GOOGLE = {
-  'openid': 'Confirm who signed in',
-  'email': 'Email address',
-  'profile': 'Profile info',
-  'https://www.googleapis.com/auth/userinfo.email': 'Email address',
-  'https://www.googleapis.com/auth/userinfo.profile': 'Profile info',
-  'https://www.googleapis.com/auth/admin.directory.user.readonly': 'Read your Workspace user directory (for user sync)',
-  'https://www.googleapis.com/auth/gmail.readonly': "Read mail in the connected account's Gmail",
-  'https://www.googleapis.com/auth/gmail.send': 'Send email as the connected account',
-  'https://www.googleapis.com/auth/drive.readonly': 'Read every Google Drive file the connected account can open',
-  'https://www.googleapis.com/auth/drive': 'Read and write every Google Drive file the connected account can open',
-  'https://www.googleapis.com/auth/calendar': "Read and write the connected account's Google Calendars",
-}
-
-// Sign-in plumbing scopes are listed for support but are not a feature a
-// firm administrator needs to weigh before connecting.
-const PLUMBING_SCOPES = new Set([
-  'openid',
-  'email',
-  'profile',
-  'offline_access',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-])
+import { PLUMBING_SCOPES, SCOPE_LABELS_GOOGLE, SCOPE_LABELS_MS } from './integrationScopeLabels'
 
 // The capability matrix reports mail, calendar and storage as available from
 // the account tier alone; a scope the administrator declined still disables

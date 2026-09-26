@@ -10,7 +10,7 @@ const PROVIDERS = {
       'Read mail in your mailbox so LawHand can file matter correspondence',
       'Send client email you approve, from your own address',
       'Add and update your matter tasks and deadlines on your Outlook calendar',
-      'Search, open and save any file you can open in OneDrive or SharePoint',
+      'Search and open (read only) any file you can open in OneDrive or SharePoint',
     ],
   },
   google: {

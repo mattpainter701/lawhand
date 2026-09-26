@@ -79,8 +79,9 @@ export const INTEGRATION_SECTIONS = [
     description: 'Connect Microsoft 365 or Google Workspace and choose where matter documents live.',
     permissions: [
       'Directory profiles for user provisioning',
-      'Mail and calendar access for enabled workflows',
-      'OneDrive, SharePoint, or Google Drive access for matter documents',
+      'Read mail, and send approved client email as the connected account',
+      'Read and write calendars for enabled workflows',
+      'Read and write every OneDrive, SharePoint, or Google Drive file the connected account can open',
     ],
     setup: [
       'An administrator account for the organization provider',

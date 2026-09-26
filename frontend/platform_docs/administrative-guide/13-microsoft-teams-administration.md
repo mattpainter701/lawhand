@@ -17,7 +17,9 @@ icon: network
 2. If the Teams card says **Reconnect to enable Teams**, re-authorize Microsoft and accept the Teams permissions. The section shows **Teams connected** when it is ready.
 3. Make sure the team, the channel, the matter, and the people involved already exist.
 
-Teams is an explicit addition to the Microsoft grant. Its permissions can read basic team and channel information, send channel messages, read and write chats, and send activity notifications. Channel creation is added only when the firm opts into creating matter channels. See [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
+Teams is an explicit addition to the Microsoft grant. It asks for three permissions: read basic team information (`Team.ReadBasic.All`), read basic channel information (`Channel.ReadBasic.All`), and send channel messages (`ChannelMessage.Send`). Channel creation (`Channel.Create`) is added only when the firm opts into creating matter channels. Teams does not ask to read or write chats or to send activity-feed notifications; LawHand posts only to the channels you link or route. See [Integration permissions and data visibility](/admin?tab=guide&chapter=integration-data-visibility).
+
+A firm that connected Teams before these permissions were narrowed keeps working without re-approving: its existing grant already covers them. Microsoft keeps the chat and activity permissions from that earlier consent until an administrator removes them in the Microsoft Entra admin center (**Enterprise applications** > LawHand > **Permissions**); LawHand does not use them.
 
 Microsoft's permissions and LawHand's matter access are separate: a channel member may not have access to the matter in LawHand, and a matter member may not be in the channel. Test both before sending real matter content.
 
@@ -65,7 +67,7 @@ Call records are metadata: numbers, participants, timing, and outcome. They are 
 
 ### Why voice needs its own consent
 
-Teams chat uses the delegated Microsoft grant. Microsoft exposes call records only through the application permission `CallRecords.Read.All`, which has no delegated equivalent, so voice capture runs on a separate application-only credential with its own administrator consent. Turning voice on does not widen the chat grant, and turning it off does not affect chat.
+Teams channel messaging uses the delegated Microsoft grant. Microsoft exposes call records only through the application permission `CallRecords.Read.All`, which has no delegated equivalent, so voice capture runs on a separate application-only credential with its own administrator consent. Turning voice on does not widen the channel-messaging grant, and turning it off does not affect channel messages.
 
 ### Set up voice capture
 

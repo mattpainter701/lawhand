@@ -105,10 +105,10 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
   - the tenant token row lock is held for the caller's whole transaction (D27)
   - the scheduler holds the tenant row lock across provider calls (D48)
 - **Consent and identity:**
-  - unused or over-broad scopes: `Chat.ReadWrite` and `TeamsActivity.Send` are never called (D28)
+  - unused or over-broad scopes: `Chat.ReadWrite` and `TeamsActivity.Send` are never called (D28; **Fixed** in PR #630: the Teams scopes are dropped, per-user Microsoft file access is `Files.Read.All` with an alias so existing `Files.ReadWrite.All` connections still pass the audit, and sign-in no longer asks for `offline_access`. The admin `Mail.Read` scope and the admin-mailbox indexing fallback are deliberately unchanged pending the D02/D03 decision)
   - no identity check on per-user connect (D30)
   - a cancelled sign-in shows raw 422 JSON (D33)
-  - docs omit the send and write-all-files access (D81)
+  - docs omit the send and write-all-files access (D81; **Fixed** in PR #630: onboarding renders the consent list from the admin card's scope labels, and the hub card, admin and user guides, setup doc and plan doc now state `Mail.Send`/`gmail.send` and file write access; a test requires the admin guide to name every requested scope)
   - disconnect does not revoke at Microsoft (D70, partly fixed by the UI)
 - **Mail filing:**
   - CC-only parties are never captured (D38)
@@ -229,7 +229,7 @@ The position: LawHand remains the template and fill engine, the source of matter
   - Move document flows to `drive.file` with Picker.
   - Use restricted Gmail scopes only if background mail filing stays core, which commits LawHand to an annual CASA assessment (ADA Assurance Level 2). The add-on contextual Gmail scope is reported as non-restricted only by third parties; confirm it with Google.
 - **Least privilege (M).**
-  - Drop `Chat.ReadWrite` and `TeamsActivity.Send` (D28).
+  - Drop `Chat.ReadWrite` and `TeamsActivity.Send` (D28, **Fixed** in PR #630, which also narrows per-user file access to `Files.Read.All`; admin `Mail.Read` is left for the D02/D03 decision).
   - Consider `Sites.Selected` for a SharePoint Matter Hub, but check the subscription conflict above first.
   - Use per-firm Google service accounts or Workload Identity Federation instead of one platform key.
 - **Throttling hygiene (S–M).** Honour 429 and Retry-After everywhere (D84, D85), cap at 4 concurrent requests per mailbox, set `User-Agent: ISV|LawHand|LawHand/<version>` on SharePoint, and use `$batch`.

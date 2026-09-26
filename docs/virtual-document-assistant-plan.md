@@ -541,8 +541,10 @@ record approval consumption and queue the action.
 
 The current platform email path does not provide the attachment, saved-draft,
 delegated-sender, idempotency, or delivery-reconciliation contract required for
-assistant sending. Existing Microsoft and Google mail integrations use read-only
-scopes.
+assistant sending. Existing Microsoft and Google mail integrations can read and
+send: they request `Mail.Read` and `Mail.Send` (Microsoft) and `gmail.readonly`
+and `gmail.send` (Google), and LawHand uses the send scope for approved client
+email. They cannot create or edit drafts in the mailbox.
 
 Recommended progression:
 

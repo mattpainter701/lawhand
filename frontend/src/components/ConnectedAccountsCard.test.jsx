@@ -32,7 +32,9 @@ describe('ConnectedAccountsCard', () => {
     expect(within(microsoft).getByText(/file matter correspondence/)).toBeInTheDocument()
     expect(within(microsoft).getByText(/Send client email you approve/)).toBeInTheDocument()
     expect(within(microsoft).getByText(/Outlook calendar/)).toBeInTheDocument()
-    expect(within(microsoft).getByText(/OneDrive or SharePoint/)).toBeInTheDocument()
+    // Per-user Microsoft file access is read-only (D28): no promise to save.
+    expect(within(microsoft).getByText(/OneDrive or SharePoint/)).toHaveTextContent(/read only/)
+    expect(within(microsoft).getByText(/OneDrive or SharePoint/)).not.toHaveTextContent(/save/)
 
     await user.click(within(microsoft).getByRole('button', { name: 'Connect Microsoft 365' }))
     expect(connectCalendarIntegration).toHaveBeenCalledWith('microsoft')
