@@ -153,14 +153,6 @@ class Settings(BaseSettings):
     # first key while decryption accepts every listed key.
     TOKEN_ENCRYPTION_KEYS: str = ""
 
-    # Azure OpenAI (Copilot backend)
-    AZURE_OPENAI_ENDPOINT: str = ""
-    AZURE_OPENAI_KEY: str = ""
-    AZURE_OPENAI_DEPLOYMENT: str = ""
-
-    # Google Gemini
-    GEMINI_API_KEY: str = ""
-
     # Google Workspace — domain-wide delegation service account
     GOOGLE_SERVICE_ACCOUNT_EMAIL: str = ""
     GOOGLE_SERVICE_ACCOUNT_KEY: str = ""  # JSON key or path
@@ -267,7 +259,7 @@ class Settings(BaseSettings):
     LITELLM_STANDARD_MODEL: str = "lawhand-standard"
     LITELLM_PREMIUM_MODEL: str = "lawhand-premium"
     # Platform-owned route for scheduled/event-driven assistant work. This is
-    # deliberately separate from tenant Standard/Premium profiles and BYOK.
+    # deliberately separate from tenant Standard/Premium profiles.
     LITELLM_BACKGROUND_MODEL: str = "lawhand-background"
     LITELLM_BACKGROUND_TRANSPORT: str = "responses"
     LITELLM_EMBEDDING_MODEL: str = ""

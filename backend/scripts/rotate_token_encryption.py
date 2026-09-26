@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.database import async_session_maker, set_tenant_context
 from app.models.llm_provider_key import LLMProviderKey
 from app.models.qbo import QBOIntegration
-from app.models.tenant import Tenant, TenantSettings
+from app.models.tenant import Tenant
 from app.models.tenant_credential import TenantCredential
 from app.models.tenant_oauth_app import TenantOAuthApp
 from app.models.user_oauth_token import UserOAuthToken
@@ -94,20 +94,6 @@ async def rotate_all(*, dry_run: bool) -> int:
             total += _rotate_fields(
                 qbo_rows, ("encrypted_access_token", "encrypted_refresh_token")
             )
-
-            tenant_settings = await db.scalar(
-                select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
-            )
-            config = (
-                dict(tenant_settings.customer_llm_config or {})
-                if tenant_settings
-                else {}
-            )
-            encrypted_api_key = config.get("encrypted_api_key")
-            if encrypted_api_key:
-                config["encrypted_api_key"] = rotate_token_ciphertext(encrypted_api_key)
-                tenant_settings.customer_llm_config = config
-                total += 1
 
             if dry_run:
                 await db.rollback()

@@ -12,7 +12,7 @@ def test_alembic_revision_graph_resolves_heads():
 
     heads = script.get_heads()
 
-    assert heads == ["203_matter_folder_share_grants"]
+    assert heads == ["204_retire_customer_llm"]
 
 
 def test_matter_engagement_migration_adds_open_date_and_engagement_columns():
@@ -930,3 +930,98 @@ def test_drawn_signature_migration_adds_and_drops_the_column():
     assert "drawn_signature_png" in source
     assert "op.add_column" in source
     assert "op.drop_column" in source
+
+
+def _load_retire_customer_llm_migration():
+    import importlib.util
+
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "204_retire_customer_llm.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_204", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_retire_customer_llm_clears_keys_inside_a_force_rls_window(monkeypatch):
+    module = _load_retire_customer_llm_migration()
+    assert module.revision == "204_retire_customer_llm"
+    assert module.down_revision == "203_matter_folder_share_grants"
+
+    executed: list[str] = []
+    monkeypatch.setattr(
+        module, "op", type("FakeOp", (), {"execute": staticmethod(executed.append)})
+    )
+    module.upgrade()
+    assert executed == [
+        "ALTER TABLE tenant_settings NO FORCE ROW LEVEL SECURITY",
+        module.CLEAR_CUSTOMER_LLM_SQL,
+        "ALTER TABLE tenant_settings FORCE ROW LEVEL SECURITY",
+    ]
+    sql = " ".join(module.CLEAR_CUSTOMER_LLM_SQL.split())
+    assert sql.startswith("UPDATE tenant_settings SET use_customer_llm = false")
+    assert "customer_llm_config = NULL" in sql
+    assert " WHERE use_customer_llm IS TRUE" in sql
+
+    # The wiped keys cannot come back, so the downgrade touches nothing.
+    executed.clear()
+    module.downgrade()
+    assert executed == []
+
+
+async def test_retire_customer_llm_wipes_stored_provider_keys(db_session):
+    import uuid
+
+    from sqlalchemy import select, text
+
+    from app.models.tenant import Tenant, TenantSettings
+
+    module = _load_retire_customer_llm_migration()
+    byok_tenant = Tenant(id=uuid.uuid4(), name="BYOK firm", domain="byok.example")
+    plain_tenant = Tenant(id=uuid.uuid4(), name="Plain firm", domain="plain.example")
+    db_session.add_all([byok_tenant, plain_tenant])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            TenantSettings(
+                tenant_id=byok_tenant.id,
+                use_customer_llm=True,
+                customer_llm_provider="gemini",
+                customer_llm_config={"encrypted_api_key": "ciphertext"},
+                default_llm_model="lawhand-standard-kept",
+            ),
+            TenantSettings(
+                tenant_id=plain_tenant.id,
+                default_llm_model="lawhand-standard-plain",
+            ),
+        ]
+    )
+    await db_session.commit()
+    byok_id, plain_id = byok_tenant.id, plain_tenant.id
+
+    await db_session.execute(text(module.CLEAR_CUSTOMER_LLM_SQL))
+    await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            select(
+                TenantSettings.tenant_id,
+                TenantSettings.use_customer_llm,
+                TenantSettings.customer_llm_provider,
+                TenantSettings.customer_llm_config,
+                TenantSettings.default_llm_model,
+            ).where(TenantSettings.tenant_id.in_([byok_id, plain_id]))
+        )
+    ).all()
+    by_tenant = {row.tenant_id: row for row in rows}
+    for tenant_id in (byok_id, plain_id):
+        row = by_tenant[tenant_id]
+        assert row.use_customer_llm is False
+        assert row.customer_llm_provider is None
+        assert row.customer_llm_config is None
+    assert by_tenant[byok_id].default_llm_model == "lawhand-standard-kept"
+    assert by_tenant[plain_id].default_llm_model == "lawhand-standard-plain"

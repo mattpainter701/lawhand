@@ -54,7 +54,12 @@ from app.models.tenant import TenantSettings
 from app.models.user import User
 from app.services.cloud_search import CloudHit
 from app.services.corpus_revision import advance_rag_corpus_revision
-from app.services.llm_routing import resolve_llm_route, route_matter_context_allowed
+from app.services.llm_routing import (
+    default_platform_llm_config,
+    invalidate_llm_route_cache,
+    resolve_llm_route,
+    route_matter_context_allowed,
+)
 from app.services.matter_context import MatterContextService
 from app.services import rag as rag_service
 from app.services.rag import build_rag_context
@@ -75,10 +80,10 @@ async def test_standard_route_matter_policy_is_platform_managed(db_session):
         requested_route="tenant-standard", gateway_alias="firm-default"
     )
     premium = SimpleNamespace(requested_route="premium", gateway_alias="premium-model")
-    customer_standard = SimpleNamespace(
+    explicit_standard = SimpleNamespace(
         requested_route="standard",
-        resolved_route="customer",
-        gateway_alias="customer-model",
+        resolved_route="explicit-standard",
+        gateway_alias="caller-model",
     )
     tenant_standard.resolved_route = "tenant-standard"
     standard.resolved_route = "standard"
@@ -96,7 +101,7 @@ async def test_standard_route_matter_policy_is_platform_managed(db_session):
     await db_session.commit()
     assert not await _is_public_general_route(db_session, standard, tenant_id)
     assert await _is_public_general_route(db_session, tenant_standard, tenant_id)
-    assert await _is_public_general_route(db_session, customer_standard, tenant_id)
+    assert await _is_public_general_route(db_session, explicit_standard, tenant_id)
 
 
 @pytest.mark.asyncio
@@ -130,9 +135,9 @@ async def test_routing_profile_controls_standard_and_premium_matter_policy(db_se
     assert await route_matter_context_allowed(
         db_session, tenant_id, use_premium=False, route=standard
     )
-    customer = SimpleNamespace(resolved_route="customer")
+    explicit = SimpleNamespace(resolved_route="explicit-standard")
     assert not await route_matter_context_allowed(
-        db_session, tenant_id, use_premium=False, route=customer
+        db_session, tenant_id, use_premium=False, route=explicit
     )
     assert not await route_matter_context_allowed(
         db_session, tenant_id, use_premium=True
@@ -640,6 +645,44 @@ async def test_resolve_llm_route_cache_invalidates_on_tenant_settings_update(
 
     route = await resolve_llm_route(db_session, test_tenant.id, use_premium=False)
     assert route.model == "lawhand-standard-b"
+
+
+@pytest.mark.asyncio
+async def test_retired_customer_llm_settings_resolve_to_platform_gateway(
+    db_session,
+    test_tenant,
+):
+    """A tenant row still flagged for the removed BYOK path uses the gateway."""
+    from app.services.token_vault import encrypt_token
+
+    invalidate_llm_route_cache()
+    db_session.add(
+        TenantSettings(
+            tenant_id=test_tenant.id,
+            use_customer_llm=True,
+            customer_llm_provider="gemini",
+            customer_llm_config={
+                "encrypted_api_key": encrypt_token("tenant-provider-key"),
+                "deployment": "tenant-deployment",
+            },
+        )
+    )
+    await db_session.commit()
+
+    standard = await resolve_llm_route(db_session, test_tenant.id, use_premium=False)
+    premium = await resolve_llm_route(db_session, test_tenant.id, use_premium=True)
+
+    assert (standard.resolved_route, premium.resolved_route) == (
+        "standard",
+        "premium",
+    )
+    for route in (standard, premium):
+        assert route.gateway_provider == "litellm"
+        assert route.gateway_alias != "tenant-deployment"
+        assert not hasattr(route, "customer_api_key")
+    platform = default_platform_llm_config()
+    assert standard.gateway_alias == platform["standard_model"]
+    assert premium.gateway_alias == platform["premium_model"]
 
 
 def test_join_context_sections_omits_empty_sections():

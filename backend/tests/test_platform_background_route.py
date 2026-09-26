@@ -245,11 +245,11 @@ async def test_background_resolution_reads_global_alias_and_ignores_tenant(monke
         _DB(row),
         uuid.uuid4(),
         route_tier=RouteTier.BACKGROUND,
-        requested_provider="customer-byoK",
+        requested_provider="tenant-provider",
         requested_model="tenant-model",
     )
     assert route.gateway_alias == "lawhand-background-r9"
-    assert route.customer_api_key is None
+    assert route.gateway_provider == "litellm"
     assert route.resolved_route == "background"
 
 

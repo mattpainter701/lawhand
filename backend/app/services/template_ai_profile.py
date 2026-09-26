@@ -55,7 +55,7 @@ class TemplateAiRoute(LLMRoute):
 
 
 async def resolve_template_ai_route(db) -> TemplateAiRoute:
-    """Never inherit tenant BYOK, Premium chat, or Background aliases."""
+    """Never inherit tenant, Premium chat, or Background aliases."""
     row = await db.scalar(
         select(PlatformSetting).where(PlatformSetting.key == TEMPLATE_AI_PROFILE_KEY)
     )

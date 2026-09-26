@@ -546,7 +546,7 @@ The route-cache key must include the tier. Background resolution must ignore:
 
 - tenant LLM routing profile assignment;
 - tenant default/premium model overrides;
-- tenant BYOK;
+- tenant BYOK (since removed, 2026-09-25);
 - caller-supplied provider/model values; and
 - automatic Standard/Premium fallback.
 
@@ -1230,10 +1230,10 @@ workflows that prepares work for review**.
 - Chat, MCP, and background proposals land in the same Work Board/review system.
 - Every final external effect still requires the existing explicit approval and
   deterministic worker.
-- A Background request cannot resolve a tenant Standard/Premium/BYOK route.
+- A Background request cannot resolve a tenant Standard/Premium route.
 - With the Background schema absent, paused, degraded, or retired, regression
   tests prove existing tenant profile assignment, Standard/Premium canaries,
-  BYOK, hot reload, activation, and rollback behavior is unchanged.
+  hot reload, activation, and rollback behavior is unchanged.
 
 ### Capacity and reliability
 
@@ -1438,7 +1438,7 @@ data.
 - [ ] Verify inference-unavailable behavior leaves the saved call, assignment,
       task, and manual packet path usable.
 - [ ] Verify background route configuration is global/platform-owned and cannot
-      be selected as a tenant Standard/Premium profile or use tenant BYOK.
+      be selected as a tenant Standard/Premium profile.
 - [ ] Run backend/frontend focused tests plus lint/build, then record the exact
       API contract and feature-flag settings used for the rehearsal.
 - [ ] Keep Ask, Today, Work Board signal ingestion, and always-on claims out of

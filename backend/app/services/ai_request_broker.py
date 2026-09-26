@@ -541,9 +541,6 @@ class AIRequestBroker:
                     use_premium=tier is RouteTier.PREMIUM,
                     model=route.gateway_alias,
                     response_format=response_format,
-                    customer_api_key=route.customer_api_key,
-                    customer_provider=route.customer_provider,
-                    customer_endpoint=route.customer_endpoint,
                     gateway_metadata=self._gateway_metadata(
                         request, tier, request_id=request_id
                     ),

@@ -193,7 +193,6 @@ async def seed(domain: str) -> uuid.UUID:
                     tenant_id=tenant_id,
                     enable_pii_detection=True,
                     enable_auto_memory=False,
-                    use_customer_llm=False,
                     custom_config={
                         "plan": "demo-scenario-library-v1",
                         "synthetic": True,

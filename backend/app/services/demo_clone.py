@@ -153,17 +153,8 @@ async def validate_demo_fixture(db: AsyncSession, fixture_tenant_id: uuid.UUID) 
         .mappings()
         .first()
     )
-    if settings_row and any(
-        (
-            settings_row["use_customer_llm"],
-            settings_row["customer_llm_provider"],
-            settings_row["customer_llm_config"],
-            settings_row["primary_cloud_provider"],
-        )
-    ):
-        raise DemoFixtureError(
-            "Fixture tenant settings contain customer LLM or cloud configuration"
-        )
+    if settings_row and settings_row["primary_cloud_provider"]:
+        raise DemoFixtureError("Fixture tenant settings contain cloud configuration")
     for table_name in sorted(SENSITIVE_NEVER_CLONE):
         table = Base.metadata.tables[table_name]
         count = await db.scalar(

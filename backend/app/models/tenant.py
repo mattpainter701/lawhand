@@ -218,7 +218,9 @@ class TenantSettings(Base):
     # Custom configuration (JSON for extensibility)
     custom_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # Customer LLM (Sprint 8) — allows firm to use their own Gemini/Copilot subscription
+    # Retired: the Sprint 8 customer-LLM (BYOK) path was removed and migration
+    # 204_retire_customer_llm cleared these columns. Nothing reads or writes
+    # them; they stay mapped only until a later contract migration drops them.
     use_customer_llm: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )

@@ -230,7 +230,6 @@ alerts, and go/no-go evidence.
 | Platform bearer token | `/api/platform/*` | Defaults to a 15-minute lifetime and cannot exceed its bootstrap grant. |
 | Research MCP OAuth/API token | `https://research.getlawhand.com/api/mcp` (shorthand host supported) | OAuth 2.1 is used by hosted ChatGPT/Claude clients; header-capable clients use a LawHand Research API token. Research scope, active tenant, entitlement, billing, quota, and Redis burst limits fail closed. Workspace tools are excluded, and the product remains release-gated. |
 | MCP upstream key | Backend to private CourtListener sidecar only | Dedicated 32+ character server credential. Browser JWTs and customer keys are never forwarded upstream. |
-| Tenant BYOK | Approved model provider only | Provider URL is allowlisted/validated; arbitrary administrator-controlled hosts are rejected. |
 
 Operational details are in
 [credential security operations](docs/credential_security_operations.md) and

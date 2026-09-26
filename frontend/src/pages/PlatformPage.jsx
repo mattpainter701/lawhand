@@ -657,7 +657,7 @@ function RoutingOverviewPanel({ config, onOpenRouting }) {
       <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
         <AliasPill label="Standard route" alias={standardAlias} sub="Resolved for normal chat, skills, summaries, and drafting." />
         <AliasPill label="Premium route" alias={premiumAlias} sub="Resolved when premium routing is requested." />
-        <AliasPill label="Background Automations" alias={backgroundAlias} sub="Platform-global, bounded, single-shot assistant work. Never tenant BYOK." />
+        <AliasPill label="Background Automations" alias={backgroundAlias} sub="Platform-global, bounded, single-shot assistant work. Never a tenant override." />
       </div>
     </div>
   )

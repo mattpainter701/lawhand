@@ -5,7 +5,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.models.tenant import Tenant, TenantSettings
+from app.models.tenant import Tenant
 from app.models.tenant_credential import TenantCredential
 from app.models.user import User
 
@@ -178,25 +178,10 @@ async def test_cloud_root_folder_storage(db_session, tenant_id):
     assert tenant.cloud_root_folder["google_drive"]["id"] == "folder-456"
 
 
-@pytest.mark.asyncio
-async def test_customer_llm_config(db_session, tenant_id):
-    """Customer LLM settings stored in TenantSettings."""
-    tenant = Tenant(id=tenant_id, name="Test Firm", domain="testfirm-llm.com")
-    db_session.add(tenant)
+def test_customer_llm_admin_routes_are_removed():
+    """The retired BYOK configure/reset endpoints are no longer served."""
+    from app.routers.admin import router
 
-    ts = TenantSettings(
-        tenant_id=tenant_id,
-        use_customer_llm=True,
-        customer_llm_provider="gemini",
-        customer_llm_config={
-            "endpoint": "https://api.example.com",
-            "encrypted_api_key": "encrypted-test-key",
-        },
-    )
-    db_session.add(ts)
-    await db_session.commit()
-    await db_session.refresh(ts)
-
-    assert ts.use_customer_llm is True
-    assert ts.customer_llm_provider == "gemini"
-    assert ts.customer_llm_config["endpoint"] == "https://api.example.com"
+    paths = {getattr(route, "path", "") for route in router.routes}
+    assert "/admin/settings" in paths
+    assert not any("customer-llm" in path for path in paths)

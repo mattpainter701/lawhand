@@ -413,9 +413,6 @@ class ChatActionAgent:
                     context="",
                     model=route.model,
                     provider=route.provider,
-                    customer_api_key=route.customer_api_key,
-                    customer_provider=route.customer_provider,
-                    customer_endpoint=route.customer_endpoint,
                     response_format={"type": "json_object"},
                     system_prompt_override=_SYSTEM_PROMPT,
                     gateway_metadata=gateway_metadata(

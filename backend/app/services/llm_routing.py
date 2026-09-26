@@ -70,9 +70,6 @@ class LLMRoute:
     resolved_route: str
     gateway_alias: str
     gateway_provider: str = LITELLM_PROVIDER
-    customer_api_key: str | None = None
-    customer_provider: str | None = None
-    customer_endpoint: str | None = None
 
     @property
     def provider(self) -> str:
@@ -381,10 +378,10 @@ async def route_matter_context_allowed(
     """Return whether the resolved route may receive confidential matter data.
 
     A profile policy approves only that profile's activated, validated alias. It
-    must not spill over to an explicit model, a legacy tenant override, or a
-    customer BYOK route that Platform did not validate as part of the profile.
-    Those routes remain fail-closed until they gain their own independently
-    reviewed confidential-data policy.
+    must not spill over to an explicit model or a legacy tenant override that
+    Platform did not validate as part of the profile. Those routes remain
+    fail-closed until they gain their own independently reviewed
+    confidential-data policy.
     """
 
     if route is not None:
@@ -392,7 +389,6 @@ async def route_matter_context_allowed(
             "profile-premium" if use_premium else "profile-standard"
         )
         independently_unapproved_routes = {
-            "customer",
             "explicit-standard",
             "explicit-premium",
             "tenant-standard",
@@ -485,7 +481,7 @@ async def resolve_llm_route(
     )
 
     # The platform-owned Background route is deliberately resolved before any
-    # explicit model, tenant profile, tenant override, or BYOK inspection.
+    # explicit model, tenant profile, or tenant override inspection.
     if tier is RouteTier.BACKGROUND:
         platform_config = (
             await get_platform_llm_config(db) if hasattr(db, "execute") else {}
@@ -495,7 +491,7 @@ async def resolve_llm_route(
         )
         if not alias:
             # Never turn a missing global background route into a Premium or
-            # tenant/BYOK request. The empty alias is surfaced to the broker as
+            # tenant request. The empty alias is surfaced to the broker as
             # a route configuration failure.
             alias = ""
         return _set_cached_route(
@@ -525,50 +521,6 @@ async def resolve_llm_route(
         select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
     )
     ts = ts_result.scalar_one_or_none()
-
-    # Customer-supplied LLM (BYOK): tenant opts in with their own API key/endpoint
-    # for Gemini or Copilot (Azure OpenAI). These requests bypass the LiteLLM
-    # gateway entirely and talk directly to the tenant's own provider account —
-    # the gateway_alias must be a model/deployment name THAT PROVIDER recognizes,
-    # not a LiteLLM gateway alias.
-    if (
-        ts
-        and ts.use_customer_llm
-        and ts.customer_llm_provider
-        and ts.customer_llm_config
-    ):
-        from app.services.token_vault import decrypt_token
-
-        raw_key = ""
-        try:
-            raw_key = decrypt_token(ts.customer_llm_config.get("encrypted_api_key", ""))
-        except Exception:
-            pass
-        if raw_key:
-            customer_provider = ts.customer_llm_provider
-            deployment = _clean(ts.customer_llm_config.get("deployment"))
-            endpoint = _clean(ts.customer_llm_config.get("endpoint"))
-            gateway_alias = (
-                deployment
-                or _clean(ts.default_llm_model)
-                or (
-                    "gemini-2.0-flash"
-                    if customer_provider == "gemini"
-                    else customer_provider
-                )
-            )
-            return _set_cached_route(
-                cache_key,
-                LLMRoute(
-                    requested_route=requested_route,
-                    resolved_route="customer",
-                    gateway_alias=gateway_alias,
-                    gateway_provider=customer_provider,
-                    customer_api_key=raw_key,
-                    customer_provider=customer_provider,
-                    customer_endpoint=endpoint,
-                ),
-            )
 
     platform_config = await get_platform_llm_config(db)
     profile = await get_tenant_routing_profile(db, tenant_id)

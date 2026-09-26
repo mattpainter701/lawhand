@@ -917,12 +917,6 @@ export const testZoomPhoneIntegration = () =>
 export const disconnectZoomPhoneIntegration = () =>
   api.post('/integrations/zoom-phone/disconnect').then((r) => r.data)
 
-// Customer LLM
-export const configureCustomerLLM = (config) =>
-  api.post('/admin/customer-llm/configure', config).then((r) => r.data)
-export const resetCustomerLLM = () =>
-  api.delete('/admin/customer-llm/configure').then((r) => r.data)
-
 // ── Plugin API ────────────────────────────────────────────────────────────────
 export const getPlugins = () => api.get('/plugins').then((r) => r.data)
 export const getPluginProfile = (plugin) => api.get(`/plugins/${plugin}/profile`).then((r) => r.data)

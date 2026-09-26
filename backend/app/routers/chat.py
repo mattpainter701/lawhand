@@ -10,7 +10,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from typing import Any, List
 
 import aiofiles
@@ -716,8 +715,8 @@ async def _is_public_general_route(db: AsyncSession, route, tenant_id) -> bool:
     """Return whether this request must carry only public/general data.
 
     The resolved route and its independently approved policy are decisive. A
-    profile toggle cannot authorize a tenant override, explicit model, or BYOK
-    destination that was not validated with that profile.
+    profile toggle cannot authorize a tenant override or explicit model that
+    was not validated with that profile.
     """
     use_premium = route.requested_route in {"premium", "tenant-premium"}
     return not (
@@ -1254,19 +1253,11 @@ def _record_action_usage(
                 model_used=action_model[:100],
                 tokens_in=outcome.tokens_in,
                 tokens_out=outcome.tokens_out,
-                # BYOK routes bill the tenant's own provider account, so the
-                # platform charges nothing — same rule as the chat completion.
-                cost_usd=(
-                    Decimal("0")
-                    if route.resolved_route == "customer"
-                    else calculate_cost(
-                        tokens_in=outcome.tokens_in,
-                        tokens_out=outcome.tokens_out,
-                        model=action_model,
-                        billing_tier=(
-                            user.tenant.billing_tier if user.tenant else "payg"
-                        ),
-                    )
+                cost_usd=calculate_cost(
+                    tokens_in=outcome.tokens_in,
+                    tokens_out=outcome.tokens_out,
+                    model=action_model,
+                    billing_tier=(user.tenant.billing_tier if user.tenant else "payg"),
                 ),
                 # Distinct operation_type so action spend can be separated from
                 # answer spend when reviewing margin.
@@ -2733,9 +2724,6 @@ async def _send_message_under_generation_lock(
             provider=route.provider,
             model=route.model,
             user_name=user_first_name,
-            customer_api_key=route.customer_api_key,
-            customer_provider=route.customer_provider,
-            customer_endpoint=route.customer_endpoint,
             gateway_metadata=gateway_metadata(
                 tenant_id=user.tenant_id,
                 user_id=user.id,
@@ -2800,9 +2788,6 @@ async def _send_message_under_generation_lock(
             provider=route.provider,
             model=route.model,
             user_name=user_first_name,
-            customer_api_key=route.customer_api_key,
-            customer_provider=route.customer_provider,
-            customer_endpoint=route.customer_endpoint,
             gateway_metadata=gateway_metadata(
                 tenant_id=user.tenant_id,
                 user_id=user.id,
@@ -2968,17 +2953,11 @@ async def _send_message_under_generation_lock(
     conv.updated_at = datetime.now(timezone.utc)
 
     # 8. Record usage
-    # BYOK (customer) routes use the tenant's own provider subscription —
-    # the platform does not pay for those tokens, so don't bill for them.
-    cost = (
-        Decimal("0")
-        if route.resolved_route == "customer"
-        else calculate_cost(
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            model=model_used,
-            billing_tier=user.tenant.billing_tier if user.tenant else "payg",
-        )
+    cost = calculate_cost(
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        model=model_used,
+        billing_tier=user.tenant.billing_tier if user.tenant else "payg",
     )
     cloud_source_ids = [
         _cloud_hit_context_id(_cloud_hit_dict(hit)) for hit in cloud_hits
@@ -3629,9 +3608,6 @@ async def _stream_message_under_generation_lock(
                 provider=route.provider,
                 model=route.model,
                 user_name=stream_user_first_name,
-                customer_api_key=route.customer_api_key,
-                customer_provider=route.customer_provider,
-                customer_endpoint=route.customer_endpoint,
                 gateway_metadata=gateway_metadata(
                     tenant_id=user.tenant_id,
                     user_id=user.id,
@@ -3723,9 +3699,6 @@ async def _stream_message_under_generation_lock(
                     provider=route.provider,
                     model=route.model,
                     user_name=stream_user_first_name,
-                    customer_api_key=route.customer_api_key,
-                    customer_provider=route.customer_provider,
-                    customer_endpoint=route.customer_endpoint,
                     gateway_metadata=gateway_metadata(
                         tenant_id=user.tenant_id,
                         user_id=user.id,
@@ -3989,9 +3962,9 @@ async def _stream_message_under_generation_lock(
             # Update conversation timestamp
             conv.updated_at = datetime.now(timezone.utc)
 
-            # LiteLLM returns exact usage on the final streaming chunk. BYOK
-            # providers without that extension use an estimate of the complete
-            # provider input, rather than only the final user message.
+            # LiteLLM returns exact usage on the final streaming chunk. If a
+            # stream ends without it, estimate from the complete provider
+            # input, rather than only the final user message.
             estimated_provider_input = (
                 tenant_name
                 + context_str
@@ -4007,17 +3980,11 @@ async def _stream_message_under_generation_lock(
             tokens_out = int(
                 stream_usage.get("tokens_out") or len(accumulated_text.split()) * 1.3
             )
-            # BYOK (customer) routes use the tenant's own provider subscription —
-            # the platform does not pay for those tokens, so don't bill for them.
-            cost = (
-                Decimal("0")
-                if route.resolved_route == "customer"
-                else calculate_cost(
-                    tokens_in=tokens_in,
-                    tokens_out=tokens_out,
-                    model=model_used,
-                    billing_tier=user.tenant.billing_tier if user.tenant else "payg",
-                )
+            cost = calculate_cost(
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                model=model_used,
+                billing_tier=user.tenant.billing_tier if user.tenant else "payg",
             )
             cloud_source_ids = [
                 _cloud_hit_context_id(_cloud_hit_dict(hit)) for hit in cloud_hits

@@ -290,7 +290,6 @@ async def create_demo_session(
                     ),
                     enable_pii_detection=True,
                     enable_auto_memory=False,
-                    use_customer_llm=False,
                     primary_cloud_provider=None,
                     custom_config={"plan": "demo"},
                 ),
