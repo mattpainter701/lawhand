@@ -62,7 +62,7 @@
 - **Sync.** Everything polls. There are no Graph change notifications, no delta queries and no Gmail or Drive push. The cloud metadata index is rebuilt every 15 minutes. Correspondence capture reads a fixed 50-message, 7-day window (D39).
 - **Office add-in (Word/Excel/Outlook).** Behind a feature flag. Its session is a LawHand cookie obtained through Nested App Authentication; it has no Graph access of its own. Only four action types exist (replace selection, set values, set formulas, set Outlook subject).
 - **Teams app.** A static personal tab and a configurable channel tab, but nginx forbids framing `/teams` and there is no Teams SSO, so the tabs cannot render inside Teams (D17, D18). Channel notifications and Teams voice intake work.
-- **AI routes.** All inference goes through LiteLLM. The API-only BYOK path for Azure OpenAI and Gemini keys, and its retired Gemini fallback model, were removed on 2026-09-25 (D68, D69).
+- **AI routes.** All inference goes through LiteLLM. The API-only BYOK path for Azure OpenAI and Gemini keys, and its retired Gemini fallback model, were removed on 2026-09-25 in PR #631 (D68, D69).
 - **Workspace MCP.** An OAuth 2.1 server with DCR, read tools, and review-first "propose" tools for email, SMS, tasks, documents and workflows. It is a good fit for firm-side assistants.
 
 ## Verified defects
@@ -154,7 +154,7 @@ The full per-claim verdicts, with file:line evidence and fix sketches, are in `v
 
 ### Low severity, resolved by removal
 
-- **D68** (BYOK Gemini accepted only a global AI Studio key, with no paid-tier, region or Vertex controls and a hard-coded `gemini-2.0-flash` default) and **D69** (the "copilot"/"gemini" BYOK path was mislabelled as a subscription and bypassed the LiteLLM gateway) are **resolved by removal**. The product owner decided on 2026-09-25 that LawHand never calls a firm's own model provider: firms connect LawHand's MCP servers to the AI tool they already pay for. The admin endpoints, direct-provider client, customer route and dead `AZURE_OPENAI_*`/`GEMINI_API_KEY` settings are gone, and migration `204_retire_customer_llm` wiped any stored provider key.
+- **D68** (BYOK Gemini accepted only a global AI Studio key, with no paid-tier, region or Vertex controls and a hard-coded `gemini-2.0-flash` default) and **D69** (the "copilot"/"gemini" BYOK path was mislabelled as a subscription and bypassed the LiteLLM gateway) are **resolved by removal** (PR #631). The product owner decided on 2026-09-25 that LawHand never calls a firm's own model provider: firms connect LawHand's MCP servers to the AI tool they already pay for. The admin endpoints, direct-provider client, customer route and dead `AZURE_OPENAI_*`/`GEMINI_API_KEY` settings are gone, and migration `204_retire_customer_llm` wiped any stored provider key.
 
 ## Using the firm's own Copilot or Gemini
 
