@@ -54,17 +54,182 @@ zero `TODO`/`FIXME` debt, and zero commented-out code. Frontend and satellite
 scripts are unusually clean — 86 of 87 scripts in `scripts/` are wired into
 CI, Makefile, docs, or another script.
 
-The waste is concentrated in **five places that are not the application code**:
+The waste is concentrated in **five places that are not the application code**,
+ranked by criticality in the next section:
 
 | # | Area | Waste | Effort |
 |---|---|---|---|
-| 1 | **Tracked env files in a public repo** contain secret-shaped values | security | hours |
-| 2 | **Two parallel production Compose topologies** maintained in lockstep | ~400 lines, 4× env-var duplication | days |
+| 1 | **Tracked env files in a public repo** contain secret-shaped values, the `.gitignore` guard is inert, and the secret scanner cannot see history | credential exposure | hours |
+| 2 | **Two parallel production Compose topologies** whose `backend` env surfaces have *already drifted* (30 / 55 / 66 keys) | silent config divergence | days, or hours if the dead one is deleted |
 | 3 | **CI**: no `paths:` filter, 144×/day health cron with no job-level gate, release-gate copied into 5+ workflows (7 call sites), two dead workflows, 26 mislabelled action pins | ~400 lines + constant runner churn | hours |
-| 4 | **92 API endpoints with no consumer anywhere in the repo** + two parallel OAuth stacks | ~2,000+ LOC reachable only by tests | days |
+| 4 | **92 API endpoints with no consumer anywhere in the repo** (capability-gated, not open) + two parallel OAuth stacks sharing 429 of 738 lines | ~2,000+ LOC reachable only by tests | days |
 | 5 | **Git history**: 130.6 MiB (74% of blob bytes) is files already deleted from `main` | 185 MiB pack → ~45–55 MiB after rewrite | needs explicit approval |
 
 Everything else on the list below is minutes-to-hours.
+
+---
+
+## Criticality ranking
+
+Priority sections (P0/P1/…) below are ordered by *effort and urgency*.
+This table is ordered by **criticality = blast radius × likelihood**, which
+sometimes disagrees with effort — a minutes-long fix can be critical, and a
+days-long refactor can be merely wasteful.
+
+**Scale:** **C1 Critical** — data or credential exposure; act regardless of
+cost. **C2 High** — can silently produce wrong production behavior.
+**C3 Medium** — bounded cost: waste, drift, or a gate that fails open.
+**C4 Low** — pure bloat, no behavior change.
+
+| # | Criticality | Finding | Blast radius if it bites | Likelihood | Fix effort |
+|---|---|---|---|---|---|
+| 1 | **C1** | `.env.hypervisor` (31) + `.env.prod.example` (73) hold non-placeholder values in a **public** repo; the `.gitignore` negation meant to protect one is inert | LLM provider keys, `SECRET_KEY` (session signing → forge sessions), QBO OAuth client secret, Postgres/Redis/LiteLLM/CourtListener passwords | **Already public — exposure is present, not probabilistic** | hours |
+| 2 | **C1** | Plaintext GCP service-account key at `F:\deepseek\legalapp\lawhand-prod-4469afdab9d2.json`, beside the repo | Object storage behind the app | Present, unrotated | hours |
+| 3 | **C1** | `scripts/scan_changed_secrets.py:18-24` is **diff-only by design** — historical content is never rescanned | *This is why #1 is invisible to CI.* Any future secret lands in history unflagged | Certain | hours |
+| 4 | **C2** | Compose topologies declare **different env surfaces** — `backend` has 30 / 55 / 66 keys across base / prod / hypervisor; `prod.yml` sets `TOKEN_ENCRYPTION_KEY` with **no `:-` fallback** and hypervisor omits it entirely | Switching topology silently changes what the backend receives: credential encryption (`token_vault.py:36` raises) or MCP product billing flags off | Triggered by any topology switch; `fresh-host-rehearsal.yml:17` exercises **both** | days, or hours if `base+prod` is deleted outright |
+| 5 | **C2** | `eslint-plugin-react-hooks` installed and registered with **zero rules enabled** — no `rules-of-hooks`, no `exhaustive-deps` | In a legal app a stale closure renders **the wrong matter's data** with no error | Already shipping such bugs undetected | **minutes to enable** + triage whatever it flags |
+| 6 | **C2** | Two parallel MCP OAuth stacks: `workspace_mcp_oauth.py` vs `research_mcp_oauth.py`, **429 of 738 lines shared** | A fix applied to one and not the other = an authz inconsistency between two tenants' MCP surfaces | Certain over time; already 0.50 drift ratio | days |
+| 7 | **C2** | `production-health.yml` runs **144×/day with no job-level gate** (the `if:` is on the alert *step*, not the job) | Log/alert fatigue — the run that actually detects an outage is lost among 144 routine ones | Daily, ongoing | hours |
+| 8 | **C3** | `ci.yml` has **no `paths:` filter** — 19 jobs (4 migration rehearsals, 4 test shards, 2 search-node) run on doc-only PRs | Runner minutes, and slower feedback on everything | Every PR | hours |
+| 9 | **C3** | `release-gate` copy-pasted into **5+ workflows / 7 call sites, already drifted** — no `workflow_call` reusable workflow exists | A release-policy change lands in some gates and not others | On the next policy change | hours |
+| 10 | **C3** | SBOM input lists are incomplete and **fail open**: `cube-m`/`dev1` compose and 3 Dockerfiles missing; deleted `word-addin/package.json` still listed and skipped silently at `generate_sbom_inventory.py:124` | Supply-chain gate silently covers less than it claims | On any dependency change in a missed file | hours |
+| 11 | **C3** | **26 of 30** `actions/checkout` pins are labelled `# v5.1 (Node.js 24)`; the SHA is **v7.0.1** (verified via GitHub API). Two different `upload-artifact` pins in use | Next version bump double-bumps, or an auditor concludes "on Node 20" when on Node 24 | On the next dependency bump | minutes |
+| 12 | **C3** | Two dead workflows: `deploy.yml` (self-declared retired), `dependabot-auto-merge.yml` (**`.github/dependabot.yml` has never existed**), plus exemptions for it in `verify_merge_policy.py` and `ci.yml:1230` | Misleading surface; a reviewer trusts an auto-merge path that cannot fire | On review | minutes |
+| 13 | **C3** | **92 endpoints with no consumer anywhere** (18 Template Studio, 5 dead `automation-services`, admin/SMB/sync clusters) + ~1,757 LOC of tests for them | *Not* open doors — spot-checked as `require_capabilities(...)`-gated. Cost is attack surface and unexercised authz logic, where a future regression hides | Slow, structural | days |
+| 14 | **C3** | **12 settings + 3 `.env.prod.example` vars with zero readers**, including `PRIMARY_LLM`/`PREMIUM_LLM` which **CI itself sets** (`ci.yml:396-397,618-619`) | An operator tunes a knob and nothing changes — silent misconfiguration | On first use of the knob | minutes |
+| 15 | **C3** | `services/cache.py` routes **every error path through `print()`** (10 sites) while the codebase has 100 `logging.getLogger` sites | Cache failures invisible to log shipping, levels, and redaction | Every cache failure | minutes |
+| 16 | **C3** | Stale references in *live operator docs*: `docs/legal_rag.md:15,51,54` → `docker-compose.mcp.yml` **does not exist**; `docs/smb-agent-setup.md:294` sets `LAWHAND_RELEASE_BASE` **pointing at the wrong repo**; `README.md:253` clone URL wrong | An operator follows a runbook and fails on step 1 | On first use by a new operator | hours |
+| 17 | **C3** | Makefile **100% dead** (24/24 targets, 0 references); `make setup` copies a nonexistent `.env.example`; its `sync-public-db` target is the only caller of `scripts/sync_to_vps.sh` | Newcomer runs `make dev`, gets an error, concludes the repo is broken | On onboarding | minutes |
+| 18 | **C4** | Dead code: ~2,180 backend lines (1.1% of `app`), 43 unreferenced defs, 5 dead `__init__` re-export blocks (one with eager imports), 261 frontend lines | None today; carrying cost only | — | hours |
+| 19 | **C4** | Frontend minor: unused `eslint-plugin-react-refresh`, stale "~890 unused vars" comment demoting `no-unused-vars`, 3 dead CSS animations, brand style-guide HTML shipped in `dist/` and crawlable, lint scope missing 1,577 lines | None; a crawlable internal page is the only externally visible item | Low | hours |
+| 20 | **C4** | `docs/`: 49 orphans referenced by nothing, 57 ephemeral-and-unreferenced → **35–45% archivable** | Discoverability only | — | hours |
+| 21 | **C4** | Repo/workspace size: **130.6 MiB (74% of blob bytes) is already-deleted files**; 579 branches; 9 worktrees = 875 MiB incl. a 260 MiB orphan `node_modules` | Clone time and disk | — | prune: minutes · rewrite: **explicit approval** |
+| 22 | **C4** | Monolith concentration: 55 frontend files ≥500 lines hold **51% of all JS LOC** (`PlatformPage.jsx` 4,002); `routers/document_templates.py` 5,663; `test_sms_lifecycle_db.py` 8,535 | Review and merge-conflict cost, rises with every PR | Ongoing | per-file, over months |
+
+### Hypothesised remediation
+
+Sequenced by criticality, not effort. For each, the option we would actually
+take first is marked **(A)**.
+
+**C1 — this week, human required, no code changes needed to start.**
+
+- **(A) Verify → rotate → scrub.** Read the two env files, classify each
+  value as real/placeholder/synthetic. Rotate anything real *first* (LLM keys,
+  `SECRET_KEY`, QBO client secret, DB passwords), then scrub the files to
+  placeholders, then fix `.gitignore:24` by moving the rationale comment to
+  its own line above the negation. Rotate the GCP service-account key and
+  delete the file from disk.
+  *Tradeoff:* if any key was real it is already in public history — scrubbing
+  does not unpublish it, so rotation is mandatory and scrubbing is secondary.
+- **B) Make the scanner see history.** Add a scheduled full-tree job running
+  `scan_changed_secrets.py` (or gitleaks/trufflehog) over `HEAD`, separate from
+  the existing changed-lines ratchet so the ratchet still does its job on PRs.
+  *Tradeoff:* a full-tree scan will light up on the two env files immediately —
+  land it **after** (A), or it will be red from day one and get muted.
+- **C) Add a guard so this cannot regress:** a CI assertion that no tracked
+  `.env*` file contains a value over N chars that is not in an allowlist.
+
+**C2 — next, because each one is a silent-wrong-answer machine.**
+
+- **(A) Compose: delete the dead topology rather than unify it.** Every
+  scripted deploy uses `hypervisor.yml`; `base + prod.yml` is reachable only
+  via the dead Makefile and prose runbooks. Delete `docker-compose.prod.yml`,
+  fold its 4 backend / 8 scheduler-only keys into `hypervisor.yml`, delete the
+  second legal-combo branch in `prod_env_preflight.sh:536-547`, and drop
+  `base+prod` from `fresh-host-rehearsal.yml`'s matrix. Then add a ~15-line CI
+  check asserting the per-service env-key set is identical across surviving
+  topologies.
+  *Tradeoff:* this is the *cheap* unification — it removes a whole topology
+  instead of merging two live ones. It is only safe because `base+prod` is
+  genuinely unreferenced by any script; if someone is using it by hand, the
+  rehearsal matrix is the tell, and that has to be confirmed first.
+  *Alternative (B):* keep both and extract a shared `docker-compose.backend-env.yml`
+  fragment both include. *Tradeoff:* correct but slower, and keeps two
+  topologies worth of drift surface alive.
+- **(A) Turn the hooks rules on, then pay down what they flag.**
+  `rules-of-hooks: error` and `exhaustive-deps: warn` in
+  `frontend/eslint.config.js`. The plugin is already installed, so this is a
+  one-line rules block.
+  *Tradeoff:* expect a first run with findings; land `rules-of-hooks` as an
+  error immediately (it finds real bugs) and ratchet `exhaustive-deps` from
+  warn → error separately so the PR stays reviewable. This is the highest
+  benefit-per-minute item in the entire document.
+- **(B) Merge the two MCP OAuth stacks.** Extract the shared
+  `register|authorize|token|revoke|jwks|requests|grants|well-known` flow into a
+  parameterised factory keyed on prefix and storage adapter, leaving the two
+  routers as thin wrappers.
+  *Tradeoff:* touches a security-critical path, so it wants the existing OAuth
+  tests as a safety net first — check coverage before starting. Do **not**
+  attempt this in the same PR as any behavior change.
+- **(A) Gate the health cron.** Add `if: vars.LAWHAND_PROD_HEALTH_ENABLED == 'true'`
+  at the *job* level, matching `dev1-health.yml:18` and
+  `skynet-dr-rehearsal.yml:18`. Optionally drop `*/10` to `*/30`.
+  *Tradeoff:* if the cron is genuinely load-bearing for incident detection,
+  gating it behind a var risks it being off in an environment that needs it —
+  so set the var at the same time, and confirm no alerting depends on the
+  10-minute cadence.
+
+**C3 — batch into one "hygiene" PR series; each item is independent.**
+
+- **(A) CI:** add `paths:` to `ci.yml` `push:`/`pull_request:` (exclude
+  `docs/**`, `**.md`), then extract `release-gate` into a
+  `.github/workflows/release-gate.yml` with `workflow_call` inputs for which
+  workflows to require (`ci.yml`, `codeql.yml`, optional QA) — that input is
+  exactly what the five copies currently diverge on.
+- **(A) Delete dead workflow surface:** `deploy.yml`; either add
+  `.github/dependabot.yml` (with a real `package-ecosystem` list) or delete
+  `dependabot-auto-merge.yml` plus its exemptions in `verify_merge_policy.py`
+  and `ci.yml:1230`.
+- **(A) Fix pins mechanically:** rewrite the 26 `# v5.1 (Node.js 24)` comments
+  to `# v7.0.1`, unify `upload-artifact` in `qa-acceptance.yml`, add comments
+  to the two uncommented pins. Consider a CI check that a `uses:` comment
+  matches the tag GitHub reports for that SHA — that converts this class of bug
+  permanently.
+- **(A) SBOM:** make `generate_sbom_inventory.py` **fail** (not skip) on a
+  listed input that does not exist, and add the 5 missing compose/Dockerfile
+  inputs. The fail-open is the actual defect; the missing entries follow from it.
+- **(A) Delete the Makefile**, or fix it and make it the single documented
+  entry point. Half-alive is the worst state. If deleted, re-home
+  `scripts/sync_to_vps.sh` (currently reachable only through it) or delete that
+  too.
+- **(A) Config:** delete the 12 zero-reader settings and 3 dead env vars;
+  decide whether `PRIMARY_LLM`/`PREMIUM_LLM` should be read (then read them)
+  or stop setting them in CI. Route `cache.py` through `logging`.
+- **(A) Docs fixes are one pass:** correct `legal_rag.md`,
+  `LAWHAND_RELEASE_BASE`, README clone URL, `/var/log/clarity-legal`.
+- **(B) 92 orphan endpoints — do not mass-delete.** Confirm Template Studio is
+  not an in-flight delivery first (it has a full UI component and 18 routes);
+  if it is, wire it. Otherwise delete `automation-services` outright (5 routes,
+  0 references, clearly abandoned) and open a tracked issue per remaining
+  cluster rather than a sweep, because each needs a product answer, not a
+  grep answer.
+
+**C4 — do opportunistically; nothing here blocks anything.**
+
+- **(A)** Archive `docs/reviews/`, `docs/research/`, `docs/superpowers/` and
+  dated root-level status/review notes into `docs/archive/` (57–80 files).
+- **(A)** Prune the 172 merged branches + `git gc` — safe, reclaims ~17 MiB.
+  Remove the 260 MiB orphan `worktrees/review/frontend/node_modules` and the
+  empty worktree group dirs; resolve the dirty detached-HEAD worktree.
+- **(B) History rewrite (185 MiB → ~45–55 MiB)** — **explicitly out of scope
+  for an ordinary PR.** It is a force-push to a shared branch and needs its own
+  decision, its own window, and coordination with every open PR and worktree.
+  Note it also does not solve C1: rewritten secrets were already cloned.
+- Deletions (dead modules, dead `__init__` blocks, `schemas/plugin.py` dupes,
+  frontend's 4 dead files) are safe but low value — bundle them into whatever
+  PR touches those files rather than making standalone noise.
+
+**Suggested PR series, in order:**
+
+1. **Secrets** (C1 ×3) — human, this week, no product code.
+2. **Hooks rules on** (C2 #5) — minutes, highest payoff.
+3. **Compose topology** (C2 #4) — the only C2 that needs a real PR.
+4. **Health cron gate + CI `paths:` + release-gate extraction** (C2 #7, C3 #8, #9) — one CI PR.
+5. **Dead workflow + pins + SBOM fail-closed + Makefile** (C3 #10–12, #17) — one hygiene PR.
+6. **Config cruft + cache.py logging + stale doc refs** (C3 #14–16).
+7. **OAuth stack merge** (C2 #6) — separate, careful, test-first.
+8. **Orphan endpoints** (C3 #13) — per-cluster, product-gated.
+9. **C4 cleanup** — opportunistic.
 
 ---
 
@@ -154,14 +319,48 @@ changed-lines scan.
 - The `base + prod.yml` combination is reachable only through the **dead
   Makefile** (`Makefile:42-51`) and prose runbooks, plus a manual
   `workflow_dispatch` rehearsal (`fresh-host-rehearsal.yml:17`).
-- Consequence: **every backend env var has to be hand-copied four times** —
-  base `docker-compose.yml`, `prod.yml` backend *and* scheduler,
-  `hypervisor.yml` backend *and* scheduler. The copy-paste is visible at
-  `docker-compose.prod.yml:34-80` vs `:118-164` (identical ~45-line MCP env
-  blocks).
+- Consequence: **the `environment:` block for `backend` is maintained
+  independently in three files, and it has already drifted.** Measured key
+  counts under `backend.environment` (and `scheduler.environment` where
+  present):
 
-**Recommendation:** collapse to one base + explicit overlays, or declare
-`base+prod` dead and delete it. Either is better than today's four-way lockstep.
+  | File | `backend` env keys | `scheduler` env keys |
+  |---|---:|---:|
+  | `docker-compose.yml` | **30** | — |
+  | `docker-compose.prod.yml` | **55** | **51** |
+  | `docker-compose.hypervisor.yml` | **66** | **47** |
+
+  The base is a clean subset of hypervisor (0 keys lost). But **`prod.yml`
+  sets keys that `hypervisor.yml` does not**, and hypervisor is the file every
+  scripted deploy uses:
+
+  - on `backend`: `TOKEN_ENCRYPTION_KEY`, `TOKEN_ENCRYPTION_KEYS`,
+    `MCP_PRODUCT_ENABLED`, `MCP_PRODUCT_CALL_PRICE_CENTS`
+  - on `scheduler`: the above plus `MCP_SERVER_URL`, `MCP_UPSTREAM_API_KEY`,
+    `MCP_OPERATOR_ASSERTION_SECRET`, `MCP_CITATOR_SCOPE_ASSERTION_SECRET`
+  - hypervisor-only on `scheduler`: `APP_VERSION`, `APP_COMMIT`,
+    `APP_BUILD_TIME`, `MIGRATOR_DATABASE_URL`
+
+  `prod.yml:50,139` writes `TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}` with
+  **no `:-` fallback**. Because `environment:` takes precedence over `env_file`
+  in Compose, an unset interpolation source becomes an *empty string that
+  overrides* what `env_file` would have supplied — whereas `hypervisor.yml`
+  omits the key entirely and inherits from `env_file` normally. `token_vault.py:36`
+  then raises `"TOKEN_ENCRYPTION_KEYS or TOKEN_ENCRYPTION_KEY is required for
+  credential storage"`.
+
+  Whether this is harmless today depends entirely on the contents of the
+  **untracked** `.env` — which is the finding: switching topology changes what
+  the backend receives, and nothing in the repository shows you that. The
+  copy-paste is also visible structurally at `docker-compose.prod.yml:34-80` vs
+  `:118-164` (identical ~45-line MCP env blocks for backend and scheduler).
+
+**Recommendation:** pick one. Either (a) collapse to a single base +
+overlays and make the env block live in one place, or (b) declare
+`base+prod` dead, delete it, and delete `prod_env_preflight.sh:536-547`'s
+second legal-combo branch with it. Then add a CI assertion that the set of
+env keys per service is identical across the surviving topologies — that is
+~15 lines of Python and it converts a silent drift into a red build.
 
 ### P1.2 The Makefile is 100% dead
 
@@ -259,7 +458,18 @@ operations, across 89 router files / 94 routers.**
 **121 paths (14.6% of 767) have no product client.** Of those, 20 are
 legitimate external consumers (webhooks, OAuth callbacks, MCP protocol, public
 status pages). That leaves **92 endpoints with no consumer anywhere in the
-repo** — reachable only by tests or CHANGELOG prose:
+repo** — reachable only by tests or CHANGELOG prose.
+
+**Important severity qualifier:** these are *not* unauthenticated holes.
+Spot-checked and confirmed capability-gated — e.g. `automation_services.py:27-28`
+declares `manage = require_capabilities("manage_workflows", "manage_matters")`
+and `review = require_capabilities("approve_legal_work", "manage_matters")`,
+so all 5 dead routes still demand elevated caps. The cost is therefore
+**attack-surface and maintenance weight, not an open door**: 92 more handlers
+to keep authorized, tested and reviewed, each with authz logic nobody has an
+incentive to re-verify because nothing exercises it in production. That is a
+slower kind of risk — it is where a future authz regression would hide
+unnoticed.
 
 | Cluster | Routes | Evidence |
 |---|---:|---|
@@ -285,9 +495,21 @@ repo** — reachable only by tests or CHANGELOG prose:
    `POST /api/billing/webhooks/stripe` (`billing_extended.py:2339`), both
    whitelisted in `middleware/tenant.py:24`, `middleware/rate_limit.py:71` and
    `nginx/nginx.conf:353,692`.
-3. **Cross-service path collision:** mcp-server defines `GET /api/mcp` and
+3. **Cross-service path collision — latent, not live (corrected on
+   re-inspection).** mcp-server defines `GET /api/mcp` and
    `POST /api/mcp/tools/call` (`mcp-server/mcp_server/server.py:176,262`) which
-   also exist on the backend (`main.py:431`) behind the same nginx.
+   the backend also defines (`main.py:431`). nginx resolves this today by
+   *exact-match* locations `= /api/mcp`, `= /api/mcp/workspace`,
+   `= /api/mcp/manifest`, `= /api/mcp/tools/call`
+   (`nginx/snippets/mcp_transports.conf:4,15,29,40`), all of which
+   `proxy_pass $upstream_backend` (`mcp_transport_proxy.conf:1`). The backend
+   then proxies to mcp-server over the internal network via `MCP_SERVER_URL`
+   (`config.py:368`). **So mcp-server's identical paths are currently shadowed
+   and unreachable from outside** — this is duplicated surface, not a routing
+   bug. It becomes a hazard the moment anyone adds an nginx route straight to
+   the mcp-server container, because the two definitions would then disagree
+   about behavior behind the same name. Flagging it as a trap to remove, not a
+   defect to fix.
 4. **Two vocabularies for one control operation:** backend
    `/api/mcp/authority/{action}` vs mcp-server `/api/mcp/control/{action}`.
 
@@ -512,58 +734,30 @@ README's documentation map.
 
 ## Recommended order of attack
 
-**Do first (human required):**
+The ranked plan — criticality, blast radius, and a hypothesised fix with
+tradeoffs for each item, ending in a nine-PR series — is in
+**[Criticality ranking](#criticality-ranking)** near the top of this document.
+That is the operative section.
 
-1. **Verify and, if real, rotate** the values in `.env.hypervisor` and
-   `.env.prod.example`. Fix `.gitignore:24` so the negation actually works and
-   the comment stops asserting something unverified. Check
-   `lawhand-prod-4469afdab9d2.json`. Consider a one-time full-tree secret scan
-   (the existing scanner is diff-only by design).
-2. **Turn on `react-hooks/rules-of-hooks` + `exhaustive-deps`** — the plugin is
-   installed and currently enforcing nothing.
+The items below are the small ones that did not earn a row in the ranking
+table but are still worth doing:
 
-**Cheap and high-confidence (minutes to an hour each):**
+1. `.gitignore`: add `build/` (currently shows as untracked output),
+   `.code-review-graph/` (ignored only by its own inner `.gitignore`), and
+   `!ops/inbound-email-worker/package-lock.json` (tracked but ignored).
+2. Delete the frontend's 4 dead files, `eslint-plugin-react-refresh`, and the
+   3 unused CSS animations; re-promote `no-unused-vars` to an error now that
+   the "~890" backlog it justified is gone (measured: 0 errors, 3 warnings).
+3. Generate an OpenAPI artifact in CI and extend the client contract check
+   beyond `frontend/src/api.js` to cover office-addin and agent — today three
+   of four API clients are unchecked.
+4. Prune the 172 merged branches + `git gc` (reclaims ~17 MiB, zero risk).
 
-3. Delete the Makefile (or fix it — but stop leaving it half-alive).
-4. Delete `deploy.yml`; either add `.github/dependabot.yml` or delete
-   `dependabot-auto-merge.yml` and its exemptions in `verify_merge_policy.py`
-   and `ci.yml`.
-5. Fix the 26 wrong `# v5.1` checkout comments (the SHA is v7.0.1); unify
-   `upload-artifact` in
-   `qa-acceptance.yml:189`.
-6. Add `paths:` to `ci.yml` (and `agent-release.yml` `branches:`), and gate
-   `production-health.yml` behind a `vars.*` like its two siblings.
-7. `.gitignore`: add `build/`, `.code-review-graph/`, and
-   `!ops/inbound-email-worker/package-lock.json`.
-8. Prune the 172 merged branches + `git gc` (reclaims ~17 MiB, zero risk).
-9. Archive 57–80 ephemeral docs; fix the stale `docker-compose.mcp.yml`,
-   wrong-repo README/`LAWHAND_RELEASE_BASE` references.
-10. Delete the frontend's 4 dead files, unused eslint plugin, 3 dead CSS
-    animations; re-promote `no-unused-vars` to an error.
-11. Delete the 12 dead settings + 3 dead env vars; route `services/cache.py`
-    through the logger instead of `print()`.
-
-**Worth a real PR each (hours to days):**
-
-12. **Collapse the two Compose production topologies** — this is the single
-    biggest structural win; it is what makes every env-var change a 4-way
-    copy-paste.
-13. **Extract `release-gate` into a `workflow_call` reusable workflow** (229
-    lines × 5, already drifted).
-14. **Prune the 92 consumer-less endpoints** — start with the whole
-    `automation-services` router and the 18 Template Studio routes (confirm the
-    Studio UI isn't a separate delivery first), then the test-only admin/SMB/sync
-    clusters. Delete their ~1,757 LOC of tests with them.
-15. **Merge the two MCP OAuth stacks** — two copies of a security-critical flow
-    is the kind of duplication that produces CVEs.
-16. **Generate an OpenAPI artifact in CI** and extend the client contract check
-    beyond `frontend/src/api.js` to cover office-addin and agent.
-
-**Explicitly out of scope for an ordinary PR:**
-
-17. History rewrite to drop the 130.6 MiB of deleted blobs
-    (185 MiB → ~45–55 MiB). Requires a coordinated, separately-approved decision
-    and a force-push to a shared branch.
+**Explicitly out of scope for an ordinary PR:** history rewrite to drop the
+130.6 MiB of already-deleted blobs (185 MiB → ~45–55 MiB). Requires a
+coordinated, separately-approved decision and a force-push to a shared branch.
+It also does **not** remediate the C1 secrets finding — anything already
+cloned stays cloned.
 
 ---
 
